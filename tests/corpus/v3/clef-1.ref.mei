@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:36:50" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffGrp bar.thru="true" symbol="brace">
+                        <instrDef midi.instrnum="0" />
+                        <staffDef n="1" lines="5" meter.count="3" meter.unit="4">
+                           <clef shape="G" line="2" />
+                        </staffDef>
+                        <staffDef n="2" lines="5" meter.count="3" meter.unit="4">
+                           <clef shape="F" line="4" />
+                        </staffDef>
+                     </staffGrp>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1u2rxpv" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <clef xml:id="cbn5rvq" shape="F" line="4" />
+                           <note xml:id="n1nkfkxx" dur="4" pname="c" oct="3" />
+                           <note xml:id="n12cf1nk" dur="4" pname="d" oct="3" />
+                           <note xml:id="nr4tnvj" dur="4" pname="e" oct="3" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m1s2" n="2">
+                        <layer xml:id="m1s2l1" n="1">
+                           <clef xml:id="czi7q9m" shape="G" line="2" />
+                           <note xml:id="nnge0oy" dur="4" pname="c" oct="5" />
+                           <note xml:id="n48iyt3" dur="4" pname="d" oct="5" />
+                           <note xml:id="n16t9va0" dur="4" pname="e" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m3caakc" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1a16n6b" dur="4" pname="e" oct="3" />
+                           <rest xml:id="rvdsypj" dur="2" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m2s2" n="2">
+                        <layer xml:id="m2s2l1" n="1">
+                           <mRest xml:id="mk7hn7z" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1fw8p26" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <mRest xml:id="mkeg17i" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m3s2" n="2">
+                        <layer xml:id="m3s2l1" n="1">
+                           <mRest xml:id="m1iesp3a" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1l21h42" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="mtydjsy" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m4s2" n="2">
+                        <layer xml:id="m4s2l1" n="1">
+                           <mRest xml:id="m13ta61i" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1s9jmgk" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <mRest xml:id="mmzyrjh" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m5s2" n="2">
+                        <layer xml:id="m5s2l1" n="1">
+                           <mRest xml:id="m1t3odvy" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m7a7e6o" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <mRest xml:id="mxbla9s" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m6s2" n="2">
+                        <layer xml:id="m6s2l1" n="1">
+                           <mRest xml:id="m1f8q13t" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1539jzz" right="end" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <mRest xml:id="mznv5uy" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m7s2" n="2">
+                        <layer xml:id="m7s2l1" n="1">
+                           <mRest xml:id="mzmhc5a" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

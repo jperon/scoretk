@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Idee in Noten no.8</title>
+            <respStmt>
+               <persName role="composer">Yannis A. Paul</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:49" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffGrp bar.thru="true" symbol="brace">
+                        <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                           <label>Klavier</label>
+                           <labelAbbr>Flgl.</labelAbbr>
+                           <instrDef midi.instrnum="0" />
+                           <clef shape="G" line="2" />
+                        </staffDef>
+                     </staffGrp>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1c48hm0" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1amosgg" dur="4" pname="f" oct="4" />
+                           <note xml:id="n1l01hou" dur="4" pname="f" oct="4" />
+                           <note xml:id="n1ulwjla" dur="4" pname="f" oct="4" />
+                           <note xml:id="n19p41mc" dur="4" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1qe3er7" label="p" staff="1" startid="#n1amosgg">p</dynam>
+                     <hairpin xml:id="ha0rydp" form="cres" staff="1" startid="#n1amosgg" endid="#n1au87gc" />
+                  </measure>
+                  <measure xml:id="m15u7rio" type="mscore-repeat-2" left="rptstart" right="rptend" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1au87gc" dur="4" pname="f" oct="4" />
+                           <note xml:id="n1sb03if" dur="4" pname="f" oct="4" />
+                           <note xml:id="n1qjlrrc" dur="4" pname="f" oct="4" />
+                           <note xml:id="ncp376u" dur="4" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1ekood1" label="f" staff="1" startid="#n1au87gc">f</dynam>
+                     <hairpin xml:id="hjl27u3" form="cres" staff="1" startid="#n1au87gc" place="below" endid="#ncp376u" />
+                     <dynam xml:id="d1ssipdr" label="fff" staff="1" startid="#ncp376u">fff</dynam>
+                  </measure>
+                  <measure xml:id="m9assit" right="end" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n1pzkart" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1x1glwv" dur="4" pname="g" oct="4" />
+                           <note xml:id="nuz93j9" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1wpyqpq" dur="4" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d7y1fnq" label="ppp" staff="1" startid="#n1pzkart">ppp</dynam>
+                     <hairpin xml:id="h1o379al" form="cres" staff="1" startid="#n1pzkart" place="below" endid="#n1wpyqpq" />
+                     <dynam xml:id="dinsxhg" label="p" staff="1" startid="#n1wpyqpq">p</dynam>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

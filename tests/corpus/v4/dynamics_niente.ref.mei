@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Naamloze partituur</title>
+            <title type="subordinate">Ondertitel</title>
+            <respStmt>
+               <persName role="composer">Componist / arrangeur</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:42" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">Naamloze partituur</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">Ondertitel</rend>
+                     </rend>
+                     <rend halign="right" valign="bottom">
+                        <rend type="composer">Componist / arrangeur</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Viool</label>
+                        <labelAbbr>Vl.</labelAbbr>
+                        <instrDef midi.instrnum="40" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1tkp2cj" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nm2zs17" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="dfsl8u6" label="f" staff="1" startid="#nm2zs17">f</dynam>
+                     <hairpin xml:id="hq1irqm" form="dim" staff="1" startid="#nm2zs17" endid="#nkhqpkr" />
+                     <tie xml:id="t1sy42ge" startid="#nm2zs17" endid="#nkhqpkr" />
+                  </measure>
+                  <measure xml:id="m19ky4a5" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nkhqpkr" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="dl2uifb" label="n" staff="1" startid="#nkhqpkr">n</dynam>
+                  </measure>
+                  <measure xml:id="m1feshyf" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n11mleno" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="dwlgvl9" label="f" staff="1" startid="#n11mleno">f</dynam>
+                     <hairpin xml:id="h1bxowio" form="dim" niente="true" staff="1" startid="#n11mleno" endid="#n8w6y2b" />
+                     <tie xml:id="tjpuglu" startid="#n11mleno" endid="#n8w6y2b" />
+                  </measure>
+                  <measure xml:id="muu3edz" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="n8w6y2b" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m19igezx" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="nic0ul0" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="drlff6v" label="n" staff="1" startid="#nic0ul0">n</dynam>
+                     <hairpin xml:id="hmf9441" form="cres" staff="1" startid="#nic0ul0" endid="#n1jnyo2v" />
+                     <tie xml:id="tjfo8y1" startid="#nic0ul0" endid="#n1jnyo2v" />
+                  </measure>
+                  <measure xml:id="m1ldcv5n" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n1jnyo2v" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d3otbyt" label="f" staff="1" startid="#n1jnyo2v">f</dynam>
+                  </measure>
+                  <measure xml:id="me4awle" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="n178g9fm" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <hairpin xml:id="hn28peg" form="cres" niente="true" staff="1" startid="#n178g9fm" endid="#nhwb7jx" />
+                     <tie xml:id="trusnpv" startid="#n178g9fm" endid="#nhwb7jx" />
+                  </measure>
+                  <measure xml:id="mr9bi46" right="end" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="nhwb7jx" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d2rhm2o" label="f" staff="1" startid="#nhwb7jx">f</dynam>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

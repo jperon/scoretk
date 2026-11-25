@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:40" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m8ujv7p" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nls69nj" dur="2" pname="c" oct="5">
+                              <verse xml:id="v11u7rno" n="1">
+                                 <syl>Nel</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="n10znwae" dur="4" pname="d" oct="5">
+                              <verse xml:id="v1bjpdzy" n="1">
+                                 <syl con="d" wordpos="i">mez</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="n1u2ui0q" dur="4" pname="e" oct="5">
+                              <verse xml:id="vx1ooxs" n="1">
+                                 <syl wordpos="t">zo</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m7l8y5a" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1e88er8" dur="2" pname="f" oct="5">
+                              <verse xml:id="v1134c5n" n="1">
+                                 <syl>del</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="n14kg2az" dur="4" pname="e" oct="5">
+                              <verse xml:id="vrqmtji" n="1">
+                                 <syl con="d" wordpos="i">cam</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="nc7z5wl" dur="4" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1nf27sc" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <beam>
+                              <note xml:id="n1jyjzxa" dur="8" pname="c" oct="5">
+                                 <verse xml:id="vadi7vm" n="1">
+                                    <syl con="u" wordpos="t">min</syl>
+                                 </verse>
+                              </note>
+                              <note xml:id="n23rjky" dur="8" pname="d" oct="5" />
+                              <note xml:id="ncmjk63" dur="8" pname="e" oct="5" />
+                              <note xml:id="n1rh93yl" dur="8" pname="f" oct="5">
+                                 <verse xml:id="vfi41nb" n="1">
+                                    <syl>di</syl>
+                                 </verse>
+                              </note>
+                           </beam>
+                           <beam>
+                              <note xml:id="n1htism0" dur="8" pname="g" oct="5">
+                                 <verse xml:id="vh4ftsk" n="1">
+                                    <syl con="d" wordpos="i">no</syl>
+                                 </verse>
+                              </note>
+                              <note xml:id="n1xhekjn" dur="8" pname="f" oct="5">
+                                 <verse xml:id="v1os4joo" n="1">
+                                    <syl wordpos="t">stra</syl>
+                                 </verse>
+                              </note>
+                              <note xml:id="n11l5u35" dur="8" pname="e" oct="5">
+                                 <verse xml:id="v16vkbjj" n="1">
+                                    <syl con="d" wordpos="i">vi</syl>
+                                 </verse>
+                              </note>
+                              <note xml:id="n11og2i5" dur="8" pname="d" oct="5" />
+                           </beam>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m194fj3k" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="ncgtqhl" dur="1" pname="c" oct="5">
+                              <verse xml:id="vj7e314" n="1">
+                                 <syl wordpos="t">ta.</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m13okhx8" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="nl573py" dur="4" pname="c" oct="5" />
+                           <note xml:id="nv9ei27" dur="4" pname="d" oct="5" />
+                           <note xml:id="nbp3voo" dur="4" pname="e" oct="5" />
+                           <note xml:id="n14jynqr" dur="4" pname="f" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb />
+                  <measure xml:id="mpps0g9" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <beam>
+                              <note xml:id="nlgnb6a" dur="8" pname="g" oct="5" />
+                              <note xml:id="n1737nmd" dur="8" pname="f" oct="5" />
+                              <note xml:id="nom5pue" dur="8" pname="e" oct="5" />
+                              <note xml:id="nqhpbob" dur="8" pname="d" oct="5" />
+                           </beam>
+                           <beam>
+                              <note xml:id="n1c6l0yp" dur="8" pname="c" oct="5" />
+                              <note xml:id="n1fj7ytw" dur="8" pname="d" oct="5" />
+                              <note xml:id="n10hmgy9" dur="8" pname="e" oct="5" />
+                              <note xml:id="n1x002q4" dur="8" pname="f" oct="5" />
+                           </beam>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m18nfdmw" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="nk3yzvr" dur="2" pname="e" oct="5" />
+                           <note xml:id="nzy7j8b" dur="2" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mzo83nx" right="end" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="n18e9mmi" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

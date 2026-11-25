@@ -34,10 +34,14 @@ use scoretk_xml_common::Element;
 
 use crate::{first_descendant, Error};
 
+/// Key of global `scoreDef` values in the signature maps.
+const SCOREDEF_IDX: usize = usize::MAX;
+
 /// Spanner en attente d'une extrémité (`addSpanner` / `findEnd`).
 #[derive(Clone, Debug)]
 pub(crate) struct PendingSpanner {
     pub(crate) kind: scoretk_core::model::SpannerType,
+    pub(crate) number: u8,
     pub(crate) start: (Fraction, Track),
     pub(crate) end_id: Option<String>,
     pub(crate) end_tstamp: Option<f64>,
@@ -51,7 +55,7 @@ pub(crate) struct Reader<'a> {
     pub(crate) staff_by_n: BTreeMap<i32, usize>,
     pub(crate) part_by_staff: BTreeMap<i32, usize>,
     pub(crate) clefs: BTreeMap<usize, ClefType>,
-    pub(crate) timesigs: BTreeMap<usize, (Fraction, TimeSigType)>,
+    pub(crate) timesigs: BTreeMap<usize, (i32, i32, TimeSigType)>,
     pub(crate) keysigs: BTreeMap<usize, Key>,
     pub(crate) transpose: BTreeMap<usize, Transpose>,
     /// `xml:id` → note, pour les liaisons.
@@ -59,9 +63,14 @@ pub(crate) struct Reader<'a> {
     /// `xml:id` → (mesure, piste, tick), pour les événements de contrôle.
     pub(crate) id_events: BTreeMap<String, (usize, Track, Fraction)>,
     pub(crate) pending: Vec<PendingSpanner>,
+    /// Ties whose end note is in a later measure.
+    pub(crate) pending_ties: Vec<(String, String)>,
     pub(crate) current_time: Fraction,
     pub(crate) tuplet_ratio: Option<Fraction>,
     pub(crate) beam_mode: BeamMode,
+    /// Signatures must be written in the next measure (initial `scoreDef` or
+    /// a `scoreDef` change inside a section).
+    pub(crate) signatures_pending: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -82,9 +91,11 @@ impl<'a> Reader<'a> {
             id_notes: BTreeMap::new(),
             id_events: BTreeMap::new(),
             pending: Vec::new(),
+            pending_ties: Vec::new(),
             current_time: Fraction::new(4, 4),
             tuplet_ratio: None,
             beam_mode: BeamMode::Auto,
+            signatures_pending: true,
         };
         reader.build_staff_layer_map(score_node);
         reader.read_mei_head();
@@ -128,7 +139,14 @@ impl<'a> Reader<'a> {
             match child.name.as_str() {
                 "scoreDef" => self.read_score_def(child, false),
                 "section" => self.read_section_elements(child),
-                "measure" => self.read_measure(child),
+                "measure" => {
+                    self.read_measure(child);
+                    // MuseScore 4.7.4 can write a measure inside another one;
+                    // read those too, as the reference model has them all.
+                    for nested in child.children_named("measure") {
+                        self.read_measure(nested);
+                    }
+                }
                 "ending" => {
                     let endings = child
                         .attribute("n")
@@ -208,60 +226,79 @@ impl<'a> Reader<'a> {
         };
         measure.repeat_count = info.repeat_count;
 
-        // Initial signatures of every staff, as MuseScore writes them at the
-        // start of a score and after a scoreDef change.
-        let staff_count = self.score.staves.len().max(1);
-        for staff_idx in 0..staff_count {
-            if let Some(clef) = self.clefs.get(&staff_idx).copied() {
+        // Initial signatures of every staff, only in the first measure after
+        // a scoreDef (MuseScore writes them once, not in every measure).
+        if self.signatures_pending {
+            let staff_count = self.score.staves.len().max(1);
+            for staff_idx in 0..staff_count {
+                if let Some(clef) = self.clefs.get(&staff_idx).copied() {
+                    Self::insert_segment(
+                        &mut measure,
+                        staff_count,
+                        Fraction::ZERO,
+                        SegmentType::Clef,
+                        staff_idx,
+                        SegmentItem::Clef(Clef::new(clef)),
+                    );
+                }
+                if let Some(key) = self.keysigs.get(&staff_idx).copied() {
+                    Self::insert_segment(
+                        &mut measure,
+                        staff_count,
+                        Fraction::ZERO,
+                        SegmentType::KeySig,
+                        staff_idx,
+                        SegmentItem::KeySig(scoretk_core::model::KeySig::new(key)),
+                    );
+                }
                 Self::insert_segment(
                     &mut measure,
                     staff_count,
                     Fraction::ZERO,
-                    SegmentType::Clef,
+                    SegmentType::TimeSig,
                     staff_idx,
-                    SegmentItem::Clef(Clef::new(clef)),
+                    SegmentItem::TimeSig(TimeSig {
+                        numerator: numerator as i32,
+                        denominator: denominator as i32,
+                        kind,
+                        ..TimeSig::new(numerator as i32, denominator as i32)
+                    }),
                 );
             }
-            if let Some(key) = self.keysigs.get(&staff_idx).copied() {
-                Self::insert_segment(
-                    &mut measure,
-                    staff_count,
-                    Fraction::ZERO,
-                    SegmentType::KeySig,
-                    staff_idx,
-                    SegmentItem::KeySig(scoretk_core::model::KeySig::new(key)),
-                );
-            }
-            Self::insert_segment(
-                &mut measure,
-                staff_count,
-                Fraction::ZERO,
-                SegmentType::TimeSig,
-                staff_idx,
-                SegmentItem::TimeSig(TimeSig {
-                    numerator: numerator as i32,
-                    denominator: denominator as i32,
-                    kind,
-                    ..TimeSig::new(numerator as i32, denominator as i32)
-                }),
-            );
+            self.signatures_pending = false;
         }
 
         self.score.add_measure(measure);
         self.read_staves(node, index);
         self.read_control_events(node, index);
+        // Several staves may share the last tick: the measure length is the
+        // longest voice, not the sum of all tracks.
         let len = self.score.measures[index]
             .last_segment()
             .map_or(Fraction::ZERO, |segment| {
-                let mut end = segment.tick - start;
-                for (_, item) in segment.iter_elements() {
-                    if let Some(cr) = item.as_chord_rest() {
-                        end += cr.ticks_in_measure(nominal);
-                    }
-                }
-                end
+                segment
+                    .iter_elements()
+                    .filter_map(|(_, item)| item.as_chord_rest())
+                    .map(|cr| cr.ticks_in_measure(nominal))
+                    .max()
+                    .unwrap_or(Fraction::ZERO)
+                    + (segment.tick - start)
             });
-        self.score.measures[index].len = if len > Fraction::ZERO { len } else { nominal };
+        // The MuseScore `.mscx` reader defaults `Measure::len` to the nominal
+        // length; only an irregular measure (`@metcon="false"` or no `@n`)
+        // carries its real length. Match that so ticks stay aligned.
+        let irregular = info.irregular || node.attribute("metcon") == Some("false");
+        let gap = info.n.saturating_sub(index + 1) as i64;
+        self.score.measures[index].len = if node.attribute("metcon") == Some("false") && gap > 0 {
+            nominal * Fraction::from_integer(gap)
+        } else if irregular && len > Fraction::ZERO {
+            len
+        } else {
+            nominal
+        };
+        if gap > 0 {
+            self.score.measures[index].multi_measure_rest = Some(gap as u16);
+        }
     }
 
     /// Insert (or complete) a segment at `tick` for `staff_idx`.
@@ -374,6 +411,11 @@ impl<'a> Reader<'a> {
             ChordRest::chord(duration)
         };
         cr.ticks = Some(duration.ticks());
+        if let Some(stem) = stem_direction(node) {
+            if let ChordRestKind::Chord(chord) = &mut cr.kind {
+                chord.engraving.stem = stem;
+            }
+        }
         let beam =
             convert::beam_from_mei(node.attribute("type").unwrap_or_default(), "mscore-beam");
         if beam != BeamMode::Auto {
@@ -718,13 +760,13 @@ impl<'a> Reader<'a> {
 
     /// Current time signature as `(numerator, denominator, kind)`.
     pub(crate) fn current_timesig(&self) -> (i64, i64, TimeSigType) {
-        let (fraction, kind) = self
+        let (numerator, denominator, kind) = self
             .timesigs
-            .iter()
-            .next()
-            .map(|(_, value)| *value)
-            .unwrap_or((Fraction::new(4, 4), TimeSigType::Normal));
-        (fraction.numerator(), fraction.denominator(), kind)
+            .get(&SCOREDEF_IDX)
+            .copied()
+            .or_else(|| self.timesigs.iter().next().map(|(_, value)| *value))
+            .unwrap_or((4, 4, TimeSigType::Normal));
+        (i64::from(numerator), i64::from(denominator), kind)
     }
 }
 
@@ -756,5 +798,15 @@ fn collect_descendants<'a>(node: &'a Element, name: &str, result: &mut Vec<&'a E
             result.push(child);
         }
         collect_descendants(child, name, result);
+    }
+}
+
+/// `@stem.dir` → `StemDirection` (`Convert::stemFromMEI`, meiconverter.cpp:3150).
+fn stem_direction(node: &Element) -> Option<scoretk_core::model::StemDirection> {
+    use scoretk_core::model::StemDirection;
+    match node.attribute("stem.dir") {
+        Some("up") => Some(StemDirection::Up),
+        Some("down") => Some(StemDirection::Down),
+        _ => None,
     }
 }

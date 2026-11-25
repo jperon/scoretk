@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:38:04" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano 1</label>
+                        <labelAbbr>Pno. 1</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                     <staffDef n="2" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano 2</label>
+                        <labelAbbr>Pno. 2</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mpvsbmv" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <mRest xml:id="mu9vrpb" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m1s2" n="2">
+                        <layer xml:id="m1s2l1" n="1">
+                           <mRest xml:id="m6t2erp" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m48wlxw" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <mRest xml:id="m1iozbxe" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m2s2" n="2">
+                        <layer xml:id="m2s2l1" n="1">
+                           <mRest xml:id="m173eggj" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rb8a24e" func="segno" tstamp="0" />
+                     <repeatMark xml:id="roj5gft" func="segno" tstamp="0" />
+                  </measure>
+                  <measure xml:id="m8mrw7i" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <mRest xml:id="m150j43p" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m3s2" n="2">
+                        <layer xml:id="m3s2l1" n="1">
+                           <mRest xml:id="m11sf2rq" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="r13dlfko" func="dalSegno" tstamp="0" />
+                     <repeatMark xml:id="rfrpchy" func="dalSegno" tstamp="0" />
+                  </measure>
+                  <measure xml:id="m991mmj" right="end" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="myiqxxl" />
+                        </layer>
+                     </staff>
+                     <staff xml:id="m4s2" n="2">
+                        <layer xml:id="m4s2l1" n="1">
+                           <mRest xml:id="miev7ug" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

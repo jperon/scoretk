@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Title</title>
+            <respStmt>
+               <persName role="composer">Composer</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:38:15" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">Title</rend>
+                     </rend>
+                     <rend halign="right" valign="bottom">
+                        <rend type="composer">Composer</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m7tfa2y" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <mRest xml:id="m1a0gxo4" />
+                        </layer>
+                     </staff>
+                     <tempo xml:id="t1cm3ypi" type="mscore-infer-from-text" midi.bpm="88" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 88</tempo>
+                  </measure>
+                  <measure xml:id="mre3eof" right="end" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <mRest xml:id="my5xmex" />
+                        </layer>
+                     </staff>
+                     <tempo xml:id="t1ayp4m5" midi.bpm="92" staff="1" tstamp="1">Andante</tempo>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

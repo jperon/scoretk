@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:36:59" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <labelAbbr>Vo.</labelAbbr>
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="meftl7q" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1bw6kea" dur="4" pname="g" oct="4" />
+                           <note xml:id="n4v6i78" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1czoicr" dur="4" pname="g" oct="4" />
+                           <note xml:id="ntg3y4z" dur="4" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                     <hairpin xml:id="hoepljx" form="dim" staff="1" startid="#n4v6i78" place="below" endid="#n1xhheu7" />
+                  </measure>
+                  <measure xml:id="m1jbypwv" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1o3bx0g" dur="4" pname="g" oct="4" />
+                           <note xml:id="ni4htfb" dur="4" pname="g" oct="4" />
+                           <note xml:id="n10ie2y" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1xhheu7" dur="4" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mpis78q" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n1cqc32a" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1r58x20" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1tycqsl" dur="4" pname="g" oct="4" />
+                           <note xml:id="neoumx3" dur="4" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="manmtjq" right="end" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="m761tg1" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

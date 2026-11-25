@@ -22,7 +22,10 @@
 
 //! Header, score definition and part construction.
 
-use scoretk_core::model::{Clef, ClefType, Layers, Part, Staff, StaffBracket, Transpose};
+use scoretk_core::model::{
+    Clef, ClefType, Credit, CreditStyle, Fraction, Layers, Part, RichText, Staff, StaffBracket,
+    Transpose,
+};
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
 
@@ -111,8 +114,15 @@ impl<'a> Reader<'a> {
         let sym = node.attribute("meter.sym");
         if count.is_some() || sym.is_some() {
             let (fraction, kind) = convert::meter_from_mei(count, unit, sym);
-            self.timesigs.insert(SCOREDEF_IDX, (fraction, kind));
+            let numerator = count
+                .and_then(|value| value.split('+').next())
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(fraction.numerator() as i32);
+            let denominator = unit.unwrap_or(fraction.denominator() as i32);
+            self.timesigs
+                .insert(SCOREDEF_IDX, (numerator, denominator, kind));
             self.current_time = fraction;
+            self.signatures_pending = true;
         }
         if let Some(keysig) = node.attribute("keysig") {
             if let Some(key) = convert::key_from_mei(keysig) {
@@ -124,9 +134,11 @@ impl<'a> Reader<'a> {
             self.build_score_parts(node);
         }
         self.read_staff_defs(node);
-        if let Some((fraction, _)) = self.timesigs.get(&SCOREDEF_IDX).copied() {
-            self.current_time = fraction;
+        if let Some((numerator, denominator, _)) = self.timesigs.get(&SCOREDEF_IDX).copied() {
+            self.current_time = Fraction::try_new(i64::from(numerator), i64::from(denominator))
+                .unwrap_or(Fraction::new(4, 4));
         }
+        self.signatures_pending = true;
     }
 
     /// `MeiImporter::readPgHead` (`meiimporter.cpp:1102`): the first-page
@@ -135,6 +147,29 @@ impl<'a> Reader<'a> {
         let Some(node) = node else {
             return;
         };
+        // MuseScore turns the first-page head into a title VBox; the pivot's
+        // closest equivalent is an ordered list of credits.
+        for rend in descendants_named(node, "rend") {
+            let Some(style) = rend.attribute("type") else {
+                continue;
+            };
+            let text = crate::lines_of(rend);
+            if text.is_empty() {
+                continue;
+            }
+            let mut credit = Credit::new(RichText::new(text), CreditStyle::from_name(style));
+            if let Some(align) = rend.attribute("halign") {
+                if let Some(justify) = scoretk_core::model::CreditJustify::from_name(align) {
+                    credit.justify = justify;
+                }
+            }
+            if let Some(align) = rend.attribute("valign") {
+                if let Some(valign) = scoretk_core::model::CreditValign::from_name(align) {
+                    credit.valign = valign;
+                }
+            }
+            self.score.add_credit(credit);
+        }
         if self.score.metadata.work_title.is_empty() {
             if let Some(title) = descendants_named(node, "title").first() {
                 let text = crate::lines_of(title);
@@ -169,7 +204,10 @@ impl<'a> Reader<'a> {
             if label.is_empty() || children.is_empty() {
                 continue;
             }
-            let part = Part::new(label, abbr);
+            let mut part = Part::new(label, abbr);
+            if let Some(id) = scoretk_core::model::recognize_musicxml_id(&part.long_name, None) {
+                part.instrument.id = id.to_owned();
+            }
             let part_id = self.score.add_part(part);
             let part_index = part_id.index();
             for child in children {
@@ -189,21 +227,21 @@ impl<'a> Reader<'a> {
                 .attribute("n")
                 .and_then(|value| value.parse::<i32>().ok())
                 .unwrap_or(1);
-            let staff_idx = self.staff_by_n.get(&n).copied().unwrap_or(0);
             let part_index = if let Some(index) = part_for_staff.get(&n).copied() {
                 index
             } else {
                 let label = staff_def.child_text("label").unwrap_or_default();
                 let abbr = staff_def.child_text("labelAbbr").unwrap_or_default();
                 let source = staff_def.child("instrDef");
-                let mut part = Part::new(
-                    if label.is_empty() {
-                        format!("Staff {n}")
-                    } else {
-                        label.to_owned()
-                    },
-                    abbr,
-                );
+                let long_name = if label.is_empty() {
+                    format!("Staff {n}")
+                } else {
+                    label.to_owned()
+                };
+                let mut part = Part::new(long_name.clone(), abbr);
+                if let Some(id) = scoretk_core::model::recognize_musicxml_id(&long_name, None) {
+                    part.instrument.id = id.to_owned();
+                }
                 if let Some(instr) = source {
                     if let Some(program) = instr
                         .attribute("midi.instrnum")
@@ -243,8 +281,6 @@ impl<'a> Reader<'a> {
                 ));
             }
             let part = &mut self.score.parts[part_index];
-            part.staves
-                .push(scoretk_core::model::StaffId::from_index(staff_idx));
             if part_for_staff
                 .values()
                 .filter(|value| **value == part_index)
@@ -297,6 +333,11 @@ impl<'a> Reader<'a> {
             .and_then(|value| value.parse::<u8>().ok())
         {
             part.instrument.midi_program = Some(program);
+            if part.instrument.id.is_empty() {
+                if let Some(id) = scoretk_core::model::recognize_musicxml_id("", Some(program)) {
+                    part.instrument.id = id.to_owned();
+                }
+            }
         }
         if let Some(channel) = node
             .attribute("midi.channel")
@@ -361,8 +402,13 @@ impl<'a> Reader<'a> {
                     .and_then(|child| child.attribute("sym"))
             });
             if count.is_some() || sym.is_some() {
+                let (_, kind) = convert::meter_from_mei(count, unit, sym);
+                let numerator = count
+                    .and_then(|value| value.split('+').next())
+                    .and_then(|value| value.parse::<i32>().ok())
+                    .unwrap_or(4);
                 self.timesigs
-                    .insert(staff_idx, convert::meter_from_mei(count, unit, sym));
+                    .insert(staff_idx, (numerator, unit.unwrap_or(4), kind));
             }
             let keysig = staff_def.attribute("keysig").or_else(|| {
                 staff_def

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:36:50" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Flute</label>
+                        <labelAbbr>Fl.</labelAbbr>
+                        <instrDef midi.instrnum="73" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m168ifow" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n15054pi" dur="4" pname="a" oct="4" />
+                           <note xml:id="n1wfogit" dur="8" pname="a" oct="4" />
+                           <rest xml:id="rdbvc3p" type="mscore-beam-none" dur="8" />
+                           <rest xml:id="r10kx5iy" dur="2" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1ut0z8s" right="end" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nsc72zy" dur="4" pname="a" oct="4" />
+                           <beam>
+                              <tuplet xml:id="tb6o73f" num="3" numbase="2">
+                                 <note xml:id="n4kcap4" dur="8" pname="a" oct="4" />
+                                 <note xml:id="ng8eefp" dur="8" pname="a" oct="4" />
+                                 <note xml:id="nsp13rm" dur="8" pname="a" oct="4" />
+                              </tuplet>
+                           </beam>
+                           <note xml:id="nrnmyhw" dur="2" pname="a" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

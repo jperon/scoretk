@@ -191,43 +191,53 @@ impl<'a> Reader<'a> {
         let start = node
             .attribute("startid")
             .unwrap_or_default()
-            .trim_start_matches('#');
+            .trim_start_matches('#')
+            .to_owned();
         let end = node
             .attribute("endid")
             .unwrap_or_default()
-            .trim_start_matches('#');
-        let (Some(start), Some(end)) = (
-            self.id_notes.get(start).copied(),
-            self.id_notes.get(end).copied(),
-        ) else {
-            return;
-        };
-        if start.index() >= self.score.notes.len() || end.index() >= self.score.notes.len() {
-            return;
+            .trim_start_matches('#')
+            .to_owned();
+        if !start.is_empty() && !end.is_empty() {
+            self.pending_ties.push((start, end));
         }
-        self.score.notes[start.index()].tie_forward = Some(end);
-        self.score.notes[end.index()].tie_back = Some(start);
     }
 
     /// `MeiImporter::readSlur` (`meiimporter.cpp:3058`).
     fn read_slur(&mut self, node: &Element, measure: usize, is_trill: bool) {
         let start = self.anchor(node, measure);
-        let end = self.end_anchor(node, measure).unwrap_or((start.0, start.1));
         let kind = if is_trill {
             SpannerType::Trill
         } else {
             SpannerType::Slur
         };
-        let mut spanner = Spanner::new(
-            kind,
-            SpannerAnchor::new(start.0, start.1),
-            SpannerAnchor::new(end.0, end.1),
-        );
-        spanner.number = node
+        let end_id = node.attribute("endid").map(str::to_owned);
+        let end_tstamp = node
+            .attribute("tstamp2")
+            .and_then(|value| value.parse::<f64>().ok());
+        let end = self.end_anchor(node, measure);
+        let number = node
             .attribute("n")
             .and_then(|value| value.parse::<u8>().ok())
             .unwrap_or(0);
-        self.score.add_spanner(spanner);
+        if let (Some((tick, track)), None, None) = (end, end_id.as_ref(), end_tstamp) {
+            let mut spanner = Spanner::new(
+                kind,
+                SpannerAnchor::new(start.0, start.1),
+                SpannerAnchor::new(tick, track),
+            );
+            spanner.number = number;
+            self.score.add_spanner(spanner);
+        } else {
+            self.pending.push(PendingSpanner {
+                kind,
+                number,
+                start,
+                end_id,
+                end_tstamp,
+                measure,
+            });
+        }
     }
 
     /// `MeiImporter::addSpanner` (`meiimporter.cpp:516`) for span-based events.
@@ -244,6 +254,7 @@ impl<'a> Reader<'a> {
             }
             None => self.pending.push(PendingSpanner {
                 kind,
+                number: 0,
                 start,
                 end_id: node.attribute("endid").map(str::to_owned),
                 end_tstamp: node
@@ -520,11 +531,27 @@ impl<'a> Reader<'a> {
             let (tick, track) = end
                 .map(|(_, track, tick)| (tick, track))
                 .unwrap_or((item.start.0, item.start.1));
-            self.score.add_spanner(Spanner::new(
+            let mut spanner = Spanner::new(
                 item.kind,
                 SpannerAnchor::new(item.start.0, item.start.1),
                 SpannerAnchor::new(tick, track),
-            ));
+            );
+            spanner.number = item.number;
+            self.score.add_spanner(spanner);
+        }
+        let ties = std::mem::take(&mut self.pending_ties);
+        for (start, end) in ties {
+            let (Some(start), Some(end)) = (
+                self.id_notes.get(&start).copied(),
+                self.id_notes.get(&end).copied(),
+            ) else {
+                continue;
+            };
+            if start.index() >= self.score.notes.len() || end.index() >= self.score.notes.len() {
+                continue;
+            }
+            self.score.notes[start.index()].tie_forward = Some(end);
+            self.score.notes[end.index()].tie_back = Some(start);
         }
     }
 

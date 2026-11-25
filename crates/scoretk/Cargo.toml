@@ -79,6 +79,7 @@ scoretk-abc-import = { path = "../scoretk-abc-import" }
 scoretk-abc-export = { path = "../scoretk-abc-export" }
 scoretk-mei-import = { path = "../scoretk-mei-import" }
 scoretk-mei-export = { path = "../scoretk-mei-export" }
+scoretk-xml-common = { path = "../scoretk-xml-common" }
 quick-xml = { workspace = true }
 similar = "3"
 zip = { workspace = true }

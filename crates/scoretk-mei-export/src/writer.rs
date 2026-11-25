@@ -25,7 +25,8 @@
 //! control events after the staves, as MuseScore 4.7.4 writes them.
 
 use scoretk_core::model::{
-    Annotation, ChordRest, ChordRestKind, Fraction, Score, SegmentItem, SpannerType, Track, VOICES,
+    Annotation, BeamMode, ChordRest, ChordRestKind, Fraction, Score, SegmentItem, SpannerType,
+    Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -141,7 +142,13 @@ fn write_layer(
     let layer_n = (voice + 1).to_string();
     xml.start_element("layer", &[("xml:id", &layer_id), ("n", &layer_n)]);
     let mut open_tuplet: Option<scoretk_core::model::TupletId> = None;
+    let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
+        // MuseScore wraps consecutive beamed events in a `<beam>` container.
+        if cr.engraving.beam_mode == BeamMode::Begin && !open_beam {
+            xml.start_element("beam", &[]);
+            open_beam = true;
+        }
         let mut attributes = Vec::new();
         attributes.push((
             "dur".to_owned(),
@@ -212,9 +219,21 @@ fn write_layer(
                 }
             }
         }
+        if open_beam
+            && matches!(
+                cr.engraving.beam_mode,
+                BeamMode::End | BeamMode::None | BeamMode::ForwardHook | BeamMode::BackwardHook
+            )
+        {
+            xml.end_element();
+            open_beam = false;
+        }
         let _ = position;
     }
     if open_tuplet.is_some() {
+        xml.end_element();
+    }
+    if open_beam {
         xml.end_element();
     }
     xml.end_element();
@@ -231,6 +250,8 @@ fn write_note(
     let (pname, oct, accid, accid_ges) =
         convert::pitch_to_mei(note.pitch, note.tpc, note.accidental.map(|a| a.kind), 0);
     let mut attrs = extra.to_vec();
+    let uid = format!("n{}", id.index());
+    attrs.push(("xml:id", &uid));
     let pname_owned = pname.clone();
     attrs.push(("pname", &pname_owned));
     let oct_owned = oct.to_string();
@@ -365,6 +386,20 @@ fn write_control_events(
                 xml.tag_empty("gliss", &refs);
             }
             _ => {}
+        }
+    }
+    // Ties are note-to-note in MEI (`startid`/`endid`), not a chord field.
+    for (index, note) in score.notes.iter().enumerate() {
+        if let Some(next) = note.tie_forward {
+            let attrs = [
+                ("startid".to_owned(), format!("#n{index}")),
+                ("endid".to_owned(), format!("#n{}", next.index())),
+            ];
+            let refs: Vec<(&str, &str)> = attrs
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            xml.tag_empty("tie", &refs);
         }
     }
     let _ = index;

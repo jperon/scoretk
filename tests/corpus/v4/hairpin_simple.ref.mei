@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:53" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4" trans.diat="-7" trans.semi="-12">
+                        <label>Steel Guitar</label>
+                        <labelAbbr>s.guit.</labelAbbr>
+                        <instrDef midi.instrnum="25" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1vhc5u0" right="end" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n4xyh3p" dur="4" pname="b" oct="4" />
+                           <note xml:id="n17cyfaq" dur="4" pname="c" oct="5" />
+                           <note xml:id="n1t7pys1" dur="4" pname="d" oct="5" />
+                           <note xml:id="n1ma324n" dur="4" pname="e" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1ce81yw" label="p" staff="1" startid="#n4xyh3p">p</dynam>
+                     <tempo xml:id="t9t2det" midi.bpm="120" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 120</tempo>
+                     <hairpin xml:id="h1j7h3ul" form="cres" staff="1" startid="#n4xyh3p" endid="#n1ma324n" />
+                     <dynam xml:id="dyfhntg" label="f" staff="1" startid="#n1ma324n">f</dynam>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:38:17" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1i77exo" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nx8vot5" dur="2" pname="c" oct="5" />
+                           <note xml:id="napm8j2" dur="2" pname="c" oct="5" />
+                        </layer>
+                        <layer xml:id="m1s1l2" n="2">
+                           <note xml:id="nc62shu" dur="2" pname="f" oct="4" />
+                           <note xml:id="nzj1q3p" dur="2" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d18a5zbw" type="mscore-staff-text" startid="#nx8vot5">No tuplets:</dir>
+                  </measure>
+                  <measure xml:id="m1f3crgf" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nv52z2f" dur="2" pname="c" oct="5" />
+                           <chord xml:id="c1vwd0je" dur="2">
+                              <note xml:id="n1b2lyvx" pname="f" oct="4" />
+                              <note xml:id="n1y74che" pname="c" oct="5" />
+                           </chord>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m5thfl" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <tuplet xml:id="tkgj5gu" num="3" numbase="2" bracket.place="above" num.place="above">
+                              <note xml:id="n17fyy1l" dur="2" pname="c" oct="5" stem.dir="up" />
+                              <note xml:id="n4hlfpt" dur="2" pname="c" oct="5" stem.dir="up" />
+                              <note xml:id="n1rnph1v" dur="2" pname="c" oct="5" stem.dir="up" />
+                           </tuplet>
+                        </layer>
+                        <layer xml:id="m3s1l2" n="2">
+                           <note xml:id="n18ep239" dur="4" pname="f" oct="4" />
+                           <note xml:id="n10y59j7" dur="2" pname="f" oct="4" />
+                           <note xml:id="n1pzxbwn" dur="4" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dppdcxr" type="mscore-staff-text" startid="#n17fyy1l">Tuplets in voice 1:</dir>
+                  </measure>
+                  <measure xml:id="m1wvb2ai" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="n1hvd3c5" dur="2" pname="c" oct="5" stem.dir="up" />
+                           <tuplet xml:id="tij4q7" num="3" numbase="2" bracket.place="above" num.place="above">
+                              <note xml:id="ngry1ob" dur="4" pname="c" oct="5" stem.dir="up" />
+                              <beam>
+                                 <tuplet xml:id="tnhxi0q" num="3" numbase="2" bracket.place="above" num.place="above">
+                                    <note xml:id="n1fvdzgj" dur="8" pname="c" oct="5" stem.dir="up" />
+                                    <note xml:id="nsmnnht" dur="8" pname="c" oct="5" stem.dir="up" />
+                                    <note xml:id="nvs2q2v" dur="8" pname="c" oct="5" stem.dir="up" />
+                                 </tuplet>
+                              </beam>
+                              <note xml:id="n1b3eri" dur="4" pname="c" oct="5" stem.dir="up" />
+                           </tuplet>
+                        </layer>
+                        <layer xml:id="m4s1l2" n="2">
+                           <note xml:id="n190nid5" dur="4" pname="f" oct="4" />
+                           <note xml:id="n10mvd9c" dur="2" pname="f" oct="4" />
+                           <note xml:id="n1l2tc72" dur="4" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m12a3xwp" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="n1b6xwa9" dur="4" pname="f" oct="4" />
+                           <note xml:id="n18pt8oi" dur="2" pname="f" oct="4" />
+                           <note xml:id="nbb8n7" dur="4" pname="f" oct="4" />
+                        </layer>
+                        <layer xml:id="m5s1l2" n="2">
+                           <note xml:id="nk2bdkl" dur="2" pname="c" oct="5" stem.dir="up" />
+                           <tuplet xml:id="tsvdaq8" num="3" numbase="2" bracket.place="above" num.place="above">
+                              <note xml:id="n1dqtt76" dur="4" pname="c" oct="5" stem.dir="up" />
+                              <note xml:id="njjck1p" dur="4" pname="c" oct="5" stem.dir="up" />
+                              <note xml:id="n1owbve8" dur="4" pname="c" oct="5" stem.dir="up" />
+                           </tuplet>
+                        </layer>
+                     </staff>
+                     <dir xml:id="d1srathe" type="mscore-staff-text" startid="#n1b6xwa9">Tuplets in voice 2:</dir>
+                  </measure>
+                  <measure xml:id="m1w745ot" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n6d476h" dur="2" pname="f" oct="4" />
+                           <note xml:id="naymvss" dur="2" pname="f" oct="4" />
+                        </layer>
+                        <layer xml:id="m6s1l2" n="2">
+                           <tuplet xml:id="t18k116p" num="3" numbase="2" bracket.place="above" num.place="above">
+                              <note xml:id="n14wef83" dur="2" pname="c" oct="5" stem.dir="up" />
+                              <tuplet xml:id="t1azur2" num="3" numbase="2" bracket.place="above" num.place="above">
+                                 <note xml:id="nicip8s" dur="4" pname="c" oct="5" stem.dir="up" />
+                                 <beam>
+                                    <tuplet xml:id="t123xzcs" num="3" numbase="2">
+                                       <note xml:id="n1f2xdx0" dur="8" pname="c" oct="5" stem.dir="up" />
+                                       <note xml:id="n11e89nm" dur="8" pname="c" oct="5" stem.dir="up" />
+                                       <note xml:id="n1knojx5" dur="8" pname="c" oct="5" stem.dir="up" />
+                                    </tuplet>
+                                 </beam>
+                                 <note xml:id="n14sgaa1" dur="4" pname="c" oct="5" stem.dir="up" />
+                              </tuplet>
+                              <note xml:id="ninv4pr" dur="2" pname="c" oct="5" stem.dir="up" />
+                           </tuplet>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m14ol4ly" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <tuplet xml:id="tfgapy0" num="3" numbase="2">
+                              <note xml:id="n1c7ag0l" dur="2" pname="e" oct="5" />
+                              <tuplet xml:id="t4qh3ev" num="3" numbase="2">
+                                 <note xml:id="n12nvcdf" dur="4" pname="e" oct="5" />
+                                 <note xml:id="n1v8nl2q" dur="4" pname="e" oct="5" />
+                                 <note xml:id="nf5xnm5" dur="4" pname="e" oct="5" />
+                              </tuplet>
+                              <note xml:id="n14iat9f" dur="2" pname="e" oct="5" />
+                           </tuplet>
+                        </layer>
+                        <layer xml:id="m7s1l2" n="2">
+                           <tuplet xml:id="t1e1kxh4" num="4" numbase="4">
+                              <note xml:id="nid7xow" dur="4" pname="a" oct="4" />
+                              <tuplet xml:id="t12rs8db" num="4" numbase="4">
+                                 <beam>
+                                    <note xml:id="n7sbdfw" dur="8" pname="a" oct="4" />
+                                    <note xml:id="n1xfxg74" dur="8" pname="a" oct="4" />
+                                 </beam>
+                                 <beam>
+                                    <note xml:id="nbutr0a" dur="8" pname="a" oct="4" />
+                                    <note xml:id="n11ph4qv" dur="8" pname="a" oct="4" />
+                                 </beam>
+                              </tuplet>
+                              <note xml:id="n1chpsyi" dur="4" pname="a" oct="4" />
+                           </tuplet>
+                        </layer>
+                     </staff>
+                     <dir xml:id="d1uql6s4" type="mscore-staff-text" startid="#n1c7ag0l">Tuplets in voices 1 and 2:</dir>
+                  </measure>
+                  <measure xml:id="m15tlxb8" right="end" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="n8v0jiq" dur="2" pname="e" oct="5" />
+                           <tuplet xml:id="t1gzmcr" num="3" numbase="2">
+                              <note xml:id="n15hom8k" dur="4" pname="e" oct="5" />
+                              <beam>
+                                 <tuplet xml:id="t1hvy9d8" num="3" numbase="2">
+                                    <note xml:id="n18vs5lm" dur="8" pname="e" oct="5" />
+                                    <note xml:id="n1w5bn2s" dur="8" pname="e" oct="5" />
+                                    <note xml:id="nv5tboo" dur="8" pname="e" oct="5" />
+                                 </tuplet>
+                              </beam>
+                              <note xml:id="n6axnjc" dur="4" pname="e" oct="5" />
+                           </tuplet>
+                        </layer>
+                        <layer xml:id="m8s1l2" n="2">
+                           <note xml:id="njqmyw5" dur="4" pname="a" oct="4" />
+                           <tuplet xml:id="tdhmp7r" num="4" numbase="4">
+                              <beam>
+                                 <note xml:id="n1c99xfo" dur="8" pname="a" oct="4" />
+                                 <note xml:id="n1kdf1ho" dur="8" pname="a" oct="4" />
+                              </beam>
+                              <beam>
+                                 <tuplet xml:id="t1p3et67" num="4" numbase="4">
+                                    <note xml:id="nifm25r" dur="16" pname="a" oct="4" />
+                                    <note xml:id="nnyq8qj" dur="16" pname="a" oct="4" />
+                                    <note xml:id="nq838ta" dur="16" pname="a" oct="4" />
+                                    <note xml:id="ngs869x" dur="16" pname="a" oct="4" />
+                                 </tuplet>
+                              </beam>
+                              <note xml:id="n11oh1su" dur="4" pname="a" oct="4" />
+                           </tuplet>
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

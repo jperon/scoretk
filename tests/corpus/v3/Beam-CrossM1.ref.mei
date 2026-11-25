@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Beam Test Cross Measure</title>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:36:47" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="subtitle" fontsize="large">Recreation of beam</rend>
+                        <lb />
+                        <rend type="title" fontsize="x-large">Beam Test-Cross Measure</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mwypr4u" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <rest xml:id="rlcc64j" dur="2" />
+                           <rest xml:id="ru56yze" dur="4" />
+                           <rest xml:id="r83mzlv" type="mscore-beam-none" dur="8" />
+                           <note xml:id="n1jeyfrl" dur="8" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mtbzdeg" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1wr8oh9" type="mscore-beam-mid" dur="8" pname="a" oct="4" />
+                           <note xml:id="n9ss349" dur="8" pname="b" oct="4" />
+                           <note xml:id="n17sf55i" dur="8" pname="a" oct="4" />
+                           <note xml:id="ndjcpr" dur="8" pname="c" oct="5" />
+                           <beam>
+                              <note xml:id="npz3ro" dur="8" pname="a" oct="4" />
+                              <note xml:id="nc3nm2v" dur="8" pname="c" oct="5" />
+                              <note xml:id="nbkkyf8" dur="8" pname="b" oct="4" />
+                              <note xml:id="nsqdeh1" dur="8" pname="g" oct="4" />
+                           </beam>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m1wtl1a6" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <mRest xml:id="mkst7s6" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1nplp9p" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="mcjp4a6" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m1x99x23" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <mRest xml:id="m1v56k7i" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1r8nshv" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <mRest xml:id="m1jqrz6y" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mrv7p3p" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <mRest xml:id="m1hkv3t4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="mrem8n4" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <mRest xml:id="m1xpov83" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mctdzjj" n="9">
+                     <staff xml:id="m9s1" n="1">
+                        <layer xml:id="m9s1l1" n="1">
+                           <mRest xml:id="mts9kqd" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m1i5jqtu" n="10">
+                     <staff xml:id="m10s1" n="1">
+                        <layer xml:id="m10s1l1" n="1">
+                           <mRest xml:id="mtcfogt" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="muspzw" n="11">
+                     <staff xml:id="m11s1" n="1">
+                        <layer xml:id="m11s1l1" n="1">
+                           <mRest xml:id="mhyda7i" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="mrcp82o" n="12">
+                     <staff xml:id="m12s1" n="1">
+                        <layer xml:id="m12s1l1" n="1">
+                           <mRest xml:id="mzm9nyr" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="md6kdvc" n="13">
+                     <staff xml:id="m13s1" n="1">
+                        <layer xml:id="m13s1l1" n="1">
+                           <mRest xml:id="m1gozshn" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1ihq4m9" n="14">
+                     <staff xml:id="m14s1" n="1">
+                        <layer xml:id="m14s1l1" n="1">
+                           <mRest xml:id="mgm63xl" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m10s6p91" n="15">
+                     <staff xml:id="m15s1" n="1">
+                        <layer xml:id="m15s1l1" n="1">
+                           <mRest xml:id="m1aupq5c" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1h7o38j" right="end" n="16">
+                     <staff xml:id="m16s1" n="1">
+                        <layer xml:id="m16s1l1" n="1">
+                           <mRest xml:id="mdndraw" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

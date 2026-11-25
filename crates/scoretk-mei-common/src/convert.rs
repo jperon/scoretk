@@ -353,7 +353,7 @@ pub fn measure_to_mei(measure: &Measure, measure_n: &mut i32) -> Vec<(&'static s
     }
     if !measure.is_irregular() {
         *measure_n += 1;
-        result.push(("n", measure.number.to_string()));
+        result.push(("n", measure_n.to_string()));
     }
     if measure.start_bar_line.is_repeat_start() {
         result.push(("left", "rptstart".to_owned()));
@@ -364,7 +364,11 @@ pub fn measure_to_mei(measure: &Measure, measure_n: &mut i32) -> Vec<(&'static s
             format!("{MEASURE_REPEAT_TYPE}{}", measure.repeat_count),
         ));
     }
-    result.push(("right", barline_to_mei(measure.end_bar_line).to_owned()));
+    // MuseScore leaves `@right` unset for a normal barline (its
+    // `barlineToMEI` returns `BARRENDITION_NONE`, which libmei omits).
+    if measure.end_bar_line != BarLineType::Normal {
+        result.push(("right", barline_to_mei(measure.end_bar_line).to_owned()));
+    }
     result
 }
 
@@ -428,7 +432,7 @@ pub fn pitch_to_mei(
 ) -> (String, i32, Option<&'static str>, Option<&'static str>) {
     // Inverse of `step2tpc`: the TPCs of C..B are 14,16,18,13,15,17,19.
     let index = (i32::from(tpc) * 4).rem_euclid(7) as usize;
-    let pname = (b'c' + index as u8) as char;
+    let pname = ['c', 'd', 'e', 'f', 'g', 'a', 'b'][index];
     let alter = (i32::from(tpc) + 8).div_euclid(7) - 3;
     let written_alter = accidental.map(|kind| match kind {
         AccidentalType::Flat | AccidentalType::NaturalFlat => -1,

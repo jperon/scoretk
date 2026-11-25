@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:36" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mtl21nn" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1736v4o" dots="1" dur="8" pname="g" oct="4">
+                              <artic xml:id="a1wreoe5" artic="acc" />
+                              <accid xml:id="a10hrqia" accid="s" />
+                           </note>
+                           <rest xml:id="r13o5720" type="mscore-beam-none" dur="16" />
+                           <rest xml:id="res6que" dots="1" dur="4" />
+                           <graceGrp grace="acc">
+                              <beam>
+                                 <note xml:id="n1w3il7i" dur="8" pname="g" oct="4">
+                                    <accid accid.ges="s" />
+                                 </note>
+                                 <note xml:id="n1rmkjxo" dur="8" pname="g" oct="4">
+                                    <accid accid.ges="s" />
+                                 </note>
+                                 <note xml:id="n1ngsvuc" dur="8" pname="g" oct="4">
+                                    <accid accid.ges="s" />
+                                 </note>
+                              </beam>
+                           </graceGrp>
+                           <note xml:id="nhub2tz" dur="8" pname="g" oct="4">
+                              <verse xml:id="v15hhpad" n="1">
+                                 <syl>lyric</syl>
+                              </verse>
+                              <accid accid.ges="s" />
+                           </note>
+                           <rest xml:id="r5z29zu" type="mscore-beam-none" dur="8" />
+                           <note xml:id="n1npqp5v" dur="8" pname="g" oct="4">
+                              <accid accid.ges="s" />
+                           </note>
+                        </layer>
+                     </staff>
+                     <slur xml:id="s11dxnrw" startid="#nhub2tz" endid="#r5z29zu" />
+                  </measure>
+                  <measure xml:id="m119wyb9" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <chord xml:id="cl5gicm" dots="1" dur="8">
+                              <artic xml:id="aa9puty" artic="acc" />
+                              <note xml:id="nvv5xoy" pname="f" oct="4">
+                                 <accid xml:id="afsctxj" accid="s" />
+                              </note>
+                              <note xml:id="nq8iv6p" pname="a" oct="4" />
+                              <note xml:id="nii85sh" pname="c" oct="5" />
+                           </chord>
+                           <rest xml:id="rwl6nq4" type="mscore-beam-none" dur="16" />
+                           <rest xml:id="r1dd9bvw" dur="4" />
+                           <rest xml:id="rh8qub0" dur="2" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mw5lckb" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <beam>
+                              <chord xml:id="c1cfm3nq" dur="8">
+                                 <artic xml:id="a1osx6h0" artic="acc" />
+                                 <note xml:id="n19jfqf3" pname="g" oct="4" />
+                                 <note xml:id="n1v1trj5" pname="b" oct="4">
+                                    <accid xml:id="a1j6j3yo" accid="s" />
+                                 </note>
+                              </chord>
+                              <note xml:id="n6vm6xu" dur="8" pname="g" oct="4" />
+                              <note xml:id="n1vppl5l" dur="8" pname="g" oct="4" />
+                              <note xml:id="nkjnms3" dur="8" pname="g" oct="4" />
+                           </beam>
+                           <rest xml:id="ra008yi" dur="2" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1s1c7l0" right="end" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="ngc8bvn" dur="2" pname="b" oct="4" />
+                           <note xml:id="n1njrd6z" dur="2" pname="c" oct="5">
+                              <accid xml:id="antgyx1" accid="n" />
+                           </note>
+                        </layer>
+                     </staff>
+                     <turn xml:id="tq2aavc" type="mscore-above-second:major mscore-below-second:minor" form="upper" accidupper="s" accidlower="s" startid="#ngc8bvn" />
+                     <trill xml:id="tsvw0g0" type="mscore-above-fourth:augmented" startid="#n1njrd6z" />
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

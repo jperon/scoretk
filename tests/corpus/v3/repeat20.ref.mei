@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:08" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">repeat20</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">DS al Coda followed by DS1 al Fine</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1g0np8m" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1vez5y6" dur="1" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rycr0pn" func="segno" tstamp="0" />
+                     <repeatMark xml:id="r1mdsrda" type="mscore-marker-to-coda" func="coda" tstamp="0">To Coda</repeatMark>
+                     <tempo xml:id="tdx84p9" type="mscore-infer-from-text" midi.bpm="400" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 400</tempo>
+                  </measure>
+                  <measure xml:id="m1d3dmo8" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1kb0wu9" dur="1" pname="d" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="me0kxez" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="neyxw4d" dur="1" pname="e" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rxhbo22" type="mscore-jump-ds-al-coda" func="dalSegno" tstamp="0">D.S. al Coda</repeatMark>
+                  </measure>
+                  <measure xml:id="m1bk7gu2" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="n1f3f0cg" dur="1" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="r1slkons" func="coda" tstamp="0" />
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m984395" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="nxv9w4g" dur="1" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rlxrsiv" func="segno" tstamp="0">1</repeatMark>
+                  </measure>
+                  <measure xml:id="msk6a9g" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n8hby3d" dur="1" pname="a" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rttm3we" func="fine" tstamp="0" />
+                  </measure>
+                  <measure xml:id="m1gkumw2" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="n6ffz3p" dur="1" pname="b" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mb8kt7l" right="end" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="n1shtngw" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="r1oqhn37" func="daCapo" tstamp="0">D.S.1 al Fine</repeatMark>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

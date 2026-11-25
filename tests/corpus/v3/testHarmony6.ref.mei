@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Harmony 6</title>
+            <respStmt>
+               <persName role="composer">Leon Vinken</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:20" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">Harmony 6</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">MuseScore testfile<lb />Chords using normal, Roman and Nashville notation<lb />containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape<lb /></rend>
+                     </rend>
+                     <rend halign="right" valign="bottom">
+                        <rend type="composer">Leon Vinken</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Voice</label>
+                        <labelAbbr>Vo.</labelAbbr>
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m65423n" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n15sr5tv" dur="1" pname="c" oct="5">
+                              <verse xml:id="v187o5vd" n="1">
+                                 <syl>Normal</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="h18004ha" staff="1" startid="#n15sr5tv">Cm</harm>
+                  </measure>
+                  <measure xml:id="m130qz33" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1ut2kw5" dur="1" pname="c" oct="5">
+                              <verse xml:id="v1rnufdx" n="1">
+                                 <syl>Roman</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="h1u78hz8" type="mscore-roman" staff="1" startid="#n1ut2kw5">i</harm>
+                  </measure>
+                  <measure xml:id="m1dq1poo" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="nslucc" dur="1" pname="c" oct="5">
+                              <verse xml:id="v1uq9di1" n="1">
+                                 <syl>Nashville</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hojomo4" type="mscore-" staff="1" startid="#nslucc">1m</harm>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m17d0uur" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="nj7wbtx" dur="1" pname="c" oct="5">
+                              <verse xml:id="v1bpnqk4" n="1">
+                                 <syl>Normal</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hrercst" staff="1" startid="#nj7wbtx">xyz</harm>
+                  </measure>
+                  <measure xml:id="m1vcts4i" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="n1j3asap" dur="1" pname="c" oct="5">
+                              <verse xml:id="vo9jkkw" n="1">
+                                 <syl>Roman</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hapxst4" type="mscore-roman" staff="1" startid="#n1j3asap">xyz</harm>
+                  </measure>
+                  <measure xml:id="mq1e8yn" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n15wgca4" dur="1" pname="c" oct="5">
+                              <verse xml:id="vq6m6e8" n="1">
+                                 <syl>Nashville</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hrne2i7" type="mscore-" staff="1" startid="#n15wgca4">xyz</harm>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m1bz73bg" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="n1dokp40" dur="1" pname="c" oct="5">
+                              <verse xml:id="v1nmtzlo" n="1">
+                                 <syl>Normal</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hmtq17r" staff="1" startid="#n1dokp40">&lt;&gt;&amp;"</harm>
+                  </measure>
+                  <measure xml:id="m136t2pn" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="nnejyqt" dur="1" pname="c" oct="5">
+                              <verse xml:id="vzd97tf" n="1">
+                                 <syl>Roman</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="hrufc69" type="mscore-roman" staff="1" startid="#nnejyqt">&lt;&gt;&amp;"</harm>
+                  </measure>
+                  <measure xml:id="m1540r6e" right="end" n="9">
+                     <staff xml:id="m9s1" n="1">
+                        <layer xml:id="m9s1l1" n="1">
+                           <note xml:id="n1akvvxe" dur="1" pname="c" oct="5">
+                              <verse xml:id="v16bxpat" n="1">
+                                 <syl>Nashville</syl>
+                              </verse>
+                           </note>
+                        </layer>
+                     </staff>
+                     <harm xml:id="h1e5nba5" type="mscore-" staff="1" startid="#n1akvvxe">&lt;&gt;&amp;"</harm>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

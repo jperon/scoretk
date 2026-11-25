@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:38" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Flute</label>
+                        <labelAbbr>Fl.</labelAbbr>
+                        <instrDef midi.instrnum="73" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m42bqwm" right="dbl" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n8au3ya" oct.ges="5" dur="4" pname="b" oct="4">
+                              <artic xml:id="ahpdsbc" artic="acc" />
+                              <artic xml:id="a1p1xvdc" artic="fall" />
+                           </note>
+                           <note xml:id="n1cy38cq" oct.ges="6" dur="4" pname="c" oct="5">
+                              <artic xml:id="a3nythv" artic="stacc" />
+                              <accid xml:id="a60q0q" accid="s" />
+                           </note>
+                           <note xml:id="nmv62g7" oct.ges="5" dur="4" pname="b" oct="4">
+                              <artic xml:id="a1oh0wwl" artic="ten" />
+                           </note>
+                           <graceGrp grace="acc">
+                              <note xml:id="n1k15iih" oct.ges="4" dur="32" pname="b" oct="3" />
+                           </graceGrp>
+                           <bTrem xml:id="b12jrh6v">
+                              <note xml:id="n1kf45hy" oct.ges="5" dur="4" pname="b" oct="4" stem.mod="2slash" />
+                           </bTrem>
+                        </layer>
+                     </staff>
+                     <tempo xml:id="t1ljlrdg" type="mscore-infer-from-text" midi.bpm="80" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 80</tempo>
+                     <pedal xml:id="p1aw7ni" dir="down" startid="#n8au3ya" form="pedline" endid="#c3i0ikn" />
+                     <octave xml:id="o81aq" staff="1" dis="8" dis.place="above" startid="#n8au3ya" endid="#n1kf45hy" />
+                     <slur xml:id="sajnrlm" startid="#n1cy38cq" endid="#nmv62g7" />
+                     <fermata xml:id="faffwqc" startid="#n1kf45hy" />
+                  </measure>
+                  <ending xml:id="e273ioe" label="1." type="mscore-ending-1">
+                     <scoreDef keysig="4s" meter.count="3" meter.unit="4" />
+                     <measure xml:id="m10ywkql" n="2">
+                        <staff xml:id="m2s1" n="1">
+                           <layer xml:id="m2s1l1" n="1">
+                              <chord xml:id="c3i0ikn" dur="4">
+                                 <note xml:id="n1jswjsp" pname="b" oct="4" />
+                                 <note xml:id="no97lqb" pname="f" oct="5">
+                                    <accid accid.ges="s" />
+                                 </note>
+                              </chord>
+                              <note xml:id="nwkrk89" dur="4" pname="b" oct="4">
+                                 <artic xml:id="a1ei2urh" artic="marc" />
+                              </note>
+                              <note xml:id="ngu6wvl" dur="4" pname="b" oct="4" />
+                              <clef xml:id="c1etv5g7" shape="F" line="4" />
+                           </layer>
+                        </staff>
+                        <dynam xml:id="d1uf0o0g" label="p" staff="1" startid="#c3i0ikn">p</dynam>
+                        <caesura xml:id="c1tnh30u" startid="#c3i0ikn" glyph.auth="smufl" glyph.name="caesuraCurved" />
+                        <hairpin xml:id="h1mj46eh" form="cres" staff="1" startid="#c3i0ikn" endid="#n2p607x" />
+                        <arpeg xml:id="a1nccaq4" startid="#c3i0ikn" />
+                        <tie xml:id="tihtd39" startid="#nwkrk89" endid="#ngu6wvl" />
+                     </measure>
+                  </ending>
+                  <scoreDef keysig="0" meter.count="4" meter.unit="4" />
+                  <measure xml:id="mt76yee" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n2p607x" dur="4" pname="b" oct="4" />
+                           <fTrem xml:id="f1v6v1pv" unitdur="32">
+                              <note xml:id="n1wm8smz" dur="2" pname="b" oct="4" />
+                              <note xml:id="n1jwmkm1" dur="2" pname="b" oct="4" />
+                           </fTrem>
+                           <note xml:id="n11imfy6" dur="4" pname="f" oct="4" />
+                           <clef xml:id="c15hxepd" shape="G" line="2" />
+                        </layer>
+                     </staff>
+                     <trill xml:id="ts0s2g9" type="mscore-above-third:major" startid="#n2p607x" extender="true" endid="#n2p607x" dur="4" />
+                     <gliss xml:id="gqooo92" startid="#n1jwmkm1" lform="solid" endid="#n11imfy6">gliss.</gliss>
+                  </measure>
+                  <measure xml:id="m1eit0gc" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="mbo6030" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m15fizhz" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <mRest xml:id="mbp5zcn" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb />
+                  <measure xml:id="m2le2pp" right="end" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <mRest xml:id="m1u7k4t7" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

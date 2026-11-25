@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Repeat Test</title>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:10" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">repeat39</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">Alternating Volta</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mrl9as8" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n14fzl0k" dur="1" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                     <tempo xml:id="tfi3kbr" type="mscore-infer-from-text" midi.bpm="400" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 400</tempo>
+                  </measure>
+                  <measure xml:id="my4fnva" left="rptstart" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1196yow" dur="1" pname="d" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <ending xml:id="e82o6ae" label="1. 3." type="mscore-ending-1 mscore-ending-3">
+                     <measure xml:id="myj6eee" type="mscore-repeat-3" right="rptend" n="3">
+                        <staff xml:id="m3s1" n="1">
+                           <layer xml:id="m3s1l1" n="1">
+                              <note xml:id="nceodnx" dur="1" pname="e" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <ending xml:id="exhhg1u" label="2. 4." type="mscore-ending-2 mscore-ending-4">
+                     <measure xml:id="m1u3ltl0" n="4">
+                        <staff xml:id="m4s1" n="1">
+                           <layer xml:id="m4s1l1" n="1">
+                              <note xml:id="n1hacmkc" dur="1" pname="f" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                     <measure xml:id="mz9shkv" type="mscore-repeat-3" right="rptend" n="5">
+                        <staff xml:id="m5s1" n="1">
+                           <layer xml:id="m5s1l1" n="1">
+                              <note xml:id="n1plbpsd" dur="1" pname="g" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <measure xml:id="m8bpowv" right="end" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n1trrfif" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:46" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Flute</label>
+                        <labelAbbr>Fl.</labelAbbr>
+                        <instrDef midi.instrnum="73" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1hgpnj9" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n8mpmba" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dmo5872" startid="#n8mpmba">expr text</dir>
+                  </measure>
+                  <measure xml:id="m1mme9bf" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nrc6qlf" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dqsbg8h" startid="#nrc6qlf" place="below">expr text</dir>
+                  </measure>
+                  <measure xml:id="m2u3tq9" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="nksg5r7" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d1t7fkf8" startid="#nksg5r7">expr text</dir>
+                  </measure>
+                  <measure xml:id="m1rl39vi" right="end" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="naqykju" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d14hheki" startid="#naqykju" place="below">expr text</dir>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

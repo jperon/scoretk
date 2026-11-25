@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:14" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Voice</label>
+                        <labelAbbr>Vo.</labelAbbr>
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1noehs" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <mRest xml:id="mvw669n" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dlgi0fm" type="mscore-system-text" startid="#mvw669n">First system (no frames above)</dir>
+                  </measure>
+                  <pb type="mscore-manual" />
+                  <measure xml:id="mxyomw3" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <mRest xml:id="m1carfv" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d17owomm" type="mscore-system-text" startid="#m1carfv">After page break</dir>
+                  </measure>
+                  <sb />
+                  <pb type="mscore-manual" />
+                  <measure xml:id="m19xo004" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <mRest xml:id="mlgzldw" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d1jtj96i" type="mscore-system-text" startid="#mlgzldw">After page break in vframe</dir>
+                  </measure>
+                  <sb />
+                  <pb type="mscore-manual" />
+                  <measure xml:id="m5kk49i" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="m1najxmx" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="di0d8o4" type="mscore-system-text" startid="#m1najxmx">After page break in tframe</dir>
+                  </measure>
+                  <pb type="mscore-manual" />
+                  <measure xml:id="m10iijkg" right="end" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <mRest xml:id="m1c2o7sd" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dvn260k" type="mscore-system-text" startid="#m1c2o7sd">After page break in hframe</dir>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

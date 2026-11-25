@@ -545,6 +545,7 @@ dependencies = [
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "scoretk-musicxml-import",
+ "scoretk-xml-common",
  "similar 3.2.1",
  "thiserror",
  "zip",

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:58" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Flute</label>
+                        <labelAbbr>Fl.</labelAbbr>
+                        <instrDef midi.instrnum="73" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1v9sm33" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nq77nkj" dur="4" pname="c" oct="4" />
+                           <note xml:id="n88mli6" dur="4" pname="c" oct="4" />
+                           <note xml:id="njwi914" dur="4" pname="c" oct="4" />
+                           <note xml:id="nk7jszv" dur="4" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="d93mrme" type="mscore-staff-text" startid="#nq77nkj">Staff text</dir>
+                     <dir xml:id="dgg18yv" type="mscore-system-text" startid="#njwi914">System text</dir>
+                  </measure>
+                  <measure xml:id="mvxv5js" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n4zyofn" dur="4" pname="c" oct="4" />
+                           <note xml:id="ntxw9i2" dur="4" pname="c" oct="4" />
+                           <clef xml:id="c9typgc" shape="F" line="4" />
+                           <note xml:id="n4v5a5g" dur="4" pname="c" oct="4" />
+                           <note xml:id="ngo0j6t" dur="4" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mskg3qe" right="end" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n1kabinx" oct.ges="4" dur="4" pname="c" oct="3" />
+                           <note xml:id="n9w8jan" oct.ges="4" dur="4" pname="c" oct="3" />
+                           <note xml:id="n1e8610b" oct.ges="4" dur="4" pname="c" oct="3" />
+                           <note xml:id="n15wnjsd" oct.ges="4" dur="4" pname="c" oct="3" />
+                        </layer>
+                     </staff>
+                     <octave xml:id="o1h984ya" staff="1" dis="8" dis.place="above" startid="#n1kabinx" endid="#n15wnjsd" />
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

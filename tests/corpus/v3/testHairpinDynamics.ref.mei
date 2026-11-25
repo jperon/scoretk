@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Hairpin Dynamics</title>
+            <respStmt>
+               <persName role="composer">Leon Vinken</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:17" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">Hairpin Dynamics</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">MuseScore testfile</rend>
+                     </rend>
+                     <rend halign="right" valign="bottom">
+                        <rend type="composer">Leon Vinken</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Voice</label>
+                        <labelAbbr>Vo.</labelAbbr>
+                        <instrDef midi.instrnum="52" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m17q2itc" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nywxp8k" dur="4" pname="g" oct="4">
+                              <verse xml:id="v54y7p" n="1">
+                                 <syl>dyn</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="n1594lpt" dur="4" pname="a" oct="4">
+                              <verse xml:id="vycesxw" n="1">
+                                 <syl>hairpin</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="nhixg6q" dur="4" pname="b" oct="4" />
+                           <note xml:id="n1lvz3bq" dur="4" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1vbxyfu" label="mf" staff="1" startid="#nywxp8k" place="below">mf</dynam>
+                     <hairpin xml:id="h1ol56wi" form="cres" staff="1" startid="#nywxp8k" place="below" endid="#nkbc925" />
+                  </measure>
+                  <measure xml:id="mu3j9po" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nkbc925" dur="4" pname="g" oct="4">
+                              <verse xml:id="vntk9xk" n="1">
+                                 <syl>combined</syl>
+                              </verse>
+                           </note>
+                           <note xml:id="n1b3y3rt" dur="4" pname="a" oct="4" />
+                           <note xml:id="njxu4aq" dur="4" pname="b" oct="4" />
+                           <note xml:id="n1vbpbc4" dur="4" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <hairpin xml:id="h2muy3b" form="cres" staff="1" startid="#nkbc925" place="below" endid="#n1wi4b7v" />
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m25yp7t" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n1wi4b7v" dur="4" pname="g" oct="4" />
+                           <note xml:id="niqy8sd" dur="4" pname="a" oct="4" />
+                           <note xml:id="n1jkot0q" dur="4" pname="b" oct="4" />
+                           <note xml:id="ny5262t" dur="4" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <hairpin xml:id="hkxfiz4" form="cres" staff="1" startid="#n1wi4b7v" place="below" endid="#nk2gcpg" />
+                  </measure>
+                  <measure xml:id="m1xnj1sc" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="nk2gcpg" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1q65cwh" dur="4" pname="a" oct="4" />
+                           <note xml:id="npo8omo" dur="4" pname="b" oct="4" />
+                           <note xml:id="njv3lrb" dur="4" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <hairpin xml:id="h2xym8j" form="cres" staff="1" startid="#nk2gcpg" place="below" endid="#n7j9dm8" />
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="mdm454e" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <note xml:id="n7j9dm8" dur="4" pname="g" oct="4" />
+                           <note xml:id="nn73qh0" dur="4" pname="a" oct="4" />
+                           <note xml:id="n100sc2d" dur="4" pname="b" oct="4" />
+                           <note xml:id="nyh5p0o" dur="4" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <dir xml:id="dgsjerj" type="mscore-hairpin mscore-cresc" startid="#n7j9dm8" extender="true" endid="#mgiebzi">cresc. from &lt;sym&gt;dynamicMezzo&lt;/sym&gt;&lt;sym&gt;dynamicForte&lt;/sym&gt; to &lt;sym&gt;dynamicForte&lt;/sym&gt;&lt;sym&gt;dynamicForte&lt;/sym&gt;&lt;sym&gt;dynamicForte&lt;/sym&gt;</dir>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="mos43le" right="end" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <mRest xml:id="mgiebzi" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

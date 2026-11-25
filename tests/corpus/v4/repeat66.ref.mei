@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Repeat Test</title>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:38:00" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">repeat66</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">Force Final Repeat should reset when crossing to next section.</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m1bk8ac4" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n7b1ldw" dur="1" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                     <tempo xml:id="t186dqa0" type="mscore-infer-from-text" midi.bpm="400" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 400</tempo>
+                  </measure>
+                  <measure xml:id="mxlj39" left="rptstart" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nc72jxp" dur="1" pname="d" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <ending xml:id="earwc6c" label="1, 2" type="mscore-ending-1 mscore-ending-2">
+                     <measure xml:id="m1lr1p78" n="3">
+                        <staff xml:id="m3s1" n="1">
+                           <layer xml:id="m3s1l1" n="1">
+                              <note xml:id="n1rztve4" dur="1" pname="e" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                     <measure xml:id="m1t6v47w" type="mscore-repeat-3" right="rptend" n="4">
+                        <staff xml:id="m4s1" n="1">
+                           <layer xml:id="m4s1l1" n="1">
+                              <note xml:id="nv746aw" dur="1" pname="f" oct="4" />
+                           </layer>
+                        </staff>
+                        <repeatMark xml:id="rtbuxb" func="daCapo" tstamp="0" />
+                     </measure>
+                  </ending>
+                  <ending xml:id="eu6gfvn" label="3." type="mscore-ending-3">
+                     <measure xml:id="m19s80z0" right="end" n="5">
+                        <staff xml:id="m5s1" n="1">
+                           <layer xml:id="m5s1l1" n="1">
+                              <note xml:id="n1ochd3e" dur="1" pname="g" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <sb />
+                  <measure xml:id="m1nemidi" n="1">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n1ba6mre" dur="1" pname="g" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1muqfp4" left="rptstart" n="2">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="nihvhsa" dur="1" pname="f" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <ending xml:id="e1dqgfxq" label="1, 2" type="mscore-ending-1 mscore-ending-2">
+                     <measure xml:id="m8t1yrw" n="3">
+                        <staff xml:id="m8s1" n="1">
+                           <layer xml:id="m8s1l1" n="1">
+                              <note xml:id="n1bfvw2k" dur="1" pname="e" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                     <measure xml:id="mr9vwgf" type="mscore-repeat-3" right="rptend" n="4">
+                        <staff xml:id="m9s1" n="1">
+                           <layer xml:id="m9s1l1" n="1">
+                              <note xml:id="n1iufod7" dur="1" pname="d" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <ending xml:id="e1ej024t" label="3." type="mscore-ending-3">
+                     <measure xml:id="me2qe2e" right="end" n="5">
+                        <staff xml:id="m10s1" n="1">
+                           <layer xml:id="m10s1l1" n="1">
+                              <note xml:id="n1wlxcen" dur="1" pname="c" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

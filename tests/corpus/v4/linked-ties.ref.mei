@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">Untitled score</title>
+            <title type="subordinate">Subtitle</title>
+            <respStmt>
+               <persName role="composer">Composer / arranger</persName>
+            </respStmt>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:54" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Flute</label>
+                        <labelAbbr>Fl.</labelAbbr>
+                        <instrDef midi.instrnum="73" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mbtx6mr" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1dfnap8" dur="4" pname="b" oct="4" />
+                           <note xml:id="n1a0b3lr" dur="4" pname="b" oct="4" />
+                           <rest xml:id="r1ijzx0e" dur="2" />
+                        </layer>
+                     </staff>
+                     <tie xml:id="t781dhl" startid="#n1dfnap8" endid="#n1a0b3lr" />
+                  </measure>
+                  <measure xml:id="m5vvxxs" right="end" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <graceGrp grace="acc">
+                              <note xml:id="n1pcds9k" dur="8" pname="b" oct="4" />
+                           </graceGrp>
+                           <note xml:id="n8zwo8h" dur="4" pname="b" oct="4" />
+                           <rest xml:id="rvtrryz" dur="4" />
+                           <note xml:id="nd2ex4r" dur="4" pname="b" oct="4" />
+                           <graceGrp attach="pre" grace="unknown">
+                              <note xml:id="n1yqb8ke" dur="8" pname="b" oct="4" />
+                           </graceGrp>
+                           <rest xml:id="rj4lzzm" dur="4" />
+                        </layer>
+                     </staff>
+                     <tie xml:id="toyng3f" startid="#n1pcds9k" endid="#n8zwo8h" />
+                     <tie xml:id="tueaaq6" startid="#nd2ex4r" endid="#n1yqb8ke" />
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

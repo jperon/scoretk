@@ -79,10 +79,10 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
         }
         for staff_id in &part.staves {
             let staff = &score.staves[staff_id.index()];
-            let (fraction, kind) = first_time_sig(score);
+            let (numerator, denominator, kind) = first_time_sig(score);
             let (count, unit, sym) = convert::meter_to_mei(&scoretk_core::model::TimeSig {
-                numerator: fraction.numerator() as i32,
-                denominator: fraction.denominator() as i32,
+                numerator,
+                denominator,
                 kind,
                 ..scoretk_core::model::TimeSig::new(1, 1)
             });
@@ -127,25 +127,17 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
 }
 
 /// First time signature of the score, used in `scoreDef`.
-fn first_time_sig(
-    score: &Score,
-) -> (
-    scoretk_core::model::Fraction,
-    scoretk_core::model::TimeSigType,
-) {
+fn first_time_sig(score: &Score) -> (i32, i32, scoretk_core::model::TimeSigType) {
     for measure in &score.measures {
         for segment in &measure.segments {
             for (_, item) in segment.iter_elements() {
                 if let scoretk_core::model::SegmentItem::TimeSig(time) = item {
-                    return (time.measure_len(), time.kind);
+                    return (time.numerator, time.denominator, time.kind);
                 }
             }
         }
     }
-    (
-        scoretk_core::model::Fraction::new(4, 4),
-        scoretk_core::model::TimeSigType::Normal,
-    )
+    (4, 4, scoretk_core::model::TimeSigType::Normal)
 }
 
 /// Namespace declaration of the MEI root, as written by MuseScore.

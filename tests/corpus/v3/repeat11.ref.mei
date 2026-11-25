@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:06" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">repeat11</rend>
+                        <lb />
+                        <rend type="subtitle" fontsize="large">Volta after to coda</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Piano</label>
+                        <labelAbbr>Pno.</labelAbbr>
+                        <instrDef midi.instrnum="0" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m13i2zb7" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nzgncw1" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                     <tempo xml:id="t1pwa959" type="mscore-infer-from-text" midi.bpm="400" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 400</tempo>
+                  </measure>
+                  <measure xml:id="mjv3tsz" left="rptstart" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n17wrqvb" dur="1" pname="b" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="rq5mgjy" func="segno" tstamp="0" />
+                     <repeatMark xml:id="r1sguknp" type="mscore-marker-to-coda" func="coda" tstamp="0">To Coda</repeatMark>
+                  </measure>
+                  <measure xml:id="mrbdmlj" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="n1l46ozf" dur="1" pname="a" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <ending xml:id="e3z5y1p" label="1." type="mscore-ending-1">
+                     <measure xml:id="mw75kx1" type="mscore-repeat-2" right="rptend" n="4">
+                        <staff xml:id="m4s1" n="1">
+                           <layer xml:id="m4s1l1" n="1">
+                              <note xml:id="n1rk0pdc" dur="1" pname="g" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <ending xml:id="e1xxou1y" label="2." type="mscore-ending-2">
+                     <measure xml:id="my2s85k" n="5">
+                        <staff xml:id="m5s1" n="1">
+                           <layer xml:id="m5s1l1" n="1">
+                              <note xml:id="n129rsb4" dur="1" pname="f" oct="4" />
+                           </layer>
+                        </staff>
+                     </measure>
+                  </ending>
+                  <measure xml:id="mgip7p1" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <note xml:id="n1eypv6u" dur="1" pname="e" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mouakx4" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <note xml:id="n16e9son" dur="1" pname="d" oct="4" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="muqu21k" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <note xml:id="n1tcyfxf" dur="1" pname="c" oct="4" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="r1mru2sq" type="mscore-jump-ds-al-coda" func="dalSegno" tstamp="0">D.S. al Coda</repeatMark>
+                  </measure>
+                  <sb type="mscore-manual" />
+                  <measure xml:id="m2u8ltv" n="9">
+                     <staff xml:id="m9s1" n="1">
+                        <layer xml:id="m9s1l1" n="1">
+                           <note xml:id="n2p3gj3" dur="1" pname="d" oct="5" />
+                        </layer>
+                     </staff>
+                     <repeatMark xml:id="r1y7ve2q" func="coda" tstamp="0" />
+                  </measure>
+                  <measure xml:id="m7zdxlf" right="end" n="10">
+                     <staff xml:id="m10s1" n="1">
+                        <layer xml:id="m10s1l1" n="1">
+                           <note xml:id="n1w4ubbj" dur="1" pname="c" oct="5" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

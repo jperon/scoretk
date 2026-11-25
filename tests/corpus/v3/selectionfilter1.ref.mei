@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">selection-filter-dynamics</title>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:12" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">selection-filter-dynamics</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4">
+                        <label>Violin</label>
+                        <labelAbbr>Vln.</labelAbbr>
+                        <instrDef midi.instrnum="40" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="m4t6x1z" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="nqfs874" dur="4" pname="c" oct="5" />
+                           <note xml:id="nbdww5a" dur="4" pname="d" oct="5" />
+                           <note xml:id="nkvj5l8" dur="4" pname="e" oct="5" />
+                           <note xml:id="n14swc7h" dur="4" pname="f" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1e2tccj" label="f" staff="1" startid="#nqfs874">f</dynam>
+                     <hairpin xml:id="h1d58ceb" form="cres" staff="1" startid="#nbdww5a" endid="#n14swc7h" />
+                  </measure>
+                  <measure xml:id="mfg3f6u" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <mRest xml:id="m156vzc5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m36mmev" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <mRest xml:id="mzp2l0w" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mo3vavn" right="end" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <mRest xml:id="m1tct9ra" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

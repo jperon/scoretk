@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title type="main">clarinet scales</title>
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:22" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <pgHead func="first">
+                     <rend halign="center" valign="top">
+                        <rend type="title" fontsize="x-large">clarinet scales</rend>
+                     </rend>
+                  </pgHead>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" keysig="3f" meter.count="4" meter.unit="4" trans.diat="-2" trans.semi="-3">
+                        <label>A Clarinet</label>
+                        <labelAbbr>A Cl.</labelAbbr>
+                        <instrDef midi.instrnum="71" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mir0z7z" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n4wbnd" dur="4" pname="e" oct="4">
+                              <accid accid.ges="f" />
+                           </note>
+                           <note xml:id="n1hsr58v" dur="4" pname="f" oct="4" />
+                           <note xml:id="np2dna" dur="4" pname="g" oct="4" />
+                           <note xml:id="nsfwyx8" dur="4" pname="a" oct="4">
+                              <accid accid.ges="f" />
+                           </note>
+                        </layer>
+                     </staff>
+                     <dir xml:id="dh2bp6d" type="mscore-staff-text" startid="#n4wbnd">A Clarinet</dir>
+                  </measure>
+                  <measure xml:id="m1tajoey" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="nw1a2aq" dur="4" pname="b" oct="4">
+                              <accid accid.ges="f" />
+                           </note>
+                           <note xml:id="ndhc2fw" dur="4" pname="c" oct="5" />
+                           <note xml:id="nyaq2ch" dur="4" pname="d" oct="5" />
+                           <note xml:id="ngx02fq" dur="4" pname="e" oct="5">
+                              <accid accid.ges="f" />
+                           </note>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <scoreDef keysig="3f" />
+                  <measure xml:id="m5d814x" n="3">
+                     <staff xml:id="m3s1" n="1">
+                        <layer xml:id="m3s1l1" n="1">
+                           <note xml:id="nd75y1x" dur="4" pname="e" oct="4">
+                              <accid accid.ges="f" />
+                           </note>
+                           <note xml:id="n5nccyl" dur="4" pname="f" oct="4" />
+                           <note xml:id="n1565wx9" dur="4" pname="g" oct="4" />
+                           <note xml:id="n1qsw8wr" dur="4" pname="a" oct="4">
+                              <accid accid.ges="f" />
+                           </note>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m1fgtawj" n="4">
+                     <staff xml:id="m4s1" n="1">
+                        <layer xml:id="m4s1l1" n="1">
+                           <note xml:id="nd3ejc0" dur="4" pname="b" oct="5">
+                              <accid accid.ges="f" />
+                           </note>
+                           <note xml:id="n7z89wr" dur="4" pname="c" oct="5" />
+                           <note xml:id="ni9leig" dur="4" pname="d" oct="5" />
+                           <note xml:id="nfecm7e" dur="4" pname="e" oct="5">
+                              <accid accid.ges="f" />
+                           </note>
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mjksk7x" n="5">
+                     <staff xml:id="m5s1" n="1">
+                        <layer xml:id="m5s1l1" n="1">
+                           <mRest xml:id="m1dx6nh5" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="m15i1sx2" n="6">
+                     <staff xml:id="m6s1" n="1">
+                        <layer xml:id="m6s1l1" n="1">
+                           <mRest xml:id="mp0hdvv" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <measure xml:id="mosl5ra" n="7">
+                     <staff xml:id="m7s1" n="1">
+                        <layer xml:id="m7s1l1" n="1">
+                           <mRest xml:id="mkx4b84" />
+                        </layer>
+                     </staff>
+                  </measure>
+                  <sb />
+                  <measure xml:id="m2sz5jh" right="end" n="8">
+                     <staff xml:id="m8s1" n="1">
+                        <layer xml:id="m8s1l1" n="1">
+                           <mRest xml:id="m1dzd34f" />
+                        </layer>
+                     </staff>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

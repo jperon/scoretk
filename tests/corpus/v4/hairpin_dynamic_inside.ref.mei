@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/5.1/mei-basic.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title />
+         </titleStmt>
+         <pubStmt>
+            <date isodate="2026-11-25T09:37:46" />
+         </pubStmt>
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv>
+            <score>
+               <scoreDef>
+                  <staffGrp>
+                     <staffDef n="1" lines="5" meter.count="4" meter.unit="4" trans.diat="-7" trans.semi="-12">
+                        <label>Steel Guitar</label>
+                        <labelAbbr>s.guit.</labelAbbr>
+                        <instrDef midi.instrnum="25" />
+                        <clef shape="G" line="2" />
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="s1">
+                  <pb />
+                  <measure xml:id="mo5lzms" n="1">
+                     <staff xml:id="m1s1" n="1">
+                        <layer xml:id="m1s1l1" n="1">
+                           <note xml:id="n1ge4ut3" dur="4" pname="c" oct="5" />
+                           <note xml:id="nlw1f4v" dur="4" pname="d" oct="5" />
+                           <note xml:id="n1yjvv1f" dur="4" pname="e" oct="5" />
+                           <note xml:id="n12oz906" dur="4" pname="f" oct="5" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d18dcr65" label="mf" staff="1" startid="#n1ge4ut3">mf</dynam>
+                     <tempo xml:id="txbd0xe" midi.bpm="120" staff="1" tstamp="1">
+                        <rend glyph.auth="smufl"></rend> = 120</tempo>
+                     <hairpin xml:id="h1my45sr" form="cres" staff="1" startid="#n1ge4ut3" endid="#rilcodq" />
+                     <dynam xml:id="dfnllbq" label="p" staff="1" startid="#n12oz906">p</dynam>
+                  </measure>
+                  <measure xml:id="m1gsqmm8" right="end" n="2">
+                     <staff xml:id="m2s1" n="1">
+                        <layer xml:id="m2s1l1" n="1">
+                           <note xml:id="n1o1geql" dur="4" pname="g" oct="5" />
+                           <note xml:id="n1osfc9s" dur="4" pname="a" oct="5" />
+                           <note xml:id="n479ix9" dur="4" pname="b" oct="5" />
+                           <rest xml:id="rilcodq" dur="4" />
+                        </layer>
+                     </staff>
+                     <dynam xml:id="d1izqrxl" label="f" staff="1" startid="#n1osfc9s">f</dynam>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>

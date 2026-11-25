@@ -50,6 +50,8 @@ use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
 use scoretk_abc_import::CAPABILITIES as ABC_IMPORT;
 use scoretk_lilypond_export::CAPABILITIES as LY_EXPORT;
 use scoretk_lilypond_import::CAPABILITIES as LY_IMPORT;
+use scoretk_mei_export::CAPABILITIES as MEI_EXPORT;
+use scoretk_mei_import::CAPABILITIES as MEI_IMPORT;
 use scoretk_midi_export::CAPABILITIES as MIDI_EXPORT;
 use scoretk_midi_import::CAPABILITIES as MIDI_IMPORT;
 use scoretk_musescore_export::CAPABILITIES as MSCX_EXPORT;
@@ -73,6 +75,7 @@ enum ReferenceKind {
     Midi,
     Ly,
     Abc,
+    Mei,
 }
 
 const DIRECTIONS: &[Direction] = &[
@@ -124,6 +127,13 @@ const DIRECTIONS: &[Direction] = &[
         import: ABC_IMPORT,
         export: ABC_EXPORT,
         reference: Some(ReferenceKind::Abc),
+    },
+    Direction {
+        name: "mei",
+        format: Format::Mei,
+        import: MEI_IMPORT,
+        export: MEI_EXPORT,
+        reference: Some(ReferenceKind::Mei),
     },
 ];
 
@@ -263,6 +273,10 @@ fn reference_file(scores: &str, kind: ReferenceKind) -> Option<(PathBuf, Format)
             root.join("abc").join(format!("{version}_{name}.abc")),
             Format::Abc,
         ),
+        ReferenceKind::Mei => (
+            corpus_dir(version).join(format!("{name}.ref.mei")),
+            Format::Mei,
+        ),
     };
     path.is_file().then_some((path, format))
 }
@@ -276,6 +290,7 @@ fn reference_source(kind: ReferenceKind) -> &'static str {
         ReferenceKind::Midi => "MuseScore 4.7.4 *.ref.mid",
         ReferenceKind::Ly => "scoretk snapshot (self-consistency)",
         ReferenceKind::Abc => "scoretk snapshot (self-consistency)",
+        ReferenceKind::Mei => "MuseScore 4.7.4 *.ref.mei",
     }
 }
 
@@ -449,11 +464,41 @@ fn reference_sources_distinguish_self_written_snapshots() {
             reference_source(kind)
         );
     }
-    for kind in [ReferenceKind::MusicXml, ReferenceKind::Midi] {
+    for kind in [
+        ReferenceKind::MusicXml,
+        ReferenceKind::Midi,
+        ReferenceKind::Mei,
+    ] {
         assert!(
             reference_source(kind).starts_with("MuseScore 4.7.4"),
             "{} must be labelled as a MuseScore 4.7.4 reference",
             reference_source(kind)
         );
     }
+}
+
+#[test]
+fn mei_import_alone_reads_musescore_474_references() {
+    let mut checked = 0;
+    for (name, _) in corpus_scores() {
+        let (path, format) = reference_file(&name, ReferenceKind::Mei)
+            .expect("a MuseScore MEI reference for every corpus score");
+        assert_eq!(format, Format::Mei);
+        assert!(
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(".ref.mei")),
+            "{} is not a *.ref.mei reference",
+            path.display()
+        );
+        let bytes = fs::read(&path).expect("read MuseScore MEI reference");
+        let text = String::from_utf8(bytes).expect("UTF-8 reference");
+        assert!(
+            text.contains("xmlns=\"http://www.music-encoding.org/ns/mei\""),
+            "{} has no MEI namespace",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 56);
 }
