@@ -1903,7 +1903,7 @@ impl Context<'_> {
                 if gregorian
                     .syllables
                     .get(ids.measure_index)
-                    .and_then(|syllable| syllable.notes.get(index))
+                    .and_then(|syllable| syllable.notes.get(ids.chord_rank))
                     .is_some_and(|gregorian_note| gregorian_note.glyph == "x")
                 {
                     out.xml.tag("notehead", "x");
@@ -2006,7 +2006,7 @@ impl Context<'_> {
                 if let Some(gregorian_note) = gregorian
                     .syllables
                     .get(ids.measure_index)
-                    .and_then(|syllable| syllable.notes.get(index))
+                    .and_then(|syllable| syllable.notes.get(ids.chord_rank))
                 {
                     chant::write_note_notation(out, gregorian_note);
                     chant::write_note_signs(out, gregorian_note);

@@ -68,6 +68,7 @@
 
 mod barline;
 pub mod capabilities;
+mod chant;
 mod container;
 
 pub use capabilities::CAPABILITIES;
@@ -118,5 +119,9 @@ pub(crate) fn parse_document(document: &[u8]) -> Result<Score> {
     // silences « gap », qui ne sont pas exportés mais font avancer le curseur
     // (origine des `<forward>`/`<backup>` scindés de MuseScore).
     scoretk_core::gap_rests::fill(&mut score);
+    // Chant grégorien : les extensions structurées portées par le XML
+    // restaurent la charge L6 et sa projection dérivée. Sans ces extensions,
+    // le document ordinaire n'est pas modifié.
+    chant::restore(&root, &mut score);
     Ok(score)
 }

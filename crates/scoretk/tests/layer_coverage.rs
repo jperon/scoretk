@@ -599,6 +599,26 @@ fn gabc_cross_round_trip_table() {
     println!();
 }
 
+/// Honest target of the cross conversion: what MusicXML can carry (structured
+/// chant facts) must survive, while the known out-of-reach L6 items of
+/// `docs/agents/gabc.md` §10 are *not* counted as gains. The measurement still
+/// re-serialises all nine sources through MusicXML and back to GABC.
+#[test]
+fn gabc_cross_round_trip_reaches_full_support_target() {
+    let (totals, _, rewritten) = gabc_cross_totals();
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    assert_eq!(
+        rewritten, 9,
+        "no raw-string copy may stand in for a conversion"
+    );
+    assert!(
+        totals.total.percent() >= 95.0,
+        "GABC cross full support is {:.2} %",
+        totals.total.percent()
+    );
+}
+
 #[test]
 fn gabc_cross_round_trip_is_not_a_self_comparison() {
     let (totals, _, rewritten) = gabc_cross_totals();

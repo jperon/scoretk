@@ -57,6 +57,12 @@ pub(crate) fn escape(value: &str) -> String {
         match character {
             '\\' => out.push_str("\\\\"),
             '|' => out.push_str("\\|"),
+            // Certains lecteurs XML (quick-xml 0.42) perdent `&gt;` dans le
+            // texte : on encode donc `>` comme une séquence propre au champ,
+            // sans changer l'échappement global de l'écrivain (qui doit rester
+            // identique aux références MuseScore 4.7.4).
+            '>' => out.push_str("\\g"),
+            '<' => out.push_str("\\l"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             other => out.push(other),
@@ -84,12 +90,16 @@ pub(crate) fn write_header_directions(out: &mut Out, gregorian: &Gregorian) {
         );
         write_direction(out, &text);
     }
-    let text = format!(
-        "{PREFIX}clef:{}|{}",
-        field('t', gregorian.clefs.first().map_or("c4", String::as_str)),
-        field('l', &gregorian.staff_lines.to_string())
-    );
-    write_direction(out, &text);
+    // Une source sans jeton de clé (`( )`) ne doit pas en recevoir une par
+    // défaut : la clé absente est elle-même une donnée du payload.
+    if let Some(clef) = gregorian.clefs.first() {
+        let text = format!(
+            "{PREFIX}clef:{}|{}",
+            field('t', clef),
+            field('l', &gregorian.staff_lines.to_string())
+        );
+        write_direction(out, &text);
+    }
 }
 
 /// Une syllabe et ses barres : une direction par mesure dérivée.
@@ -182,8 +192,8 @@ mod tests {
 
     #[test]
     fn escape_keeps_field_boundaries_unambiguous() {
-        assert_eq!(escape("a|b\\c\nd"), "a\\|b\\\\c\\nd");
-        assert_eq!(field('t', "<sp>R/</sp>"), "t=<sp>R/</sp>");
+        assert_eq!(escape("a|b\\c\nd>e"), "a\\|b\\\\c\\nd\\ge");
+        assert_eq!(field('t', "<sp>R/</sp>"), "t=\\lsp\\gR/\\l/sp\\g");
     }
 
     #[test]
@@ -255,6 +265,39 @@ mod tests {
         );
     }
 
+    /// Out-of-reach L6 facts are declared, not silently counted as gains:
+    /// custos and line breaks (`Gabc.tex:872-906`), bracketed TeX/layout
+    /// attributes (`:689-700,908-931`), NABC cuts
+    /// (`gabc-score-determination.y:870-907`) and the exact order of bars
+    /// inside a group. None of them is a sung fact and none gets an XML field.
+    #[test]
+    fn out_of_reach_gabc_facts_have_no_xml_field() {
+        let mut out = Out::new();
+        let gregorian = Gregorian {
+            clefs: vec!["c3".to_owned()],
+            syllables: vec![Syllable {
+                text: "<sp>V/</sp>.".to_owned(),
+                bars: vec![BarKind::DivisioFinalis],
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        write_header_directions(&mut out, &gregorian);
+        write_syllable_direction(&mut out, &gregorian, 0);
+        let xml = out.xml.finish();
+        for absent in [
+            "gabc:custos",
+            "gabc:line-break",
+            "gabc:nabc",
+            "gabc:attribute",
+        ] {
+            assert!(
+                !xml.contains(absent),
+                "{absent} must not be invented: {xml}"
+            );
+        }
+    }
+
     #[test]
     fn a_syllable_direction_carries_each_fact_separately() {
         let gregorian = Gregorian {
@@ -274,7 +317,7 @@ mod tests {
         let xml = out.xml.finish();
         assert!(xml.contains("gabc:syllable:i=0|t=De\\|us|w=1"), "{xml}");
         assert!(xml.contains("|c=c3"), "{xml}");
-        assert!(xml.contains("|r=&lt;sp&gt;R/&lt;/sp&gt;"), "{xml}");
+        assert!(xml.contains("|r=\\lsp\\gR/\\l/sp\\g"), "{xml}");
         assert!(xml.contains("|b=::"), "{xml}");
         assert!(xml.contains("|b=;2"), "{xml}");
         assert!(xml.contains("|z='"), "{xml}");
