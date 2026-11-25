@@ -512,12 +512,53 @@ fn gabc_full_support_reaches_the_target() {
     );
 }
 
+/// Removes every MusicXML element whose text is a private `gabc:` field.
+///
+/// Same method as the private ABC/LilyPond extensions in
+/// `model-modularisation.md` §11.8: the written MusicXML is re-read after the
+/// extensions have been deleted, so the score can only come from standard
+/// MusicXML fields. Only the leaf element carrying the field is removed; an
+/// empty `<direction>`/`<notations>` wrapper is harmless to the reader.
+fn strip_gabc_extensions(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len());
+    let mut rest = xml;
+    loop {
+        let Some(at) = rest.find("gabc:") else {
+            out.push_str(rest);
+            return out;
+        };
+        let Some(open) = rest[..at].rfind('<') else {
+            out.push_str(rest);
+            return out;
+        };
+        let tag = &rest[open + 1..];
+        let name_end = tag
+            .find(|character: char| character.is_whitespace() || character == '>')
+            .unwrap_or(tag.len());
+        let name = &tag[..name_end];
+        let close = format!("</{name}>");
+        let Some(end) = rest[at..]
+            .find(&close)
+            .map(|offset| at + offset + close.len())
+        else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..open]);
+        rest = &rest[end..];
+    }
+}
+
 /// Cross conversion `GABC → MusicXML → GABC → model`, on the same nine
 /// sources. Unlike `gabc_totals`, this cannot preserve the L6 payload: a
 /// MusicXML score has no neume stream, so the second GABC is rebuilt by
 /// `from_score` from concert pitches, lyrics and bars. The result measures
 /// what a real conversion keeps, not what a verbatim copy keeps.
-fn gabc_cross_totals() -> (Totals, Layers, usize) {
+///
+/// With `strip_extensions`, every `gabc:` field is deleted from the written
+/// MusicXML before re-reading it: only standard MusicXML then transports the
+/// chant.
+fn gabc_cross_totals(strip_extensions: bool) -> (Totals, Layers, usize) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -548,6 +589,19 @@ fn gabc_cross_totals() -> (Totals, Layers, usize) {
                 continue;
             }
         };
+        let xml = if strip_extensions {
+            let text = String::from_utf8(xml).expect("UTF-8 MusicXML");
+            assert!(text.contains("gabc:"), "the private fields must be present");
+            strip_gabc_extensions(&text).into_bytes()
+        } else {
+            xml
+        };
+        if strip_extensions {
+            assert!(
+                !String::from_utf8_lossy(&xml).contains("gabc:"),
+                "no private field may survive the strip"
+            );
+        }
         let from_xml = match read(&xml, Format::MusicXml) {
             Ok(value) => value,
             Err(_) => {
@@ -580,7 +634,8 @@ fn gabc_cross_totals() -> (Totals, Layers, usize) {
 
 #[test]
 fn gabc_cross_round_trip_table() {
-    let (totals, declared, rewritten) = gabc_cross_totals();
+    let (private, declared, rewritten) = gabc_cross_totals(false);
+    let (stripped, _, _) = gabc_cross_totals(true);
     println!("\n=== GABC cross round trip: GABC → MusicXML → GABC (nine examples) ===");
     println!(
         "key = (layer, tick, staff, kind, value); {rewritten}/9 outputs differ from their source"
@@ -592,10 +647,17 @@ fn gabc_cross_round_trip_table() {
     print_row(
         "gabc→xml→gabc",
         declared,
-        &totals,
-        "Gregorio examples (cross conversion, no payload copy)",
+        &private,
+        "Gregorio examples (cross conversion, private gabc: fields)",
     );
-    print_details(declared, &totals);
+    print_details(declared, &private);
+    print_row(
+        "gabc→xml→gabc",
+        declared,
+        &stripped,
+        "same files, gabc: fields stripped (standard MusicXML only)",
+    );
+    print_details(declared, &stripped);
     println!();
 }
 
@@ -605,7 +667,7 @@ fn gabc_cross_round_trip_table() {
 /// re-serialises all nine sources through MusicXML and back to GABC.
 #[test]
 fn gabc_cross_round_trip_reaches_full_support_target() {
-    let (totals, _, rewritten) = gabc_cross_totals();
+    let (totals, _, rewritten) = gabc_cross_totals(false);
     assert_eq!(totals.files, 9);
     assert_eq!(totals.skipped, 0);
     assert_eq!(
@@ -619,9 +681,25 @@ fn gabc_cross_round_trip_reaches_full_support_target() {
     );
 }
 
+/// Second, honest measurement: the same cross conversion after deleting every
+/// private `gabc:` field. This is the number the standard-MusicXML consumer
+/// can reproduce; items 1–9 of the modern projection are measured against it.
+#[test]
+fn gabc_cross_round_trip_without_private_extensions_is_measured() {
+    let (totals, _, _) = gabc_cross_totals(true);
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    assert!(totals.total.reference > 0);
+    println!(
+        "GABC cross round trip without gabc: fields: essential {:.2} %, full support {:.2} %",
+        totals.essential.percent(),
+        totals.total.percent()
+    );
+}
+
 #[test]
 fn gabc_cross_round_trip_is_not_a_self_comparison() {
-    let (totals, _, rewritten) = gabc_cross_totals();
+    let (totals, _, rewritten) = gabc_cross_totals(false);
     assert_eq!(totals.files, 9);
     assert_eq!(totals.skipped, 0);
     // If the writer copied its input, this would be 0/9.

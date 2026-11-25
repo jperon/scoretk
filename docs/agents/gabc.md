@@ -231,6 +231,7 @@ in §6 and `crates/scoretk/tests/layer_coverage.rs`.
 | Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **0/9 byte-identical** (expected); structured inventory 100 % self-consistency. Gregorio accepts 6/6 of the examples it accepts at all, **6/6 core-exact**, **0/6 dump-identical** in `mesure.jsonl` (3 examples are invalid for Gregorio itself) |
 | Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 435 items (L1 342, L2 1 033, L3 308, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
 | **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **before: essential 83.00 %, full support 59.07 %** (L1 45.03 %, L2 95.74 %, L3 95.78 %, L6 33.73 %) → **after: essential 100 %, full support 100 %** (L1 342/342, L2 1 033/1 033, L3 308/308, L6 1 752/1 752, 0 extra), 9/9 outputs still differ from their source |
+| **Cross without private `gabc:` fields**, nine examples | `gabc_cross_round_trip_without_private_extensions_is_measured` | **before items 1–9: essential 83.00 %, full support 59.07 %** (same per-layer gaps as above). Every element whose text starts with `gabc:` is deleted from the written MusicXML before re-reading it, as for the private ABC/LilyPond extensions of `model-modularisation.md` §11.8: only standard MusicXML is scored. This is the number a third-party consumer can reproduce. |
 | Gregorio vs itself, full 202-file lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio itself) |
 | **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **before: 193/194 = 99.48 %, 3 writer outputs rejected** → **after: writer core-exact 194/194 = 100 %**, **dump SHA identical 0/194**, **0 writer output rejected**, 0 tool crashes; the same five *source* files are rejected by Gregorio itself and excluded from both sides |
 | Python source sanity reader (phase 0) | same run, `cmp_source` | 133/197 = 67.51 % (was 132/197; the canonical form now keeps Dominican-bar digits and ignores custos pitches) |
@@ -265,6 +266,16 @@ the shared XML reader loses `&gt;` in text, so the chant bridge uses its own
 reversible escapes rather than changing the writer used for MuseScore 4.7.4
 references. Nothing is scored as a gain unless the XML actually carries the
 field (`out_of_reach_gabc_facts_have_no_xml_field`).
+
+The 100 % cross row above is therefore **not** a claim about interoperable
+MusicXML: it also counts the private `gabc:` fields. A second row strips every
+element carrying such a field before re-reading and measures what standard
+MusicXML alone transports (83.00 % / 59.07 % before the modern projection of
+items 1–9). Both rows are printed by `gabc_cross_round_trip_table`; the stripped
+row is the honest target for a consumer that knows nothing about scoretk.
+`no_raw_gabc_source_in_xml` still forbids copying the `.gabc` source into a
+`<words>` blob: the standard-MusicXML gain must come from `<alter>`,
+`<syllabic>`, `<bar-style>`, `<stem>`, `<slur>`, `<words>` and durations.
 
 ### Why the numbers moved
 
