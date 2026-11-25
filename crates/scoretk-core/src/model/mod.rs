@@ -119,8 +119,8 @@ pub use layers::metric::{
     TimeSigType, Tuplet, TupletNumberType,
 };
 pub use layers::{
-    ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extensions, Layers, Loss,
-    NotePlayback, Playback, Text,
+    ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extension, Extensions,
+    Gregorian, Layers, Loss, NotePlayback, Playback, Text,
 };
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};

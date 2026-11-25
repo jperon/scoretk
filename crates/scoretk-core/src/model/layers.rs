@@ -269,9 +269,29 @@ pub struct ChordEngraving {
     pub stem: StemDirection,
 }
 
-/// L6 per-format extensions. Empty until step 5 of the migration plan.
+/// L6 per-format payload that no other direction can interpret.
+///
+/// The slot is typed and closed: a misspelled format cannot silently create a
+/// new entry, and no `HashMap<String, …>` ends up in the wasm binary.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Extensions {}
+pub struct Extensions {
+    /// Payload of the format that owns the primary data, when it is present.
+    pub format: Option<Extension>,
+}
+
+/// One L6 payload. New formats add a variant, not a string key.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Extension {
+    /// Gregorian chant (GABC): the neume/syllable data is primary and the
+    /// modern-notation projection into L0/L1 is derived. Marker only until
+    /// the GABC reader ships.
+    Gregorian(Gregorian),
+}
+
+/// Empty GABC payload: the reader is deliberately not implemented yet.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Gregorian {}
 
 #[cfg(test)]
 mod tests {
@@ -297,6 +317,14 @@ mod tests {
         assert_eq!(report.lost(Layers::ENGRAVING), 1);
         assert_eq!(report.losses[1].layer, Layers::METRIC);
         assert_eq!(report.losses[1].tick, Some(Fraction::QUARTER));
+    }
+
+    #[test]
+    fn extension_slot_is_typed() {
+        let mut extensions = Extensions::default();
+        assert_eq!(extensions.format, None);
+        extensions.format = Some(Extension::Gregorian(Gregorian::default()));
+        assert!(matches!(extensions.format, Some(Extension::Gregorian(_))));
     }
 
     #[test]

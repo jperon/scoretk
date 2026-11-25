@@ -1,6 +1,6 @@
 # Pivot model: layer audit and modularisation proposal
 
-Status: **migration in progress — steps 0, 1, 2, 3 and 4 executed** (§10). Audience: whoever
+Status: **migration in progress — steps 0 through 5 executed** (§10). No GABC reader yet (step 6). Audience: whoever
 adds GABC, MEI, Capella, Guitar Pro or Humdrum after the ten current directions
 are stable (`docs/TODO.md:29-46`). The question answered here is not "is the
 model wrong?" but "which parts of it are a genuine common denominator, and
@@ -651,3 +651,27 @@ artefacts and 2 544/2 544 LilyPond artefacts byte-identical, 0 lost file.
 Scheduled 10 s Lakh timeouts flapped on eight rows under concurrent load;
 replaying those eight files without load produces identical SHA-256 on both
 binaries. No output byte changed in any of the five directions.
+
+### 10.6 Step 5 — empty L6 slot, no reader
+
+`Extensions { format: Option<Extension> }` replaces the empty struct;
+`Extension` is `#[non_exhaustive]` and has one variant, `Gregorian(Gregorian)`,
+where `Gregorian` is a zero-sized marker. Nothing constructs a payload outside
+one unit test, no reader or writer references L6, and the wasm ABI is
+unchanged. The GABC reader (step 6) will own the syllable/neume data here.
+
+Verification: `cargo test --workspace`, clippy `-D warnings`, fmt, all eight
+`wasm32-unknown-unknown` builds, `ly_notes.py selftest` and the Node smoke test
+pass. Wasm raw size **2 331 942 bytes**, i.e. **+4 422 bytes (+0.190 %)** versus
+the re-frozen master baseline and **+8 bytes** versus step 4, far below the 2 %
+threshold. MusicXML (174/174) and ABC (26 542 measurements) are byte-identical
+to the baseline. The scratch worktree `wt-mod`, whose paths the frozen lot
+manifests used, was deleted by another task during this step: 56 MuseScore
+corpus rows failed to find their inputs. The corpus lot was re-run for **both**
+binaries with paths pointing at the migration worktree: 172/172 artefacts
+byte-identical, 0 changed rows. MIDI and LilyPond were likewise re-run with
+stable manifests for both binaries (2 197/2 197 and 2 544/2 544 artefacts
+identical); one more Lakh 10 s timeout flapped and was replayed byte-identically
+(`23efbd9f…`, 6 626 353 bytes). The MuseScore `ly` lot's only row difference is
+an *alternative tool* (MuseScore itself) timing out, not scoretk output.
+No output byte changed in any direction and no contract element moved.
