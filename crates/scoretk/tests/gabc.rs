@@ -162,6 +162,33 @@ fn an_alteration_is_not_a_note_and_changes_pitch_and_musicxml_alter() {
     assert_eq!(again.notes.len(), score.notes.len());
 }
 
+/// Positions source UTF-16 : identifiants MusicXML et carte des temps sont
+/// calculés par la même fonction du noyau, donc exactement égaux.
+#[test]
+fn gabc_source_positions_reach_musicxml_ids_and_timeline() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) é(fgh)b(gixi) (::)\n";
+    let score = read(SOURCE.as_bytes(), Format::Gabc).expect("GABC import");
+    let playback = scoretk::write_playback(&score, &Options::default()).expect("playback");
+    let xml = String::from_utf8(playback.musicxml.clone()).expect("UTF-8 MusicXML");
+    let expected = [
+        ("m0-s0-v0-c0-n0", 18, 19),
+        ("m0-s0-v0-c1-n0", 19, 20),
+        ("m0-s0-v0-c2-n0", 20, 21),
+        ("m1-s0-v0-c0-n0", 24, 25),
+        ("m1-s0-v0-c1-n0", 27, 28),
+    ];
+    assert_eq!(playback.timemap.notes.len(), expected.len());
+    for ((id, offset, end), note) in expected.iter().zip(&playback.timemap.notes) {
+        assert_eq!(note.source_offset, Some(*offset));
+        assert_eq!(note.source_end, Some(*end));
+        assert_eq!(note.xml_id(), format!("{id}-o{offset}-e{end}"));
+        assert!(
+            xml.contains(&format!("id=\"{}-o{offset}-e{end}\"", id)),
+            "the identifier must be in the MusicXML: {xml}"
+        );
+    }
+}
+
 /// A monophonic MuseScore example from the versioned corpus: one staff, four
 /// notes and one lyric syllable. It has no L6 payload, so it exercises the
 /// score → GABC projection rather than the payload serializer.

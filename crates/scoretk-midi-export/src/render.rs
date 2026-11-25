@@ -37,9 +37,9 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, ArpeggioType, ArticulationType, Chord, ChordRest, ChordRestKind, Fraction,
-    GraceType, Instrument, KeyMode, KeySig, LyricsSyllabic, Measure, Note, OrnamentType,
-    OttavaType, PartId, Score, SegmentItem, SegmentType, SpannerNotation, SpannerType, StaffId,
-    TimeSig, Track, TremoloKind, TrillType, VeloType, VOICES,
+    GraceType, Instrument, KeyMode, KeySig, LyricsSyllabic, Measure, Note, NoteSource,
+    OrnamentType, OttavaType, PartId, Score, SegmentItem, SegmentType, SpannerNotation,
+    SpannerType, StaffId, TimeSig, Track, TremoloKind, TrillType, VeloType, VOICES,
 };
 
 use super::error::Result;
@@ -1098,6 +1098,8 @@ struct AttackNote {
     /// Vrai quand l'ornement précède l'accord principal.
     grace_before: bool,
     tremolo: bool,
+    /// Position source pour la timeline (unités UTF-16).
+    source: Option<NoteSource>,
 }
 
 impl AttackContext<'_, '_> {
@@ -1116,6 +1118,7 @@ impl AttackContext<'_, '_> {
             grace_index: note.grace_index,
             grace_before: note.grace_before,
             tremolo: note.tremolo,
+            source: note.source,
         });
     }
 }
@@ -1206,6 +1209,10 @@ fn render_two_chord_tremolo(
                 grace_index: None,
                 grace_before: false,
                 tremolo: true,
+                source: first
+                    .notes
+                    .first()
+                    .and_then(|id| score.notes[id.index()].source),
             },
         );
         out.push(Event {
@@ -1235,6 +1242,10 @@ fn render_two_chord_tremolo(
                     grace_index: None,
                     grace_before: false,
                     tremolo: true,
+                    source: second_chord
+                        .notes
+                        .first()
+                        .and_then(|id| score.notes[id.index()].source),
                 },
             );
             out.push(Event {
@@ -1601,6 +1612,7 @@ fn render_chord(
                                 grace_index: None,
                                 grace_before: true,
                                 tremolo: false,
+                                source: note.source,
                             },
                         );
                         out.push(Event {
@@ -1637,6 +1649,7 @@ fn render_chord(
                     grace_index: None,
                     grace_before: false,
                     tremolo: false,
+                    source: note.source,
                 },
             );
             out.push(Event {
@@ -1684,6 +1697,7 @@ fn render_chord(
                         grace_index: None,
                         grace_before: true,
                         tremolo: false,
+                        source: note.source,
                     },
                 );
                 out.push(Event {
@@ -1729,6 +1743,7 @@ fn render_chord(
                         grace_index: None,
                         grace_before: true,
                         tremolo: false,
+                        source: note.source,
                     },
                 );
                 out.push(Event {
@@ -1768,6 +1783,7 @@ fn render_chord(
                         grace_index: None,
                         grace_before: true,
                         tremolo: false,
+                        source: note.source,
                     },
                 );
                 out.push(Event {
@@ -1801,6 +1817,7 @@ fn render_chord(
                         grace_index: None,
                         grace_before: false,
                         tremolo: true,
+                        source: note.source,
                     },
                 );
                 out.push(Event {
@@ -1838,6 +1855,7 @@ fn render_chord(
                 grace_index: None,
                 grace_before: false,
                 tremolo: false,
+                source: note.source,
             },
         );
         out.push(Event {
@@ -1902,6 +1920,7 @@ fn render_grace_notes(
                 grace_index: Some(grace_index),
                 grace_before,
                 tremolo: false,
+                source: note.source,
             },
         );
         out.push(Event {

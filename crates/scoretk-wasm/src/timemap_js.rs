@@ -144,6 +144,20 @@ fn note_to_js(note: &NoteSync) -> JsValue {
     set(&object, "grace", JsValue::from_bool(note.grace));
     set(&object, "tremolo", JsValue::from_bool(note.tremolo));
     set(&object, "xmlId", JsValue::from_str(&note.xml_id()));
+    // Champs additifs : `null` pour une note sans source textuelle (MuseScore,
+    // MIDI, …), sinon indices UTF-16 depuis le début du fichier.
+    set(
+        &object,
+        "sourceOffset",
+        note.source_offset
+            .map_or(JsValue::NULL, |offset| JsValue::from_f64(offset as f64)),
+    );
+    set(
+        &object,
+        "sourceEnd",
+        note.source_end
+            .map_or(JsValue::NULL, |end| JsValue::from_f64(end as f64)),
+    );
     object.into()
 }
 

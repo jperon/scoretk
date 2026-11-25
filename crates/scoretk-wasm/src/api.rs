@@ -65,7 +65,8 @@ export interface TimelineTempo { tick: number; timeUs: number; microsPerQuarter:
 /** Mesure jouée ; `xmlId` est celui de la partie 0. `ordinal` est la seule clé d'ancrage à utiliser (`number` n'est pas exposé : 0-basé côté modèle, 1-basé et remis à 1 par section côté MusicXML). */
 export interface TimelineMeasure { measure: number; ordinal: number; segment: number; passage: number; xmlId: string; tick: number; endTick: number; timeUs: number; endTimeUs: number; timeMs: number }
 /** Attaque de note ; `xmlId` est l'identifiant MusicXML stable. */
-export interface TimelineNote { tick: number; timeUs: number; durationTicks: number; measure: number; staff: number; voice: number; chord: number; note: number; pitch: number; passage: number; grace: boolean; tremolo: boolean; xmlId: string }
+/** Attaque de note ; `xmlId` est l'identifiant MusicXML stable. `sourceOffset` / `sourceEnd` sont des indices UTF-16 depuis le début du fichier source quand le format en a une (GABC), `null` sinon. */
+export interface TimelineNote { tick: number; timeUs: number; durationTicks: number; measure: number; staff: number; voice: number; chord: number; note: number; pitch: number; passage: number; grace: boolean; tremolo: boolean; xmlId: string; sourceOffset: number | null; sourceEnd: number | null }
 /** Pause de section insérée. */
 export interface TimelinePause { tick: number; endTick: number; timeUs: number; endTimeUs: number; seconds: number }
 /** Carte des temps du rendu MIDI. */

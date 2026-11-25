@@ -101,6 +101,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                         letter,
                         glyph: raw.to_owned(),
                         signs: vec![NeumeSign::new(SignKind::Alteration, raw)],
+                        ..GregorianNote::default()
                     });
                     effect[slot] = wanted;
                 }
@@ -108,6 +109,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                     letter,
                     glyph: String::new(),
                     signs: Vec::new(),
+                    ..GregorianNote::default()
                 });
             }
             if event.space_after || event.bar.is_some() {

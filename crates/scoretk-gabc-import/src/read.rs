@@ -40,8 +40,14 @@ pub(super) fn parse_payload(header_source: &str, notation: &str) -> Result<Grego
         .and_then(|header| header.value.bytes().find(|byte| byte.is_ascii_digit()))
         .map_or(4, |digit| digit - b'0')
         .clamp(2, 5);
-    let body = notation.split_once('\n').map_or("", |(_, body)| body);
-    let (syllables, clefs) = parse_notation(body);
+    // Position source des notes : unités UTF-16 depuis le début du fichier
+    // entier (indices de chaîne JavaScript). Le `%%` et sa fin de ligne
+    // appartiennent à l'en-tête pour ce compte, comme le veut le consommateur.
+    let marker_line = notation.find('\n').map_or(notation.len(), |end| end + 1);
+    let base =
+        header_source.encode_utf16().count() + notation[..marker_line].encode_utf16().count();
+    let body = &notation[marker_line..];
+    let (syllables, clefs) = parse_notation(body, base);
     Ok(Gregorian {
         headers,
         staff_lines,
@@ -76,12 +82,22 @@ pub(super) fn apply_metadata(score: &mut Score, gregorian: &Gregorian) {
 /// Returns the syllables and the clefs in source order. A group containing
 /// only a clef is not a syllable, but the clef is still primary data
 /// (`Gabc.tex:847-870`).
-fn parse_notation(body: &str) -> (Vec<Syllable>, Vec<String>) {
+fn parse_notation(body: &str, base: usize) -> (Vec<Syllable>, Vec<String>) {
     let chars: Vec<char> = body.chars().collect();
+    // `offsets[i]` est la position UTF-16 du caractère `chars[i]` dans le
+    // fichier entier ; le dernier élément est la fin du corps.
+    let mut offsets = Vec::with_capacity(chars.len() + 1);
+    let mut cursor = base;
+    for char in &chars {
+        offsets.push(cursor);
+        cursor += char.len_utf16();
+    }
+    offsets.push(cursor);
     let mut syllables: Vec<Syllable> = Vec::new();
     let mut clefs: Vec<String> = Vec::new();
     let mut text = String::new();
     let mut code = String::new();
+    let mut code_start = 0usize;
     let mut in_notes = false;
     let mut escaped = false;
     let mut seen_content = false;
@@ -90,7 +106,7 @@ fn parse_notation(body: &str) -> (Vec<Syllable>, Vec<String>) {
         let char = chars[index];
         if in_notes {
             if char == ')' {
-                let (mut syllable, group_clefs) = parse_group(&code);
+                let (mut syllable, group_clefs) = parse_group(&code, &offsets[code_start..=index]);
                 clefs.extend(group_clefs.iter().cloned());
                 // The clef is stored on the group that carries it: an
                 // in-score clef change must not be moved to the beginning by
@@ -133,6 +149,7 @@ fn parse_notation(body: &str) -> (Vec<Syllable>, Vec<String>) {
             }
             let pending = raw.trim().to_owned();
             code.clear();
+            code_start = index + 1;
             in_notes = true;
             // Kept until `)` closes the group; a single buffer handles
             // comments and escapes uniformly.
@@ -191,9 +208,14 @@ fn rubric(text: &str) -> Option<String> {
 }
 
 /// Parses one parenthesised note group into its syllable and clefs.
-fn parse_group(raw_code: &str) -> (Syllable, Vec<String>) {
-    let code = strip_attributes(raw_code);
+///
+/// `offsets` gives the UTF-16 position of each character of `raw_code` (plus
+/// a final sentinel) so every note keeps its exact source location even
+/// when bracketed layout attributes are stripped.
+fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>) {
+    let (code, mapping) = strip_attributes(raw_code);
     let chars: Vec<char> = code.chars().collect();
+    let source: Vec<usize> = mapping.iter().map(|&position| offsets[position]).collect();
     let clefs = syntax::parse_clefs(&code);
     let mut syllable = Syllable::default();
     let mut index = 0;
@@ -267,6 +289,12 @@ fn parse_group(raw_code: &str) -> (Syllable, Vec<String>) {
                 letter: char,
                 signs: syntax::parse_signs(&glyph),
                 glyph,
+                source_offset: source.get(start).copied(),
+                source_end: index.checked_sub(1).and_then(|last| {
+                    source
+                        .get(last)
+                        .map(|start| start + chars[last].len_utf16())
+                }),
             });
             continue;
         }
@@ -281,9 +309,11 @@ fn parse_group(raw_code: &str) -> (Syllable, Vec<String>) {
 /// primitive notes that are all sung (`@[ehg]` = `e`, `h`, `g`), so stripping
 /// them silently lost notes. The caller iterates the same characters and
 /// treats the `@` as a fusion marker, leaving one note per letter.
-fn strip_attributes(code: &str) -> String {
+fn strip_attributes(code: &str) -> (String, Vec<usize>) {
     let chars: Vec<char> = code.chars().collect();
     let mut result = String::with_capacity(code.len());
+    // Position d'origine de chaque caractère conservé, plus un sentinelle.
+    let mut mapping = Vec::with_capacity(chars.len() + 1);
     let mut index = 0;
     while index < chars.len() {
         if chars[index] == '[' {
@@ -303,17 +333,20 @@ fn strip_attributes(code: &str) -> String {
             if fusion {
                 // Keep the primitives, drop the delimiters: `parse_group`
                 // already treats the preceding `@` as a fusion marker.
-                for char in &chars[index + 1..end.saturating_sub(1)] {
+                for (offset, char) in chars[index + 1..end.saturating_sub(1)].iter().enumerate() {
                     result.push(*char);
+                    mapping.push(index + 1 + offset);
                 }
             }
             index = end;
             continue;
         }
         result.push(chars[index]);
+        mapping.push(index);
         index += 1;
     }
-    result
+    mapping.push(chars.len());
+    (result, mapping)
 }
 
 #[cfg(test)]
@@ -322,7 +355,8 @@ mod tests {
     use scoretk_core::model::{BarKind, SignKind};
 
     fn group(code: &str) -> Syllable {
-        parse_group(code).0
+        let offsets: Vec<usize> = (0..=code.chars().count()).collect();
+        parse_group(code, &offsets).0
     }
 
     #[test]
@@ -395,7 +429,8 @@ mod tests {
 
     #[test]
     fn clef_changes_in_bar_groups_are_recorded() {
-        let parsed = parse_group("(:c3)g");
+        let offsets: Vec<usize> = (0..="(:c3)g".chars().count() + 1).collect();
+        let parsed = parse_group("(:c3)g", &offsets);
         assert_eq!(parsed.1, ["c3"]);
         assert_eq!(parsed.0.bars, [BarKind::DivisioMaior]);
         assert_eq!(parsed.0.notes.len(), 1);
@@ -410,6 +445,40 @@ mod tests {
         assert_eq!(gregorian.syllables[0].notes.len(), 1);
         assert_eq!(gregorian.syllables[1].text, "le");
         assert_eq!(gregorian.syllables[1].notes.len(), 1);
+    }
+
+    #[test]
+    fn utf16_source_offsets_point_at_the_sung_pitch_letter() {
+        // Mesuré sur exsurge 2.8.7 par le consommateur Cantus. `é` vaut une
+        // unité UTF-16 mais deux octets UTF-8 : les positions sont donc des
+        // indices de chaîne JavaScript, pas des octets. Dans le corps, f=7,
+        // g=8, h=9, le `g` de `gixi`=13 et le `i` chanté (après `x`)=16.
+        let source = "name:t;\n%%\n(c4) é(fgh)b(gixi) (::)\n";
+        let (header, notation) = syntax::split_sections(source).expect("sections");
+        let gregorian = parse_payload(&header, &notation).expect("payload");
+        let notes: Vec<&GregorianNote> = gregorian
+            .syllables
+            .iter()
+            .flat_map(|syllable| syllable.notes.iter())
+            .collect();
+        // Le payload L6 garde le glyphe d'alteration (`i` à 25) pour un
+        // aller-retour exact ; la projection n'en fait pas une note chantée.
+        let offsets: Vec<usize> = notes
+            .iter()
+            .map(|note| note.source_offset.unwrap())
+            .collect();
+        assert_eq!(offsets, [18, 19, 20, 24, 25, 27]);
+        assert_eq!(notes[4].glyph, "x");
+        let ends: Vec<usize> = notes.iter().map(|note| note.source_end.unwrap()).collect();
+        assert_eq!(ends, [19, 20, 21, 25, 27, 28]);
+        let score = crate::read_gabc(source).expect("projected score");
+        let projected: Vec<usize> = score
+            .notes
+            .iter()
+            .map(|note| note.source.unwrap().offset)
+            .collect();
+        assert_eq!(projected, [18, 19, 20, 24, 27]);
+        assert_eq!(source.encode_utf16().nth(27), Some('i' as u16));
     }
 
     #[test]

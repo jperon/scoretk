@@ -142,6 +142,8 @@ fn read_direction(text: &str, collected: &mut Collected) {
                     letter,
                     signs: scoretk_gabc_common::syntax::parse_signs(&glyph),
                     glyph,
+                    source_offset: value(&fields, 'o').and_then(|value| value.parse().ok()),
+                    source_end: value(&fields, 'e').and_then(|value| value.parse().ok()),
                 };
                 collected
                     .notes
@@ -204,6 +206,8 @@ fn read_note(
             letter: value(&fields, 'l')?.chars().next()?,
             glyph: value(&fields, 'g').unwrap_or_default().to_owned(),
             signs: Vec::new(),
+            source_offset: value(&fields, 'o').and_then(|value| value.parse().ok()),
+            source_end: value(&fields, 'e').and_then(|value| value.parse().ok()),
         },
     ))
 }

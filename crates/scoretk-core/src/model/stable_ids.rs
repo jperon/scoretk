@@ -75,7 +75,30 @@ pub fn stable_note_id(measure: usize, staff: u32, voice: u8, chord: usize, note:
     format!("m{measure}-s{staff}-v{voice}-c{chord}-n{note}")
 }
 
-/// Identifiant XML d'une note d'ornement :
+/// Identifiant d'une note qui porte une position dans sa source textuelle.
+///
+/// Additif : sans [`NoteSource`], le résultat est exactement
+/// [`stable_note_id`]. Avec une source, le suffixe `-o{décalage}-e{fin}` rend
+/// la position UTF-16 consultable directement dans l'attribut `id`/`xml:id`
+/// du `<note>` MusicXML (unités de chaîne JavaScript, cf.
+/// `docs/agents/timemap.md`). La carte des temps utilise la même fonction,
+/// donc `timeline.notes[].xmlId` et le document restent égaux.
+pub fn stable_note_id_with_source(
+    measure: usize,
+    staff: u32,
+    voice: u8,
+    chord: usize,
+    note: usize,
+    source: Option<super::NoteSource>,
+) -> String {
+    let id = stable_note_id(measure, staff, voice, chord, note);
+    match source {
+        Some(source) => format!("{id}-o{}-e{}", source.offset, source.end),
+        None => id,
+    }
+}
+
+/// Identifiant d'une note d'ornement :
 /// `m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{b|a}n{note}`.
 ///
 /// `grace_index` est la position dans `Chord::grace_chords` et `before`
@@ -94,6 +117,26 @@ pub fn stable_grace_note_id(
     format!("m{measure}-s{staff}-v{voice}-c{chord}-g{grace_index}{side}n{note}")
 }
 
+/// Variante avec position source pour un ornement (voir
+/// [`stable_note_id_with_source`]).
+#[allow(clippy::too_many_arguments)]
+pub fn stable_grace_note_id_with_source(
+    measure: usize,
+    staff: u32,
+    voice: u8,
+    chord: usize,
+    grace_index: usize,
+    note: usize,
+    before: bool,
+    source: Option<super::NoteSource>,
+) -> String {
+    let id = stable_grace_note_id(measure, staff, voice, chord, grace_index, note, before);
+    match source {
+        Some(source) => format!("{id}-o{}-e{}", source.offset, source.end),
+        None => id,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +151,30 @@ mod tests {
     fn note_identifiant_stable() {
         assert_eq!(stable_note_id(0, 0, 0, 0, 0), "m0-s0-v0-c0-n0");
         assert_eq!(stable_note_id(3, 5, 2, 9, 1), "m3-s5-v2-c9-n1");
+    }
+
+    #[test]
+    fn identifiant_avec_position_source_additive() {
+        use super::super::NoteSource;
+        assert_eq!(
+            stable_note_id_with_source(0, 0, 0, 0, 0, None),
+            "m0-s0-v0-c0-n0"
+        );
+        assert_eq!(
+            stable_note_id_with_source(
+                0,
+                0,
+                0,
+                0,
+                0,
+                Some(NoteSource {
+                    offset: 18,
+                    end: 19,
+                    ..NoteSource::default()
+                })
+            ),
+            "m0-s0-v0-c0-n0-o18-e19"
+        );
     }
 
     #[test]

@@ -207,11 +207,13 @@ mod tests {
                             letter: 'g',
                             glyph: ".".to_owned(),
                             signs: vec![NeumeSign::new(SignKind::PunctumMora, ".")],
+                            ..GregorianNote::default()
                         },
                         GregorianNote {
                             letter: 'h',
                             glyph: String::new(),
                             signs: vec![NeumeSign::new(SignKind::Ictus, "'")],
+                            ..GregorianNote::default()
                         },
                     ],
                     signs: Vec::new(),
@@ -226,6 +228,7 @@ mod tests {
                         letter: 'g',
                         glyph: String::new(),
                         signs: Vec::new(),
+                        ..GregorianNote::default()
                     }],
                     signs: Vec::new(),
                     bars: vec![BarKind::DivisioFinalis],

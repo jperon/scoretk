@@ -45,7 +45,9 @@ use std::collections::BTreeSet;
 
 use crate::Result;
 use scoretk_core::model::chord::ChordRestKind;
-use scoretk_core::model::stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
+use scoretk_core::model::stable_ids::{
+    stable_grace_note_id_with_source, stable_measure_id, stable_note_id, stable_note_id_with_source,
+};
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Extension,
     Fraction, GraceChord, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
@@ -1769,7 +1771,7 @@ impl Context<'_> {
             // du `ChordRest` dans la voix, du côté de l'ornement et de l'index
             // de la note dans l'accord.
             let note_id = self.options.stable_ids.then(|| match grace {
-                Some(grace) => stable_grace_note_id(
+                Some(grace) => stable_grace_note_id_with_source(
                     ids.measure_index,
                     track.staff().raw(),
                     track.voice(),
@@ -1777,13 +1779,15 @@ impl Context<'_> {
                     grace.index,
                     index,
                     grace.before,
+                    note.source,
                 ),
-                None => stable_note_id(
+                None => stable_note_id_with_source(
                     ids.measure_index,
                     track.staff().raw(),
                     track.voice(),
                     ids.chord_rank,
                     index,
+                    note.source,
                 ),
             });
             let mut note_attributes: Vec<(&str, &str)> = Vec::new();

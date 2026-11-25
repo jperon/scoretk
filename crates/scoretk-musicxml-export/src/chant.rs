@@ -145,13 +145,21 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
             .iter()
             .any(|sign| sign.kind == SignKind::Alteration)
         {
-            let text = format!(
+            let mut text = format!(
                 "{PREFIX}alter:{}|{}|{}|{}",
                 field('i', &index.to_string()),
                 field('a', &note_index.to_string()),
                 field('l', &note.letter.to_string()),
                 field('g', &note.glyph)
             );
+            if let Some(offset) = note.source_offset {
+                text.push('|');
+                text.push_str(&field('o', &offset.to_string()));
+            }
+            if let Some(end) = note.source_end {
+                text.push('|');
+                text.push_str(&field('e', &end.to_string()));
+            }
             out.attr(false);
             write_direction(out, &text);
         }
@@ -169,13 +177,23 @@ pub(crate) fn write_note_notation(
     syllable_index: usize,
     note_index: usize,
 ) {
-    let text = format!(
+    let mut text = format!(
         "{PREFIX}note:{}|{}|{}|{}",
         field('l', &note.letter.to_string()),
         field('g', &note.glyph),
         field('i', &syllable_index.to_string()),
         field('a', &note_index.to_string())
     );
+    // Positions source en unités UTF-16 : elles traversent le pont privé pour
+    // que l'identifiant et la timeline restent les mêmes après un aller-retour.
+    if let Some(offset) = note.source_offset {
+        text.push('|');
+        text.push_str(&field('o', &offset.to_string()));
+    }
+    if let Some(end) = note.source_end {
+        text.push('|');
+        text.push_str(&field('e', &end.to_string()));
+    }
     out.xml
         .start_element("notations", &[("print-object", "no")]);
     out.xml
@@ -248,6 +266,7 @@ mod tests {
                     letter: 'g',
                     glyph: "h_".to_owned(),
                     signs: vec![NeumeSign::new(SignKind::Ictus, "'")],
+                    ..GregorianNote::default()
                 }],
                 space_after: true,
                 bars: vec![BarKind::DivisioFinalis],

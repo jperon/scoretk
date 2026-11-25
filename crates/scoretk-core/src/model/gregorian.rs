@@ -210,6 +210,12 @@ pub struct GregorianNote {
     pub glyph: String,
     /// Rhythmic and shape signs attached to this note (`:702-797`).
     pub signs: Vec<NeumeSign>,
+    /// Décalage UTF-16 de la lettre chantée depuis le début du fichier GABC.
+    ///
+    /// Additif : `None` pour une note reconstruite sans source textuelle.
+    pub source_offset: Option<usize>,
+    /// Décalage UTF-16 juste après le jeton source de la note.
+    pub source_end: Option<usize>,
 }
 
 /// One syllable and the neumes it carries (`Gabc.tex:228-317`).
@@ -330,9 +336,10 @@ impl Gregorian {
                 let tpc = (i16::from(derived_tpc(step)) + 7 * i16::from(alter)).clamp(0, 26) as i8;
                 let mut projected = Note::new(pitch, tpc);
                 projected.source = Some(NoteSource {
+                    offset: note.source_offset.unwrap_or(0),
+                    end: note.source_end.unwrap_or(0),
                     gregorian_syllable: index,
                     gregorian_note: note_index,
-                    ..NoteSource::default()
                 });
                 let id = score.add_note(projected);
                 let mut chord_rest = ChordRest::chord(Duration::quarter());
@@ -635,6 +642,7 @@ mod tests {
                         letter: 'i',
                         glyph: "x".to_owned(),
                         signs: vec![NeumeSign::new(SignKind::Alteration, "x")],
+                        ..GregorianNote::default()
                     },
                     GregorianNote {
                         letter: 'i',
@@ -664,6 +672,7 @@ mod tests {
             letter,
             glyph: raw.to_owned(),
             signs: vec![NeumeSign::new(SignKind::Alteration, raw)],
+            ..GregorianNote::default()
         };
         let payload = Gregorian {
             clefs: vec!["c4".to_owned()],
@@ -713,6 +722,7 @@ mod tests {
                 letter: 'g',
                 glyph: "h_".to_owned(),
                 signs: vec![NeumeSign::new(SignKind::HorizontalEpisema, "_")],
+                ..GregorianNote::default()
             }],
             signs: Vec::new(),
             bars: vec![BarKind::DivisioFinalis],

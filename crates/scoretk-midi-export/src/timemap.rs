@@ -64,7 +64,9 @@
 //! `scoretk_core::model::stable_ids` : la carte et l'export MusicXML produisent donc
 //! exactement les mêmes chaînes, sans recopie. Voir `docs/agents/timemap.md`.
 
-use scoretk_core::model::stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
+use scoretk_core::model::stable_ids::{
+    stable_grace_note_id_with_source, stable_measure_id, stable_note_id_with_source,
+};
 use scoretk_core::model::Score;
 
 use super::pause_map::PauseMap;
@@ -148,6 +150,12 @@ pub struct NoteSync {
     pub grace_before: bool,
     /// Vrai pour une attaque de trémolo.
     pub tremolo: bool,
+    /// Position de la lettre chantée dans la source, en unités UTF-16
+    /// depuis le début du fichier (indices de chaîne JavaScript).
+    /// `None` pour les notes sans source textuelle.
+    pub source_offset: Option<usize>,
+    /// Fin du jeton source de la note, dans la même unité.
+    pub source_end: Option<usize>,
 }
 
 impl NoteSync {
@@ -157,8 +165,15 @@ impl NoteSync {
     /// et à [`scoretk_core::model::stable_grace_note_id`] pour un ornement (position
     /// dans `Chord::grace_chords` et côté avant/après).
     pub fn xml_id(&self) -> String {
+        let source = self
+            .source_offset
+            .map(|offset| scoretk_core::model::NoteSource {
+                offset,
+                end: self.source_end.unwrap_or(offset),
+                ..scoretk_core::model::NoteSource::default()
+            });
         match self.grace_index {
-            Some(index) => stable_grace_note_id(
+            Some(index) => stable_grace_note_id_with_source(
                 self.measure,
                 self.staff,
                 self.voice,
@@ -166,8 +181,16 @@ impl NoteSync {
                 index,
                 self.note,
                 self.grace_before,
+                source,
             ),
-            None => stable_note_id(self.measure, self.staff, self.voice, self.chord, self.note),
+            None => stable_note_id_with_source(
+                self.measure,
+                self.staff,
+                self.voice,
+                self.chord,
+                self.note,
+                source,
+            ),
         }
     }
 }
@@ -274,6 +297,8 @@ pub(crate) struct Attack {
     pub grace_before: bool,
     /// Vrai pour une attaque de trémolo.
     pub tremolo: bool,
+    /// Position source de la note (unités UTF-16).
+    pub source: Option<scoretk_core::model::NoteSource>,
 }
 
 /// Mesure déjà datée lors du rendu, en attente de ses temps définitifs.
@@ -409,6 +434,8 @@ impl<'a> Builder<'a> {
             grace_index: attack.grace_index,
             grace_before: attack.grace_before,
             tremolo: attack.tremolo,
+            source_offset: attack.source.map(|source| source.offset),
+            source_end: attack.source.map(|source| source.end),
         });
     }
 

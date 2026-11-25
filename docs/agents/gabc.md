@@ -275,7 +275,8 @@ to carry (`Gabc.tex:801-845`).
 | Clef token (`c3`, `cb3`, `c1@c4`) | `<clef>` in the derived view + `gabc:clef` atomic token in `<other-direction>` | `Gabc.tex:847-870`, `src/struct.c:1273-1288`; XSD 4.0 `clef`, `other-direction` |
 | Absence of metre | `<time print-object="no"><senza-misura/></time>` | XSD 4.0 `time` / `senza-misura` (“explicitly indicates that no time signature is present”); `Gabc.tex:801-845` |
 | Syllable text and word space | `<lyric>` with `syllabic` for the sung word; `gabc:syllable` in `<other-direction>` for markup and exact text | XSD 4.0 `lyric`, `syllabic`; `Gabc.tex:228-245,314-343` |
-| Pitch letter and neume shape | derived `<pitch>` + `gabc:note` in `<notations>/<other-notation>`; `<notehead>x</notehead>` when the enumeration has the shape | XSD 4.0 `notehead-value` (`x`), `other-notation` (“extended representation, though without application interoperability”); `Gabc.tex:408-443,452-700` |
+| Pitch letter and neume shape | derived `<pitch>` + `gabc:note` in `<notations>/<other-notation>`; the shape fields are private (an alteration is **not** a `<notehead>` and emits no note, §7) | XSD 4.0 `notehead-value`, `other-notation` (“extended representation, though without application interoperability”); `Gabc.tex:408-443,452-540` |
+| Source position of a sung pitch | additive suffix `-o{offset}-e{end}` on `id`/`xml:id`, in UTF-16 units from the start of the file | XSD 4.0 `id`/`xml:id`; documented in `timemap.md`; `Gabc.tex:408-443` |
 | Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`) | XSD 4.0 `other-technical`; `Gabc.tex:702-797` |
 | Separation bars and their exact token | `<barline>/<bar-style>` for the modern view; `gabc:syllable` `b=` fields for `;1`…`;8`, `::`, `:?`, … | XSD 4.0 `barline`; `Gabc.tex:801-845`, `src/dump/dump.c:805-821` |
 

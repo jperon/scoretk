@@ -145,7 +145,20 @@ type remains `Timemap`; the JS fields are in `camelCase`:
 | `measures[].xml_id(0)` | `measures[].xmlId` |
 | `measures[].end_tick`, `time_us`, `end_time_us` | `measures[].endTick`, `timeUs`, `endTimeUs`, `timeMs` |
 | `notes[].duration_ticks`, `pass`, `grace`, `tremolo`, `xml_id()` | `notes[].durationTicks`, `passage`, `grace`, `tremolo`, `xmlId` |
+| `notes[].source_offset`, `source_end` (optionsnels) | `notes[].sourceOffset`, `sourceEnd` (`number \| null`) |
 | `pauses[].end_tick`, `time_us`, `end_time_us`, `seconds` | `pauses[].endTick`, `timeUs`, `endTimeUs`, `seconds` |
+
+`sourceOffset` / `sourceEnd` are **additive** (AGENTS.md invariant 5): they are
+`null` for notes without a textual source (MuseScore, MIDI, …). For GABC they
+are UTF-16 code units from the start of the **whole file** (JavaScript string
+indices, not UTF-8 bytes): `sourceOffset` points at the *sung pitch letter*,
+not at a preceding alteration nor at the `(`, and `sourceEnd` just after the
+note token. They are also encoded in the stable MusicXML identifier, e.g.
+`m0-s0-v0-c0-n0-o18-e19`, produced by the same
+`stable_note_id_with_source` function on the export and timemap sides; without
+a source the identifier is unchanged. Example `name:t;\n%%\n(c4) é(fgh)b(gixi)
+(::)\n` (é = 1 UTF-16 unit, 2 UTF-8 bytes) gives offsets 18, 19, 20, 24 and 27
+(body offsets 7, 8, 9, 13, 16 plus the 11-unit header).
 
 `timeMs` is `timeUs / 1000`. `TimelineMeasure::ordinal` is exactly
 `measure` (0-based index in `Score::measures`, identical to the position of the

@@ -332,6 +332,34 @@ for (const loss of detailed.losses) {
   }
 }
 
+// 26. Positions source GABC : unités UTF-16 depuis le début du fichier, dans
+// l'identifiant MusicXML et dans la timeline (champs additifs).
+const gabcSource = 'name:t;\n%%\n(c4) é(fgh)b(gixi) (::)\n';
+const gabcPlayback = wasm.convertWithTimeline(encoder.encode(gabcSource), { from: 'gabc' });
+assert.deepEqual(
+  gabcPlayback.timeline.notes.map((note) => note.sourceOffset),
+  [18, 19, 20, 24, 27],
+  'sourceOffset pointe la lettre chantée, en unités UTF-16',
+);
+assert.deepEqual(
+  gabcPlayback.timeline.notes.map((note) => note.sourceEnd),
+  [19, 20, 21, 25, 28],
+  'sourceEnd est la fin du jeton source',
+);
+const gabcXml = text(gabcPlayback.musicxml);
+assert.ok(
+  gabcXml.includes('id="m0-s0-v0-c0-n0-o18-e19"'),
+  'la position source est exposée dans l\'identifiant MusicXML',
+);
+assert.equal(
+  gabcPlayback.timeline.notes[0].xmlId,
+  'm0-s0-v0-c0-n0-o18-e19',
+  'l\'identifiant de la timeline est celui du MusicXML',
+);
+// L'alteration `x` de `gixi` ne produit aucune note et ne décale pas les
+// positions des notes chantées suivantes.
+assert.equal(gabcPlayback.timeline.notes.length, 5, 'une alteration n\'est pas une note');
+
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +
     `taille ${new Uint8Array(readFileSync(join(esmDir, 'scoretk_wasm_bg.wasm'))).length} octets, ` +

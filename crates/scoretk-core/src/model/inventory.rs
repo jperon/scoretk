@@ -1263,6 +1263,7 @@ mod tests {
                         letter: 'g',
                         glyph: String::new(),
                         signs: vec![NeumeSign::new(SignKind::PunctumMora, ".")],
+                        ..GregorianNote::default()
                     }],
                     signs: Vec::new(),
                     bars: vec![BarKind::DivisioFinalis],
