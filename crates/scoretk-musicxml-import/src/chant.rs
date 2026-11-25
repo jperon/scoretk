@@ -163,6 +163,7 @@ fn read_direction(text: &str, collected: &mut Collected) {
             syllable.space_after = value(&fields, 'w') == Some("1");
             syllable.clef = value(&fields, 'c').map(str::to_owned);
             syllable.rubric = value(&fields, 'r').map(str::to_owned);
+            syllable.above_text = value(&fields, 'A').map(str::to_owned);
             for (_, bar) in fields.iter().filter(|(key, _)| *key == 'b') {
                 if let Some((kind, _)) = BarKind::parse_prefix(bar) {
                     syllable.bars.push(kind);

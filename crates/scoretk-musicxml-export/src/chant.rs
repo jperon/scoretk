@@ -133,6 +133,10 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
         text.push('|');
         text.push_str(&field('r', rubric));
     }
+    if let Some(above) = &syllable.above_text {
+        text.push('|');
+        text.push_str(&field('A', above));
+    }
     for bar in &syllable.bars {
         text.push('|');
         text.push_str(&field('b', bar.as_str()));
@@ -143,6 +147,16 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
     }
     out.attr(false);
     write_direction(out, &text);
+    if let Some(above) = &syllable.above_text {
+        // XSD 4.0 `words` / `placement=above` : le texte `[alt:…]` devient
+        // lisible par n'importe quel lecteur MusicXML, sans le préfixe GABC.
+        out.xml
+            .start_element("direction", &[("placement", "above")]);
+        out.xml.start_element("direction-type", &[]);
+        out.xml.tag_with("words", &[], above);
+        out.xml.end_element();
+        out.xml.end_element();
+    }
     // Une alteration (`Gabc.tex:481-489,512-540`) est un glyphe, pas une note
     // chantée : la projection dérivée ne produit donc aucun `<note>` pour
     // elle. Son rang source est transporté séparément pour que l'aller-retour

@@ -126,6 +126,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                 signs: Vec::new(),
                 bars: event.bar.into_iter().collect(),
                 space_after: event.space_after,
+                ..Syllable::default()
             }
         })
         .collect();

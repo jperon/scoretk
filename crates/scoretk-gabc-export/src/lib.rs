@@ -126,6 +126,13 @@ fn emit(gregorian: &Gregorian) -> String {
         if let Some(clef) = &syllable.clef {
             out.push_str(clef);
         }
+        if let Some(above) = &syllable.above_text {
+            // `Gabc.tex:1088-1091` : `[alt:…]` est un texte au-dessus de la
+            // portée, émis à côté des notes mais jamais comme une note.
+            out.push_str("[alt:");
+            out.push_str(above);
+            out.push(']');
+        }
         for note in &syllable.notes {
             out.push(note.letter);
             if !note.glyph.is_empty() {
@@ -223,6 +230,7 @@ mod tests {
                     signs: Vec::new(),
                     bars: Vec::new(),
                     space_after: true,
+                    ..scoretk_core::model::Syllable::default()
                 },
                 scoretk_core::model::Syllable {
                     text: "ni".to_owned(),
@@ -237,6 +245,7 @@ mod tests {
                     signs: Vec::new(),
                     bars: vec![BarKind::DivisioFinalis],
                     space_after: false,
+                    ..scoretk_core::model::Syllable::default()
                 },
             ],
             derived_modern_view: false,

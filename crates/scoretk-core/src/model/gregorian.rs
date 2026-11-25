@@ -230,6 +230,9 @@ pub struct Syllable {
     pub clef: Option<String>,
     /// Special-character markup such as `<sp>R/</sp>` (`:297-309,345-378`).
     pub rubric: Option<String>,
+    /// Texte au-dessus de la portée `[alt:…]` (`:1088-1091`), sans les
+    /// crochets ni le préfixe. Champ L6 atomique : le writer le réémet.
+    pub above_text: Option<String>,
     /// Pitch letters of the parenthesised groups, in source order.
     pub notes: Vec<GregorianNote>,
     /// Signs attached to the groups rather than to one note.
@@ -879,6 +882,7 @@ mod tests {
             value: "Veni Sancte Spiritus".to_owned(),
         });
         gregorian.syllables.push(Syllable {
+            above_text: Some("Fa".to_owned()),
             text: "DE(g)us".to_owned(),
             clef: None,
             rubric: Some("<sp>R/</sp>".to_owned()),

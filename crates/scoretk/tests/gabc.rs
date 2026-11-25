@@ -198,6 +198,29 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
     assert_eq!(playback.timemap.notes.len(), 8);
 }
 
+/// `Gabc.tex:1088-1091` : `[alt:…]` est un texte au-dessus de la portée.
+#[test]
+fn gabc_above_text_becomes_musicxml_words() {
+    const ALT: &str = "name:t;\n%%\n(c4) x(g[alt:Fa]h) (::)\n";
+    let score = read(ALT.as_bytes(), Format::Gabc).expect("GABC import");
+    let Some(scoretk::model::Extension::Gregorian(payload)) = &score.extensions.format else {
+        panic!("the L6 payload is present");
+    };
+    assert_eq!(payload.syllables[0].above_text.as_deref(), Some("Fa"));
+    assert_eq!(score.notes.len(), 2, "[alt:Fa] is not a note");
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert!(
+        xml.contains("<direction placement=\"above\">") && xml.contains("<words>Fa</words>"),
+        "a third-party reader sees the text: {xml}"
+    );
+    let gabc = String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC"))
+        .expect("UTF-8 GABC");
+    assert!(gabc.contains("[alt:Fa]"), "{gabc}");
+}
+
 /// `Gabc.tex:36-58,452-700` : pas de hampe, une liure par neume.
 #[test]
 fn gabc_notes_are_stemless_and_neumes_are_slurred() {

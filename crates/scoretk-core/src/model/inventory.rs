@@ -1049,6 +1049,15 @@ pub fn inventory(score: &Score) -> LayerInventory {
                 "gregorian-syllable",
                 format!("{index}:{}", syllable.text),
             );
+            if let Some(above) = &syllable.above_text {
+                result.push(
+                    Layers::EXTENSIONS,
+                    None,
+                    None,
+                    "gregorian-above-text",
+                    format!("{index}:{above}"),
+                );
+            }
             if let Some(rubric) = &syllable.rubric {
                 result.push(
                     Layers::EXTENSIONS,
@@ -1268,6 +1277,7 @@ mod tests {
                     signs: Vec::new(),
                     bars: vec![BarKind::DivisioFinalis],
                     space_after: false,
+                    ..Syllable::default()
                 }],
                 derived_modern_view: true,
             }));

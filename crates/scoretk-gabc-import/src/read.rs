@@ -106,7 +106,8 @@ fn parse_notation(body: &str, base: usize) -> (Vec<Syllable>, Vec<String>) {
         let char = chars[index];
         if in_notes {
             if char == ')' {
-                let (mut syllable, group_clefs) = parse_group(&code, &offsets[code_start..=index]);
+                let (mut syllable, group_clefs, above_text) =
+                    parse_group(&code, &offsets[code_start..=index]);
                 clefs.extend(group_clefs.iter().cloned());
                 // The clef is stored on the group that carries it: an
                 // in-score clef change must not be moved to the beginning by
@@ -114,6 +115,7 @@ fn parse_notation(body: &str, base: usize) -> (Vec<Syllable>, Vec<String>) {
                 syllable.clef = group_clefs.into_iter().next();
                 syllable.text = take_text(&mut text);
                 syllable.rubric = rubric(&syllable.text);
+                syllable.above_text = above_text;
                 let has_content = !syllable.notes.is_empty()
                     || !syllable.bars.is_empty()
                     || !syllable.signs.is_empty()
@@ -212,12 +214,16 @@ fn rubric(text: &str) -> Option<String> {
 /// `offsets` gives the UTF-16 position of each character of `raw_code` (plus
 /// a final sentinel) so every note keeps its exact source location even
 /// when bracketed layout attributes are stripped.
-fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>) {
+fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>, Option<String>) {
+    let above_text = above_staff_text(raw_code);
+    let mut syllable = Syllable {
+        above_text: above_text.clone(),
+        ..Syllable::default()
+    };
     let (code, mapping) = strip_attributes(raw_code);
     let chars: Vec<char> = code.chars().collect();
     let source: Vec<usize> = mapping.iter().map(|&position| offsets[position]).collect();
     let clefs = syntax::parse_clefs(&code);
-    let mut syllable = Syllable::default();
     let mut index = 0;
     while index < chars.len() {
         let rest: String = chars[index..].iter().collect();
@@ -300,7 +306,18 @@ fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>) {
         }
         index += 1;
     }
-    (syllable, clefs)
+    (syllable, clefs, above_text)
+}
+
+/// Extrait `[alt:…]`, texte au-dessus de la portée (`Gabc.tex:1088-1091`).
+///
+/// Les autres crochets sont des attributs de mise en page ou du TeX brut
+/// (`:689-700,908-931,1093-1118`) : ils ne sont pas du texte chanté et ne
+/// sont pas non plus des notes.
+fn above_staff_text(code: &str) -> Option<String> {
+    let start = code.find("[alt:")? + "[alt:".len();
+    let end = code[start..].find(']')? + start;
+    Some(code[start..end].to_owned())
 }
 
 /// Removes bracketed layout/tuning attributes from a note group
@@ -445,6 +462,14 @@ mod tests {
         assert_eq!(gregorian.syllables[0].notes.len(), 1);
         assert_eq!(gregorian.syllables[1].text, "le");
         assert_eq!(gregorian.syllables[1].notes.len(), 1);
+    }
+
+    #[test]
+    fn above_staff_text_is_a_syllable_fact_not_a_note() {
+        let syllable = group("g[alt:Fa]h");
+        assert_eq!(syllable.above_text.as_deref(), Some("Fa"));
+        assert_eq!(syllable.notes.len(), 2);
+        assert!(group("g[cs:c]h").above_text.is_none());
     }
 
     #[test]
