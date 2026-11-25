@@ -58,8 +58,17 @@ zip = { workspace = true }
 [dev-dependencies]
 # Les tests d'aller-retour comparent les deux sens d'un même format : ils
 # vivent dans la façade et dépendent donc des crates de sens directement.
+# Le test de couverture mesure les dix déclarations de capacités : il a
+# besoin de toutes les crates de sens, sans affecter les dépendances de la
+# bibliothèque ni le contrat wasm.
 scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-musescore-export = { path = "../scoretk-musescore-export" }
+scoretk-musicxml-import = { path = "../scoretk-musicxml-import" }
 scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
+scoretk-midi-import = { path = "../scoretk-midi-import" }
+scoretk-midi-export = { path = "../scoretk-midi-export" }
+scoretk-lilypond-import = { path = "../scoretk-lilypond-import" }
+scoretk-lilypond-export = { path = "../scoretk-lilypond-export" }
 scoretk-abc-import = { path = "../scoretk-abc-import" }
 scoretk-abc-export = { path = "../scoretk-abc-export" }
 quick-xml = { workspace = true }

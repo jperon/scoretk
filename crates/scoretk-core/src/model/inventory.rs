@@ -641,10 +641,16 @@ pub fn inventory(score: &Score) -> LayerInventory {
             Some(tuplet.tick),
             None,
             "tuplet",
-            format!(
-                "{}:{}:{}:{}",
-                tuplet.ratio, tuplet.base_len, tuplet.len, tuplet.bracket
-            ),
+            format!("{}:{}:{}", tuplet.ratio, tuplet.base_len, tuplet.len),
+        );
+        // The bracket is a MuseScore engraving decision (`calcHasBracket` in
+        // `engraving/dom/tuplet.cpp`), not part of the metric ratio.
+        result.push(
+            Layers::ENGRAVING,
+            Some(tuplet.tick),
+            None,
+            "tuplet-bracket",
+            format!("{}:{}", tuplet.bracket, tuplet.bracket_explicit),
         );
     }
 
