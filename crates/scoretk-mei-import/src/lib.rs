@@ -101,6 +101,31 @@ mod tests {
         assert!(read_mei(b"<score-partwise/>").is_err());
     }
 
+    /// Les Guidelines MEI 5.1 (§"Dynamics", `cmn.html`) donnent
+    /// `<dynam val="84">f</dynam>` comme vitesse MIDI d'une nuance
+    /// (`att.dynam.ges` → `att.midiValue`).
+    #[test]
+    fn reads_dynamic_velocity_from_val() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="c" oct="4"/>
+            </layer></staff><dynam staff="1" tstamp="1" val="84">f</dynam></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a dynamic velocity");
+        let items = scoretk_core::model::inventory(&score);
+        assert!(items
+            .items
+            .iter()
+            .any(|item| { item.kind == "dynamic-velocity" && item.value == "84" }));
+        let audit = audit_mei(bytes).expect("audit");
+        assert!(!audit
+            .ignored_attributes()
+            .iter()
+            .any(|(element, attribute, _)| *element == "dynam" && *attribute == "val"));
+    }
+
     /// `mei-all_anyStart.rng` (MEI 5.1) autorise `<meiHead>` comme racine.
     #[test]
     fn reads_an_any_start_document() {

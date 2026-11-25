@@ -1103,6 +1103,66 @@ fn mei_full_support_residual() {
     assert_eq!(totals.skipped, 0);
 }
 
+/// Every missing item of the extended MEI round trip, file by file with tick,
+/// staff and value. This is the file-by-file queue of the campaign: unlike
+/// `mei_full_support_residual` (per-kind totals), it tells where each loss is.
+#[test]
+fn mei_full_support_loss_diagnostic() {
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    let declared = MEI_IMPORT.declared().union(MEI_EXPORT.declared());
+    let kinds = MEI_IMPORT.declared_kinds().or(MEI_EXPORT.declared_kinds());
+    for (name, path) in corpus_scores() {
+        let reference = inventory(&reference_model(&path));
+        let Ok(bytes) = write(&reference_model(&path), Format::Mei, &options) else {
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, Format::Mei) else {
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let mut expected: BTreeMap<_, usize> = BTreeMap::new();
+        let mut actual: BTreeMap<_, usize> = BTreeMap::new();
+        for (bucket, source) in [(&mut expected, &reference), (&mut actual, &candidate)] {
+            for item in &source.items {
+                if declared.contains(item.layer) && kinds.is_none_or(|ks| ks.contains(&item.kind)) {
+                    *bucket
+                        .entry((item.tick, item.staff, item.kind, item.value.clone()))
+                        .or_insert(0) += 1;
+                }
+            }
+        }
+        let mut lines = Vec::new();
+        for (key, wanted) in expected {
+            let found = actual.get_mut(&key).map_or(0, |count| {
+                let taken = (*count).min(wanted);
+                *count -= taken;
+                taken
+            });
+            for _ in found..wanted {
+                lines.push(format!(
+                    "    {:<22} tick {:<8} staff {:<3} {}",
+                    key.2,
+                    key.0
+                        .map(|tick| tick.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                    key.1.map(|s| s.to_string()).unwrap_or_else(|| "-".into()),
+                    key.3,
+                ));
+            }
+        }
+        if !lines.is_empty() {
+            println!("--- {name} ---");
+            for line in lines {
+                println!("{line}");
+            }
+        }
+    }
+    println!();
+}
+
 /// Per-file diagnostic for the priority kinds of the MEI campaign: prints
 /// every missing reference item with its measure (tick) and staff, for the
 /// round trip and for the import of MuseScore's own `.ref.mei`. Diagnostic

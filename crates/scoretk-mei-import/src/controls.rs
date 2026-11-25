@@ -316,12 +316,22 @@ impl<'a> Reader<'a> {
             .map(str::to_owned)
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| crate::lines_of(node));
-        if text.is_empty() {
+        // Une nuance « blanche » (texte vide, simple changement de
+        // vitesse) est un objet du modèle : `@val` suffit à la porter.
+        let velocity = node
+            .attribute("val")
+            .and_then(|value| value.parse::<u8>().ok());
+        if text.is_empty() && velocity.is_none() {
             return;
         }
         let (tick, track) = self.anchor(node, measure);
         let mut dynamic = Dynamic::new(text);
         dynamic.placement = convert::place_from_mei(node.attribute("place"));
+        // `att.midiValue/@val` (MEI 5.1 `att.dynam.ges`) : les Guidelines
+        // donnent `<dynam val="84">f</dynam>` comme vitesse MIDI de la
+        // nuance. MuseScore 4.7.4 n'écrit pas l'attribut ; le lecture le
+        // consomme quand un encodeur externe le fournit.
+        dynamic.velocity = velocity;
         self.add_annotation(tick, track, Annotation::Dynamic(dynamic));
     }
 

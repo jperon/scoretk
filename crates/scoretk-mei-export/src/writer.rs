@@ -257,7 +257,7 @@ fn write_measure(
         }
         xml.end_element();
     }
-    write_control_events(xml, score, measure, index);
+    write_control_events(xml, score, measure, index, options);
     // `MeiExporter::writeMeasure`: jumps and markers are direct children of
     // the measure (`writeRepeatMark`, meiexporter.cpp:2057/2112).
     for mark in &measure.repeat_marks {
@@ -675,7 +675,27 @@ fn write_control_events(
     score: &Score,
     measure: &scoretk_core::model::Measure,
     index: usize,
+    options: &MeiOptions,
 ) {
+    // MuseScore ancre ses événements de contrôle sur les `xml:id` des notes
+    // quand il peut (`findStart`, meiimporter.cpp:620). `@tstamp` est une
+    // approximation continued-fraction et la valeur de `tstamp_denominator`
+    // n'est pas stable entre l'export 4.7.4 et sa relecture pour certaines
+    // mesures : l'ancrage par identifiant est exact.
+    let mut note_at: BTreeMap<(Fraction, u32), usize> = BTreeMap::new();
+    for source in &score.measures {
+        for segment in &source.segments {
+            for (track, item) in segment.iter_elements() {
+                if let Some(ChordRestKind::Chord(chord)) = item.as_chord_rest().map(|cr| &cr.kind) {
+                    if let Some(note) = chord.notes.first() {
+                        note_at
+                            .entry((segment.tick, track.raw()))
+                            .or_insert(note.index());
+                    }
+                }
+            }
+        }
+    }
     for segment in &measure.segments {
         for annotation in &segment.annotations {
             let staff = annotation.track.staff().raw() + 1;
@@ -683,17 +703,48 @@ fn write_control_events(
                 segment.tick - measure.start_tick,
                 convert::tstamp_denominator(measure),
             );
-            let attrs = [
+            let mut attrs = vec![
                 ("staff".to_owned(), staff.to_string()),
                 ("tstamp".to_owned(), format!("{stamp:.3}")),
             ];
+            if options.full_support {
+                let note = note_at
+                    .get(&(segment.tick, annotation.track.raw()))
+                    .copied()
+                    .or_else(|| {
+                        note_at
+                            .iter()
+                            .find(|((tick, track), _)| {
+                                *tick == segment.tick
+                                    && scoretk_core::model::Track::from_raw(*track).staff()
+                                        == annotation.track.staff()
+                            })
+                            .map(|(_, note)| *note)
+                    });
+                if let Some(note) = note {
+                    attrs.push(("startid".to_owned(), format!("#n{note}")));
+                }
+            }
             let refs: Vec<(&str, &str)> = attrs
                 .iter()
                 .map(|(key, value)| (key.as_str(), value.as_str()))
                 .collect();
             match &annotation.annotation {
                 Annotation::Dynamic(dynamic) => {
-                    xml.tag_with("dynam", &refs, &dynamic.text);
+                    let mut dynamic_attrs = refs.clone();
+                    // MEI 5.1 `att.dynam.ges` → `att.midiValue/@val` : les
+                    // Guidelines montrent `<dynam val="84">f</dynam>` pour
+                    // une nuance MIDI (`cmn.html`, §"Dynamics"). MuseScore
+                    // 4.7.4 n'écrit pas cette vitesse : porteur additionnel.
+                    let velocity = options
+                        .full_support
+                        .then_some(dynamic.velocity)
+                        .flatten()
+                        .map(|value| value.to_string());
+                    if let Some(velocity) = &velocity {
+                        dynamic_attrs.push(("val", velocity.as_str()));
+                    }
+                    xml.tag_with("dynam", &dynamic_attrs, &dynamic.text);
                 }
                 Annotation::StaffText(text) | Annotation::Expression(text) => {
                     let mut type_attrs = refs.clone();
@@ -743,22 +794,7 @@ fn write_control_events(
         }
     }
     // MuseScore anchors its control events on note ids (`@startid`/`@endid`),
-    // which survives a tick that `@tstamp` can only approximate. Build the
-    // same anchor map from the generated `xml:id`s of the written notes.
-    let mut note_at: BTreeMap<(Fraction, u32), usize> = BTreeMap::new();
-    for source in &score.measures {
-        for segment in &source.segments {
-            for (track, item) in segment.iter_elements() {
-                if let Some(ChordRestKind::Chord(chord)) = item.as_chord_rest().map(|cr| &cr.kind) {
-                    if let Some(note) = chord.notes.first() {
-                        note_at
-                            .entry((segment.tick, track.raw()))
-                            .or_insert(note.index());
-                    }
-                }
-            }
-        }
-    }
+    // which survives a tick that `@tstamp` can only approximate.
     for (id, spanner) in score.spanners.iter().enumerate() {
         if spanner.start.tick < measure.start_tick || spanner.start.tick >= measure.end_tick() {
             continue;
@@ -858,6 +894,47 @@ mod tests {
         ChordRest, Duration, Fraction, Measure, Note, Part, Score, Segment, SegmentType, Spanner,
         SpannerAnchor, SpannerType, StaffId, Track, VoltaInfo,
     };
+
+    /// `<dynam @val>` est un porteur MEI 5.1 de la vitesse d'une nuance
+    /// (`att.dynam.ges` → `att.midiValue`). MuseScore 4.7.4 ne l'écrit pas :
+    /// il reste derrière `MeiOptions::full_support`.
+    #[test]
+    fn dynamic_velocity_is_an_additive_carrier() {
+        use scoretk_core::model::{Annotation, Dynamic, Segment};
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(
+            scoretk_core::model::SegmentType::ChordRest,
+            Fraction::ZERO,
+            1,
+        );
+        let mut dynamic = Dynamic::new("f");
+        dynamic.velocity = Some(96);
+        segment.add_annotation(Track::new(staff, 0), Annotation::Dynamic(dynamic));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let default = write(&score, &MeiOptions::default()).expect("4.7.4 export");
+        assert!(!default.contains("val=\"96\""));
+        let full = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("extended export");
+        assert!(full.contains("<dynam staff=\"1\" tstamp=\"1.000\" val=\"96\">f</dynam>"));
+        let read_back = scoretk_mei_import::read_mei(full.as_bytes()).expect("read MEI");
+        let items = scoretk_core::model::inventory(&read_back);
+        assert!(items
+            .items
+            .iter()
+            .any(|item| { item.kind == "dynamic-velocity" && item.value == "96" }));
+    }
 
     #[test]
     fn manual_system_breaks_are_written() {

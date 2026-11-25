@@ -196,6 +196,7 @@ const MAPPED_ATTRIBUTES: &[&str] = &[
     "tstamp2",
     "type",
     "unit",
+    "val",
     "valign",
     "vel",
     "visible",
