@@ -26,8 +26,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
     Accidental, BarLineType, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration,
-    Fraction, Key, KeyMode, Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType,
-    StaffId, TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
+    Fraction, Key, KeyMode, Layers, Measure, Note, NoteId, Placement, Segment, SegmentItem,
+    SegmentType, StaffId, TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -46,6 +46,8 @@ pub(crate) struct PendingSpanner {
     pub(crate) end_id: Option<String>,
     pub(crate) end_tstamp: Option<f64>,
     pub(crate) measure: usize,
+    /// `@curvedir` d'un slur, conservé jusqu'à la résolution de `@endid`.
+    pub(crate) placement: Option<Placement>,
 }
 
 pub(crate) struct Reader<'a> {
@@ -63,8 +65,8 @@ pub(crate) struct Reader<'a> {
     /// `xml:id` → (mesure, piste, tick), pour les événements de contrôle.
     pub(crate) id_events: BTreeMap<String, (usize, Track, Fraction)>,
     pub(crate) pending: Vec<PendingSpanner>,
-    /// Ties whose end note is in a later measure.
-    pub(crate) pending_ties: Vec<(String, String)>,
+    /// Ties whose end note is in a later measure, with `@curvedir`.
+    pub(crate) pending_ties: Vec<(String, String, Option<bool>)>,
     pub(crate) current_time: Fraction,
     /// Rang du `<measure>` MEI courant (indépendant des mesures recréées pour
     /// un multi-repos) : `@n` compte les mesures écrites, pas le modèle.

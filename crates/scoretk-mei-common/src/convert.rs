@@ -27,7 +27,7 @@
 
 use scoretk_core::model::{
     AccidentalType, ArticulationType, BarLineType, BeamMode, ClefType, CreditStyle, Duration,
-    DurationType, Fraction, JumpType, Key, KeySig, MarkerType, Measure, NoteHeadGroup,
+    DurationType, Fraction, JumpType, Key, KeySig, MarkerType, Measure, NoteHeadGroup, Placement,
     StemDirection, TimeSig, TimeSigType,
 };
 
@@ -752,6 +752,25 @@ pub fn meter_to_mei(time: &TimeSig) -> (Option<String>, Option<i32>, Option<&'st
             Some(time.denominator),
             None,
         ),
+    }
+}
+
+/// `Convert::curvedirFromMEI` (`meiconverter.cpp:1112`) : `@curvedir` d'un
+/// `<slur>`/`<tie>`/`<lv>` MEI 5.1 (`att.curvature`).
+pub fn curvedir_from_mei(value: Option<&str>) -> Option<Placement> {
+    match value {
+        Some("above") => Some(Placement::Above),
+        Some("below") => Some(Placement::Below),
+        _ => None,
+    }
+}
+
+/// `Convert::curvedirToMEI` (`meiconverter.cpp:1123`).
+pub fn curvedir_to_mei(placement: Option<Placement>) -> Option<&'static str> {
+    match placement {
+        Some(Placement::Above) => Some("above"),
+        Some(Placement::Below) => Some("below"),
+        _ => None,
     }
 }
 

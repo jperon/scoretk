@@ -26,8 +26,8 @@ use scoretk_core::model::{
     Annotation, Arpeggio, ArpeggioType, Articulation, ArticulationType, Breath, BreathType,
     ChordRestKind, Dynamic, Fermata, FermataType, Fingering, Fraction, HairpinType, Harmony,
     Layers, Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement,
-    RehearsalMark, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerType, StaffId,
-    StaffText, SystemText, Tempo, Track,
+    RehearsalMark, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, StaffId, StaffText, SystemText, Tempo, Track,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -198,8 +198,15 @@ impl<'a> Reader<'a> {
             .unwrap_or_default()
             .trim_start_matches('#')
             .to_owned();
+        // `Convert::curvedirFromMEI` (meiconverter.cpp:1112) : `@curvedir`
+        // porte la direction explicite de la liaison (`Note::tie_up`).
+        let up = match node.attribute("curvedir") {
+            Some("above") => Some(true),
+            Some("below") => Some(false),
+            _ => None,
+        };
         if !start.is_empty() && !end.is_empty() {
-            self.pending_ties.push((start, end));
+            self.pending_ties.push((start, end, up));
         }
     }
 
@@ -220,6 +227,13 @@ impl<'a> Reader<'a> {
             .attribute("n")
             .and_then(|value| value.parse::<u8>().ok())
             .unwrap_or(0);
+        let placement = convert::curvedir_from_mei(node.attribute("curvedir"));
+        let notation = placement.map(|placement| {
+            SpannerNotation::Slur(Slur {
+                placement: Some(placement),
+                visible: true,
+            })
+        });
         if let (Some((tick, track)), None, None) = (end, end_id.as_ref(), end_tstamp) {
             let mut spanner = Spanner::new(
                 kind,
@@ -227,6 +241,7 @@ impl<'a> Reader<'a> {
                 SpannerAnchor::new(tick, track),
             );
             spanner.number = number;
+            spanner.notation = notation;
             self.score.add_spanner(spanner);
         } else {
             self.pending.push(PendingSpanner {
@@ -236,6 +251,7 @@ impl<'a> Reader<'a> {
                 end_id,
                 end_tstamp,
                 measure,
+                placement,
             });
         }
     }
@@ -261,6 +277,7 @@ impl<'a> Reader<'a> {
                     .attribute("tstamp2")
                     .and_then(|value| value.parse::<f64>().ok()),
                 measure,
+                placement: None,
             }),
         }
     }
@@ -619,10 +636,16 @@ impl<'a> Reader<'a> {
                 SpannerAnchor::new(tick, track),
             );
             spanner.number = item.number;
+            spanner.notation = item.placement.map(|placement| {
+                SpannerNotation::Slur(Slur {
+                    placement: Some(placement),
+                    visible: true,
+                })
+            });
             self.score.add_spanner(spanner);
         }
         let ties = std::mem::take(&mut self.pending_ties);
-        for (start, end) in ties {
+        for (start, end, up) in ties {
             let (Some(start), Some(end)) = (
                 self.id_notes.get(&start).copied(),
                 self.id_notes.get(&end).copied(),
@@ -633,6 +656,7 @@ impl<'a> Reader<'a> {
                 continue;
             }
             self.score.notes[start.index()].tie_forward = Some(end);
+            self.score.notes[start.index()].tie_up = up;
             self.score.notes[end.index()].tie_back = Some(start);
         }
     }

@@ -134,6 +134,7 @@ const MAPPED_ATTRIBUTES: &[&str] = &[
     "clef.line",
     "clef.shape",
     "count",
+    "curvedir",
     "dis",
     "dis.place",
     "dots",

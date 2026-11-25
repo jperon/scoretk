@@ -502,3 +502,36 @@ importer starts at `<mei>` only.
 The measurement tests now assert **130 files read, 0 skipped, 0 unreadable**;
 the full support stays at **99.43 %**. The 37 header fragments remain in
 `EXCLUDED.tsv` (no `<score>`) and are still read by `mei_samples_never_panic`.
+
+### 9.9 Sixth fix: `@curvedir` from the import-completeness audit
+
+The audit's top ignored attribute was `@curvedir` on `<slur>` (9 870) and
+`<tie>` (3 835): MEI 5.1 `att.curvature` expresses an explicit direction that
+the pivot can hold (`Slur::placement`, `Note::tie_up`). MuseScore 4.7.4 reads
+it with `Convert::curvedirFromMEI` (meiconverter.cpp:1112) and writes it with
+`curvedirToMEI` (`:1123`). The port now maps `above`/`below` on slurs and ties
+in both directions, including slurs whose `@endid` is resolved at the end of
+the score, and the audit marks the attribute as mapped.
+
+| Import completeness (130 files) | Before | After |
+| --- | ---: | ---: |
+| Attributes ignored | 65 552 (5.02 %) | 51 838 (3.97 %) |
+| Elements ignored | 19 681 (4.25 %) | 19 681 (unchanged) |
+
+The round-trip figure stays at 99.43 % (the inventory does not key slur/tie
+placement), but the reader now consumes an additional 13 714 MEI attributes
+that were previously ignored. Unit tests cover a tie and a slur with opposite
+`@curvedir` values.
+
+### 9.10 Where the campaign stopped
+
+After six measured fixes the round trip on the 130 external encodings is
+**99.43 %** (128 files at the first two steps, 130 after `anyStart`), against
+77.64 % at the baseline. The remaining per-kind losses are `articulation` 376,
+`note` 329, `slur` 269, `stem` 219, `rest` 114 and `tuplet-member` 114; they
+are spread across many small files and are not a single dominant cause as the
+first six were. The largest ignored *elements* are header prose (`p` 1 674,
+`change`/`changeDesc` 1 392 each), `tupletSpan` 1 467, and metadata containers;
+mapping those would require a model slot for editorial markup or a full
+span-based tuplet reader, neither of which MuseScore 4.7.4 has. No declaration
+was narrowed and no item was removed from the denominator at any step.

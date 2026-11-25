@@ -190,6 +190,36 @@ mod tests {
         assert!(!count(1), "no spurious time signature on measure 2");
     }
 
+    /// MEI 5.1 `att.curvature/@curvedir` est porté par `Convert::curvedirFromMEI`
+    /// (meiconverter.cpp:1112) vers la direction du slur et de la liaison.
+    #[test]
+    fn reads_curvedirection_of_slurs_and_ties() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1">
+              <staff n="1"><layer n="1">
+                <note xml:id="n0" dur="4" pname="c" oct="4"/>
+                <note xml:id="n1" dur="4" pname="d" oct="4"/>
+              </layer></staff>
+              <tie curvedir="above" startid="n0" endid="n1"/>
+              <slur curvedir="below" startid="n0" endid="n1"/>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with @curvedir");
+        assert_eq!(score.notes[0].tie_up, Some(true));
+        let slur = score
+            .spanners
+            .iter()
+            .find(|spanner| matches!(spanner.kind, scoretk_core::model::SpannerType::Slur))
+            .expect("slur");
+        assert!(matches!(
+            &slur.notation,
+            Some(scoretk_core::model::SpannerNotation::Slur(slur))
+                if slur.placement == Some(scoretk_core::model::Placement::Below)
+        ));
+    }
+
     #[test]
     fn tempo_bpm_becomes_beats_per_second() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">

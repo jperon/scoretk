@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, BeamMode, ChordRest, ChordRestKind, DurationType, Fraction, Key, Score,
-    SegmentItem, SpannerType, TimeSigType, Track, VOICES,
+    SegmentItem, SpannerNotation, SpannerType, TimeSigType, Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -785,12 +785,19 @@ fn write_control_events(
             attrs.push(("tstamp".to_owned(), format!("{start:.3}")));
             attrs.push(("tstamp2".to_owned(), format!("{end:.3}")));
         }
-        let refs: Vec<(&str, &str)> = attrs
+        let mut refs: Vec<(&str, &str)> = attrs
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
         match &spanner.kind {
             SpannerType::Slur => {
+                // `Convert::curvedirToMEI` (meiconverter.cpp:1123) : la
+                // direction explicite est portée par `@curvedir` (MEI 5.1).
+                if let Some(SpannerNotation::Slur(slur)) = &spanner.notation {
+                    if let Some(dir) = convert::curvedir_to_mei(slur.placement) {
+                        refs.push(("curvedir", dir));
+                    }
+                }
                 xml.tag_empty("slur", &refs);
             }
             SpannerType::Hairpin(kind) => {
@@ -821,10 +828,19 @@ fn write_control_events(
     // Ties are note-to-note in MEI (`startid`/`endid`), not a chord field.
     for (index, note) in score.notes.iter().enumerate() {
         if let Some(next) = note.tie_forward {
-            let attrs = [
+            let mut attrs = vec![
                 ("startid".to_owned(), format!("#n{index}")),
                 ("endid".to_owned(), format!("#n{}", next.index())),
             ];
+            if let Some(dir) = convert::curvedir_to_mei(note.tie_up.map(|up| {
+                if up {
+                    scoretk_core::model::Placement::Above
+                } else {
+                    scoretk_core::model::Placement::Below
+                }
+            })) {
+                attrs.push(("curvedir".to_owned(), dir.to_owned()));
+            }
             let refs: Vec<(&str, &str)> = attrs
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
