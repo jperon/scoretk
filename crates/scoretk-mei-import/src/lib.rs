@@ -266,6 +266,24 @@ mod tests {
         assert_eq!(key.mode, scoretk_core::model::KeyMode::Unknown);
     }
 
+    /// MEI 5.1 `att.noteHeads` : les têtes sans terme `data.HEADSHAPE` sont
+    /// nommées par un glyphe SMuFL (`@glyph.auth="smufl"`).
+    #[test]
+    fn reads_a_smufl_note_head() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="c" oct="4" glyph.auth="smufl" glyph.name="noteDoBlack"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a SMuFL note head");
+        assert_eq!(
+            score.notes[0].head_group,
+            scoretk_core::model::NoteHeadGroup::Do
+        );
+    }
+
     /// Un `<scoreDef keysig>` en cours de partition s'applique à toutes les
     /// portées (MEI 5.1 `att.scoreDef.log`), pas seulement au `scoreDef` initial.
     #[test]

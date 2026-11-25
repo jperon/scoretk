@@ -27,8 +27,8 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, BeamMode, ChordRest, ChordRestKind, Fraction, Key, Score, SegmentItem, SpannerType,
-    TimeSigType, Track, VOICES,
+    Annotation, BeamMode, ChordRest, ChordRestKind, DurationType, Fraction, Key, Score,
+    SegmentItem, SpannerType, TimeSigType, Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -495,12 +495,19 @@ fn write_layer(
             }
             ChordRestKind::Chord(chord) => {
                 if chord.notes.len() == 1 {
-                    write_note(xml, score, &chord.notes[0], &refs, Some(chord));
+                    write_note(
+                        xml,
+                        score,
+                        &chord.notes[0],
+                        &refs,
+                        Some(chord),
+                        cr.duration.kind,
+                    );
                     write_verses(xml, cr);
                 } else {
                     xml.start_element("chord", &refs);
                     for id in &chord.notes {
-                        write_note(xml, score, id, &[], None);
+                        write_note(xml, score, id, &[], None, cr.duration.kind);
                     }
                     write_artics(xml, chord);
                     write_verses(xml, cr);
@@ -548,6 +555,7 @@ fn write_note(
     id: &scoretk_core::model::NoteId,
     extra: &[(&str, &str)],
     chord: Option<&scoretk_core::model::Chord>,
+    kind: DurationType,
 ) {
     let note = &score.notes[id.index()];
     let (pname, oct, accid, accid_ges) =
@@ -565,8 +573,17 @@ fn write_note(
     if let Some(ges) = accid_ges {
         attrs.push(("accid.ges", ges));
     }
-    if let Some(shape) = convert::head_shape_to_mei(&note.head_group) {
+    // MEI 5.1 `att.noteHeads` : `@head.shape` (`data.HEADSHAPE`) quand le
+    // terme est non ambigu, sinon `@glyph.name` avec `@glyph.auth="smufl"`.
+    // `Convert::headShapeToMEI` regroupe par exemple slash, diamond old et
+    // croix épaisse sous un même terme : le glyphe SMuFL les distingue.
+    let shape = convert::head_shape_to_mei(&note.head_group)
+        .filter(|shape| convert::head_shape_from_mei(shape) == Some(note.head_group.clone()));
+    if let Some(shape) = shape {
         attrs.push(("head.shape", shape));
+    } else if let Some(name) = convert::head_shape_to_smufl(&note.head_group, kind) {
+        attrs.push(("glyph.auth", "smufl"));
+        attrs.push(("glyph.name", name));
     }
     match chord {
         Some(chord) => {

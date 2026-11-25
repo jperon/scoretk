@@ -637,10 +637,7 @@ impl<'a> Reader<'a> {
             transpose.chromatic,
         );
         let mut note = Note::new(info.pitch, info.tpc);
-        if let Some(group) = node
-            .attribute("head.shape")
-            .and_then(convert::head_shape_from_mei)
-        {
+        if let Some(group) = note_head_group(node) {
             note.head_group = group;
         }
         note.accidental = info.accidental.map(|kind| Accidental {
@@ -692,6 +689,9 @@ impl<'a> Reader<'a> {
                 transpose.chromatic,
             );
             let mut note = Note::new(info.pitch, info.tpc);
+            if let Some(group) = note_head_group(note_node) {
+                note.head_group = group;
+            }
             note.accidental = info.accidental.map(|kind| Accidental {
                 kind,
                 bracket: accid.attribute("enclose") == Some("brack"),
@@ -1019,6 +1019,26 @@ impl<'a> Reader<'a> {
             .unwrap_or((4, 4, TimeSigType::Normal));
         (i64::from(numerator), i64::from(denominator), kind)
     }
+}
+
+/// `@head.shape` (MEI 5.1 `data.HEADSHAPE`) ou `@glyph.name` SMuFL
+/// (`att.noteHeads`, `@glyph.auth="smufl"`). Les têtes sans terme standard
+/// dans `HEADSHAPE` passent par le nom de glyphe, comme dans
+/// `Convert::headShapeFromMEI` (meiconverter.cpp:3547 pour les glyphes des
+/// autres objets).
+fn note_head_group(node: &Element) -> Option<scoretk_core::model::NoteHeadGroup> {
+    if let Some(shape) = node
+        .attribute("head.shape")
+        .and_then(convert::head_shape_from_mei)
+    {
+        return Some(shape);
+    }
+    if matches!(node.attribute("glyph.auth"), Some("smufl") | None) {
+        return node
+            .attribute("glyph.name")
+            .and_then(convert::head_shape_from_smufl);
+    }
+    None
 }
 
 /// `Duration` from `@dur` and `@dots`, defaulting to a quarter note

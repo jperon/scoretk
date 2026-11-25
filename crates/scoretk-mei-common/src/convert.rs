@@ -442,6 +442,204 @@ pub fn head_shape_from_mei(value: &str) -> Option<NoteHeadGroup> {
     }
 }
 
+/// Noms de glyphes SMuFL des têtes de note, indexés par type de durée
+/// (`whole`, `half`, `quarter`, `double whole`).
+///
+/// Portage de la table `noteHeads` de `engraving/dom/note.cpp:89` et des noms
+/// de `engraving/types/symnames.cpp`. MEI 5.1 `att.noteHeads` porte
+/// `@glyph.name` et `@glyph.auth` : `@glyph.auth="smufl"` est la valeur
+/// standard (`MEI.shared.xml`, `data.GLYPH_AUTH`).
+pub fn head_shape_to_smufl(group: &NoteHeadGroup, kind: DurationType) -> Option<&'static str> {
+    let index = match kind {
+        DurationType::Long | DurationType::Breve => 3,
+        DurationType::Whole => 0,
+        DurationType::Half => 1,
+        _ => 2,
+    };
+    let names: &[&str; 4] = match group {
+        NoteHeadGroup::Cross => &[
+            "noteheadXWhole",
+            "noteheadXHalf",
+            "noteheadXBlack",
+            "noteheadXDoubleWhole",
+        ],
+        NoteHeadGroup::Plus => &[
+            "noteheadPlusWhole",
+            "noteheadPlusHalf",
+            "noteheadPlusBlack",
+            "noteheadPlusDoubleWhole",
+        ],
+        NoteHeadGroup::XCircle => &[
+            "noteheadCircleXWhole",
+            "noteheadCircleXHalf",
+            "noteheadCircleX",
+            "noteheadCircleXDoubleWhole",
+        ],
+        NoteHeadGroup::WithX => &[
+            "noteheadWholeWithX",
+            "noteheadHalfWithX",
+            "noteheadVoidWithX",
+            "noteheadDoubleWholeWithX",
+        ],
+        NoteHeadGroup::TriangleUp => &[
+            "noteheadTriangleUpWhole",
+            "noteheadTriangleUpHalf",
+            "noteheadTriangleUpBlack",
+            "noteheadTriangleUpDoubleWhole",
+        ],
+        NoteHeadGroup::TriangleDown => &[
+            "noteheadTriangleDownWhole",
+            "noteheadTriangleDownHalf",
+            "noteheadTriangleDownBlack",
+            "noteheadTriangleDownDoubleWhole",
+        ],
+        NoteHeadGroup::Slashed1 => &[
+            "noteheadSlashedWhole1",
+            "noteheadSlashedHalf1",
+            "noteheadSlashedBlack1",
+            "noteheadSlashedDoubleWhole1",
+        ],
+        NoteHeadGroup::Slashed2 => &[
+            "noteheadSlashedWhole2",
+            "noteheadSlashedHalf2",
+            "noteheadSlashedBlack2",
+            "noteheadSlashedDoubleWhole2",
+        ],
+        NoteHeadGroup::Diamond => &[
+            "noteheadDiamondWhole",
+            "noteheadDiamondHalf",
+            "noteheadDiamondBlack",
+            "noteheadDiamondDoubleWhole",
+        ],
+        NoteHeadGroup::DiamondOld => &[
+            "noteheadDiamondWholeOld",
+            "noteheadDiamondHalfOld",
+            "noteheadDiamondBlackOld",
+            "noteheadDiamondDoubleWholeOld",
+        ],
+        NoteHeadGroup::Circled => &[
+            "noteheadCircledWhole",
+            "noteheadCircledHalf",
+            "noteheadCircledBlack",
+            "noteheadCircledDoubleWhole",
+        ],
+        NoteHeadGroup::CircledLarge => &[
+            "noteheadCircledWholeLarge",
+            "noteheadCircledHalfLarge",
+            "noteheadCircledBlackLarge",
+            "noteheadCircledDoubleWholeLarge",
+        ],
+        NoteHeadGroup::LargeArrow => &[
+            "noteheadLargeArrowUpWhole",
+            "noteheadLargeArrowUpHalf",
+            "noteheadLargeArrowUpBlack",
+            "noteheadLargeArrowUpDoubleWhole",
+        ],
+        // Le groupe `BrevisAlt` utilise les glyphes normaux pour whole/half/
+        // quarter (note.cpp:119) ; seul le double whole a un glyphe propre,
+        // utilisé ici pour distinguer le groupe de manière non ambiguë.
+        NoteHeadGroup::BrevisAlt => &["noteheadDoubleWholeSquare"; 4],
+        NoteHeadGroup::Slash => &[
+            "noteheadSlashWhiteWhole",
+            "noteheadSlashWhiteHalf",
+            "noteheadSlashHorizontalEnds",
+            "noteheadSlashWhiteWhole",
+        ],
+        NoteHeadGroup::LargeDiamond => &[
+            "noteShapeDiamondWhite",
+            "noteShapeDiamondWhite",
+            "noteShapeDiamondBlack",
+            "noteShapeDiamondDoubleWhole",
+        ],
+        NoteHeadGroup::HeavyCross => &["noteheadHeavyX"; 4],
+        NoteHeadGroup::HeavyCrossHat => &["noteheadHeavyXHat"; 4],
+        NoteHeadGroup::Do => &["noteDoWhole", "noteDoHalf", "noteDoBlack", "noteDoBlack"],
+        NoteHeadGroup::Re => &["noteReWhole", "noteReHalf", "noteReBlack", "noteReBlack"],
+        NoteHeadGroup::Mi => &["noteMiWhole", "noteMiHalf", "noteMiBlack", "noteMiBlack"],
+        NoteHeadGroup::Fa => &["noteFaWhole", "noteFaHalf", "noteFaBlack", "noteFaBlack"],
+        NoteHeadGroup::Sol => &["noteSoWhole", "noteSoHalf", "noteSoBlack", "noteSoBlack"],
+        NoteHeadGroup::La => &["noteLaWhole", "noteLaHalf", "noteLaBlack", "noteLaBlack"],
+        NoteHeadGroup::Ti => &["noteTiWhole", "noteTiHalf", "noteTiBlack", "noteTiBlack"],
+        _ => return None,
+    };
+    Some(names[index])
+}
+
+/// Inverse de [`head_shape_to_smufl`] : un `@glyph.name` SMuFL standard
+/// (`@glyph.auth="smufl"`) donne le groupe de tête du modèle.
+pub fn head_shape_from_smufl(name: &str) -> Option<NoteHeadGroup> {
+    Some(match name {
+        "noteheadXWhole" | "noteheadXHalf" | "noteheadXBlack" | "noteheadXDoubleWhole" => {
+            NoteHeadGroup::Cross
+        }
+        "noteheadPlusWhole"
+        | "noteheadPlusHalf"
+        | "noteheadPlusBlack"
+        | "noteheadPlusDoubleWhole" => NoteHeadGroup::Plus,
+        "noteheadCircleXWhole"
+        | "noteheadCircleXHalf"
+        | "noteheadCircleX"
+        | "noteheadCircleXDoubleWhole" => NoteHeadGroup::XCircle,
+        "noteheadWholeWithX"
+        | "noteheadHalfWithX"
+        | "noteheadVoidWithX"
+        | "noteheadDoubleWholeWithX" => NoteHeadGroup::WithX,
+        "noteheadTriangleUpWhole"
+        | "noteheadTriangleUpHalf"
+        | "noteheadTriangleUpBlack"
+        | "noteheadTriangleUpDoubleWhole" => NoteHeadGroup::TriangleUp,
+        "noteheadTriangleDownWhole"
+        | "noteheadTriangleDownHalf"
+        | "noteheadTriangleDownBlack"
+        | "noteheadTriangleDownDoubleWhole" => NoteHeadGroup::TriangleDown,
+        "noteheadSlashedWhole1"
+        | "noteheadSlashedHalf1"
+        | "noteheadSlashedBlack1"
+        | "noteheadSlashedDoubleWhole1" => NoteHeadGroup::Slashed1,
+        "noteheadSlashedWhole2"
+        | "noteheadSlashedHalf2"
+        | "noteheadSlashedBlack2"
+        | "noteheadSlashedDoubleWhole2" => NoteHeadGroup::Slashed2,
+        "noteheadDiamondWhole"
+        | "noteheadDiamondHalf"
+        | "noteheadDiamondBlack"
+        | "noteheadDiamondDoubleWhole" => NoteHeadGroup::Diamond,
+        "noteheadDiamondWholeOld"
+        | "noteheadDiamondHalfOld"
+        | "noteheadDiamondBlackOld"
+        | "noteheadDiamondDoubleWholeOld" => NoteHeadGroup::DiamondOld,
+        "noteheadCircledWhole"
+        | "noteheadCircledHalf"
+        | "noteheadCircledBlack"
+        | "noteheadCircledDoubleWhole" => NoteHeadGroup::Circled,
+        "noteheadCircledWholeLarge"
+        | "noteheadCircledHalfLarge"
+        | "noteheadCircledBlackLarge"
+        | "noteheadCircledDoubleWholeLarge" => NoteHeadGroup::CircledLarge,
+        "noteheadLargeArrowUpWhole"
+        | "noteheadLargeArrowUpHalf"
+        | "noteheadLargeArrowUpBlack"
+        | "noteheadLargeArrowUpDoubleWhole" => NoteHeadGroup::LargeArrow,
+        "noteheadDoubleWholeSquare" => NoteHeadGroup::BrevisAlt,
+        "noteheadSlashWhiteWhole" | "noteheadSlashWhiteHalf" | "noteheadSlashHorizontalEnds" => {
+            NoteHeadGroup::Slash
+        }
+        "noteShapeDiamondWhite" | "noteShapeDiamondBlack" | "noteShapeDiamondDoubleWhole" => {
+            NoteHeadGroup::LargeDiamond
+        }
+        "noteheadHeavyX" => NoteHeadGroup::HeavyCross,
+        "noteheadHeavyXHat" => NoteHeadGroup::HeavyCrossHat,
+        "noteDoWhole" | "noteDoHalf" | "noteDoBlack" => NoteHeadGroup::Do,
+        "noteReWhole" | "noteReHalf" | "noteReBlack" => NoteHeadGroup::Re,
+        "noteMiWhole" | "noteMiHalf" | "noteMiBlack" => NoteHeadGroup::Mi,
+        "noteFaWhole" | "noteFaHalf" | "noteFaBlack" => NoteHeadGroup::Fa,
+        "noteSoWhole" | "noteSoHalf" | "noteSoBlack" => NoteHeadGroup::Sol,
+        "noteLaWhole" | "noteLaHalf" | "noteLaBlack" => NoteHeadGroup::La,
+        "noteTiWhole" | "noteTiHalf" | "noteTiBlack" => NoteHeadGroup::Ti,
+        _ => return None,
+    })
+}
+
 /// `Convert::beamFromMEI` (`meiconverter.cpp:626`).
 pub fn beam_from_mei(type_str: &str, prefix: &str) -> BeamMode {
     if has_type_value(type_str, &format!("{prefix}-begin")) {
@@ -899,6 +1097,30 @@ mod tests {
         assert_eq!(dur_from_mei("4"), Some(DurationType::Quarter));
         assert_eq!(dur_from_mei("breve"), Some(DurationType::Breve));
         assert_eq!(dur_to_mei(DurationType::Eighth), "8");
+    }
+
+    #[test]
+    fn smufl_note_heads_cover_the_shapes_without_a_headshape_term() {
+        use scoretk_core::model::NoteHeadGroup;
+        for (group, glyph) in [
+            (NoteHeadGroup::Cross, "noteheadXBlack"),
+            (NoteHeadGroup::Plus, "noteheadPlusBlack"),
+            (NoteHeadGroup::XCircle, "noteheadCircleX"),
+            (NoteHeadGroup::Do, "noteDoBlack"),
+            (NoteHeadGroup::La, "noteLaBlack"),
+            (NoteHeadGroup::HeavyCrossHat, "noteheadHeavyXHat"),
+        ] {
+            assert_eq!(
+                head_shape_to_smufl(&group, DurationType::Quarter),
+                Some(glyph)
+            );
+            assert_eq!(head_shape_from_smufl(glyph), Some(group));
+        }
+        assert_eq!(
+            head_shape_to_smufl(&NoteHeadGroup::Cross, DurationType::Half),
+            Some("noteheadXHalf")
+        );
+        assert!(head_shape_to_smufl(&NoteHeadGroup::Normal, DurationType::Quarter).is_none());
     }
 
     #[test]
