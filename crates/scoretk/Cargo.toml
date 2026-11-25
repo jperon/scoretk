@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-# Dix features symétriques, une par crate de sens : `<format>-import` branche
+# Douze features symétriques, une par crate de sens : `<format>-import` branche
 # la lecture, `<format>-export` l'écriture. Aucun alias mixte : un besoin des
 # deux sens liste les deux features (comme la CLI et le crate wasm).
 default = [
@@ -25,6 +25,8 @@ default = [
     "abc-export",
     "mei-import",
     "mei-export",
+    "gabc-import",
+    "gabc-export",
 ]
 
 # Points d'accroche des convertisseurs optionnels. Tant qu'une feature est
@@ -43,6 +45,8 @@ abc-import = ["dep:scoretk-abc-import"]
 abc-export = ["dep:scoretk-abc-export"]
 mei-import = ["dep:scoretk-mei-import"]
 mei-export = ["dep:scoretk-mei-export"]
+gabc-import = ["dep:scoretk-gabc-import"]
+gabc-export = ["dep:scoretk-gabc-export"]
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
@@ -58,13 +62,15 @@ scoretk-abc-import = { path = "../scoretk-abc-import", optional = true }
 scoretk-abc-export = { path = "../scoretk-abc-export", optional = true }
 scoretk-mei-import = { path = "../scoretk-mei-import", optional = true }
 scoretk-mei-export = { path = "../scoretk-mei-export", optional = true }
+scoretk-gabc-import = { path = "../scoretk-gabc-import", optional = true }
+scoretk-gabc-export = { path = "../scoretk-gabc-export", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
 # Les tests d'aller-retour comparent les deux sens d'un même format : ils
 # vivent dans la façade et dépendent donc des crates de sens directement.
-# Le test de couverture mesure les dix déclarations de capacités : il a
+# Le test de couverture mesure les douze déclarations de capacités : il a
 # besoin de toutes les crates de sens, sans affecter les dépendances de la
 # bibliothèque ni le contrat wasm.
 scoretk-musescore-import = { path = "../scoretk-musescore-import" }
@@ -80,6 +86,9 @@ scoretk-abc-export = { path = "../scoretk-abc-export" }
 scoretk-mei-import = { path = "../scoretk-mei-import" }
 scoretk-mei-export = { path = "../scoretk-mei-export" }
 scoretk-xml-common = { path = "../scoretk-xml-common" }
+scoretk-gabc-import = { path = "../scoretk-gabc-import" }
+scoretk-gabc-export = { path = "../scoretk-gabc-export" }
+scoretk-gabc-common = { path = "../scoretk-gabc-common" }
 quick-xml = { workspace = true }
 similar = "3"
 zip = { workspace = true }

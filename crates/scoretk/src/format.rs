@@ -80,11 +80,13 @@ pub enum Format {
     Abc,
     /// MIDI standard (`.mid`, `.midi`).
     Midi,
+    /// Gregorian GABC, syntaxe de Gregorio (`.gabc`).
+    Gabc,
 }
 
 impl Format {
     /// Tous les formats, dans l'ordre d'affichage de `--list-formats`.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Mscz,
         Self::Mscx,
         Self::MusicXml,
@@ -93,6 +95,7 @@ impl Format {
         Self::Ly,
         Self::Abc,
         Self::Midi,
+        Self::Gabc,
     ];
 
     /// Nom canonique (celui de `--from`/`--to`).
@@ -106,6 +109,7 @@ impl Format {
             Self::Ly => "ly",
             Self::Abc => "abc",
             Self::Midi => "midi",
+            Self::Gabc => "gabc",
         }
     }
 
@@ -120,6 +124,7 @@ impl Format {
             Self::Ly => &["ly"],
             Self::Abc => &["abc"],
             Self::Midi => &["mid", "midi"],
+            Self::Gabc => &["gabc"],
         }
     }
 
@@ -128,7 +133,7 @@ impl Format {
     /// Chaque format dépend de sa feature `<format>-import` : MuseScore
     /// `musescore-import` (`.mscz`, `.mscx`), MusicXML `musicxml-import`
     /// (`.musicxml`, `.xml`, `.mxl`), LilyPond `lilypond-import`, ABC
-    /// `abc-import`, MIDI `midi-import`.
+    /// `abc-import`, MIDI `midi-import`, GABC `gabc-import`.
     pub const fn supports_read(self) -> bool {
         match self {
             Self::Mscz | Self::Mscx => cfg!(feature = "musescore-import"),
@@ -137,6 +142,7 @@ impl Format {
             Self::Ly => cfg!(feature = "lilypond-import"),
             Self::Abc => cfg!(feature = "abc-import"),
             Self::Midi => cfg!(feature = "midi-import"),
+            Self::Gabc => cfg!(feature = "gabc-import"),
         }
     }
 
@@ -153,6 +159,7 @@ impl Format {
             Self::Midi => cfg!(feature = "midi-export"),
             Self::Ly => cfg!(feature = "lilypond-export"),
             Self::Abc => cfg!(feature = "abc-export"),
+            Self::Gabc => cfg!(feature = "gabc-export"),
         }
     }
 
@@ -170,6 +177,7 @@ impl Format {
             "ly" | "lilypond" => Some(Self::Ly),
             "abc" => Some(Self::Abc),
             "mid" | "midi" => Some(Self::Midi),
+            "gabc" => Some(Self::Gabc),
             _ => None,
         }
     }
@@ -196,7 +204,13 @@ impl Format {
     /// 4. l'espace de noms MEI (`music-encoding.org/ns/mei`) : MEI ;
     /// 5. `<score-partwise`/`<score-timewise` ou `<?xml` : MusicXML ;
     /// 6. `\version` : LilyPond ;
-    /// 7. `%abc` ou un en-tête `X:` : ABC.
+    /// 7. `%abc` ou un en-tête `X:` : ABC ;
+    /// 8. un en-tête `name:` suivi d'une ligne `%%` : GABC
+    ///    (`Gabc.tex:51,58,79-82`).
+    ///
+    /// Les tests sont mutuellement exclusifs : un document MEI porte
+    /// l'espace de noms MEI (jamais de GABC `%%`), et un `.gabc` ne contient
+    /// ni balise XML ni en-tête ABC.
     ///
     /// Renvoie `None` si rien ne correspond : la façade préfère une erreur à
     /// une supposition fausse.
@@ -229,8 +243,33 @@ impl Format {
         if text.starts_with(b"%abc") || text.starts_with(b"X:") || contains(text, b"\nX:") {
             return Some(Self::Abc);
         }
+        if is_gabc(text) {
+            return Some(Self::Gabc);
+        }
         None
     }
+}
+
+/// Une ligne `name:` et une ligne `%%` suffisent à reconnaître un `.gabc`
+/// (`Gabc.tex:51,58,79-82`). Les commentaires et les espaces précédant le
+/// nom sont autorisés, comme dans les exemples de Gregorio.
+fn is_gabc(text: &[u8]) -> bool {
+    let source = String::from_utf8_lossy(text);
+    let mut has_name = false;
+    let mut has_separator = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("name:") {
+            has_name = true;
+        }
+        if trimmed == "%%" {
+            has_separator = true;
+        }
+        if has_name && has_separator {
+            return true;
+        }
+    }
+    false
 }
 
 impl fmt::Display for Format {

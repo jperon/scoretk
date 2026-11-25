@@ -30,6 +30,8 @@ scoretk = { path = "../scoretk", features = [
     "lilypond-export",
     "abc-import",
     "abc-export",
+    "gabc-import",
+    "gabc-export",
 ] }
 clap = { workspace = true }
 

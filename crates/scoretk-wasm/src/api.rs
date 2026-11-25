@@ -44,7 +44,7 @@ extern "C" {
 const TS_API: &'static str = r#"
 /** Options de `convert`. Toutes sont facultatives. */
 export interface ConvertOptions {
-  /** Format d'entrée, `--from` de la CLI (`mscz`, `mscx`, `musicxml`, `xml`, `mxl`, `ly`, `lilypond`, `abc`, `mid`, `midi`). Détecté par le contenu si absent. */
+  /** Format d'entrée, `--from` de la CLI (`mscz`, `mscx`, `musicxml`, `xml`, `mxl`, `mei`, `ly`, `lilypond`, `abc`, `mid`, `midi`, `gabc`). Détecté par le contenu si absent. */
   from?: string;
   /** Format de sortie (`--to` de la CLI). Défaut : `"musicxml"`. */
   to?: string;

@@ -28,6 +28,8 @@ scoretk = { path = "../scoretk", features = [
     "lilypond-export",
     "abc-import",
     "abc-export",
+    "gabc-import",
+    "gabc-export",
 ] }
 # Doit être ÉGALE à la version de wasm-bindgen-cli du shell nix (sinon
 # « schema version mismatch » au moment de `wasm-bindgen`).

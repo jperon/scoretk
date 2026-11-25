@@ -19,7 +19,7 @@
 //!
 //! Chaque feature de `Cargo.toml` branche exactement un crate de sens, et le
 //! point de branchement est ici, nulle part ailleurs ; la procédure complète
-//! est dans `docs/agents/scoretk.md` § 3. Les dix paires fonction/sens :
+//! est dans `docs/agents/scoretk.md` § 3. Les douze paires fonction/sens :
 //!
 //! | Feature | Crate | Fonctions |
 //! | --- | --- | --- |
@@ -35,11 +35,13 @@
 //! | `abc-export` | `scoretk-abc-export` | [`write_abc`] |
 //! | `mei-import` | `scoretk-mei-import` | [`read_mei`] |
 //! | `mei-export` | `scoretk-mei-export` | [`write_mei`] |
+//! | `gabc-import` | `scoretk-gabc-import` | [`read_gabc`] |
+//! | `gabc-export` | `scoretk-gabc-export` | [`write_gabc`] |
 //!
 //! Chaque fonction a deux définitions exclusives : la vraie sous
 //! `#[cfg(feature = "…")]`, et un repli sous `#[cfg(not(feature = "…"))]` qui
 //! renvoie [`Error::FormatNonPrisEnCharge`]. Le repli est engendré par la
-//! macro [`non_branche`] pour éviter dix-sept corps identiques ; il n'y a
+//! macro [`non_branche`] pour éviter vingt et un corps identiques ; il n'y a
 //! aucun `cfg(not(any(…)))` global à maintenir.
 
 use scoretk_core::model::Score;
@@ -346,5 +348,36 @@ non_branche!(
     "mei-export",
     write_mei(score: &Score) -> Result<Vec<u8>>,
     Format::Mei,
+    Ecriture
+);
+
+// --- GABC (lecture) -------------------------------------------------------
+
+#[cfg(feature = "gabc-import")]
+pub(crate) fn read_gabc(bytes: &[u8]) -> Result<Score> {
+    let text = std::str::from_utf8(bytes).map_err(|error| Error::Gabc(error.to_string()))?;
+    scoretk_gabc_import::read_gabc(text).map_err(|error| Error::Gabc(error.to_string()))
+}
+
+non_branche!(
+    "gabc-import",
+    read_gabc(bytes: &[u8]) -> Result<Score>,
+    Format::Gabc,
+    Lecture
+);
+
+// --- GABC (écriture) ------------------------------------------------------
+
+#[cfg(feature = "gabc-export")]
+pub(crate) fn write_gabc(score: &Score) -> Result<Vec<u8>> {
+    scoretk_gabc_export::write_gabc(score)
+        .map(String::into_bytes)
+        .map_err(|error| Error::Gabc(error.to_string()))
+}
+
+non_branche!(
+    "gabc-export",
+    write_gabc(score: &Score) -> Result<Vec<u8>>,
+    Format::Gabc,
     Ecriture
 );

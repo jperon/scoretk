@@ -47,6 +47,7 @@
 //! | LilyPond `.ly` | `lilypond-import` | `lilypond-export` |
 //! | ABC `.abc` | `abc-import` | `abc-export` |
 //! | MIDI | `midi-import` | `midi-export` |
+//! | GABC `.gabc` | `gabc-import` | `gabc-export` |
 //!
 //! Les douze features sont actives par défaut. Un format dont la feature du sens
 //! demandé est désactivée renvoie [`Error::FormatNonPrisEnCharge`] : la façade
@@ -163,6 +164,7 @@ pub fn read_with_report(bytes: &[u8], format: Format) -> Result<(Score, model::C
         Format::Ly => hooks::read_lilypond(bytes)?,
         Format::Abc => hooks::read_abc(bytes)?,
         Format::Midi => hooks::read_midi(bytes)?,
+        Format::Gabc => hooks::read_gabc(bytes)?,
     };
     let report = score.report.clone();
     Ok((score, report))
@@ -226,6 +228,7 @@ pub fn write_with_report(
         Format::Mscz => hooks::write_mscz(score)?,
         Format::Ly => hooks::write_lilypond(score)?,
         Format::Abc => hooks::write_abc(score)?,
+        Format::Gabc => hooks::write_gabc(score)?,
     };
     let mut report = score.report.clone();
     record_write_losses(score, format, &mut report);

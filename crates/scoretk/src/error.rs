@@ -52,7 +52,7 @@ pub enum Error {
     /// inconnu.
     ///
     /// [`Format::from_str`]: std::str::FromStr::from_str
-    #[error("format inconnu : « {0} » (attendu mscz, mscx, musicxml, mxl, mei, ly, abc ou midi)")]
+    #[error("format inconnu : « {0} » (attendu mscz, mscx, musicxml, mxl, mei, ly, abc, midi ou gabc)")]
     FormatInconnu(String),
 
     /// Le contenu ne correspond à aucun format reconnu.
@@ -95,6 +95,11 @@ pub enum Error {
     /// `mei-export`).
     #[error("MEI : {0}")]
     Mei(String),
+
+    /// Erreur renvoyée par les crates GABC (features `gabc-import` et
+    /// `gabc-export`).
+    #[error("GABC : {0}")]
+    Gabc(String),
 }
 
 impl Error {

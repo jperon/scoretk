@@ -535,6 +535,8 @@ dependencies = [
  "scoretk-abc-export",
  "scoretk-abc-import",
  "scoretk-core",
+ "scoretk-gabc-export",
+ "scoretk-gabc-import",
  "scoretk-lilypond-export",
  "scoretk-lilypond-import",
  "scoretk-mei-export",
@@ -591,6 +593,30 @@ name = "scoretk-core"
 version = "0.1.0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "scoretk-gabc-common"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "thiserror",
+]
+
+[[package]]
+name = "scoretk-gabc-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-gabc-common",
+]
+
+[[package]]
+name = "scoretk-gabc-import"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-gabc-common",
 ]
 
 [[package]]

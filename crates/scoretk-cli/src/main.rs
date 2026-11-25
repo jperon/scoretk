@@ -75,11 +75,11 @@ struct Cli {
     #[arg(short, long, value_name = "SORTIE")]
     output: Option<String>,
 
-    /// Force le format d'entrée (mscz, mscx, musicxml, mxl, ly, abc, midi)
+    /// Force le format d'entrée (mscz, mscx, musicxml, mxl, mei, ly, abc, midi, gabc)
     #[arg(long, value_name = "FORMAT", value_parser = parse_format)]
     from: Option<Format>,
 
-    /// Force le format de sortie (mscz, mscx, musicxml, mxl, ly, abc, midi)
+    /// Force le format de sortie (mscz, mscx, musicxml, mxl, mei, ly, abc, midi, gabc)
     #[arg(long, value_name = "FORMAT", value_parser = parse_format)]
     to: Option<Format>,
 

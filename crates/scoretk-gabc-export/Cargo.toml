@@ -1,0 +1,13 @@
+[package]
+name = "scoretk-gabc-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "GABC writer from scoretk's pivot model, no I/O"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-gabc-common = { path = "../scoretk-gabc-common" }
