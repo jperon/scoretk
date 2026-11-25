@@ -42,7 +42,7 @@ pub(crate) fn write(
 ) -> Result<String, scoretk_mei_common::Error> {
     let mut xml = XmlWriter::new();
     header::mei_start(&mut xml, &options.encoding_date);
-    header::write_header(&mut xml, score, &options.encoding_date);
+    header::write_header(&mut xml, score, &options.encoding_date, options);
     xml.start_element("music", &[]);
     xml.start_element("body", &[]);
     xml.start_element("mdiv", &[]);
@@ -61,6 +61,19 @@ pub(crate) fn write(
         write_ending_start(&mut xml, score, index);
         write_measure(&mut xml, score, measure, index, &mut measure_n, options);
         write_ending_end(&mut xml, score, index);
+    }
+    if options.full_support {
+        // Une rupture sur la dernière mesure n'a pas de mesure suivante
+        // devant elle : l'écrire après la mesure, où `readSectionElements`
+        // l'attache au dernier `<measure>`.
+        if let Some(last) = score.measures.last() {
+            if last.section_break_before {
+                xml.tag_empty("pb", &[("type", ids::BREAK_TYPE)]);
+            }
+            if last.line_break {
+                xml.tag_empty("sb", &[("type", ids::BREAK_TYPE)]);
+            }
+        }
     }
     xml.end_element();
     xml.end_element();
@@ -502,8 +515,13 @@ fn write_graces(
         for id in &grace.chord.notes {
             let note = &score.notes[id.index()];
             let (pname, oct, accid) = convert::pitch_to_mei_written(note.pitch, transpose);
+            let uid = format!("gn{}", id.index());
             let oct = oct.to_string();
-            let mut note_attrs = vec![("pname", pname.as_str()), ("oct", oct.as_str())];
+            let mut note_attrs = vec![
+                ("pname", pname.as_str()),
+                ("oct", oct.as_str()),
+                ("xml:id", uid.as_str()),
+            ];
             if let Some(accid) = accid {
                 note_attrs.push(("accid", accid));
             }
@@ -1165,6 +1183,12 @@ fn write_control_events(
             }
             SpannerType::Glissando => {
                 xml.tag_empty("gliss", &refs);
+            }
+            SpannerType::TextLine => {
+                let mut line_attrs = refs.clone();
+                line_attrs.push(("type", ids::TEXT_LINE_TYPE));
+                let text = spanner.text.clone().unwrap_or_default();
+                xml.tag_with("dir", &line_attrs, text.as_str());
             }
             _ => {}
         }

@@ -55,6 +55,9 @@ pub const MEASURE_REPEAT_TYPE: &str = "mscore-repeat-";
 /// `@type` prefix for markers on `<repeatMark>`.
 pub const MARKER_TYPE: &str = "mscore-marker-";
 
+/// `@type` for a MuseScore text line written as a `<dir>` control event.
+pub const TEXT_LINE_TYPE: &str = "mscore-text-line";
+
 /// `@type` prefix carrying the exact ornament/breath variant on `<ornam>`
 /// and `<breath>`/`<caesura>` (porteurs additionnels).
 pub const ORNAMENT_TYPE: &str = "mscore-ornament-";

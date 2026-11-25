@@ -1031,6 +1031,9 @@ impl<'a> Reader<'a> {
                 transpose.chromatic,
             );
             let id = self.score.add_note(Note::new(info.pitch, info.tpc));
+            if let Some(xml_id) = note_node.attribute("id") {
+                self.id_notes.insert(xml_id.to_owned(), id);
+            }
             chord.notes.push(id);
         }
         self.pending_graces.push(GraceChord {

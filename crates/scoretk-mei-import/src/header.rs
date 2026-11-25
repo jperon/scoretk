@@ -60,7 +60,9 @@ impl<'a> Reader<'a> {
             if text.is_empty() {
                 continue;
             }
-            if first {
+            if title.attribute("type") == Some("work-number") {
+                self.score.metadata.work_number = text.to_owned();
+            } else if first {
                 self.score.metadata.work_title = text.to_owned();
                 first = false;
             } else if title.attribute("type") == Some("subordinate") {

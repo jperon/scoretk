@@ -377,6 +377,14 @@ impl<'a> Reader<'a> {
         // Changement d'instrument en cours de partition : MuseScore 4.7.4 ne
         // l'écrit pas, mais `<dir>` porte le texte et `@trans.*` la nouvelle
         // transposition (porteur additionnel).
+        if typ == scoretk_mei_common::ids::TEXT_LINE_TYPE {
+            let line_text = text.clone();
+            self.add_span(node, measure, SpannerType::TextLine);
+            if let Some(spanner) = self.score.spanners.last_mut() {
+                spanner.text = Some(line_text);
+            }
+            return;
+        }
         if typ == scoretk_mei_common::ids::INSTRUMENT_CHANGE_TYPE {
             let id = node
                 .attribute("label")

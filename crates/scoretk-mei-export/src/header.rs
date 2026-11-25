@@ -29,7 +29,7 @@ use scoretk_xml_common::XmlWriter;
 use crate::MeiOptions;
 
 /// `MeiExporter::writeHeader` (`meiexporter.cpp:198`).
-pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str) {
+pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str, options: &MeiOptions) {
     xml.start_element("meiHead", &[]);
     xml.start_element("fileDesc", &[]);
     xml.start_element("titleStmt", &[]);
@@ -39,6 +39,16 @@ pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str) {
             "title",
             &[("type", "subordinate")],
             &score.metadata.subtitle,
+        );
+    }
+    // `workNumber`/`work_number` n'a pas d'élément MEI dédié : un `<title>`
+    // typé est un porteur standard (`att.typed`) et reste lisible par
+    // `readMeiHead` (porteur additionnel, 4.7.4 ne l'écrit pas).
+    if options.full_support && !score.metadata.work_number.is_empty() {
+        xml.tag_with(
+            "title",
+            &[("type", "work-number")],
+            &score.metadata.work_number,
         );
     }
     for (role, value) in [
