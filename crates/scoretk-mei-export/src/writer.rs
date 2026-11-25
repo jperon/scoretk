@@ -220,6 +220,48 @@ fn write_transposition_change(xml: &mut XmlWriter, score: &Score, measure_index:
     }
 }
 
+/// `xml:id` stable de chaque événement (note ou silence) d'une mesure. Les
+/// silences portent aussi un id quand les porteurs additionnels sont actifs :
+/// les hairpins et les text-lines s'ancrent souvent sur un silence, pas sur
+/// une note (`@tstamp` seul perd la précision du tick).
+fn event_ids(score: &Score, full_support: bool) -> BTreeMap<(Fraction, u32), String> {
+    let mut map = BTreeMap::new();
+    for (measure_index, measure) in score.measures.iter().enumerate() {
+        for staff_idx in 0..score.staves.len() {
+            let staff_id = scoretk_core::model::StaffId::from_index(staff_idx);
+            for voice in 0..VOICES as u8 {
+                let track = Track::new(staff_id, voice);
+                let events: Vec<_> = measure
+                    .segments
+                    .iter()
+                    .filter_map(|segment| {
+                        segment
+                            .element(track)
+                            .and_then(SegmentItem::as_chord_rest)
+                            .map(|cr| (segment.tick, cr))
+                    })
+                    .collect();
+                for (position, (tick, cr)) in events.iter().enumerate() {
+                    let id = match &cr.kind {
+                        ChordRestKind::Chord(chord) => {
+                            chord.notes.first().map(|note| format!("n{}", note.index()))
+                        }
+                        ChordRestKind::Rest(rest) if rest.full_measure => {
+                            full_support.then(|| format!("mr{measure_index}"))
+                        }
+                        ChordRestKind::Rest(_) => full_support
+                            .then(|| format!("r{measure_index}s{}i{position}", track.raw())),
+                    };
+                    if let Some(id) = id {
+                        map.entry((*tick, track.raw())).or_insert(id);
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
 /// Measure containing `tick`, used to place `<ending>` around its measures.
 fn measure_at(score: &Score, tick: Fraction) -> usize {
     score
@@ -687,9 +729,15 @@ fn write_layer(
                 xml.tag_empty("mRest", &[("xml:id", &format!("mr{measure_index}"))]);
             }
             ChordRestKind::Rest(rest) => {
+                let rest_id = options
+                    .full_support
+                    .then(|| format!("r{measure_index}s{}i{position}", track.raw()));
                 let mut rest_attrs = refs.clone();
                 if !rest.visible {
                     rest_attrs.push(("visible", "false"));
+                }
+                if let Some(id) = &rest_id {
+                    rest_attrs.push(("xml:id", id.as_str()));
                 }
                 xml.start_element("rest", &rest_attrs);
                 write_verses(xml, cr);
@@ -784,6 +832,15 @@ fn tuplet_chain(
 /// children of the note/chord event they belong to.
 fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord, full_support: bool) {
     let startid = chord.notes.first().map(|id| format!("#n{}", id.index()));
+    if full_support {
+        if chord.arpeggio.is_some() {
+            xml.tag_empty("arpeg", &[]);
+        }
+        for ornament in &chord.ornaments {
+            let type_name = format!("{}{:?}", ids::ORNAMENT_TYPE, ornament.kind);
+            xml.tag_empty("ornam", &[("type", &type_name)]);
+        }
+    }
     for articulation in &chord.articulations {
         if full_support {
             let name = convert::artic_to_mei_full(&articulation.kind);
@@ -887,25 +944,40 @@ fn write_control_events(
     index: usize,
     options: &MeiOptions,
 ) {
-    // MuseScore ancre ses événements de contrôle sur les `xml:id` des notes
-    // quand il peut (`findStart`, meiimporter.cpp:620). `@tstamp` est une
-    // approximation continued-fraction et la valeur de `tstamp_denominator`
-    // n'est pas stable entre l'export 4.7.4 et sa relecture pour certaines
-    // mesures : l'ancrage par identifiant est exact.
-    let mut note_at: BTreeMap<(Fraction, u32), usize> = BTreeMap::new();
-    for source in &score.measures {
-        for segment in &source.segments {
-            for (track, item) in segment.iter_elements() {
-                if let Some(ChordRestKind::Chord(chord)) = item.as_chord_rest().map(|cr| &cr.kind) {
-                    if let Some(note) = chord.notes.first() {
-                        note_at
-                            .entry((segment.tick, track.raw()))
-                            .or_insert(note.index());
-                    }
-                }
-            }
+    // MuseScore ancre ses événements de contrôle sur les `xml:id` des
+    // événements quand il peut (`findStart`, meiimporter.cpp:620). `@tstamp`
+    // est une approximation continued-fraction et `tstamp_denominator` n'est
+    // pas stable entre l'export 4.7.4 et sa relecture : l'ancrage par id est
+    // exact, y compris quand l'extrémité tombe sur un silence.
+    if options.full_support {
+        for segment in &measure.segments {
+            let Some(SegmentItem::Breath(breath)) = segment.element(Track::from_raw(0)) else {
+                continue;
+            };
+            use scoretk_core::model::BreathType;
+            let name = match breath.kind {
+                BreathType::Caesura
+                | BreathType::CaesuraCurved
+                | BreathType::CaesuraShort
+                | BreathType::CaesuraThick
+                | BreathType::CaesuraSingle => "caesura",
+                _ => "breath",
+            };
+            let type_name = format!("{}{:?}", ids::BREATH_TYPE, breath.kind);
+            let stamp = convert::tstamp_from_fraction(
+                segment.tick - measure.start_tick,
+                convert::tstamp_denominator(measure),
+            );
+            let stamp = format!("{stamp:.3}");
+            let attrs = [
+                ("staff", "1"),
+                ("tstamp", stamp.as_str()),
+                ("type", type_name.as_str()),
+            ];
+            xml.tag_empty(name, &attrs);
         }
     }
+    let event_at = event_ids(score, options.full_support);
     for segment in &measure.segments {
         for annotation in &segment.annotations {
             let staff = annotation.track.staff().raw() + 1;
@@ -918,21 +990,21 @@ fn write_control_events(
                 ("tstamp".to_owned(), format!("{stamp:.3}")),
             ];
             if options.full_support {
-                let note = note_at
+                let event = event_at
                     .get(&(segment.tick, annotation.track.raw()))
-                    .copied()
                     .or_else(|| {
-                        note_at
+                        event_at
                             .iter()
                             .find(|((tick, track), _)| {
                                 *tick == segment.tick
                                     && scoretk_core::model::Track::from_raw(*track).staff()
                                         == annotation.track.staff()
                             })
-                            .map(|(_, note)| *note)
-                    });
-                if let Some(note) = note {
-                    attrs.push(("startid".to_owned(), format!("#n{note}")));
+                            .map(|(_, id)| id)
+                    })
+                    .cloned();
+                if let Some(id) = event {
+                    attrs.push(("startid".to_owned(), format!("#{id}")));
                 }
             }
             let refs: Vec<(&str, &str)> = attrs
@@ -1041,8 +1113,8 @@ fn write_control_events(
             (spanner.end.tick - measure.start_tick).max(Fraction::ZERO),
             den,
         );
-        let start_note = note_at.get(&(spanner.start.tick, spanner.start.track.raw()));
-        let end_note = note_at.get(&(spanner.end.tick, spanner.end.track.raw()));
+        let start_note = event_at.get(&(spanner.start.tick, spanner.start.track.raw()));
+        let end_note = event_at.get(&(spanner.end.tick, spanner.end.track.raw()));
         let mut attrs = vec![
             ("xml:id".to_owned(), format!("sp{id}")),
             (
@@ -1050,9 +1122,9 @@ fn write_control_events(
                 (spanner.start.track.staff().raw() + 1).to_string(),
             ),
         ];
-        if let (Some(start_note), Some(end_note)) = (start_note, end_note) {
-            attrs.push(("startid".to_owned(), format!("#n{start_note}")));
-            attrs.push(("endid".to_owned(), format!("#n{end_note}")));
+        if let (Some(start_event), Some(end_event)) = (start_note, end_note) {
+            attrs.push(("startid".to_owned(), format!("#{start_event}")));
+            attrs.push(("endid".to_owned(), format!("#{end_event}")));
         } else {
             attrs.push(("tstamp".to_owned(), format!("{start:.3}")));
             attrs.push(("tstamp2".to_owned(), format!("{end:.3}")));

@@ -55,6 +55,11 @@ pub const MEASURE_REPEAT_TYPE: &str = "mscore-repeat-";
 /// `@type` prefix for markers on `<repeatMark>`.
 pub const MARKER_TYPE: &str = "mscore-marker-";
 
+/// `@type` prefix carrying the exact ornament/breath variant on `<ornam>`
+/// and `<breath>`/`<caesura>` (porteurs additionnels).
+pub const ORNAMENT_TYPE: &str = "mscore-ornament-";
+pub const BREATH_TYPE: &str = "mscore-breath-";
+
 /// `@type` for a mid-score instrument change written as a `<dir>`.
 pub const INSTRUMENT_CHANGE_TYPE: &str = "mscore-instrument-change";
 

@@ -596,10 +596,26 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::readBreath`/`readCaesura` (`:2461`, `:2486`).
     fn add_breath(&mut self, node: &Element, measure: usize) {
         let (tick, track) = self.anchor(node, measure);
-        let kind = if node.name == "caesura" {
-            BreathType::Caesura
-        } else {
-            BreathType::Comma
+        let type_name = node
+            .attribute("type")
+            .and_then(|value| value.strip_prefix(scoretk_mei_common::ids::BREATH_TYPE));
+        let kind = match type_name {
+            Some("Comma") => BreathType::Comma,
+            Some("Caesura") => BreathType::Caesura,
+            Some("CaesuraCurved") => BreathType::CaesuraCurved,
+            Some("CaesuraShort") => BreathType::CaesuraShort,
+            Some("CaesuraThick") => BreathType::CaesuraThick,
+            Some("CaesuraSingle") => BreathType::CaesuraSingle,
+            Some("Tick") => BreathType::Tick,
+            Some("Upbow") => BreathType::Upbow,
+            Some("Salzedo") => BreathType::Salzedo,
+            _ => {
+                if node.name == "caesura" {
+                    BreathType::Caesura
+                } else {
+                    BreathType::Comma
+                }
+            }
         };
         let mut breath = Breath {
             kind,
@@ -624,6 +640,21 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readOrnam` / `readMordent` / `readTurn` / `readTrill`.
     fn add_ornament(&mut self, node: &Element, measure: usize, kind: OrnamentType) {
+        let kind = node
+            .attribute("type")
+            .and_then(|value| value.strip_prefix(scoretk_mei_common::ids::ORNAMENT_TYPE))
+            .and_then(|name| match name {
+                "TrillMark" => Some(OrnamentType::TrillMark),
+                "Turn" => Some(OrnamentType::Turn),
+                "InvertedTurn" => Some(OrnamentType::InvertedTurn),
+                "Mordent" => Some(OrnamentType::Mordent),
+                "InvertedMordent" => Some(OrnamentType::InvertedMordent),
+                "TurnSlash" => Some(OrnamentType::TurnSlash),
+                "VerticalTurn" => Some(OrnamentType::VerticalTurn),
+                "InvertedVerticalTurn" => Some(OrnamentType::InvertedVerticalTurn),
+                _ => None,
+            })
+            .unwrap_or(kind);
         let (_, track) = self.anchor(node, measure);
         if let Some(cr) = self.last_chord_rest_mut(measure, track) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
