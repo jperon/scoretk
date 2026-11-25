@@ -35,16 +35,24 @@ Usage :
         --lot ext --jobs 1 --sandbox --sandbox-dir /path/to/writable \\
         --inject-midi --same-score
 
+    # Upgrade path of LilyPond itself, on a sandboxed copy of older sources:
+    scripts/oracle/lilypond/references.py --manifest mut.txt --out refs-convertis \\
+        --lot mut --jobs 2 --sandbox --sandbox-dir /path/to/writable \\
+        --inject-midi --same-score --convert-ly
+
 Le statut de chaque fichier va dans ``<out>/<lot>/status.jsonl`` ; un fichier
 dont LilyPond échoue n'a pas de ``ly.midi`` et sera exclu par l'oracle comme
-référence inutilisable. Aucune source n'est copiée : LilyPond résout les
-``\\include`` relatifs au fichier source.
+référence inutilisable. Sans ``--convert-ly`` aucune source n'est copiée :
+LilyPond résout les ``\\include`` relatifs au fichier source. Avec
+``--convert-ly``, seule une copie dans le dossier temporaire est réécrite et
+le statut porte ``converti`` / ``modifie``.
 """
 
 from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 import json
 import re
 from pathlib import Path
@@ -192,6 +200,118 @@ def bwrap_prefix(dossier: Path) -> list[str]:
     ]
 
 
+_RE_VERSION = re.compile(r'(?m)^\s*\\version\s*"(\d+(?:\.\d+)*)"')
+
+
+def version_source(texte: str) -> tuple[int, ...] | None:
+    """Declared ``\\version``, padded to three components (``None`` if absent).
+
+    A commented-out declaration (``% \\version "…"``) does not match, since
+    the command must start its line.  Includes may declare another version;
+    the main file is the one LilyPond's ``convert-ly`` reads first.
+    """
+    m = _RE_VERSION.search(texte)
+    if m is None:
+        return None
+    parties = [int(x) for x in m.group(1).split(".")]
+    return tuple((parties + [0, 0, 0])[:3])
+
+
+@lru_cache(maxsize=8)
+def version_installee(lilypond: str) -> tuple[int, ...]:
+    """Version reported by the very LilyPond that will compile the source."""
+    p = subprocess.run([lilypond, "--version"], stdout=subprocess.PIPE,
+                       stderr=subprocess.DEVNULL, check=False, timeout=30)
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", p.stdout.decode("utf-8", "replace"))
+    if m is None:
+        raise RuntimeError(f"version LilyPond illisible : {lilypond}")
+    return tuple(int(x or 0) for x in m.groups())
+
+
+def doit_convertir(texte: str, lilypond: str | tuple[int, ...]) -> bool:
+    """True when the source declares a version older than this LilyPond.
+
+    A tuple is accepted for the selftest (no compiler subprocess needed).
+    """
+    declaree = version_source(texte)
+    installee = version_installee(lilypond) if isinstance(lilypond, str) else lilypond
+    return declaree is not None and declaree < installee
+
+
+def fichiers_a_convertir(source: Path) -> list[Path]:
+    """Main file and its transitive relative ``\\include``s, without cycles.
+
+    A regression directory holds thousands of unrelated `.ly` files: running
+    `convert-ly` on all of them for every source would be both slow and wrong.
+    Only the files LilyPond actually loads from this copy need upgrading.
+    """
+    trouves: list[Path] = []
+    vus: set[Path] = set()
+
+    def visiter(fichier: Path) -> None:
+        resolu = fichier.resolve()
+        if resolu in vus or not fichier.is_file():
+            return
+        vus.add(resolu)
+        trouves.append(fichier)
+        texte = fichier.read_text(encoding="utf-8", errors="replace")
+        for nom in re.findall(r'\\include\s*"([^"]+)"', texte):
+            visiter(fichier.parent / nom)
+
+    visiter(source)
+    return trouves
+
+
+def convertir_copie(
+    dossier: Path, sandbox: Path, convert_ly: str = "",
+    fichiers: list[Path] | None = None,
+    version: tuple[int, ...] | None = None,
+) -> dict:
+    """Run the installed ``convert-ly`` on a writable *copy* of the sources.
+
+    The upgrade is LilyPond's own path (`python/convertrules.py`), never a
+    comparator change.  The corpus is read-only: only files under ``dossier``
+    are rewritten, and ``convert-ly`` itself runs under the same bubblewrap
+    sandbox as the compiler.  A failed conversion is rolled back to the
+    original bytes so it cannot silently corrupt a reference.
+    """
+    if not convert_ly:
+        convert_ly = shutil.which("convert-ly") or ""
+    resultat = {"applique": False, "modifie": False, "fichiers": 0, "echecs": 0}
+    if not convert_ly:
+        return resultat
+    cibles = fichiers if fichiers is not None else sorted(dossier.rglob("*"))
+    for fichier in cibles:
+        if not fichier.is_file() or fichier.suffix not in (".ly", ".ily"):
+            continue
+        avant = fichier.read_bytes()
+        options: list[str] = []
+        # Un `\include` n'a souvent pas de `\version` : LilyPond lit alors
+        # celui du fichier principal. `convert-ly` ne le sait pas et prendrait
+        # 2.27, ce qui laisserait un `\relative {` ancien non réécrit dans
+        # l'inclusion (`sonate.ly`). On lui donne donc explicitement la version
+        # déclarée par le fichier principal, sans ajouter de `\version` à la
+        # copie (`--no-version`).
+        if version is not None and version_source(avant.decode("utf-8", "replace")) is None:
+            depuis = ".".join(str(x) for x in version)
+            options = [f"--from={depuis}", "--no-version"]
+        commande = ["timeout", "60", *bwrap_prefix(sandbox), convert_ly,
+                    *options, "-e", str(fichier)]
+        p = subprocess.run(commande, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=False, timeout=90)
+        apres = fichier.read_bytes()
+        if p.returncode != 0:
+            if apres != avant:
+                fichier.write_bytes(avant)
+            resultat["echecs"] += 1
+            continue
+        resultat["applique"] = True
+        if apres != avant:
+            resultat["modifie"] = True
+            resultat["fichiers"] += 1
+    return resultat
+
+
 def _lancer(
     source: Path, sortie: Path, lilypond: str, timeout: int,
     sandbox: Path | None = None, extra: list[str] | None = None,
@@ -217,62 +337,70 @@ def _lancer(
         return 124, "dépassement de la borne de temps", sortie.with_suffix(".midi")
 
 
-def _convertir(source: Path, racine: Path) -> Path | None:
+def _convertir(source: Path, racine: Path) -> tuple[Path | None, bool]:
     """Copie le dossier de ``source`` et le passe par ``convert-ly``.
 
-    LilyPond 2.27 refuse les commandes supprimées après 2.10/2.16
-    (`\\compressMusic`, `\\compressFullBarRests`, `\\setTextCresc`…) et son
-    rattrapage insère des silences : la référence MIDI serait fausse. Le
-    ``convert-ly`` de la même installation applique les règles de
-    `python/convertrules.py` (par exemple l. 2765 et l. 4239) à une **copie**
-    du dossier (les `\\include` restent relatifs), puis on compile la copie.
+    Repli quand LilyPond 2.27 refuse une commande supprimée (son rattrapage
+    insère des silences et lance une référence fausse). `convertir_copie`
+    applique les règles de `python/convertrules.py` à une **copie** du dossier,
+    sous bwrap ; les `\\include` restent relatifs.
     """
-    convert_ly = shutil.which("convert-ly")
-    if not convert_ly:
-        return None
-    copie = racine / "src"
+    copie = racine / "src-recup"
     shutil.copytree(source.parent, copie, dirs_exist_ok=True)
-    for fichier in sorted(copie.rglob("*")):
-        if fichier.suffix not in (".ly", ".ily"):
-            continue
-        subprocess.run(
-            [convert_ly, "-e", str(fichier)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=60,
-            check=False,
-        )
+    resultat = convertir_copie(
+        copie, racine, fichiers=fichiers_a_convertir(copie / source.name),
+        version=version_source(source.read_text(encoding="utf-8", errors="replace")),
+    )
+    if not resultat["applique"]:
+        return None, False
     converti = copie / source.name
-    return converti if converti.exists() else None
+    return (converti if converti.exists() else None), resultat["modifie"]
 
 
 def compiler(
     source: Path, destination: Path, lilypond: str, timeout: int,
-    sandbox: Path | None = None,
+    sandbox: Path | None = None, convert_ly: bool = False,
 ) -> dict:
     """Compile une source et copie son MIDI ; renvoie une ligne de statut.
 
-    Si LilyPond signale une commande inconnue (syntaxe supprimée que
-    ``convert-ly`` sait réécrire), la source est convertie dans une copie et
-    recompilée : la référence reste alors celle du LilyPond installé, mais sur
-    le source que `convert-ly` produirait, au lieu d'être jetée.
+    Avec ``convert_ly``, une source qui déclare un ``\\version`` plus ancien
+    que le compilateur installé est d'abord convertie par le ``convert-ly`` de
+    **la même installation** (LilyPond 2.27), sur une copie dans le dossier
+    temporaire, puis la copie convertie est compilée. Le repli sur erreur
+    « commande inconnue » conserve le même chemin. Les champs ``converti`` et
+    ``modifie`` du statut disent si `convert-ly` a été appliqué et s'il a
+    réellement changé le fichier ; le corpus n'est jamais écrit.
     """
     debut = time.monotonic()
     converti = False
+    modifie = False
     with tempfile.TemporaryDirectory(dir=sandbox) as tmp:
-        sortie = Path(tmp) / "ly"
-        code, journal, midi = _lancer(source, sortie, lilypond, timeout, Path(tmp) if sandbox else None)
-        if "commande inconnue" in journal or "unknown command" in journal:
-            converti_source = _convertir(source, Path(tmp))
+        base = Path(tmp)
+        sortie = base / "ly"
+        travail = source
+        texte = source.read_text(encoding="utf-8", errors="replace")
+        if convert_ly and doit_convertir(texte, lilypond):
+            copie = base / "src"
+            shutil.copytree(source.parent, copie)
+            resultat = convertir_copie(
+                copie, base, fichiers=fichiers_a_convertir(copie / source.name),
+                version=version_source(texte),
+            )
+            converti, modifie = resultat["applique"], resultat["modifie"]
+            travail = copie / source.name
+        code, journal, midi = _lancer(travail, sortie, lilypond, timeout,
+                                      base if sandbox else None)
+        if not modifie and ("commande inconnue" in journal or "unknown command" in journal):
+            converti_source, change = _convertir(source, base)
             if converti_source is not None:
                 if midi.exists():
                     midi.unlink()
                 code, journal, midi = _lancer(
                     converti_source, sortie, lilypond, timeout,
-                    Path(tmp) if sandbox else None,
+                    base if sandbox else None,
                 )
                 if midi.exists() and midi.stat().st_size > 0:
-                    converti = True
+                    converti, modifie = True, change
         if midi.exists() and midi.stat().st_size > 0:
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(midi, destination / "ly.midi")
@@ -284,6 +412,7 @@ def compiler(
         "ok": ok,
         "code": code,
         "converti": converti,
+        "modifie": modifie,
         "temps": round(time.monotonic() - debut, 3),
         "erreur": "" if ok else journal[-400:],
     }
@@ -336,6 +465,7 @@ def _fichier_score_lu(source: Path, dossier: Path) -> tuple[Path, int] | None:
 def compiler_injecte(
     source: Path, destination: Path, lilypond: str, timeout: int, sandbox: Path,
     same_score: bool = False, raw_ref: Path | None = None,
+    convert_ly: bool = False,
 ) -> dict:
     """Compile une copie sandboxed avec ``\\midi { }`` injecté (regen-refs.py).
 
@@ -344,10 +474,15 @@ def compiler_injecte(
     copie locale (les ``\\include`` restent relatifs) et dans le bac à sable.
     Avec ``same_score``, l'injection vise le score que le lecteur importe et
     les ``\\midi`` des autres scores sont retirés, pour que LilyPond n'écrive
-    qu'un seul MIDI : celui de ce score.
+    qu'un seul MIDI : celui de ce score. Avec ``convert_ly``, une source dont
+    le ``\\version`` est antérieur à LilyPond est d'abord passée par le
+    ``convert-ly`` de la même installation, sur la copie et dans le même
+    sandbox ; un MIDI brut ne peut alors plus être réutilisé.
     """
     debut = time.monotonic()
-    if same_score and raw_ref is not None and raw_ref.is_file():
+    texte_source = source.read_text(encoding="utf-8", errors="replace")
+    conversion = convert_ly and doit_convertir(texte_source, lilypond)
+    if not conversion and same_score and raw_ref is not None and raw_ref.is_file():
         cible = _fichier_score_lu(source, source.parent)
         blocs_main = blocs_score(source.read_text(encoding="utf-8", errors="replace"))
         identique = cible is None or (
@@ -364,6 +499,7 @@ def compiler_injecte(
             shutil.copyfile(raw_ref, destination / "ly.midi")
             return {
                 "fichier": str(source), "ok": True, "code": 0, "converti": False,
+                "modifie": False,
                 "injecte": True, "same_score": True, "copie_brute": True,
                 "temps": round(time.monotonic() - debut, 3), "erreur": "",
             }
@@ -384,6 +520,22 @@ def compiler_injecte(
 
         cible = _fichier_score_lu(source, dossier) if same_score else None
         include_args = [] if cible is not None else prepare_includes(source, dossier)
+        converti = False
+        modifie = False
+        if conversion:
+            resultat = convertir_copie(
+                dossier, base, fichiers=fichiers_a_convertir(dossier / source.name),
+                version=version_source(texte_source),
+            )
+            converti, modifie = resultat["applique"], resultat["modifie"]
+            if same_score:
+                # convert-ly may rewrite a \score header; find the target again
+                # on the converted copy, never in the corpus.
+                cible = _fichier_score_lu(source, dossier)
+        # Frozen model of the copy (conversion and include injection included):
+        # the raw-injection fallback must restore this, not the obsolete source.
+        modele = base / "src-modele"
+        shutil.copytree(dossier, modele)
         texte_original = (dossier / source.name).read_text(encoding="utf-8",
                                                            errors="replace")
         bruts = candidats_avec_midi(texte_original) or [texte_original]
@@ -392,9 +544,11 @@ def compiler_injecte(
                 if fichier.suffix not in (".ly", ".ily") or not fichier.is_file():
                     continue
                 texte = fichier.read_text(encoding="utf-8", errors="replace")
-                modifie = pour_meme_score(texte, cible[1] if fichier == cible[0] else None)
-                if modifie != texte:
-                    fichier.write_text(modifie, encoding="utf-8")
+                texte_meme_score = pour_meme_score(
+                    texte, cible[1] if fichier == cible[0] else None,
+                )
+                if texte_meme_score != texte:
+                    fichier.write_text(texte_meme_score, encoding="utf-8")
             # The targeted copy is tried first.  If the selected score lives
             # in an include that is never engraved, LilyPond writes no MIDI;
             # the raw injection is then the honest fallback.
@@ -410,11 +564,9 @@ def compiler_injecte(
         essais = [(c, False) for c in candidats] + [(c, True) for c in repli]
         for candidat, restaurer in essais:
             if restaurer:
-                # Restore pristine includes before the raw fallback.
+                # Restore the converted/injected copy before the raw fallback.
                 shutil.rmtree(dossier)
-                shutil.copytree(source.parent, dossier)
-                if include_args:
-                    prepare_includes(source, dossier)
+                shutil.copytree(modele, dossier)
             (dossier / source.name).write_text(candidat, encoding="utf-8")
             code, journal, midi = _lancer(
                 dossier / source.name, sortie, lilypond, timeout,
@@ -430,7 +582,8 @@ def compiler_injecte(
         "fichier": str(source),
         "ok": ok,
         "code": 0 if ok else code,
-        "converti": False,
+        "converti": converti,
+        "modifie": modifie,
         "injecte": True,
         "same_score": same_score,
         "temps": round(time.monotonic() - debut, 3),
@@ -454,6 +607,51 @@ def selftest() -> None:
     assert "\\midi" in second.split("\\score")[2]
     # Comments and strings must not create or hide score blocks.
     assert len(blocs_score("% \\score { c'1 }\n\"\\score { d'1 }\"\n\\score { e'1 }")) == 1
+    # --convert-ly: only a declared older \version triggers the upgrade.
+    assert version_source('\\version "2.10.0"\n{ c4 }') == (2, 10, 0)
+    assert version_source('\\version "2.27"\n{ c4 }') == (2, 27, 0)
+    assert version_source('% \\version "2.10.0"\n{ c4 }') is None
+    assert version_source('{ c4 }') is None
+    # (2, 27, 0) is the LilyPond of this campaign; the production path reads
+    # the version from the very compiler passed on the command line.
+    assert doit_convertir('\\version "2.10.0"', (2, 27, 0))
+    assert doit_convertir('\\version "2.27.0"', (2, 27, 0)) is False
+    assert doit_convertir('\\version "2.28.0"', (2, 27, 0)) is False
+    assert doit_convertir('{ c4 }', (2, 27, 0)) is False
+    # Real convert-ly, same installation, inside the same bwrap sandbox, on a
+    # copy only: obsolete command rewritten, version header updated, source
+    # outside the copy untouched.
+    if shutil.which("convert-ly") and shutil.which("bwrap"):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            dossier = base / "src"
+            dossier.mkdir()
+            vieux = '\\version "2.10.0"\n{ \\compressFullBarRests c4 }\n'
+            (dossier / "vieux.ly").write_text(vieux, encoding="utf-8")
+            original = base / "corpus.ly"
+            original.write_text(vieux, encoding="utf-8")
+            (dossier / "autre.ly").write_text(vieux, encoding="utf-8")
+            # An include without \version inherits the main file's version.
+            (dossier / "inc.ily").write_text("\\relative { c4 }\n", encoding="utf-8")
+            (dossier / "vieux.ly").write_text(
+                vieux + '\\include "inc.ily"\n', encoding="utf-8")
+            cibles = fichiers_a_convertir(dossier / "vieux.ly")
+            assert [f.name for f in cibles] == ["vieux.ly", "inc.ily"], cibles
+            resultat = convertir_copie(dossier, base, fichiers=cibles,
+                                       version=(2, 10, 0))
+            assert resultat["applique"] and resultat["modifie"], resultat
+            assert "\\compressEmptyMeasures" in (dossier / "vieux.ly").read_text(
+                encoding="utf-8")
+            assert "\\relative c'" in (dossier / "inc.ily").read_text(
+                encoding="utf-8")
+            assert "\\compressFullBarRests" in (dossier / "autre.ly").read_text(
+                encoding="utf-8")
+            converti = (dossier / "vieux.ly").read_text(encoding="utf-8")
+            assert "\\compressEmptyMeasures" in converti and '\\version "2.27.0"' in converti
+            assert original.read_text(encoding="utf-8") == vieux
+            avant = converti
+            assert convertir_copie(dossier, base, fichiers=cibles)["applique"]
+            assert (dossier / "vieux.ly").read_text(encoding="utf-8") == avant
     print("selftest références : OK")
 
 
@@ -485,6 +683,10 @@ def main() -> None:
     p.add_argument("--raw-refs", default="",
                    help="raw reference tree; with --same-score, reuse a raw MIDI when "
                         "there is no score block to retarget")
+    p.add_argument("--convert-ly", action="store_true",
+                   help="when a source declares a \\version older than this LilyPond, "
+                        "run the installed convert-ly on a sandboxed copy before "
+                        "compiling (LilyPond's own upgrade path, not a comparator change)")
     args = p.parse_args()
     if args.selftest:
         selftest()
@@ -493,6 +695,8 @@ def main() -> None:
         p.error("--manifest, --out and --lot are required")
     if args.same_score and not args.inject_midi:
         p.error("--same-score requires --inject-midi")
+    if args.convert_ly and not args.sandbox:
+        p.error("--convert-ly requires --sandbox: convert-ly rewrites an untrusted copy")
 
     sandbox = None
     if args.sandbox:
@@ -532,11 +736,12 @@ def main() -> None:
                 futurs.append(pool.submit(
                     compiler_injecte, source, destination,
                     args.lilypond, args.timeout, sandbox, args.same_score, brut,
+                    args.convert_ly,
                 ))
         else:
             futurs = [
                 pool.submit(compiler, source, destination, args.lilypond, args.timeout,
-                            sandbox)
+                            sandbox, args.convert_ly)
                 for source, destination in a_faire
             ]
         for index, futur in enumerate(futurs, 1):

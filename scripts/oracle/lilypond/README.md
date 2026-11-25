@@ -347,3 +347,20 @@ the raw injection already plays the selected score: no `\score` to retarget,
 or an explicit `\score` where LilyPond's first MIDI is the first score with
 `\midi`, i.e. the reader's choice. Keep the two reference trees separate;
 report both scores rather than replacing the raw one.
+
+### Obsolete `\version`: `--convert-ly`
+
+When a source declares a `\version` older than the installed LilyPond, LilyPond
+2.27 may reject a command removed after 2.10/2.16, mis-parse the next duration
+and write a MIDI with shifted attacks (`\compressFullBarRests`,
+`\compressMusic`, `\autochange`, `\fermataMarkup`, `\partcombine`, …).
+`references.py --convert-ly` applies **LilyPond's own upgrade path** before
+compiling: it runs the same installation's `convert-ly` on a copy of the source
+tree inside the same `bwrap` sandbox, then compiles that converted copy. This
+is not a comparator or exclusion change; the corpus is never written. Each
+`status.jsonl` row records `converti` (convert-ly applied) and `modifie` (the
+copy's bytes actually changed). With `--same-score`, a raw MIDI is never reused
+for a source that needs conversion, and the score selection is resolved again
+on the converted copy. `--convert-ly` requires `--sandbox`. The option's
+selftest checks version comparison, rewriting of `\compressFullBarRests` and
+that a file outside the copy is untouched.
