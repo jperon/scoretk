@@ -535,8 +535,8 @@ fn multiplicateur_du_silence_multi_mesures_compte_les_mesures_du_modele() {
 
     let produit = scoretk_lilypond_export::write_lilypond(&score).expect("écriture");
     assert!(
-        produit.contains("R1*3"),
-        "le multiplicateur doit compter les trois mesures de silence du modèle :\n{produit}"
+        produit.matches("R1").count() >= 3 && !produit.contains("R1*"),
+        "les trois mesures de silence du modèle doivent rester distinctes :\n{produit}"
     );
     assert!(
         !produit.contains("R1*5"),

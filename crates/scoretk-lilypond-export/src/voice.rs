@@ -149,21 +149,10 @@ pub(crate) fn render_body(
                         let levee_partielle = measure_index == 0
                             && measure.len.is_positive()
                             && measure.len < measure.nominal_len;
-                        // Un silence multi-mesures étale `measure.len` sur
-                        // plusieurs mesures nominales : le `R1*N` porte sur
-                        // la mesure nominale (Notation Reference §2.2.3),
-                        // pas sur l'étendue du silence.
-                        let multi_rest = measure
-                            .multi_measure_rest
-                            .filter(|count| *count > 1)
-                            .is_some_and(|count| {
-                                measure.nominal_len.is_positive()
-                                    && measure.len
-                                        == measure.nominal_len
-                                            * Fraction::from_integer(i64::from(count))
-                            });
+                        // Un silence multi-mesures s'écrit `R1` sous
+                        // `measureLength` (Notation Reference §2.2.3) : la
+                        // longueur réelle de la mesure doit être conservée.
                         if !levee_partielle
-                            && !multi_rest
                             && time.measure_len() != measure.len
                             && measure.len.is_positive()
                         {
@@ -570,7 +559,14 @@ pub(crate) fn render_body(
             let all_rests = items[item_index..end_of_measure]
                 .iter()
                 .all(|item| item.chord_rest.is_rest());
-            if all_rests {
+            // Le champ `multi_measure_rest` est un plafond, pas une vérité :
+            // quand la grille du modèle porte plusieurs mesures distinctes de
+            // silence, chacune doit rester une mesure (`R1 | R1 | R1`), sinon
+            // la relecture perd leurs frontières. On ne condense que le cas
+            // d'une mesure réellement longue (§2.2.3).
+            let presents =
+                silences_present(&items, item_index, measure_index, score.measures.len());
+            if all_rests && (measure.len > measure.nominal_len || presents <= 1) {
                 // Le multiplicateur porte sur la mesure nominale : `R2.*30`
                 // et non `R1*9/4*30` pour 30 mesures de 3/4 (comportement de
                 // `musicxml2ly`).
@@ -580,18 +576,7 @@ pub(crate) fn render_body(
                     measure.len
                 };
                 if len.is_positive() {
-                    // Le champ du modèle est un plafond, pas une vérité : le
-                    // multiplicateur est le nombre de mesures de silence
-                    // réellement présentes, ou l'étendue de la mesure quand
-                    // elle en condense plusieurs (cas des tests du corpus).
-                    let presents =
-                        silences_present(&items, item_index, measure_index, score.measures.len());
                     let etendue = (measure.len / len).as_f64().round().max(1.0) as usize;
-                    // Dès que la grille du modèle porte plusieurs mesures de
-                    // silence, elle décrit la musique réelle (§2.2.3) : la
-                    // `len` du marqueur est redondante et ne doit pas allonger
-                    // le silence. Sinon (une seule mesure longue), c'est elle
-                    // qui donne le nombre de mesures nominales couvertes.
                     let reel = if presents > 1 { presents } else { etendue }.min(count as usize);
                     emitter.token(&format!("{}*{reel}", measure_rest_token(len)));
                     multi_rest_left = reel.saturating_sub(1) as u16;
@@ -618,7 +603,9 @@ pub(crate) fn render_body(
 
             let render_item = |index: usize, suppress_tremolo: bool, body: Option<Fraction>| {
                 let entry = &items[index];
-                let mut token = if suppress_tremolo || body.is_some() {
+                let bare_measure_rest =
+                    measure_plan[measure_index].set && entry.chord_rest.is_full_measure_rest();
+                let mut token = if suppress_tremolo || body.is_some() || bare_measure_rest {
                     chord::render_inner(
                         score,
                         entry.chord_rest,
@@ -626,6 +613,7 @@ pub(crate) fn render_body(
                         crate::pitch::written_transposition(transpose_at(score, staff, entry.tick)),
                         suppress_tremolo,
                         body,
+                        bare_measure_rest,
                     )
                 } else {
                     chord::render(
@@ -878,22 +866,11 @@ fn measure_length_plan(score: &Score, staff: usize, voice: usize) -> Vec<Measure
                 _ => None,
             })
             .last();
-        // Un silence multi-mesures condense plusieurs mesures dans
-        // `measure.len` ; `R1*N` porte sur la mesure nominale (§2.2.3).
-        // Poser `measureLength = #N/1` ferait sonner chaque `R1` N fois
-        // trop long : la métrique nominale doit rester en vigueur.
-        let multi_rest = measure
-            .multi_measure_rest
-            .filter(|count| *count > 1)
-            .is_some_and(|count| {
-                measure.nominal_len.is_positive()
-                    && measure.len == measure.nominal_len * Fraction::from_integer(i64::from(count))
-            });
-        let written_len = if multi_rest {
-            measure.nominal_len
-        } else {
-            measure.len
-        };
+        // Une mesure irrégulière qui ne contient qu'un silence de mesure
+        // entière est écrite `R1` sous `measureLength = #len` (§2.2.3), et non
+        // `R1*N` : ce dernier étalerait le silence sur N mesures nominales et
+        // ferait perdre la mesure longue du modèle à la relecture.
+        let written_len = measure.len;
         let mut expected = current;
         if let Some(time) = time {
             meter = time.measure_len();

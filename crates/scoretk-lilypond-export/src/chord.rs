@@ -60,6 +60,7 @@ pub(crate) fn render(
         transpose_chromatic,
         false,
         None,
+        false,
     )
 }
 
@@ -72,6 +73,7 @@ pub(crate) fn render_inner(
     transpose_chromatic: i32,
     suppress_tremolo: bool,
     duration_override: Option<Fraction>,
+    bare_measure_rest: bool,
 ) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         // Silence « gap » de `Measure::fillGap` : il ne s'exporte pas, il ne
@@ -85,11 +87,18 @@ pub(crate) fn render_inner(
             // de la mesure (`ly/parser.yy`, `MULTI_MEASURE_REST`), y compris
             // quand il est invisible : `r1` vaudrait quatre noires en 3/4 et
             // décalerait tout ce qui suit d'une noire.
-            let length = length_token(if measure_len.is_positive() {
-                measure_len
+            let length = if bare_measure_rest {
+                // `Timing.measureLength` porte déjà la longueur irrégulière :
+                // `R1` couvre exactement cette mesure, alors que `R1*N` en
+                // couvrirait N nominales.
+                "1".to_owned()
             } else {
-                chord_rest.ticks()
-            });
+                length_token(if measure_len.is_positive() {
+                    measure_len
+                } else {
+                    chord_rest.ticks()
+                })
+            };
             if !rest.visible {
                 return format!("\\once \\override Rest.transparent = ##t R{length}");
             }

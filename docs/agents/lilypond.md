@@ -251,7 +251,7 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | `KeySig` | `\key <tonic> \major` or `\minor` |
 | `Clef` | `\clef treble`, `bass`, `alto`, `tenor`, `"treble_8"`, `varbaritone`, `percussion`… |
 | `Staff.default_clef` without a `Clef` at the head of the first measure | `\clef …` at the start of voice 0; `read4xx` does not materialise a `HeaderClef` segment, unlike `read302` |
-| `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… |
+| `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… when one model measure spans several nominal measures; one `R1` per model measure when the grid carries several successive rest measures (`R1 | R1 | R1`), so their boundaries survive the round trip |
 | `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` for repeats, `\bar "|."`, `\bar "||"`, `\bar ";"` |
 | `section_break_before` | `\section` |
 | `line_break` | `\break` (except on the last measure) |
@@ -9743,6 +9743,11 @@ per §52.3):
   representation: LilyPond 2.26 rejects both `120.5` and
   `#(ly:make-moment 241 2)` ("not an exact unsigned number"), so the
   integer BPM is written and the written text keeps MuseScore's value.
+- **Multi-measure rests.** The writer no longer collapses successive model
+  measures of silence into `R1*N`: each measure keeps its own `R1` and bar
+  check, while a single long measure still uses `R1*N` (Notation Reference
+  §2.2.3). This closed 15 `measure` and 11 `rest` losses on `v4/mmrest` and
+  `v3/testTboxWords1`; all 56 outputs still compile (56/56).
 - All 56 corpus outputs still compile with LilyPond 2.27
   (`lilypond_compile`: 56/56), with no new warning.
 
