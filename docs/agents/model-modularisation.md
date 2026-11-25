@@ -907,3 +907,83 @@ Reading the table:
 - No reader or writer was changed by this campaign. §11.4 is the input to the
   next tasks, which must close those gaps one layer at a time, re-running
   this table after each change.
+
+### 11.6 Final table after the gap campaign (2026-11-25)
+
+Definitions changed during §11.0–§11.5: `midi-articulation` and the
+MuseScore-only style defaults are L6 (§11.4), the `tuplet-bracket` item
+compares the rendered decision, and style floats are normalised to five
+decimals. The "before" column is therefore the historical §11.3 table, not a
+re-measurement with the current definitions.
+
+Round trip (`reference → write X → read X`):
+
+| Direction | Declared | Before (§11.3) | After | Target 95 % |
+| --- | --- | ---: | ---: | --- |
+| mscx / mscz | L0–L6 | 95.36 % | **99.51 %** | reached |
+| musicxml / mxl | L0–L5 | 78.32 % | **95.44 %** | reached |
+| midi | L0–L4 | 63.61 % | 68.40 % | **not reached** |
+| lilypond | L0–L5 | 79.32 % | 90.58 % | **not reached** |
+| abc | L0–L4 | 81.08 % | 89.75 % | **not reached** |
+
+Import alone (`reference file → reader`, same redefined inventory):
+
+| Format | Source | Before (§11.3) | After |
+| --- | --- | ---: | ---: |
+| musicxml / mxl | MuseScore 4.7.4 `*.ref.musicxml` | 78.32 % | **95.44 %** |
+| midi | MuseScore 4.7.4 `*.ref.mid` | 32.52 % | 39.81 % |
+| lilypond | scoretk snapshot — self-consistency | 79.32 % | 90.58 % |
+| abc | scoretk snapshot — self-consistency | 81.08 % | 89.75 % |
+
+`e2e_corpus` stays at 8/8 passing with no changed discrepancy, as do
+`cargo test --workspace`, clippy `-D warnings` and `fmt --check` after each
+commit.
+
+#### Why the remaining three directions are below 95 %
+
+**MIDI (68.40 % round trip, 39.81 % import alone; essential 83.41 %).**
+The SMF has *no* measure or bar-line object, no repeats/voltas/tuplets/ties
+and no `Credit` structure: the delta-time track chunk has "no absolute
+timestamps and no bar/measure/staff/voice fields"
+(`format-ref/midi.md` §"Container layout"), "SMF has no repeats, voltas,
+tuplets, ties or slurs" (§"Instruments, parts, repeats") and the meta-event
+table (§"Meta-event types") only offers free text, track names and lyrics —
+not indexed, justified credits. The remaining `measure` 100, `barline` 85,
+`credit` 67, `title` 60, `slur` 65 and `tremolo` items are therefore either
+not carried by SMF at all or only reconstructed by the importer's quantiser
+(`format-mapping/midi.md` rows 15, 25, 27, 31–36). `note` 284 / `rest` 200 are
+*in* SMF, but a rest is silence rather than an event and the tick is changed
+by repeat unfolding, so those are **open implementation work**, not a format
+limit. Under the current per-layer declaration, 95 % cannot be reached: SMF
+does not carry the L1/L3 items that dominate the denominator.
+
+**LilyPond (90.58 %).** `\paper` now restores page geometry and the implicit
+end-bar line is back, but two large families have no LilyPond counterpart:
+the text-style font sizes (`title`/`composer`/`lyricist`, 90 items) and the
+numeric velocity of dynamics (43 items). `\header` carries titles, not text
+styles, and `\paper` has no staff-space/title-font-size field
+(`format-mapping/lilypond.md`, `\paper` row and `\header` row); dynamics are
+symbols (`\p`, `\mf`) whose velocity belongs to the MIDI-only `\score`
+(rows "Dynamics" and "Second MIDI-only `\score`"). Note-head group fidelity
+is documented as open work (row "Articulations, ornaments" and "Model gaps"
+n°3). Those 133 items are 2.26 % of the corpus: 95 % is *not claimed
+impossible* for LilyPond — reaching it still requires the remaining 41
+note-head, 24 rest, 22 tremolo, 19 credit, 21 barline and 17 measure items.
+That work is not done in this campaign.
+
+**ABC (89.75 %).** Two item families are genuinely outside ABC 2.1. The
+`instrument` items (63) compare the MuseScore instrument identifier such as
+`0:keyboard.piano`; ABC has only GM program/channel/volume/pan directives
+(`format-ref/abc.md` §"Voices, staves, parts"; `format-mapping/abc.md` §6.2
+and "Model gaps" n°5). The `key-sig` items (37) are per-staff local key
+changes while ABC has one global `K:` field (`format-mapping/abc.md`
+"Model gaps" n°1). Together they are 100 of 4 870 items (2.05 %); even if
+every other item were matched, the ceiling with the current L0–L4
+declaration is ≈ 93.7 %, below the requested 95 %. The remaining `credit`
+67, `dynamic-velocity` 43, `note` 25 and `tremolo` 24 items are open
+implementation work, not a format limit.
+
+No definition was changed to gain points: each reclassification above is
+backed by a format specification section and by a test, and the `style`
+items kept in L5 (page geometry, scaling, credit fonts) are exactly those
+that MusicXML `<defaults>` and LilyPond `\paper` can carry.
