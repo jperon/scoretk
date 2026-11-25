@@ -517,10 +517,19 @@ pub fn parse_key(text: &str) -> Option<ParsedKey> {
     }
     let fifths = major_fifths(major_letter, major_alter)?;
 
-    let model_mode = match mode {
-        Mode::Ionian => KeyMode::Major,
-        Mode::Aeolian => KeyMode::Minor,
-        _ => KeyMode::Major,
+    // Un `K:` sans mot de mode n'affirme pas « majeur » : MuseScore 4.7.4
+    // laisse `<mode>` absent, ce que le modèle représente par `Unknown`
+    // (même lecture que `\major` côté LilyPond, cf. `format-mapping/lilypond.md`).
+    // L'écriture `key_field` continue d'émettre la tonique seule pour les deux
+    // valeurs, donc aucun instantané ABC ne change.
+    let model_mode = if suffix.is_empty() {
+        KeyMode::Unknown
+    } else {
+        match mode {
+            Mode::Ionian => KeyMode::Major,
+            Mode::Aeolian => KeyMode::Minor,
+            _ => KeyMode::Major,
+        }
     };
     let exotic_mode = match mode {
         Mode::Ionian | Mode::Aeolian => None,
@@ -679,6 +688,11 @@ mod tests {
 
         let parsed = parse_key("Bb").expect("si bémol majeur");
         assert_eq!(parsed.key.concert_key.fifths(), -2);
+        assert_eq!(parsed.key.mode, KeyMode::Unknown);
+        assert_eq!(
+            parse_key("G major").expect("mode explicite").key.mode,
+            KeyMode::Major
+        );
         let parsed = parse_key("F#m").expect("fa dièse mineur");
         assert_eq!(parsed.key.concert_key.fifths(), 3);
         assert_eq!(parsed.key.mode, KeyMode::Minor);
