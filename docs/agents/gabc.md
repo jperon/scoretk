@@ -148,15 +148,41 @@ record make that choice explicit (`model-modularisation.md` §7.1).
 
 ## 8. Writer (`scoretk-gabc-export`)
 
-`write_gabc(&Score) → String` emits the exact `header_source` + `notation`
-stored by the reader. Because the reader keeps the bytes from before the
-`%%` marker to the end of the file — comments, spaces and all — the round
-trip is byte-identical. This is deliberate: spaces are music
-(`Gabc.tex:60-61,668-687`) and the plan requires the L6 payload to be
-written back verbatim when present. A score with no Gregorian payload is
-refused (`Error::MissingGregorian`) instead of inventing chant from a
-metrical L0/L1 score: durations and metre in that projection are not source
-data (`:801-845`).
+`write_gabc(&Score) → String` **serialises the structured L6 payload**; it
+does not keep or read any raw source text. The `Gregorian` model has no
+`header_source`/`notation` field (a test in `scoretk-gabc-export` reads the
+model source to keep a reintroduction from silently restoring the
+self-comparison). Each emitted construct comes from a parsed field:
+
+| Emitted construct | Structured source | Spec / code |
+| --- | --- | --- |
+| `name: v;`, multi-line `book: …;;` | `GregorianHeader { name, value }` | `Gabc.tex:67-82,69-74` |
+| `%%` marker and section break | generated, not stored | `:51,58` |
+| Initial clef `(c3)` | `Gregorian::clefs[0]` | `:847-870`, `struct.c:1273-1288` |
+| Clef changed inside a score | `Syllable::clef` (added for this purpose) | `:847-870` |
+| Syllable text, `<sp>`/`<alt>` rubrics | `Syllable::text` (rubric is markup inside it) | `:228-343` |
+| Pitch letter and its neume | `GregorianNote::letter`, `glyph` | `:408-443,452-700` |
+| `.` / `'` / `_` / liquescents | `NeumeSign::raw` when `glyph` is empty | `:702-797` |
+| `,` `;` `:` `::` `;1`…`;8` | `BarKind::as_str()` | `:801-845`, `dump.c:805-821` |
+| Space or line end after a group | `Syllable::space_after` | `:60-61,241-245` |
+
+**Atomic-token exception.** Three strings are copied because they *are* the
+GABC token and have no decomposed representation in the model: (1) a sign's
+`raw` (`.1`, `_502`, `r3`, …) — `SignKind` alone loses placement and modifiers
+(`:742-797`); (2) one neume's `glyph` — the spelling of a single neume is the
+unit Gregorio parses (`:452-700`), and decomposing it would require a new
+neume-grammar layer; (3) a clef token (`cb3`, `c1@c4`) — two simultaneous
+clefs have no single pivot `Clef` equivalent (`:854-856`). Every one of these
+is produced by the reader from parsed characters, never by slicing the source
+file. Everything else is generated.
+
+**What is lost on a round trip** (and therefore measured honestly): header
+comments, bracketed layout/tuning/TeX attributes stripped by
+`strip_attributes` (`:689-700,908-931,1093-1118`), custos and line breaks
+`z`/`Z` (`:872-906`), NABC cuts `|`, zero-width spaces `!`, within-group
+ordering of bars versus notes, and exact line breaks/indentation. These are
+not fields of the payload, so a byte comparison would have hidden their loss
+by copying them; see §9 for the canonical results.
 
 `Capabilities` declares L0+L1+L2+L3+L6 for both directions, cited from
 `Gabc.tex:228-343` (text), `:408-443` (pitch), `:452-870` (neumes, signs,

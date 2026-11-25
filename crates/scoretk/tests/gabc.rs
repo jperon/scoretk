@@ -17,7 +17,7 @@
 
 //! Facade wiring of GABC: extension, content detection and round trip.
 
-use scoretk::{read, write, Error, Format, Options};
+use scoretk::{read, write, Format, Options};
 
 const GABC: &str = "% a comment\nname: Veni Sancte Spiritus;\nlanguage: latin;\nmode: 2;\n%%\n(c3)\nVE(g.)ni(h') (,)\n";
 
@@ -33,19 +33,28 @@ fn gabc_is_recognised_by_extension_and_content() {
 }
 
 #[test]
-fn gabc_round_trip_preserves_the_source_bytes() {
+fn gabc_round_trip_serialises_the_payload() {
     let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
     let bytes = write(&score, Format::Gabc, &Options::default()).expect("GABC export");
-    assert_eq!(String::from_utf8(bytes).expect("UTF-8"), GABC);
-    let again = read(GABC.as_bytes(), Format::Gabc).expect("second import");
-    assert_eq!(score, again);
-}
-
-#[test]
-fn writing_gabc_without_a_gregorian_payload_is_an_error() {
-    let source =
-        br#"<museScore version="4.60"><Score><Division>480</Division></Score></museScore>"#;
-    let score = read(source, Format::Mscx).expect("MuseScore import");
-    let error = write(&score, Format::Gabc, &Options::default()).expect_err("no payload");
-    assert!(matches!(error, Error::Gabc(_)), "{error}");
+    let written = String::from_utf8(bytes).expect("UTF-8");
+    // The leading comment is not a modelled field: it must not come back.
+    // A byte-identical output would mean the writer copied its input.
+    assert!(!written.contains("a comment"), "{written}");
+    assert!(
+        written.starts_with("name: Veni Sancte Spiritus;\n"),
+        "{written}"
+    );
+    let again = read(written.as_bytes(), Format::Gabc).expect("second import");
+    let reference = scoretk::model::inventory(&score);
+    let candidate = scoretk::model::inventory(&again);
+    let coverage = scoretk::model::compare(&reference, &candidate, scoretk::model::Layers::ALL);
+    assert_eq!(
+        (
+            coverage.total.reference,
+            coverage.total.matched,
+            coverage.total.extra
+        ),
+        (reference.items.len(), reference.items.len(), 0),
+        "the structured inventory changed"
+    );
 }

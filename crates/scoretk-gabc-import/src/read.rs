@@ -47,10 +47,6 @@ pub(super) fn parse_payload(header_source: &str, notation: &str) -> Result<Grego
         staff_lines,
         clefs,
         syllables,
-        header_source: header_source.to_owned(),
-        // The `%%` line is part of the notation half of `split_sections`, so
-        // concatenating both halves reproduces the source byte for byte.
-        notation: notation.to_owned(),
         derived_modern_view: false,
     })
 }
@@ -88,21 +84,32 @@ fn parse_notation(body: &str) -> (Vec<Syllable>, Vec<String>) {
     let mut code = String::new();
     let mut in_notes = false;
     let mut escaped = false;
+    let mut seen_content = false;
     let mut index = 0;
     while index < chars.len() {
         let char = chars[index];
         if in_notes {
             if char == ')' {
                 let (mut syllable, group_clefs) = parse_group(&code);
-                clefs.extend(group_clefs);
+                clefs.extend(group_clefs.iter().cloned());
+                // The clef is stored on the group that carries it: an
+                // in-score clef change must not be moved to the beginning by
+                // the writer (`Gabc.tex:847-870`, `struct.c:1273-1288`).
+                syllable.clef = group_clefs.into_iter().next();
                 syllable.text = take_text(&mut text);
                 syllable.rubric = rubric(&syllable.text);
-                if !syllable.notes.is_empty()
+                let has_content = !syllable.notes.is_empty()
                     || !syllable.bars.is_empty()
                     || !syllable.signs.is_empty()
-                    || !syllable.text.is_empty()
-                {
+                    || !syllable.text.is_empty();
+                // A leading group holding only the initial clef is recorded
+                // in `Gregorian::clefs` and emitted before the first
+                // syllable; a later clef-only group needs its own syllable.
+                if has_content || (syllable.clef.is_some() && seen_content) {
                     syllables.push(syllable);
+                }
+                if has_content {
+                    seen_content = true;
                 }
                 code.clear();
                 in_notes = false;

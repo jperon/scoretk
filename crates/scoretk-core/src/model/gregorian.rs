@@ -190,7 +190,7 @@ impl NeumeSign {
 }
 
 /// One pitch letter of a neume (`Gabc.tex:408-443`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GregorianNote {
     /// Typographical staff position `a`–`n` or `p`, **not** a concert pitch
     /// name (`:410-413`); upper case is a punctum inclinatum (`:454-468`).
@@ -207,6 +207,11 @@ pub struct GregorianNote {
 pub struct Syllable {
     /// Text outside parentheses, markup included (`:241-245,254-309`).
     pub text: String,
+    /// Clef token opening this group, when one occurs here
+    /// (`:847-870`). `Gregorian::clefs` keeps the source-order list; this
+    /// per-syllable slot is what lets the writer place a *clef change* at the
+    /// right point instead of inventing one.
+    pub clef: Option<String>,
     /// Special-character markup such as `<sp>R/</sp>` (`:297-309,345-378`).
     pub rubric: Option<String>,
     /// Pitch letters of the parenthesised groups, in source order.
@@ -233,15 +238,12 @@ pub struct Gregorian {
     /// (`:847-870`).
     pub clefs: Vec<String>,
     /// Primary data: syllables, their neumes and their separation bars.
-    pub syllables: Vec<Syllable>,
-    /// Exact header section source, so the writer can emit it verbatim.
-    pub header_source: String,
-    /// Exact notation section source, so the writer can emit it verbatim.
     ///
-    /// The modularisation plan (§7.1) requires the export to write the L6
-    /// payload back verbatim when present; the structured fields above are
-    /// what the inventory and the loss report measure.
-    pub notation: String,
+    /// This is the **only** source the writer uses. No raw header or notation
+    /// text is kept: every emitted token is rebuilt from these fields (an
+    /// atomic GABC spelling such as a sign's `raw` or a clef token is the one
+    /// deliberate exception, justified in `docs/agents/gabc.md` §8).
+    pub syllables: Vec<Syllable>,
     /// True when the L0/L1 event spine was generated from this payload.
     ///
     /// GABC carries neither metrical measures nor fixed durations
@@ -305,6 +307,7 @@ mod tests {
         });
         gregorian.syllables.push(Syllable {
             text: "DE(g)us".to_owned(),
+            clef: None,
             rubric: Some("<sp>R/</sp>".to_owned()),
             notes: vec![GregorianNote {
                 letter: 'g',

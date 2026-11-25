@@ -1230,6 +1230,7 @@ mod tests {
                 clefs: vec!["c3".to_owned()],
                 syllables: vec![Syllable {
                     text: "Ve(g)ni(h)".to_owned(),
+                    clef: None,
                     rubric: None,
                     notes: vec![GregorianNote {
                         letter: 'g',
@@ -1240,8 +1241,6 @@ mod tests {
                     bars: vec![BarKind::DivisioFinalis],
                     space_after: false,
                 }],
-                header_source: "name: Veni;\n".to_owned(),
-                notation: "(c3) Ve(g)ni(h) (::)".to_owned(),
                 derived_modern_view: true,
             }));
             score
