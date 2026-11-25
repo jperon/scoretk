@@ -275,22 +275,43 @@ fn parse_group(raw_code: &str) -> (Syllable, Vec<String>) {
     (syllable, clefs)
 }
 
-/// Removes bracketed attributes from a note group (`Gabc.tex:689-700,908-931,
-/// 1093-1118`); the raw source remains in the L6 payload.
+/// Removes bracketed layout/tuning attributes from a note group
+/// (`Gabc.tex:689-700,908-931,1093-1118`), but **not** the pitch letters of a
+/// fusion group introduced by `@[…]` (`:603-666`): there the brackets group
+/// primitive notes that are all sung (`@[ehg]` = `e`, `h`, `g`), so stripping
+/// them silently lost notes. The caller iterates the same characters and
+/// treats the `@` as a fusion marker, leaving one note per letter.
 fn strip_attributes(code: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
     let mut result = String::with_capacity(code.len());
-    let mut depth = 0;
-    for char in code.chars() {
-        match char {
-            '[' => depth += 1,
-            ']' => {
-                if depth > 0 {
-                    depth -= 1;
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '[' {
+            // An `@` immediately before `[` introduces a fusion sequence
+            // (`Gabc.tex:603-666`): its pitch letters are sung and must stay.
+            let fusion = index > 0 && chars[index - 1] == '@';
+            let mut depth = 1;
+            let mut end = index + 1;
+            while end < chars.len() && depth > 0 {
+                match chars[end] {
+                    '[' => depth += 1,
+                    ']' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            if fusion {
+                // Keep the primitives, drop the delimiters: `parse_group`
+                // already treats the preceding `@` as a fusion marker.
+                for char in &chars[index + 1..end.saturating_sub(1)] {
+                    result.push(*char);
                 }
             }
-            _ if depth == 0 => result.push(char),
-            _ => {}
+            index = end;
+            continue;
         }
+        result.push(chars[index]);
+        index += 1;
     }
     result
 }
@@ -345,6 +366,23 @@ mod tests {
         let syllable = group("g[cs:c]h[shape:stroke]i");
         assert_eq!(syllable.notes.len(), 3);
         assert_eq!(syllable.notes[0].glyph, "");
+    }
+
+    #[test]
+    fn fusion_groups_keep_every_primitive_note() {
+        // `Gabc.tex:603-666`: `@[ehg]` fuses three *sung* pitches; it is not
+        // a bracketed layout attribute. `gb18458` lost five notes this way.
+        let syllable = group("@[ehg]");
+        let letters: Vec<char> = syllable.notes.iter().map(|note| note.letter).collect();
+        assert_eq!(letters, ['e', 'h', 'g']);
+        let syllable = group("@[ig]");
+        let letters: Vec<char> = syllable.notes.iter().map(|note| note.letter).collect();
+        assert_eq!(letters, ['i', 'g']);
+        // Ordinary `[…]` attributes are still layout, not notes.
+        assert!(group("g[h390]a")
+            .notes
+            .iter()
+            .all(|note| note.glyph.is_empty()));
     }
 
     #[test]
