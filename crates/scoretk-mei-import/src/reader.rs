@@ -1001,21 +1001,25 @@ impl<'a> Reader<'a> {
     }
 
     /// Last chord/rest written on a track, used for attached notations.
+    ///
+    /// At the start of a measure, the initial clef/key/time signatures share
+    /// the chord's tick. Searching for the last segment with *any* element on
+    /// the track picks a signature segment and returns no chord rest: lyrics,
+    /// grace notes, articulations and tremolos attached to the first event
+    /// were then silently dropped. Search explicitly for a `ChordRest`.
     pub(crate) fn last_chord_rest_mut(
         &mut self,
         measure: usize,
         track: Track,
     ) -> Option<&mut ChordRest> {
-        let tick = self.score.measures[measure]
-            .segments
-            .iter()
-            .rev()
-            .find(|segment| segment.element(track).is_some())?
-            .tick;
         let position = self.score.measures[measure]
             .segments
             .iter()
-            .position(|segment| segment.tick == tick)?;
+            .rposition(|segment| {
+                segment
+                    .element(track)
+                    .is_some_and(|item| item.as_chord_rest().is_some())
+            })?;
         self.score.measures[measure].segments[position]
             .element_mut(track)
             .and_then(SegmentItem::as_chord_rest_mut)

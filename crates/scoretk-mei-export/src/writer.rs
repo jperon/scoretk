@@ -523,11 +523,16 @@ fn write_layer(
                         Some(chord),
                         cr.duration.kind,
                     );
+                    // `MeiExporter::writeVerse` (meiexporter.cpp:1594) attache
+                    // `<verse>` à l'élément `<note>` ouvert : MEI 5.1 définit
+                    // `verse` comme enfant de `note`/`chord`, pas comme frère.
                     write_verses(xml, cr);
+                    xml.end_element();
                 } else {
                     xml.start_element("chord", &refs);
                     for id in &chord.notes {
                         write_note(xml, score, id, &[], None, cr.duration.kind);
+                        xml.end_element();
                     }
                     write_artics(xml, chord);
                     write_verses(xml, cr);
@@ -625,13 +630,10 @@ fn write_note(
         attrs.push(("glyph.auth", "smufl"));
         attrs.push(("glyph.name", name));
     }
-    match chord {
-        Some(chord) => {
-            xml.start_element("note", &attrs);
-            write_artics(xml, chord);
-            xml.end_element();
-        }
-        None => xml.tag_empty("note", &attrs),
+    // L'élément reste ouvert : l'appelant y écrit les `<verse>` puis le ferme.
+    xml.start_element("note", &attrs);
+    if let Some(chord) = chord {
+        write_artics(xml, chord);
     }
 }
 
@@ -823,7 +825,7 @@ mod tests {
     use super::*;
     use scoretk_core::model::{
         ChordRest, Duration, Fraction, Measure, Note, Part, Score, Segment, SegmentType, Spanner,
-        SpannerAnchor, SpannerType, Track, VoltaInfo,
+        SpannerAnchor, SpannerType, StaffId, Track, VoltaInfo,
     };
 
     #[test]
@@ -941,5 +943,60 @@ mod tests {
         let output = write(&score, &MeiOptions::default()).expect("MEI with a slur");
         assert!(output.contains("startid=\"#n0\""));
         assert!(output.contains("endid=\"#n1\""));
+    }
+
+    /// MEI 5.1 `model.noteLike` : `<verse>` est un enfant de `<note>` (ou de
+    /// `<chord>`), jamais un frère dans la couche. `MeiExporter::writeVerse`
+    /// (meiexporter.cpp:1594) l'attache au nœud courant avant d'écrire la note.
+    #[test]
+    fn verses_are_children_of_the_note_and_survive_a_read() {
+        use scoretk_core::model::{ChordRestKind, Lyrics, LyricsSyllabic};
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Voice", "Vox"));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let note = score.add_note(Note::new(60, 14));
+        if let ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![note];
+        }
+        chord
+            .lyrics
+            .push(Lyrics::new(0, LyricsSyllabic::Single, "Du"));
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a lyric");
+        fn find<'a>(
+            node: &'a scoretk_xml_common::Element,
+            name: &str,
+        ) -> Option<&'a scoretk_xml_common::Element> {
+            if node.name == name {
+                return Some(node);
+            }
+            node.children.iter().find_map(|child| find(child, name))
+        }
+        let tree = scoretk_xml_common::parse(output.as_bytes()).expect("XML");
+        let note = find(&tree, "note").expect("note element");
+        assert_eq!(
+            note.child("verse")
+                .and_then(|verse| verse.child_text("syl")),
+            Some("Du")
+        );
+        let read_back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        let lyric = &read_back.measures[0]
+            .segments
+            .iter()
+            .find_map(|segment| {
+                segment
+                    .element(Track::new(StaffId::from_index(0), 0))
+                    .and_then(SegmentItem::as_chord_rest)
+            })
+            .expect("chord rest")
+            .lyrics[0];
+        assert_eq!(lyric.text, "Du");
     }
 }

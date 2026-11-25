@@ -416,3 +416,28 @@ order. No declaration was narrowed.
 
 Remaining leaders: `lyric` 14 934, `note` 9 518, `time-sig` 956,
 `key-sig` 406, `articulation` 376.
+
+### 9.5 Second fix: lyrics on the chord/rest segment
+
+Two independent defects dropped 14 886 of the 14 934 missing `lyric` items:
+
+1. **Writer.** `write_note` emitted `<note/>` then `<verse>` as a *sibling* in
+   the layer. MEI 5.1 defines `<verse>` as a child of `<note>`/`<chord>`
+   (`model.noteLike`), and `MeiExporter::writeVerse`
+   (meiexporter.cpp:1594) attaches it to the currently open note node. The
+   writer now opens `<note>`, writes articulations and verses, and closes it;
+   for a chord, each `<note>` is closed before `<chord>`'s own verses.
+2. **Reader.** `last_chord_rest_mut` looked for the last segment of a track
+   having *any* element. At the first tick of a measure the initial
+   clef/key/time-signature segments share that tick, so the lookup returned a
+   signature and no chord rest: lyrics (and grace chords, articulations,
+   tremolos) attached to the first event were dropped. The lookup now
+   explicitly requires a `SegmentItem::ChordRest`.
+
+| Kind (round trip) | Before | After |
+| --- | ---: | ---: |
+| `lyric` | 14 934 | 48 |
+| Full support | 91.77 % | **96.24 %** |
+
+Remaining leaders: `note` 9 518, `time-sig` 956, `key-sig` 406,
+`articulation` 376, `slur` 267, `stem` 219, `dynamic` 192.
