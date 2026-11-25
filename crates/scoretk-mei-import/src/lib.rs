@@ -197,4 +197,46 @@ mod tests {
             scoretk_core::model::Fraction::new(7, 4)
         );
     }
+
+    /// `Measure::measureToMEI` (meiconverter.cpp:2254) ne trace qu'une mesure
+    /// pour un multi-repos ; `@n` saute les mesures couvertes. Le lecteur doit
+    /// les recréer avec un silence entier (comme le modèle `.mscx`).
+    #[test]
+    fn expands_a_multi_measure_rest_span() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section>
+              <measure n="1"><staff n="1"><layer n="1"><mRest/></layer></staff></measure>
+              <measure n="4" metcon="false" right="end"><staff n="1"><layer n="1"/></staff></measure>
+            </section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a multi-measure rest");
+        assert_eq!(score.measures.len(), 3);
+        for (index, measure) in score.measures.iter().enumerate() {
+            assert_eq!(measure.len, scoretk_core::model::Fraction::new(4, 4));
+            assert_eq!(
+                measure.start_tick,
+                scoretk_core::model::Fraction::from_integer(index as i64)
+            );
+            let rest = measure
+                .segments
+                .iter()
+                .filter_map(|segment| {
+                    segment
+                        .element(scoretk_core::model::Track::new(
+                            scoretk_core::model::StaffId::from_index(0),
+                            0,
+                        ))
+                        .and_then(|item| item.as_chord_rest())
+                })
+                .next()
+                .expect("a full-measure rest");
+            assert!(rest.is_full_measure_rest());
+        }
+        assert_eq!(
+            score.measures[2].end_bar_line,
+            scoretk_core::model::BarLineType::End
+        );
+    }
 }

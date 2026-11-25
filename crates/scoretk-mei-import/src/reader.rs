@@ -25,9 +25,9 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Accidental, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Key,
-    Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType, StaffId, TimeSig,
-    TimeSigType, Track, Transpose, Tuplet, VOICES,
+    Accidental, BarLineType, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration,
+    Fraction, Key, Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType, StaffId,
+    TimeSig, TimeSigType, Track, Transpose, Tuplet, VOICES,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -309,16 +309,78 @@ impl<'a> Reader<'a> {
         // carries its real length. Match that so ticks stay aligned.
         let irregular = info.irregular || node.attribute("metcon") == Some("false");
         let gap = info.n.saturating_sub(index + 1) as i64;
-        self.score.measures[index].len = if node.attribute("metcon") == Some("false") && gap > 0 {
-            nominal * Fraction::from_integer(gap)
-        } else if irregular && len > Fraction::ZERO {
-            len
+        if node.attribute("metcon") == Some("false") && gap > 0 {
+            // `Convert::measureToMEI` (meiconverter.cpp:2254) writes a single
+            // `<measure>` for a whole multi-measure rest, and `writeScore`
+            // (meiexporter.cpp:292) iterates layout measures: the covered
+            // measures are absent from the reference. `@n` is the last
+            // displayed number of the group, so `gap` measures are hidden.
+            // Recreate them explicitly with a full-measure rest each, as the
+            // `.mscx` model has them, while keeping the group's total length.
+            let end_bar_line = self.score.measures[index].end_bar_line;
+            let repeat_count = self.score.measures[index].repeat_count;
+            self.score.measures[index].len = nominal;
+            self.score.measures[index].end_bar_line = BarLineType::Normal;
+            self.score.measures[index].repeat_count = 0;
+            self.expand_mmrest(index, nominal, gap as usize, end_bar_line, repeat_count);
         } else {
-            nominal
-        };
-        if gap > 0 {
-            self.score.measures[index].multi_measure_rest = Some(gap as u16);
+            self.score.measures[index].len = if irregular && len > Fraction::ZERO {
+                len
+            } else {
+                nominal
+            };
         }
+    }
+
+    /// Recrée les mesures couvertes par un multi-repos (`@n` qui saute).
+    fn expand_mmrest(
+        &mut self,
+        index: usize,
+        nominal: Fraction,
+        count: usize,
+        end_bar_line: BarLineType,
+        repeat_count: u8,
+    ) {
+        let start = self.score.measures[index].start_tick;
+        let staff_count = self.score.staves.len().max(1);
+        let has_content = self.score.measures[index].segments.iter().any(|segment| {
+            segment
+                .element(Track::new(StaffId::from_index(0), 0))
+                .and_then(SegmentItem::as_chord_rest)
+                .is_some()
+        });
+        if !has_content {
+            Self::insert_measure_rest(&mut self.score.measures[index], start, staff_count, nominal);
+        }
+        for offset in 1..count {
+            let tick = start + nominal * Fraction::from_integer(offset as i64);
+            let mut measure = Measure::new(index + offset, tick, nominal);
+            measure.len = nominal;
+            if offset + 1 == count {
+                measure.end_bar_line = end_bar_line;
+                measure.repeat_count = repeat_count;
+            }
+            Self::insert_measure_rest(&mut measure, tick, staff_count, nominal);
+            self.score.add_measure(measure);
+        }
+    }
+
+    /// Un silence de mesure entière sur la première portée, comme dans le
+    /// modèle `.mscx` (`Rest` avec `durationType=measure`).
+    fn insert_measure_rest(
+        measure: &mut Measure,
+        tick: Fraction,
+        staff_count: usize,
+        nominal: Fraction,
+    ) {
+        let mut segment = Segment::new(SegmentType::ChordRest, tick, staff_count);
+        let mut rest = ChordRest::rest(Duration::measure());
+        rest.ticks = Some(nominal);
+        segment.set_element(
+            Track::new(StaffId::from_index(0), 0),
+            SegmentItem::ChordRest(rest),
+        );
+        measure.add_segment(segment);
     }
 
     /// Insert (or complete) a segment at `tick` for `staff_idx`.
