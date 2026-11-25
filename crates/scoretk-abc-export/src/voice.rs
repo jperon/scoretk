@@ -72,6 +72,18 @@ pub(crate) fn render_voice(
     let model_voice = spec.voice;
     out.push_str(&voice_header(score, spec));
     out.push('\n');
+    // ABC 2.1 §11 : les directives `%%` sont ignorées par les programmes qui
+    // ne les connaissent pas. Celle-ci transporte l'identifiant d'instrument
+    // que `%%MIDI program` (GM) et `nm=`/`snm=` (noms) ne peuvent pas porter.
+    if let Some(id) = score
+        .staves
+        .get(staff)
+        .and_then(|value| score.parts.get(value.part.index()))
+        .map(|part| part.instrument.id.as_str())
+        .filter(|id| !id.is_empty())
+    {
+        out.push_str(&format!("%%scoretk instrument {id}\n"));
+    }
 
     let items = collect_items(score, staff, model_voice);
     // Port de `xml2abc.py::writePart` (lignes 331-334) : les couplets sont
@@ -322,9 +334,29 @@ fn voice_header(score: &Score, spec: writer::VoiceSpec) -> String {
             }
         })
         .unwrap_or_default();
+    let short_name = score
+        .staves
+        .get(staff)
+        .and_then(|value| score.parts.get(value.part.index()))
+        .map(|part| {
+            if part.instrument.short_name.trim().is_empty() {
+                part.short_name.clone()
+            } else {
+                part.instrument.short_name.clone()
+            }
+        })
+        .unwrap_or_default();
     let mut header = format!("V:{}", spec.number);
     if !name.trim().is_empty() {
+        // ABC 2.1 §7.1 : `name=`/`nm=` et `subname=`/`snm=` sont les noms
+        // affichés d'une voix (`abc2xml.py::voiceNamesAndMaps`).
         header.push_str(&format!(" name=\"{}\"", text::escape_annotation(&name)));
+    }
+    if !short_name.trim().is_empty() {
+        header.push_str(&format!(
+            " snm=\"{}\"",
+            text::escape_annotation(&short_name)
+        ));
     }
     if let Some(clef) = writer::initial_clef(score, staff) {
         if let Some(name) = pitch::clef_name(&scoretk_core::model::Clef::new(clef)) {

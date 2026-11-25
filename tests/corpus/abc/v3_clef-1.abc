@@ -7,6 +7,7 @@ K:C
 %%MIDI program 1
 %%score {1 2}
 V:1 name="Piano" clef=treble
+%%scoretk instrument keyboard.piano
 C,2D,2E,2 |
 E,2z4 |
 z6 |
@@ -15,6 +16,7 @@ z6 |
 z6 |
 z6 |]
 V:2 name="Piano" clef=bass
+%%scoretk instrument keyboard.piano
 c2d2e2 |
 z6 |
 z6 |

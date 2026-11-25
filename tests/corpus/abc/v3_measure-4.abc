@@ -5,7 +5,8 @@ M:4/4
 L:1/8
 K:C clef=treble
 %%MIDI program 53
-V:1 name="Voice" clef=treble
+V:1 name="Voice" snm="Vo." clef=treble
+%%scoretk instrument voice.vocals
 G2!>(!G2G2G2 |
 G2G2G2!>)!G2 |
 G2G2G2G2 |

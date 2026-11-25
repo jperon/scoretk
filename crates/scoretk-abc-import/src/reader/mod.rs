@@ -254,8 +254,10 @@ fn field_value(line: &Line) -> Option<(char, &str)> {
 pub(crate) struct VoiceFields {
     /// Numéro ABC.
     pub number: usize,
-    /// Nom affiché.
+    /// Nom affiché (`name=`/`nm=`, ABC 2.1 §7.1).
     pub name: String,
+    /// Nom court affiché (`snm=`, `abc2xml.py::voiceNamesAndMaps`).
+    pub short_name: String,
     /// Clef demandée.
     pub clef: Option<ClefType>,
     /// Transposition demandée, en demi-tons (`transpose=`/`t=`).
@@ -320,6 +322,7 @@ fn split_voice_fields(text: &str) -> Vec<String> {
 pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
     let mut number = 1usize;
     let mut name = String::new();
+    let mut short_name = String::new();
     let mut clef = None;
     let mut transpose = None;
     // Un texte entre guillemets peut contenir des espaces (`name="Voix 1"`) :
@@ -348,6 +351,7 @@ pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
         let value = value.trim_matches('"');
         match key.to_ascii_lowercase().as_str() {
             "name" | "nm" => name = value.to_owned(),
+            "subname" | "snm" => short_name = value.to_owned(),
             "clef" => clef = pitch::parse_clef(value),
             "transpose" | "t" => transpose = value.parse().ok(),
             _ => {}
@@ -356,6 +360,7 @@ pub(crate) fn parse_voice_fields(text: &str) -> VoiceFields {
     VoiceFields {
         number,
         name,
+        short_name,
         clef,
         transpose,
     }
@@ -473,6 +478,12 @@ pub(crate) struct Voice {
     pub overlay_of: Option<usize>,
     /// Nom affiché.
     pub name: String,
+    /// Nom court affiché (`snm=`).
+    pub short_name: String,
+    /// Identifiant d'instrument transmis par `%%scoretk instrument` (ABC 2.1
+    /// §11 : les directives `%%` inconnues sont ignorées par les autres
+    /// programmes ; ici elle complète `nm=`/`snm=` et `%%MIDI program`).
+    pub instrument_id: Option<String>,
     /// Clef demandée.
     pub clef: Option<ClefType>,
     /// Unité `L:` en vigueur.
@@ -546,6 +557,8 @@ impl Voice {
             number: fields.number,
             overlay_of: None,
             name: fields.name.clone(),
+            short_name: fields.short_name.clone(),
+            instrument_id: None,
             clef: fields.clef,
             unit,
             time: time.clone(),
@@ -847,6 +860,7 @@ impl Reader {
                 let fields = VoiceFields {
                     number: 1,
                     name: String::new(),
+                    short_name: String::new(),
                     clef: self.default_clef,
                     transpose: None,
                 };
@@ -889,6 +903,23 @@ impl Reader {
                 }
             }
             "abc-version" | "abc-include" | "unit" => {}
+            // §11 : une directive `%%` est un champ d'information ignoré par
+            // les programmes qui ne la connaissent pas. Celle-ci porte
+            // l'identifiant d'instrument du modèle, que ni `%%MIDI program`
+            // (numéro GM) ni `nm=`/`snm=` (noms affichés) ne peuvent porter.
+            "scoretk"
+                if value
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("instrument")) =>
+            {
+                let id = value
+                    .split_once(char::is_whitespace)
+                    .map_or("", |(_, rest)| rest.trim());
+                if !id.is_empty() && !self.voices.is_empty() {
+                    self.voices[self.current].instrument_id = Some(id.to_owned());
+                }
+            }
             "midi"
                 if value
                     .split_whitespace()
@@ -1136,6 +1167,9 @@ impl Reader {
                     if !fields.name.is_empty() {
                         self.voices[index].name = fields.name;
                     }
+                    if !fields.short_name.is_empty() {
+                        self.voices[index].short_name = fields.short_name;
+                    }
                     if let Some(clef) = fields.clef {
                         // Le `K:` a déjà appliqué le décalage de sa propre
                         // clef à toutes les voix : n'ajouter que la différence
@@ -1223,6 +1257,7 @@ impl Reader {
             let fields = VoiceFields {
                 number: 1,
                 name: String::new(),
+                short_name: String::new(),
                 clef: None,
                 transpose: None,
             };
@@ -1539,6 +1574,7 @@ mod tests {
             VoiceFields {
                 number: 1,
                 name: "Piano".into(),
+                short_name: String::new(),
                 clef: Some(ClefType::F),
                 transpose: None,
             }
@@ -1548,6 +1584,7 @@ mod tests {
             VoiceFields {
                 number: 2,
                 name: String::new(),
+                short_name: String::new(),
                 clef: Some(ClefType::F),
                 transpose: Some(-2),
             }

@@ -7,7 +7,8 @@ K:C
 %%MIDI program 74
 %%MIDI program 72
 %%score 1 2
-V:1 name="Flute" clef=treble
+V:1 name="Flute" snm="Fl." clef=treble
+%%scoretk instrument wind.flutes.flute
 |: !<(!E8 |
 G8 |
 !<)!A8 |
@@ -16,7 +17,8 @@ G8 |
 D8 |
 [1 G8 :|
 [2 B8 |]
-V:2 name="B♭ Clarinet" clef=treble transpose=-2
+V:2 name="B♭ Clarinet" snm="B♭ Cl." clef=treble transpose=-2
+%%scoretk instrument wind.reed.clarinet.bflat
 [K:D clef=treble] |: B8 |
 E8 |
 !>(!G8 |

@@ -6,12 +6,14 @@ L:1/8
 K:C
 %%MIDI program 1
 %%score {1 2}
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 c4z4 |
 z8 |
 z8 |
 z8 |]
-V:2 name="Piano" clef=bass
+V:2 name="Piano" snm="Pno." clef=bass
+%%scoretk instrument keyboard.piano
 z8 |
 z8 |
 z8 |

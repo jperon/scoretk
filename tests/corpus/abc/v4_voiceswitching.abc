@@ -6,7 +6,8 @@ L:1/8
 K:C
 %%MIDI program 1
 %%score (1 2)
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 "^No tuplets:"c4c4 |
 c4[Fc]4 |
 (3"^Tuplets in voice 1:"c4c4c4 |
@@ -15,7 +16,8 @@ c4(3:2:3c2(3cccc2 |
 F4F4 |
 (3:2:3"^Tuplets in voices 1 and 2:"e4(3e2e2e2e4 |
 e4(3:2:3e2(3eeee2 |]
-V:2 name="Piano" clef=treble
+V:2 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 F4F4 |
 z8 |
 F2F4F2 |

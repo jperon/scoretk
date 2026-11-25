@@ -908,6 +908,7 @@ impl Parser<'_> {
             let fields = VoiceFields {
                 number,
                 name: String::new(),
+                short_name: String::new(),
                 clef,
                 transpose: Some(transpose),
             };

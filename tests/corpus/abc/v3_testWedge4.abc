@@ -6,9 +6,11 @@ L:1/8
 K:C
 %%MIDI program 53
 %%score (1 2)
-V:1 name="Voice" clef=treble
+V:1 name="Voice" snm="Vo." clef=treble
+%%scoretk instrument voice.vocals
 z4!<(!G4 |
 !<)!z4G4 |]
-V:2 name="Voice" clef=treble
+V:2 name="Voice" snm="Vo." clef=treble
+%%scoretk instrument voice.vocals
 z8 |
 x2x2!<(!x2!<)!!>(!!>)!x2 |]

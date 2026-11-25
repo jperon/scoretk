@@ -28,7 +28,7 @@ writer: `crates/scoretk-abc-export`. Statuses reflect the code in this tree.
 | Annotations `"^above"`, `"_below"` (§4.19) | `StaffText` (`.../model/annotation.rs:231-249`) | supported | supported (`voice.rs`) | `RichText` markup is not emitted in ABC annotations. |
 | Lyrics `w:`, hyphen/underscore/`*` (§5) | `Lyrics`, `LyricsSyllabic` (`.../model/lyrics.rs:36-63`) | supported (`reader/lyrics.rs:36`) | supported | One `w:` line per verse; missing syllables become `*`. |
 | Typesetting `%%score`, `%%staves` (§6.1) | `Part`, `Staff`, `StaffBracket` (`.../model/part.rs:200-333`) | supported (`reader/mod.rs:679`) | supported (`writer.rs:192`) | Only the first `%%score` directive is honoured. |
-| Playback directives `%%MIDI` (§6.2) | `Instrument::midi_program`, `midi_channel`, `volume`, `pan` (`.../model/part.rs:71-84`) | partial (`reader/mod.rs::handle_directive`) | partial (`writer.rs::render`) | `%%MIDI program` (GM 1–128) and `%%MIDI channel` (1–16) round trip as zero-based model indices; the MuseScore instrument *id* has no ABC field. |
+| Playback directives `%%MIDI` (§6.2) | `Instrument::midi_program`, `midi_channel`, `volume`, `pan` (`.../model/part.rs:71-84`) | partial (`reader/mod.rs::handle_directive`) | partial (`writer.rs::render`) | `%%MIDI program` (GM 1–128) and `%%MIDI channel` (1–16) round trip as zero-based model indices. The MuseScore instrument *id* has no standard ABC field; `V: … name=`/`snm=` (§7.1) carry the display names and the private `%%scoretk instrument` directive (§11, unknown directives must be ignored) carries the id. Test `abc_instrument_identity.rs`. |
 | Multiple voices `V:`, inline `[V:]`, voice overlay `&` (§7) | `Track` (`.../model/ids.rs:123`), `Part::staves`, `Segment::elements` (`.../model/segment.rs:708-805`) | partial (`reader/build.rs:40`) | supported (`writer.rs:131`) | `V:` and inline fields work; `&` overlay is ignored with a warning (`docs/agents/abc.md` §7). |
 | Embedded ABC fragments (§2.3), macros (§9) | — | partial (`reader/mod.rs`) | missing | Fragment extraction is limited; macros are not written. |
 
@@ -49,7 +49,9 @@ Ranked by musical importance:
 4. **Per-element notation layout**: beams (`BeamMode`), stems, note-head groups
    and computed system breaks; ABC only carries implicit beaming.
 5. **Instrument/playback semantics** (program, channel, volume, pan, MIDI
-   articulation table): partially read from non-standard directives, never
-   reconstructed as a full instrument definition.
+   articulation table): partially read from non-standard directives. The
+   instrument id now round trips through `%%scoretk instrument` (§11); the
+   full MuseScore instrument definition and its articulation table remain
+   outside ABC.
 6. **Repeat count above 2, multi-bar voltas and nested tuplets**: either
    outside ABC 2.1 or not expressible in its grammar.

@@ -494,7 +494,23 @@ fn create_parts(
                 let number = first_voice.unwrap_or(1);
                 format!("Voix {number}")
             });
-        let part = score.add_part(Part::new(name.clone(), name));
+        let short_name = first_voice
+            .and_then(|number| voices.iter().position(|voice| voice.number == number))
+            .and_then(|index| voices.get(index))
+            .map(|voice| voice.short_name.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| name.clone());
+        let part = score.add_part(Part::new(name.clone(), short_name));
+        // `%%scoretk instrument` (ABC 2.1 §11) complète `%%MIDI program` et
+        // `nm=`/`snm=` : il restaure l'identifiant d'instrument du modèle,
+        // que le numéro GM et les noms affichés ne portent pas.
+        if let Some(id) = first_voice
+            .and_then(|number| voices.iter().position(|voice| voice.number == number))
+            .and_then(|index| voices.get(index))
+            .and_then(|voice| voice.instrument_id.clone())
+        {
+            score.part_mut(part).instrument.id = id;
+        }
         // Une transposition de voix devient l'instrument transpositeur de la
         // partie : l'écriture MusicXML garde la hauteur écrite et émet
         // `<transpose>`, exactement comme `abc2xml.py`.
@@ -743,6 +759,7 @@ mod tests {
         let fields = |number| crate::reader::VoiceFields {
             number,
             name: String::new(),
+            short_name: String::new(),
             clef: None,
             transpose: None,
         };
@@ -785,6 +802,7 @@ mod tests {
         let fields = crate::reader::VoiceFields {
             number: 1,
             name: String::new(),
+            short_name: String::new(),
             clef: None,
             transpose: None,
         };

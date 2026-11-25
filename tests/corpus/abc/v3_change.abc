@@ -7,7 +7,8 @@ K:C
 %%MIDI program 74
 %%MIDI program 69
 %%score 1 2
-V:1 name="Flute" clef=treble
+V:1 name="Flute" snm="Fl." clef=treble
+%%scoretk instrument wind.flutes.flute
 c4c4 |
 "^Instrument"c4c4 |
 c4c4 |
@@ -16,7 +17,8 @@ c4c4 |
 c4c4 |
 c4c4 |
 c4c4 |]
-V:2 name="Oboe" clef=treble
+V:2 name="Oboe" snm="Ob." clef=treble
+%%scoretk instrument wind.reed.oboe
 c4c4 |
 c4c4 |
 c4c4 |

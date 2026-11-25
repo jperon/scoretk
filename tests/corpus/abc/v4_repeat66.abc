@@ -6,7 +6,8 @@ L:1/8
 Q:" = 400" 1/4=400
 K:C clef=treble
 %%MIDI program 1
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 C8 |
 |: D8 |
 [1,2 E8 |

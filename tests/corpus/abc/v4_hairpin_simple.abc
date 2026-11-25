@@ -6,5 +6,6 @@ L:1/8
 Q:" = 120" 1/4=120
 K:C clef=treble
 %%MIDI program 26
-V:1 name="Steel Guitar" clef=treble transpose=-12
+V:1 name="Steel Guitar" snm="s.guit." clef=treble transpose=-12
+%%scoretk instrument pluck.guitar
 !p!!<(!B2c2d2!f!!<)!e2 |]

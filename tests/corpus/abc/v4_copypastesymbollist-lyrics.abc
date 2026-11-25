@@ -6,6 +6,7 @@ L:1/8
 K:C clef=treble
 %%MIDI program 53
 V:1 name="Voice" clef=treble
+%%scoretk instrument voice.vocals
 c4d2e2 |
 w: Nel mez- zo
 f4e2d2 |

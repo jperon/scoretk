@@ -6,7 +6,8 @@ M:4/4
 L:1/8
 K:C clef=treble
 %%MIDI program 74
-V:1 name="Flute" clef=treble
+V:1 name="Flute" snm="Fl." clef=treble
+%%scoretk instrument wind.flutes.flute
 "_expr text"c8 |
 "_expr text"c8 |
 "_expr text"c8 |

@@ -6,7 +6,8 @@ M:4/4
 L:1/8
 K:C clef=treble
 %%MIDI program 1
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 z8 |
 [K:G clef=treble] z8 |
 [K:D clef=treble] z8 |

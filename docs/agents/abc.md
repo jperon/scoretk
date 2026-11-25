@@ -106,6 +106,13 @@ are written one per `V:`.
 - **Annotations**: `"^text"` above, `"_text"` below, chord
   symbols `"C"`; system annotations (tempo, rehearsal mark) stay in
   the staff's voice 0.
+- **Voice and instrument identity**: `V:n name="…" snm="…"` carries the
+  long and short names of §7.1 / `abc2xml.py`'s `nm=`/`snm=`. Those fields
+  and `%%MIDI program` cannot carry the MuseScore instrument identifier
+  (`strings.violin`), so the writer adds the private `%%scoretk instrument
+  <id>` directive immediately after the `V:` line. ABC 2.1 §11 explicitly
+  reserves `%%` directives and requires unknown ones to be ignored, so the
+  snapshots stay readable by other tools; the reader restores `Instrument::id`.
 - **Lyrics**: `w:` after each music line, one line per verse;
   caesuras `-`, extensions `_`, missing syllables `*`, literal hyphen `\-`.
 

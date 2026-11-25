@@ -9,7 +9,8 @@ K:Ab
 %%MIDI program 58
 %%MIDI channel 1
 %%score {(1 2 3) 4} (5 6)
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 !pp!z8 |
 !<(!!<)!z8 |
 "Eb7"z8 |
@@ -17,7 +18,8 @@ V:1 name="Piano" clef=treble
 z4 |
 [K:G clef=treble] z4 |
 [M:4/4] [K:Eb clef=treble] z8 |]
-V:2 name="Piano" clef=treble
+V:2 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 A2B2c2z2 |
 E2E2!2!E2!>!E2 |
 E2E2E2E2 |
@@ -25,7 +27,8 @@ E2E2E2E2 |
 E2E2) |
 [K:G clef=treble] _E2-E2 |
 [M:4/4] [K:Eb clef=treble] E2z4z2 |]
-V:3 name="Piano" clef=treble
+V:3 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 e2f2g2a2 |
 z8 |
 e2e2e2e2 |
@@ -33,7 +36,8 @@ e2e2e2e2 |
 z4 |
 [K:G clef=treble] z4 |
 [M:4/4] [K:Eb clef=treble] z8 |]
-V:4 name="Piano" clef=bass
+V:4 name="Piano" snm="Pno." clef=bass
+%%scoretk instrument keyboard.piano
 z8 |
 z8 |
 G,2=A,2=B,2z2 |
@@ -41,7 +45,8 @@ G,2=A,2=B,2z2 |
 z4 |
 [K:G clef=bass] z4 |
 [M:4/4] [K:Eb clef=bass] z8 |]
-V:5 name="Trombone" clef=bass
+V:5 name="Trombone" snm="Tbn." clef=bass
+%%scoretk instrument brass.trombone
 z8 |
 z8 |
 G,4G,4 |
@@ -49,7 +54,8 @@ G,4G,4 |
 z4 |
 [K:G clef=bass] z4 |
 [M:4/4] [K:Eb clef=bass] z8 |]
-V:6 name="Trombone" clef=bass
+V:6 name="Trombone" snm="Tbn." clef=bass
+%%scoretk instrument brass.trombone
 C,2=D,2=E,2z2 |
 G,,2G,,2!2!G,,2!>!G,,2 |
 G,,2G,,2G,,2G,,2 |

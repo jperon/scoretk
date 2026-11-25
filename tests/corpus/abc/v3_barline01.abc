@@ -8,7 +8,8 @@ K:C
 %%MIDI program 74
 %%MIDI program 74
 %%score 1 2 3
-V:1 name="Flute 1" clef=treble
+V:1 name="Flute 1" snm="Fl. 1" clef=treble
+%%scoretk instrument wind.flutes.flute
 c8 |
 d8 |
 z8 |
@@ -17,7 +18,8 @@ e8 |
 f8 |
 e8 |
 f8 |]
-V:2 name="Flute 2" clef=treble
+V:2 name="Flute 2" snm="Fl. 2" clef=treble
+%%scoretk instrument wind.flutes.flute
 e8 |
 f8 |
 e8 |
@@ -26,7 +28,8 @@ z8 |
 z8 |
 c8 |
 c8 |]
-V:3 name="Flute 3" clef=treble
+V:3 name="Flute 3" snm="Fl. 3" clef=treble
+%%scoretk instrument wind.flutes.flute
 c8 |
 d8 |
 e8 |

@@ -6,7 +6,8 @@ L:1/8
 Q:" = 80" 1/4=80
 K:C clef=treble
 %%MIDI program 1
-V:1 name="Piano" clef=treble
+V:1 name="Piano" snm="Pno." clef=treble
+%%scoretk instrument keyboard.piano
 !fermata!C2!fermata!C2.D2D2 |
 "^Visible text"C2C2C2C2 |
 D2D2D2D2 |
