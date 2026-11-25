@@ -64,6 +64,11 @@ pub struct Options {
     /// registre est bas) et portée à 5 lignes au lieu de la clé d'ut et des
     /// 4 lignes du `.gabc`. Additif : `false` par défaut.
     pub gabc_modern_clef: bool,
+    /// Porteurs MEI 5.1 additionnels au-delà de l'exporteur 4.7.4
+    /// (vitesses des nuances, identité des instruments, ordre des credits…).
+    /// Additif : `false` par défaut, donc les octets MEI restent conformes
+    /// aux références `*.ref.mei` ; voir `docs/agents/mei.md` §10.
+    pub mei_full_support: bool,
 }
 
 impl Default for Options {
@@ -85,6 +90,7 @@ impl Default for Options {
             concert_pitch,
             midi: MidiOptions::default(),
             gabc_modern_clef: false,
+            mei_full_support: false,
         }
     }
 }

@@ -222,7 +222,7 @@ pub fn write_with_report(
     let bytes = match format {
         Format::MusicXml => hooks::write_musicxml(score, options)?,
         Format::Mxl => hooks::write_mxl(score, options)?,
-        Format::Mei => hooks::write_mei(score)?,
+        Format::Mei => hooks::write_mei(score, options)?,
         Format::Midi => hooks::write_midi(score, options)?,
         Format::Mscx => hooks::write_mscx(score)?,
         Format::Mscz => hooks::write_mscz(score)?,

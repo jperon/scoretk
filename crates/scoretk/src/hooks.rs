@@ -340,15 +340,21 @@ non_branche!(
 // --- MEI (écriture) -------------------------------------------------------
 
 #[cfg(feature = "mei-export")]
-pub(crate) fn write_mei(score: &Score) -> Result<Vec<u8>> {
-    scoretk_mei_export::write_mei(score)
-        .map(String::into_bytes)
-        .map_err(|error| Error::Mei(error.to_string()))
+pub(crate) fn write_mei(score: &Score, options: &Options) -> Result<Vec<u8>> {
+    scoretk_mei_export::write_mei_with(
+        score,
+        &scoretk_mei_export::MeiOptions {
+            full_support: options.mei_full_support,
+            ..Default::default()
+        },
+    )
+    .map(String::into_bytes)
+    .map_err(|error| Error::Mei(error.to_string()))
 }
 
 non_branche!(
     "mei-export",
-    write_mei(score: &Score) -> Result<Vec<u8>>,
+    write_mei(score: &Score, options: &Options) -> Result<Vec<u8>>,
     Format::Mei,
     Ecriture
 );

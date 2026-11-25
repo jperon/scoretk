@@ -38,6 +38,13 @@ pub struct MeiOptions {
     /// Date d'encodage écrite dans le `<date isodate>`, constante par défaut
     /// pour la reproductibilité.
     pub encoding_date: String,
+    /// Emploie des porteurs MEI 5.1 que l'exporteur 4.7.4 n'écrit pas
+    /// (`<dynam @val>`, `<instrDef @midi.volume>`, `@n` sur `<rend>`, …).
+    ///
+    /// Additif et désactivé par défaut : avec `false`, les octets produits
+    /// restent ceux de MuseScore 4.7.4 (voir `mei_conformity`). Avec `true`,
+    /// la même partition conserve plus de faits du modèle au aller-retour.
+    pub full_support: bool,
 }
 
 impl Default for MeiOptions {
@@ -45,6 +52,7 @@ impl Default for MeiOptions {
         Self {
             layout: true,
             encoding_date: "2026-01-01T00:00:00".to_owned(),
+            full_support: false,
         }
     }
 }
@@ -57,4 +65,23 @@ pub fn write_mei(score: &Score) -> Result<String, Error> {
 /// Écrit une partition avec des options explicites.
 pub fn write_mei_with(score: &Score, options: &MeiOptions) -> Result<String, Error> {
     writer::write(score, options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Les porteurs additionnels sont opt-in : sans eux, l'écrivain reste
+    /// strictement celui de MuseScore 4.7.4 et les octets ne changent pas.
+    #[test]
+    fn default_options_keep_474_behaviour() {
+        assert!(!MeiOptions::default().full_support);
+        let options = MeiOptions {
+            full_support: true,
+            ..Default::default()
+        };
+        assert!(options.full_support);
+        assert_eq!(options.layout, MeiOptions::default().layout);
+        assert_eq!(options.encoding_date, MeiOptions::default().encoding_date);
+    }
 }

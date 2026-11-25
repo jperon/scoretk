@@ -1051,6 +1051,58 @@ fn mei_full_loss_table() {
     println!();
 }
 
+/// Per-kind residual table of the MEI round trip with the additive MEI 5.1
+/// carriers on (`Options::mei_full_support`). The default row of
+/// `mei_full_loss_table` stays the 4.7.4-faithful export; this second row
+/// measures what the format can carry once those carriers are enabled.
+/// Diagnostic only: it never asserts on a percentage.
+#[test]
+fn mei_full_support_residual() {
+    let mei = &DIRECTIONS[7];
+    assert_eq!(mei.name, "mei");
+    let declared = mei.import.declared().union(mei.export.declared());
+    let kinds = mei.import.declared_kinds().or(mei.export.declared_kinds());
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    let mut totals = Totals::default();
+    for (_, path) in &corpus_scores() {
+        let reference = reference_model(path);
+        let reference_inventory = inventory(&reference);
+        let Ok(bytes) = write(&reference, mei.format, &options) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, mei.format) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
+        totals.add(&coverage, essential(&reference_inventory, &candidate));
+    }
+    println!(
+        "\n=== MEI residual with mei_full_support (round trip): {:.2} %, {} skipped, missing {} / {} ===",
+        totals.total.percent(),
+        totals.skipped,
+        totals.total.reference - totals.total.matched,
+        totals.total.reference
+    );
+    let mut gaps: Vec<((u8, &'static str), usize)> = totals
+        .missing_kinds
+        .iter()
+        .map(|((bits, kind), count)| ((*bits, *kind), *count))
+        .collect();
+    gaps.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    for ((bits, kind), count) in gaps {
+        println!("    {:<28} {:<16} {:>5}", kind, layer_name(bits), count);
+    }
+    println!();
+    assert_eq!(totals.files, 56);
+    assert_eq!(totals.skipped, 0);
+}
+
 /// Per-file diagnostic for the priority kinds of the MEI campaign: prints
 /// every missing reference item with its measure (tick) and staff, for the
 /// round trip and for the import of MuseScore's own `.ref.mei`. Diagnostic

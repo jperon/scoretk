@@ -69,6 +69,7 @@ pub fn convert_with_report(
         concert_pitch: options.export.concert_pitch,
         midi: MidiOptions::default(),
         gabc_modern_clef: options.export.gabc_modern_clef,
+        mei_full_support: false,
     };
     write_with_report(&score, format, &write_options)
 }

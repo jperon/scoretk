@@ -309,6 +309,41 @@ fn mei_samples_round_trip_table() {
     assert!(totals.total.reference > 0);
 }
 
+/// Same 130 external encodings, but with the additive MEI 5.1 carriers
+/// (`Options::mei_full_support`) enabled. The baseline row above uses the
+/// default 4.7.4-faithful writer; this row measures what the format can carry.
+#[test]
+fn mei_samples_full_support_residual() {
+    let Some(paths) = available_lot() else {
+        return;
+    };
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    let mut totals = Totals::default();
+    for path in &paths {
+        let bytes = fs::read(path).expect("read MEI sample");
+        let Ok(model) = read(&bytes, Format::Mei) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let reference = inventory(&model);
+        let Ok(written) = write(&model, Format::Mei, &options) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&written, Format::Mei) else {
+            totals.skipped += 1;
+            continue;
+        };
+        totals.add(&reference, &inventory(&candidate));
+    }
+    totals.print_losses("with mei_full_support (MEI -> model -> MEI -> model)");
+    assert_eq!(totals.files, 130);
+    assert_eq!(totals.skipped, 0);
+}
+
 #[test]
 fn mei_samples_import_completeness_table() {
     let Some(paths) = available_lot() else {
