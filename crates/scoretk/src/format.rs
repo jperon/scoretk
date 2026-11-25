@@ -334,3 +334,26 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .windows(needle.len())
         .any(|window| window == needle)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Format;
+
+    #[test]
+    fn mei_and_gabc_content_detection_is_unambiguous() {
+        let mei = b"<?xml version=\"1.0\"?>\n<mei xmlns=\"http://www.music-encoding.org/ns/mei\"><score/></mei>\n";
+        assert_eq!(Format::detect(mei), Some(Format::Mei));
+
+        let gabc = b"name: Veni;\nlanguage: latin;\n%%\n(f3)\nVE(g)ni(h) (,)\n";
+        assert_eq!(Format::detect(gabc), Some(Format::Gabc));
+
+        // The MEI namespace wins over a GABC-looking header: an XML document
+        // is never mistaken for plain-text GABC (and vice versa).
+        let mixed = b"<?xml version=\"1.0\"?>\n<mei xmlns=\"http://www.music-encoding.org/ns/mei\">name: x;\n%%</mei>";
+        assert_eq!(Format::detect(mixed), Some(Format::Mei));
+
+        // A lone header without the `%%` separator is not enough
+        // (`Gabc.tex:51,58,79-82`).
+        assert_eq!(Format::detect(b"name: Veni;\n(f3)\n"), None);
+    }
+}
