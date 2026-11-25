@@ -26,8 +26,8 @@
 //! `@tstamp` is a one-based index in beats of the current meter.
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, BeamMode, ClefType, CreditStyle, Duration, DurationType, Fraction,
-    Key, KeySig, Measure, StemDirection, TimeSig, TimeSigType,
+    AccidentalType, ArticulationType, BarLineType, BeamMode, ClefType, CreditStyle, Duration,
+    DurationType, Fraction, Key, KeySig, Measure, StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -311,6 +311,28 @@ pub fn cell_to_align(cell: u8) -> (&'static str, &'static str) {
         _ => "right",
     };
     (valign, halign)
+}
+
+/// `Convert::articToMEI` (`meiconverter.cpp:447`), restricted to the values
+/// the importer maps back to a distinct pivot articulation.
+pub fn artic_to_mei(kind: &ArticulationType) -> Option<&'static str> {
+    match kind {
+        ArticulationType::Staccato => Some("stacc"),
+        ArticulationType::Staccatissimo | ArticulationType::Spiccato => Some("stacciss"),
+        ArticulationType::Accent => Some("acc"),
+        ArticulationType::Marcato => Some("marc"),
+        ArticulationType::Tenuto => Some("ten"),
+        ArticulationType::Portato => Some("port"),
+        ArticulationType::Stress => Some("stress"),
+        ArticulationType::Unstress => Some("unstress"),
+        ArticulationType::UpBow => Some("upbow"),
+        ArticulationType::DownBow => Some("dnbow"),
+        ArticulationType::Harmonic => Some("harm"),
+        ArticulationType::Open => Some("open"),
+        ArticulationType::Stopped => Some("stop"),
+        ArticulationType::SnapPizzicato => Some("snap"),
+        _ => None,
+    }
 }
 
 /// `Convert::beamFromMEI` (`meiconverter.cpp:626`).
@@ -804,6 +826,15 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn articulations_use_mei_names() {
+        use scoretk_core::model::ArticulationType;
+        assert_eq!(artic_to_mei(&ArticulationType::Staccato), Some("stacc"));
+        assert_eq!(artic_to_mei(&ArticulationType::Accent), Some("acc"));
+        assert_eq!(artic_to_mei(&ArticulationType::Tenuto), Some("ten"));
+        assert_eq!(artic_to_mei(&ArticulationType::Marcato), Some("marc"));
     }
 
     #[test]

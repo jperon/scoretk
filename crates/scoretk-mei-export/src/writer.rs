@@ -237,13 +237,14 @@ fn write_layer(
             }
             ChordRestKind::Chord(chord) => {
                 if chord.notes.len() == 1 {
-                    write_note(xml, score, &chord.notes[0], &refs);
+                    write_note(xml, score, &chord.notes[0], &refs, Some(chord));
                     write_verses(xml, cr);
                 } else {
                     xml.start_element("chord", &refs);
                     for id in &chord.notes {
-                        write_note(xml, score, id, &[]);
+                        write_note(xml, score, id, &[], None);
                     }
+                    write_artics(xml, chord);
                     write_verses(xml, cr);
                     xml.end_element();
                 }
@@ -269,12 +270,23 @@ fn write_layer(
     xml.end_element();
 }
 
+/// `MeiExporter::writeArtics` (`meiexporter.cpp:1036`): articulations are
+/// children of the note/chord event they belong to.
+fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord) {
+    for articulation in &chord.articulations {
+        if let Some(name) = convert::artic_to_mei(&articulation.kind) {
+            xml.tag_empty("artic", &[("artic", name)]);
+        }
+    }
+}
+
 /// `MeiExporter::writeNote` (`meiexporter.cpp:1370`).
 fn write_note(
     xml: &mut XmlWriter,
     score: &Score,
     id: &scoretk_core::model::NoteId,
     extra: &[(&str, &str)],
+    chord: Option<&scoretk_core::model::Chord>,
 ) {
     let note = &score.notes[id.index()];
     let (pname, oct, accid, accid_ges) =
@@ -292,7 +304,14 @@ fn write_note(
     if let Some(ges) = accid_ges {
         attrs.push(("accid.ges", ges));
     }
-    xml.tag_empty("note", &attrs);
+    match chord {
+        Some(chord) => {
+            xml.start_element("note", &attrs);
+            write_artics(xml, chord);
+            xml.end_element();
+        }
+        None => xml.tag_empty("note", &attrs),
+    }
 }
 
 /// `MeiExporter::writeVerses`/`writeSyl` (`meiexporter.cpp:1579`, `:1529`).

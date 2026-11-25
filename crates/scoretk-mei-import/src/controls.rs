@@ -388,6 +388,14 @@ impl<'a> Reader<'a> {
             "marc" => ArticulationType::Marcato,
             "ten" => ArticulationType::Tenuto,
             "port" => ArticulationType::Portato,
+            "stress" => ArticulationType::Stress,
+            "unstress" => ArticulationType::Unstress,
+            "upbow" => ArticulationType::UpBow,
+            "dnbow" => ArticulationType::DownBow,
+            "harm" => ArticulationType::Harmonic,
+            "open" => ArticulationType::Open,
+            "stop" => ArticulationType::Stopped,
+            "snap" => ArticulationType::SnapPizzicato,
             _ => ArticulationType::Other(name.to_owned()),
         };
         let (_, track) = self.anchor(node, measure);

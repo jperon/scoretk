@@ -510,6 +510,7 @@ impl<'a> Reader<'a> {
             }
         }
         self.read_verses(node, measure, track, ticks);
+        self.read_control_events(node, measure);
         self.advance_event(ticks, node, duration, measure);
     }
 
@@ -553,6 +554,7 @@ impl<'a> Reader<'a> {
             }
         }
         self.read_verses(node, measure, track, ticks);
+        self.read_control_events(node, measure);
         self.advance_event(ticks, node, duration, measure);
     }
 
