@@ -352,3 +352,39 @@ would have been vacuous. The lot is the 130 files with a `<score>`; the 37
 others are header-only or document-start fragments with no music events and
 are listed with their reason in `EXCLUDED.tsv`. The manifests live under
 `tests/corpus/`, hence inside the flake `tests/corpus` filter.
+
+### 9.3 Two measurements (2026-11-25, baseline)
+
+`crates/scoretk/tests/mei_samples.rs` contains three tests:
+
+- `mei_samples_round_trip_table`: for every file,
+  `MEI → model → MEI → model`, compared by `(layer, tick, staff, kind, value)`
+  with the declared MEI kinds (`compare_with_kinds`), plus a full per-kind
+  loss table printed with `--nocapture`;
+- `mei_samples_import_completeness_table`: `scoretk-mei-import`'s `audit_mei`
+  walks the source tree and reports, per element and per `(element, attribute)`,
+  how often it occurs and how often the reader does **not** map it;
+- `mei_samples_never_panic`: reads all 167 files (lot and excluded fragments);
+  an error is acceptable for a fragment with no `<score>`, a panic is not.
+
+Baseline before any reader fix (130 files, 2 files with a non-`mei` root still
+rejected, 128 measured):
+
+| Measurement | Result |
+| --- | ---: |
+| Round trip, full support (declared L0–L5) | **77.64 %** |
+| Elements present / ignored by the reader | 463 375 / 19 681 (4.25 %) |
+| Attributes present / ignored by the reader | 1 306 898 / 65 552 (5.02 %) |
+
+Largest round-trip losses by kind: `note` 33 732, `stem` 16 406,
+`lyric` 14 957, `rest` 4 373, `tie` 1 173, `slur` 1 038, `time-sig` 956,
+`articulation` 559. Largest ignored musical elements: `p` 1 674,
+`tupletSpan` 1 467, `change`/`changeDesc` 1 392 each (header revision
+metadata), `contentItem` 190. Largest ignored attributes: `@curvedir` on
+`<slur>` 9 870, `@tie` on `<note>` 6 754, `@tuplet` on `<note>` 4 946,
+`@dur.ppq` 3 265, `@width` on `<measure>` 3 008, `tupletSpan/@num.visible`
+1 445, `syl/@wordpos` 1 436.
+
+The row is deliberately not compared with the 95.03 % of §3: that figure uses
+MuseScore's own exporter as oracle, while this one starts from external MEI
+that uses many standard constructs MuseScore never writes.

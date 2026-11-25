@@ -27,12 +27,14 @@
 //! `Score::report` : comme MuseScore, l'import est un analyseur « best
 //! effort » et non un validateur RelaxNG.
 
+mod audit;
 mod barlines;
 mod capabilities;
 mod controls;
 mod header;
 mod reader;
 
+pub use audit::{audit_mei, mapped_element_names, ImportAudit};
 pub use capabilities::CAPABILITIES;
 pub use scoretk_mei_common::Error;
 
