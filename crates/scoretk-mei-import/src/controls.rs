@@ -339,6 +339,38 @@ impl<'a> Reader<'a> {
     fn add_direction(&mut self, node: &Element, measure: usize) {
         let text = crate::lines_of(node);
         let typ = node.attribute("type").unwrap_or_default();
+        // Changement d'instrument en cours de partition : MuseScore 4.7.4 ne
+        // l'écrit pas, mais `<dir>` porte le texte et `@trans.*` la nouvelle
+        // transposition (porteur additionnel).
+        if typ == scoretk_mei_common::ids::INSTRUMENT_CHANGE_TYPE {
+            let id = node
+                .attribute("label")
+                .and_then(|label| {
+                    label.strip_prefix(scoretk_mei_common::ids::INSTRUMENT_CHANGE_LABEL)
+                })
+                .unwrap_or_default();
+            let diatonic = node
+                .attribute("trans.diat")
+                .and_then(|value| value.parse::<i32>().ok());
+            let chromatic = node
+                .attribute("trans.semi")
+                .and_then(|value| value.parse::<i32>().ok());
+            let mut change = scoretk_core::model::InstrumentChange::new(text);
+            if !id.is_empty() || diatonic.is_some() || chromatic.is_some() {
+                let mut instrument = scoretk_core::model::Instrument {
+                    id: id.to_owned(),
+                    ..Default::default()
+                };
+                if let (Some(diatonic), Some(chromatic)) = (diatonic, chromatic) {
+                    instrument.transpose =
+                        Some(scoretk_core::model::Transpose::new(diatonic, chromatic));
+                }
+                change.instrument = Some(instrument);
+            }
+            let (tick, track) = self.anchor(node, measure);
+            self.add_annotation(tick, track, Annotation::InstrumentChange(change));
+            return;
+        }
         // Porteur additionnel pour un `TBox` de MuseScore : MEI 5.1 n'a pas
         // d'élément de cadre ancré sur une mesure, mais `<dir>` est un
         // événement de contrôle légal et `@label`/`@type` gardent la position.

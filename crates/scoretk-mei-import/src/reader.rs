@@ -726,6 +726,17 @@ impl<'a> Reader<'a> {
             let note_id = self.score.add_note(note);
             if let Some(id) = note_node.attribute("id") {
                 self.id_notes.insert(id.to_owned(), note_id);
+                // Un slur peut s'ancrer sur un `<note>` enfant d'un `<chord>`
+                // (`@endid="#n…"`) : enregistrer aussi son id comme événement,
+                // avec le tick et la piste de l'accord qui le contient.
+                self.id_events.insert(
+                    id.to_owned(),
+                    (
+                        measure,
+                        track,
+                        self.score.measures[measure].start_tick + *ticks,
+                    ),
+                );
             }
             notes.push(note_id);
         }

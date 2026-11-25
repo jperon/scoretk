@@ -55,6 +55,9 @@ pub(crate) fn write(
         let current = measure_signatures(Some(measure));
         write_score_def_change(&mut xml, &signatures, &current);
         signatures = current;
+        if options.full_support {
+            write_transposition_change(&mut xml, score, index);
+        }
         write_ending_start(&mut xml, score, index);
         write_measure(&mut xml, score, measure, index, &mut measure_n, options);
         write_ending_end(&mut xml, score, index);
@@ -133,6 +136,88 @@ fn write_score_def_change(xml: &mut XmlWriter, previous: &Signatures, current: &
         .collect();
     xml.start_element("scoreDef", &refs);
     xml.end_element();
+}
+
+/// Transposition effective on `staff_idx` at `tick`: the initial
+/// `part.instrument.transpose`, overridden by each `InstrumentChange`
+/// annotation (`InstrumentChange::instrument.transpose`) up to that tick.
+fn effective_transpose(score: &Score, staff_idx: usize, tick: Fraction) -> i32 {
+    let mut value = score
+        .staves
+        .get(staff_idx)
+        .and_then(|staff| score.parts.get(staff.part.index()))
+        .and_then(|part| part.instrument.transpose)
+        .map_or(0, |transpose| transpose.chromatic);
+    for measure in &score.measures {
+        if measure.start_tick > tick {
+            break;
+        }
+        for segment in &measure.segments {
+            if segment.tick > tick {
+                continue;
+            }
+            for annotation in &segment.annotations {
+                if annotation.track.staff().raw() as usize != staff_idx {
+                    continue;
+                }
+                if let Annotation::InstrumentChange(change) = &annotation.annotation {
+                    if let Some(instrument) = &change.instrument {
+                        value = instrument
+                            .transpose
+                            .map_or(0, |transpose| transpose.chromatic);
+                    }
+                }
+            }
+        }
+    }
+    value
+}
+
+/// `<scoreDef>` written before a measure whose effective transposition
+/// changes, so the reader applies the new written/concert pitch relationship
+/// (`Convert::staffToMEI`, meiconverter.cpp:3099).
+fn write_transposition_change(xml: &mut XmlWriter, score: &Score, measure_index: usize) {
+    let Some(measure) = score.measures.get(measure_index) else {
+        return;
+    };
+    let tick = measure.start_tick;
+    for (staff_idx, _) in score.staves.iter().enumerate() {
+        let current = effective_transpose(score, staff_idx, tick);
+        let previous = if measure_index == 0 {
+            current
+        } else {
+            effective_transpose(
+                score,
+                staff_idx,
+                score.measures[measure_index - 1].start_tick,
+            )
+        };
+        if current == previous {
+            continue;
+        }
+        let diatonic = score
+            .staves
+            .get(staff_idx)
+            .and_then(|staff| score.parts.get(staff.part.index()))
+            .and_then(|part| part.instrument.transpose)
+            .map_or(0, |transpose| transpose.diatonic);
+        // Le nombre diatonique n'est pas modifié par un changement d'armure
+        // d'instrument dans les fichiers de référence ; conserver celui de la
+        // partie suffit pour que la relecture reconstruise le concert pitch.
+        xml.start_element("scoreDef", &[]);
+        let n = (staff_idx + 1).to_string();
+        let diatonic = diatonic.to_string();
+        let chromatic = current.to_string();
+        xml.tag_empty(
+            "staffDef",
+            &[
+                ("n", &n),
+                ("trans.diat", &diatonic),
+                ("trans.semi", &chromatic),
+            ],
+        );
+        xml.end_element();
+    }
 }
 
 /// Measure containing `tick`, used to place `<ending>` around its measures.
@@ -374,12 +459,7 @@ fn write_graces(
         xml.start_element("graceGrp", &refs);
         for id in &grace.chord.notes {
             let note = &score.notes[id.index()];
-            let (pname, oct, accid, _) = convert::pitch_to_mei(
-                note.pitch,
-                note.tpc,
-                note.accidental.map(|value| value.kind),
-                transpose,
-            );
+            let (pname, oct, accid) = convert::pitch_to_mei_written(note.pitch, transpose);
             let oct = oct.to_string();
             let mut note_attrs = vec![("pname", pname.as_str()), ("oct", oct.as_str())];
             if let Some(accid) = accid {
@@ -424,7 +504,7 @@ fn write_layer(
     // `MeiExporter::writeNote` (meiexporter.cpp:1370) appelle
     // `Convert::pitchToMEI(note, accid, staff->part()->instrument()->transpose())`
     // : la hauteur écrite est la hauteur réelle moins la transposition.
-    let transpose = score
+    let initial_transpose = score
         .staves
         .get(track.staff().raw() as usize)
         .and_then(|staff| score.parts.get(staff.part.index()))
@@ -490,6 +570,11 @@ fn write_layer(
     let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
+        let transpose = if options.full_support {
+            effective_transpose(score, track.staff().raw() as usize, *tick)
+        } else {
+            initial_transpose
+        };
         if options.full_support {
             if let ChordRestKind::Chord(chord) = &cr.kind {
                 write_graces(xml, score, chord, transpose);
@@ -619,7 +704,10 @@ fn write_layer(
                         &refs,
                         Some(chord),
                         cr.duration.kind,
-                        transpose,
+                        NotePitchContext {
+                            transpose,
+                            full_support: options.full_support,
+                        },
                     );
                     // `MeiExporter::writeVerse` (meiexporter.cpp:1594) attache
                     // `<verse>` à l'élément `<note>` ouvert : MEI 5.1 définit
@@ -629,7 +717,18 @@ fn write_layer(
                 } else {
                     xml.start_element("chord", &refs);
                     for id in &chord.notes {
-                        write_note(xml, score, id, &[], None, cr.duration.kind, transpose);
+                        write_note(
+                            xml,
+                            score,
+                            id,
+                            &[],
+                            None,
+                            cr.duration.kind,
+                            NotePitchContext {
+                                transpose,
+                                full_support: options.full_support,
+                            },
+                        );
                         xml.end_element();
                     }
                     write_artics(xml, chord);
@@ -692,6 +791,14 @@ fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord) {
 }
 
 /// `MeiExporter::writeNote` (`meiexporter.cpp:1370`).
+/// Contexte de transcription d'une hauteur : transposition effective et
+/// activation des porteurs additionnels.
+#[derive(Clone, Copy)]
+struct NotePitchContext {
+    transpose: i32,
+    full_support: bool,
+}
+
 fn write_note(
     xml: &mut XmlWriter,
     score: &Score,
@@ -699,15 +806,20 @@ fn write_note(
     extra: &[(&str, &str)],
     chord: Option<&scoretk_core::model::Chord>,
     kind: DurationType,
-    transpose: i32,
+    pitch: NotePitchContext,
 ) {
     let note = &score.notes[id.index()];
-    let (pname, oct, accid, accid_ges) = convert::pitch_to_mei(
-        note.pitch,
-        note.tpc,
-        note.accidental.map(|a| a.kind),
-        transpose,
-    );
+    let (pname, oct, accid, accid_ges) = if pitch.full_support {
+        let (pname, oct, accid) = convert::pitch_to_mei_written(note.pitch, pitch.transpose);
+        (pname, oct, accid, None)
+    } else {
+        convert::pitch_to_mei(
+            note.pitch,
+            note.tpc,
+            note.accidental.map(|a| a.kind),
+            pitch.transpose,
+        )
+    };
     let mut attrs = extra.to_vec();
     let uid = format!("n{}", id.index());
     attrs.push(("xml:id", &uid));
@@ -876,6 +988,32 @@ fn write_control_events(
                 }
                 Annotation::Harmony(harmony) => {
                     xml.tag_with("harm", &refs, &harmony.text);
+                }
+                Annotation::InstrumentChange(change) if options.full_support => {
+                    let label = format!(
+                        "{}{}",
+                        ids::INSTRUMENT_CHANGE_LABEL,
+                        change
+                            .instrument
+                            .as_ref()
+                            .map_or("", |instrument| instrument.id.as_str())
+                    );
+                    let mut change_attrs = refs.clone();
+                    change_attrs.push(("type", ids::INSTRUMENT_CHANGE_TYPE));
+                    change_attrs.push(("label", label.as_str()));
+                    let transpose = change
+                        .instrument
+                        .as_ref()
+                        .and_then(|instrument| instrument.transpose);
+                    let diatonic = transpose.map(|value| value.diatonic.to_string());
+                    let chromatic = transpose.map(|value| value.chromatic.to_string());
+                    if let Some(diatonic) = &diatonic {
+                        change_attrs.push(("trans.diat", diatonic.as_str()));
+                    }
+                    if let Some(chromatic) = &chromatic {
+                        change_attrs.push(("trans.semi", chromatic.as_str()));
+                    }
+                    xml.tag_with("dir", &change_attrs, change.text.plain());
                 }
                 _ => {}
             }

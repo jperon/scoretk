@@ -55,6 +55,12 @@ pub const MEASURE_REPEAT_TYPE: &str = "mscore-repeat-";
 /// `@type` prefix for markers on `<repeatMark>`.
 pub const MARKER_TYPE: &str = "mscore-marker-";
 
+/// `@type` for a mid-score instrument change written as a `<dir>`.
+pub const INSTRUMENT_CHANGE_TYPE: &str = "mscore-instrument-change";
+
+/// `@label` prefix carrying the new instrument id on such a `<dir>`.
+pub const INSTRUMENT_CHANGE_LABEL: &str = "mscore-instrument-change:";
+
 /// `@type` prefix for a MuseScore text frame (`TBox`) written as a `<dir>`.
 pub const TBOX_TYPE: &str = "mscore-tbox-";
 

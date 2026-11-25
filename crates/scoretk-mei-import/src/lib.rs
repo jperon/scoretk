@@ -101,6 +101,31 @@ mod tests {
         assert!(read_mei(b"<score-partwise/>").is_err());
     }
 
+    /// Un `@endid` peut viser un `<note>` enfant d'un `<chord>` : l'événement
+    /// doit être enregistré avec le tick de l'accord, sinon le slur perd son
+    /// extrémité (`v3/moonlight`).
+    #[test]
+    fn slur_endid_finds_a_note_inside_a_chord() {
+        let bytes = br##"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <chord dur="4"><note xml:id="c1" pname="c" oct="4"/><note xml:id="c2" pname="e" oct="4"/></chord>
+              <note dur="4" xml:id="n2" pname="g" oct="4"/>
+            </layer></staff>
+            <slur staff="1" startid="#c1" endid="#n2"/>
+            </measure></section>
+          </score></mdiv></body></music></mei>"##;
+        let score = read_mei(bytes).expect("MEI with a chord-anchored slur");
+        let slur = score
+            .spanners
+            .iter()
+            .find(|spanner| spanner.kind == scoretk_core::model::SpannerType::Slur)
+            .expect("slur");
+        assert_eq!(slur.start.tick, scoretk_core::model::Fraction::ZERO);
+        assert_eq!(slur.end.tick, scoretk_core::model::Fraction::new(1, 4));
+    }
+
     /// Les Guidelines MEI 5.1 (§"Dynamics", `cmn.html`) donnent
     /// `<dynam val="84">f</dynam>` comme vitesse MIDI d'une nuance
     /// (`att.dynam.ges` → `att.midiValue`).

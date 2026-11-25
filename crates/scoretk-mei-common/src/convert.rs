@@ -984,6 +984,18 @@ pub fn pitch_to_mei(
     (pname.to_string(), oct, written, ges)
 }
 
+/// Written pitch from a concert pitch and a transposition, using the
+/// written pitch *class* rather than the pivot's `tpc` (which the 3.x/4.x
+/// MuseScore readers store for the concert pitch). Used only by the additive
+/// MEI writer: the 4.7.4 path keeps `pitch_to_mei` unchanged.
+pub fn pitch_to_mei_written(pitch: u8, transpose: i32) -> (String, i32, Option<&'static str>) {
+    const TPC: [i8; 12] = [14, 21, 16, 23, 18, 13, 20, 15, 22, 17, 24, 19];
+    let written = (i32::from(pitch) - transpose).clamp(0, 127) as u8;
+    let tpc = TPC[usize::from(written % 12)];
+    let (pname, oct, accid, ges) = pitch_to_mei(written, tpc, None, 0);
+    (pname, oct, accid.or(ges))
+}
+
 /// `Convert::clefFromMEI` (`meiconverter.cpp:810`): `@shape`, `@line`,
 /// `@dis` and `@dis.place` → `ClefType`.
 pub fn clef_from_mei(
