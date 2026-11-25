@@ -38,6 +38,13 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
             .and_then(|page| page.parse::<u32>().ok())
             .unwrap_or(1);
         let kind = element.child_text("credit-type").unwrap_or_default();
+        // `MusicXmlParserPass1::addCreditWords` (`importmusicxmlpass1.cpp:
+        // 1041-1092`) applique un `TextStyleType` d'après `<credit-type>` ;
+        // `font-size` sert alors au style du texte, pas à une propriété
+        // `Pid::FONT_SIZE` explicite sur l'objet. Le modèle sépare ces deux
+        // faits : `StyleSettings` porte la taille, `Credit::font_size` ne
+        // garde qu'une taille sans type connu.
+        let typed = !kind.is_empty() && kind != "rights";
         let style = match kind {
             "title" => CreditStyle::Title,
             "subtitle" => CreditStyle::Subtitle,
@@ -77,7 +84,9 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
                 .attribute("font-size")
                 .and_then(|size| size.parse::<f64>().ok())
             {
-                credit.font_size = Some(size);
+                if !typed {
+                    credit.font_size = Some(size);
+                }
             }
             for extra in &words[1..] {
                 credit.extra_words.push(RichText::new(extra.text_trimmed()));
