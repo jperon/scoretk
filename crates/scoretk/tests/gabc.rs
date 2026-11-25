@@ -62,6 +62,77 @@ fn gabc_round_trip_serialises_the_payload() {
     );
 }
 
+/// Minimal SMF scan used as an oracle-free check of GABC → MIDI: count the
+/// note-ons with a positive velocity and the lyric/text metas.
+fn midi_events(data: &[u8]) -> (usize, Vec<String>) {
+    fn vlq(data: &[u8], at: &mut usize) -> usize {
+        let mut value = 0;
+        loop {
+            let byte = data[*at];
+            *at += 1;
+            value = (value << 7) | usize::from(byte & 0x7f);
+            if byte & 0x80 == 0 {
+                return value;
+            }
+        }
+    }
+    let mut at = 14;
+    let mut notes = 0;
+    let mut words = Vec::new();
+    while at < data.len() {
+        assert_eq!(&data[at..at + 4], b"MTrk");
+        let end = at + 8 + u32::from_be_bytes(data[at + 4..at + 8].try_into().unwrap()) as usize;
+        at += 8;
+        let mut running = 0u8;
+        while at < end {
+            vlq(data, &mut at);
+            let status = data[at];
+            if status & 0x80 != 0 {
+                running = status;
+                at += 1;
+            }
+            if running == 0xff {
+                let meta = data[at];
+                at += 1;
+                let len = vlq(data, &mut at);
+                if meta == 1 || meta == 5 {
+                    words.push(String::from_utf8_lossy(&data[at..at + len]).into_owned());
+                }
+                at += len;
+            } else if matches!(running & 0xf0, 0x80 | 0x90 | 0xa0 | 0xb0 | 0xe0) {
+                let velocity = data[at + 1];
+                if running & 0xf0 == 0x90 && velocity > 0 {
+                    notes += 1;
+                }
+                at += 2;
+            } else if matches!(running & 0xf0, 0xc0 | 0xd0) {
+                at += 1;
+            } else {
+                panic!("unsupported MIDI status {running:#x}");
+            }
+        }
+        at = end;
+    }
+    (notes, words)
+}
+
+#[test]
+fn gabc_to_midi_keeps_one_note_per_letter_and_the_syllables() {
+    let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
+    assert_eq!(
+        score.notes.len(),
+        2,
+        "the derived projection has two letters"
+    );
+    let midi = write(&score, Format::Midi, &Options::default()).expect("MIDI export");
+    let (notes, words) = midi_events(&midi);
+    assert_eq!(notes, 2, "one MIDI note-on per GABC pitch letter");
+    assert!(
+        words.iter().any(|word| word.contains("VE")),
+        "the syllable text reached the MIDI lyric meta: {words:?}"
+    );
+}
+
 /// A monophonic MuseScore example from the versioned corpus: one staff, four
 /// notes and one lyric syllable. It has no L6 payload, so it exercises the
 /// score → GABC projection rather than the payload serializer.

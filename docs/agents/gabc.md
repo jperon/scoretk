@@ -14,8 +14,9 @@ measured report in §10.7/§11.7. Syntax and mapping are in
 
 All files are local, read-only and unversioned under
 `/home/jacques/programmes/musique/specs/`, catalogued in `specs/README.md`
-§ GABC / Gregorian chant. The only executable run is Gregorio's built C
-parser; no downloaded script is imported or sourced.
+§ GABC / Gregorian chant. Gregorio's built C parser is the only executable
+reference; the one third-party script executed as a *landmark* (never
+imported, always sandboxed) is described in §12.
 
 | Source | Version | Licence | Use |
 | --- | --- | --- | --- |
@@ -47,7 +48,10 @@ signature, no measure numbering and no fixed note durations
 punctum mora, episemata and bar weight (`:742-799`, `:801-845`). A comparison
 of MIDI pitches/onsets with MusicXML written notes would therefore measure a
 duration interpretation that the format does not contain, and could never be
-a 100 % sanity test. It was removed as a comparator.
+a 100 % sanity test. It was removed as a *duration* comparator. Two other
+comparisons are kept: the cross format conversion GABC → MusicXML → GABC
+(§9, where only the model inventory is scored) and a first GABC → MIDI
+landmark test set scored on **pitch intervals and words only** (§12).
 
 ## 4. Corrected oracle: Gregorio is the reference
 
@@ -76,7 +80,8 @@ with `nix-shell -p autoconf automake flex bison`, `-j2`, in
 `mesure.py --writer` adds a third, independent measurement: scoretk's
 GABC → model → GABC output is fed back to **Gregorio**, and the two dumps
 are compared by canonical form and SHA-256. No script from a downloaded
-source is executed. Every divergence is classified by the failing check
+source is executed **in this oracle**; the separate, sandboxed MIDI landmark
+of §12 is the sole exception and is never imported. Every divergence is classified by the failing check
 and written to `mesure.jsonl`; nothing is silently dropped.
 
 Parallelism is capped at two workers (`--jobs`, default
@@ -95,7 +100,8 @@ scripts/oracle/gabc/mesure.sh \
   `gb9426`, `gb11321`, `gb18361`: "clef change is not supported on the first
   syllable", "syntax error", "unrecognized character u") and are excluded
   from both sides — they are bad corpus data, not converter failures.
-- **Our Python source reader vs Gregorio: 132/197 core-exact.** The 65
+- **Our Python source reader vs Gregorio: 132/197 core-exact at the time
+  (133/197 with the corrected canonical form of §9).** The 65
   residual files are classified in `mesure.jsonl` by `premier_divergence`:
   pitch 18, text 24, bars 23 (signs-only differences are N2). These are
   defects in the *Python sanity reader*, not in the Rust writer; bracketed
@@ -223,12 +229,12 @@ in §6 and `crates/scoretk/tests/layer_coverage.rs`.
 | Measurement | Command | Honest result |
 | --- | --- | --- |
 | Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **0/9 byte-identical** (expected); structured inventory 100 % self-consistency. Gregorio accepts 6/6 of the examples it accepts at all, **6/6 core-exact**, **0/6 dump-identical** in `mesure.jsonl` (3 examples are invalid for Gregorio itself) |
-| Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 158 items (L1 342, L2 1 033, L3 31, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
-| **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **essential 30.60 %, full support 31.54 %**, 9/9 outputs differ from their source; L1 45.03 % (154/342), L2 27.11 % (280/1 033), L3 58.06 % (18/31), L6 31.05 % (544/1 752) |
+| Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 435 items (L1 342, L2 1 033, L3 308, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
+| **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **essential 83.00 %, full support 59.07 %**, 9/9 outputs differ from their source; L1 45.03 % (154/342), L2 95.74 % (989/1 033), L3 95.78 % (295/308), L6 33.73 % (591/1 752) |
 | Gregorio vs itself, full 202-file lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio itself) |
 | **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **writer core-exact 193/194 = 99.48 %**, **dump SHA identical 0/194**, 3 writer outputs rejected by Gregorio, 0 tool crashes |
 | Python source sanity reader (phase 0) | same run, `cmp_source` | 133/197 = 67.51 % (was 132/197; the canonical form now keeps Dominican-bar digits and ignores custos pitches) |
-| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 402 453 raw / 943 264 gzip vs 2 379 470 / 931 754 at `a4053795`: **+22 983 raw (+0.97 %), +11 510 gzip (+1.23 %)**, under the ≈ 2.5 MB cap and the +2 % budget |
+| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 403 979 raw / 945 055 gzip vs 2 379 470 / 931 754 at `a4053795`: **+24 509 raw (+1.03 %), +13 301 gzip (+1.43 %)**, under the ≈ 2.5 MB cap and the +2 % budget |
 
 No existing snapshot or `e2e_corpus` result changed. The direct 100 % is a
 consistent re-parse of the same structured fields; only the cross row and
@@ -247,6 +253,13 @@ report (`mesure.jsonl`, never by the total):
 - `<v>…</v>` is verbatim TeX: a literal `(` inside it is not a note group
   (`Gabc.tex:297-309,1093-1102`). The reader now copies the whole tag as
   syllable text: `gb7851` fixed (24 notes and 3 syllables had been swallowed).
+- The derived L0/L1 projection stored segment ticks **relative** to their
+  measure and dropped syllable text. Both were real bugs: a GABC→MIDI
+  conversion stacked every syllable at the same onset and lost all words.
+  With absolute ticks (`pass2.rs:495-518` convention) and the first lyric on
+  each neume, the cross row moved from 30.60 %/31.54 % to
+  **83.00 %/59.07 %**; the L1 loss (45.03 %) remains a by-design gap, since
+  GABC measures are not MusicXML measures.
 - A custos has a `pitch` line in Gregorio's dump but is not a sung note
   (`Gabc.tex:872-884`); it shifted the canonical sequence at clef changes.
   `parse_dump` now skips `GRE_CUSTOS` pitches. The reader also no longer
@@ -258,8 +271,9 @@ report (`mesure.jsonl`, never by the total):
 - GABC has no metre, no measure numbering and no fixed durations
   (`Gabc.tex:801-845`): L0/L1 notes and measures are a derived projection,
   not comparable to MuseScore's metric spine. This is the main reason the
-  cross row is at 30.60 % essential: measure ticks and note ticks change when
-  the derived quarter-note projection round trips through MusicXML.
+  cross row is at 83.00 % essential: measure ticks and note ticks change when
+  the derived quarter-note projection round trips through MusicXML, and that
+  score must not be read as MuseScore compliance.
 - The L6 payload does not model neume grouping order inside a group, `<v>`
   and `[…]` TeX attributes, custos/line breaks, NABC cuts or word-level
   typography beyond the raw syllable text. The writer therefore cannot emit
@@ -300,3 +314,68 @@ To upgrade:
    which are layout, not notes) and its `--selftest` assertions;
 6. never regenerate the lot from GregoBase with another filter or version
    without an explicit decision (§1).
+
+## 12. GABC → MIDI landmark (first test set)
+
+`scripts/oracle/gabc/midi_refs.py` and `midi_compare.py` add a **first** MIDI
+test set. The external tool at
+`/home/jacques/programmes/musique/specs/gabc/gabctk/gabctk.py` is downloaded
+data: it is **executed, never imported**, with `python3 -I`, inside
+`bwrap --unshare-all --die-with-parent --ro-bind / / --dev /dev --proc /proc
+--tmpfs /tmp --bind <scratch> <scratch>`, `HOME`/`XDG_CACHE_HOME` in that one
+writable directory, `timeout 30`, `prlimit --as=2000000000`, and at most two
+workers (same pattern as `scripts/oracle/lilypond/references.py`). It is an
+imperfect landmark, **not** the truth: Gregorio's dump and `Gabc.tex` decide
+every disagreement.
+
+```sh
+python3 scripts/oracle/gabc/midi_refs.py --manifest <lot.tsv> \
+  --out /tmp/gabc-midi-work/refs --scratch /tmp/gabc-midi-work/scratch \
+  --jobs 2 --timeout 30
+python3 scripts/oracle/gabc/midi_compare.py --selftest
+python3 scripts/oracle/gabc/midi_compare.py --manifest <lot.tsv> \
+  --refs /tmp/gabc-midi-work/refs --cli target/debug/scoretk \
+  --scratch /tmp/gabc-midi-work/cmp --jobs 2 --timeout 30
+```
+
+Scored on the 202-file lot (2026-11-25):
+
+| Measurement | Result |
+| --- | --- |
+| Landmark MIDI references produced | **153/202**; 49 failures recorded in `status.jsonl` (23 `IndexError`, 11 `UnicodeEncodeError`, `KeyError` on GABC signs, …) |
+| Comparable files | 153/153 parsed by both SMF readers (`midi_compare.py --selftest` green) |
+| Absolute pitches identical | 0/153 — not meaningful: the landmark auto-transposes by `66 − mean(tessiture)` (`gabctk.py:485-490`); GABC has no absolute concert pitch (`Gabc.tex:410-413`) |
+| **Consecutive pitch intervals identical** | **96/153 = 62.75 %** |
+| Words identical after markup normalisation | **110/153 = 71.90 %** |
+| Files where Gregorio, scoretk and the landmark agree on note count | **96**; on those 96, intervals **96/96 = 100 %** and words **72/96 = 75 %** |
+| Landmark note counts disagree while Gregorio and scoretk agree | **52** files → landmark defect, scoretk not changed |
+| Both differ | 5 files (`gb292`, `gb6426`, `gb14155`, and the fusion files; `gb8251` is invalid for Gregorio) |
+| Durations identical | 0/153 — **informational only**, never scored (see below) |
+
+### Landmark defects (evidence, no change to scoretk)
+
+1. **Dropped notes.** On 52 files the landmark emits fewer notes than both
+   Gregorio's dump and scoretk (e.g. `gb98`: Gregorio 256, scoretk 256,
+   landmark 248; `gb389`: 193/193/192). GABC assigns one note per pitch
+   letter (`Gabc.tex:408-443`) and Gregorio's dump is the reference; the
+   missing notes are a parser defect of the landmark, so scoretk is not
+   bent to match it. Full evidence: `comparaison.jsonl` cross-referenced with
+   `scripts/oracle/gabc/mesure.jsonl`.
+2. **Typography counted as lyrics.** It keeps centring braces (`{ia}`,
+   `Gabc.tex:319-335`) and `<sp>` special characters (`v/`, `:297-309,
+   345-378`) in text metas (`gb1`, `gb1747`); Gregorio records style
+   boundaries separately (`src/dump/dump.c:41-66`) and the canonical form
+   strips them. scoretk's derived lyric drops that markup by design.
+3. **Invented durations.** The landmark's constants are `DUREE_EPISEME=1.7`,
+   `DUREE_POINT=2.3`, `DUREE_AVANT_QUILISMA=2`, default `1`, truncated by
+   `duree = int(note.duree)` and accumulated as `temps += duree/2`
+   (`gabctk.py:32-36,1017-1065,1443-1462`). scoretk's derived view uses one
+   quarter per pitch letter. GABC has no fixed duration at all
+   (`Gabc.tex:801-845`), so no duration score is claimed on either side.
+4. **Auto-transposition** (`gabctk.py:485-490`) and latin-1 text metas make
+   absolute pitch/byte comparisons meaningless; the comparison uses
+   transposition-invariant intervals and normalised words instead.
+
+The remaining 5 "both differ" files are the known L6 fusion gap (`@[…]`,
+`Gabc.tex:603-666`) plus one file Gregorio itself rejects; they are reported,
+not hidden.
