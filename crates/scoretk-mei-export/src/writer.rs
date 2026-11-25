@@ -69,8 +69,17 @@ fn write_measure(
     measure_n: &mut i32,
     options: &MeiOptions,
 ) {
-    if options.layout && measure.section_break_before {
-        xml.tag_empty("pb", &[("type", ids::BREAK_TYPE)]);
+    // `MeiExporter::writeScore` (`meiexporter.cpp:296-307`) writes the break
+    // *before* the measure that follows it; the reader attaches it to the
+    // previous measure (`meiimporter.cpp:1502-1543`).
+    if index > 0 {
+        let previous = &score.measures[index - 1];
+        if options.layout && previous.section_break_before {
+            xml.tag_empty("pb", &[("type", ids::BREAK_TYPE)]);
+        }
+        if options.layout && previous.line_break {
+            xml.tag_empty("sb", &[("type", ids::BREAK_TYPE)]);
+        }
     }
     let mut attrs = convert::measure_to_mei(measure, measure_n)
         .into_iter()
@@ -422,4 +431,25 @@ fn write_control_events(
         }
     }
     let _ = index;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scoretk_core::model::{Fraction, Measure, Part, Score};
+
+    #[test]
+    fn manual_system_breaks_are_written() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        score.add_staff(part);
+        score.add_measure(Measure::new(0, Fraction::ZERO, Fraction::new(4, 4)));
+        let mut measure = Measure::new(1, Fraction::new(4, 4), Fraction::new(4, 4));
+        measure.line_break = true;
+        score.add_measure(measure);
+        score.add_measure(Measure::new(2, Fraction::new(8, 4), Fraction::new(4, 4)));
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a system break");
+        assert_eq!(output.matches("<sb type=\"mscore-manual\"").count(), 1);
+        assert!(output.contains("<sb type=\"mscore-manual\""));
+    }
 }
