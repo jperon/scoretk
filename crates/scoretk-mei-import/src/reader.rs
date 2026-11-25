@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use scoretk_core::model::{
     Accidental, BarLineType, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration,
     Fraction, Key, Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType, StaffId,
-    TimeSig, TimeSigType, Track, Transpose, Tuplet, VOICES,
+    TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -66,7 +66,17 @@ pub(crate) struct Reader<'a> {
     /// Ties whose end note is in a later measure.
     pub(crate) pending_ties: Vec<(String, String)>,
     pub(crate) current_time: Fraction,
-    pub(crate) tuplet_ratio: Option<Fraction>,
+    /// Rang du `<measure>` MEI courant (indépendant des mesures recréées pour
+    /// un multi-repos) : `@n` compte les mesures écrites, pas le modèle.
+    pub(crate) mei_measure_ordinal: usize,
+    /// Dernier `@n` MEI lu, pour mesurer le saut de numérotation d'un
+    /// multi-repos (`Convert::measureToMEI`, meiconverter.cpp:2254).
+    pub(crate) previous_measure_n: i64,
+    /// Ratios des n-olets ouverts, du plus externe au plus interne : l'avance
+    /// d'un événement est divisée par leur produit (`Tuplet::parent`).
+    pub(crate) tuplet_ratios: Vec<Fraction>,
+    /// Identifiants des n-olets ouverts ; le dernier est le plus interne.
+    pub(crate) tuplet_stack: Vec<TupletId>,
     pub(crate) beam_mode: BeamMode,
     /// Alternates the two chords of an `<fTrem>` (`Start`, then `Stop`).
     pub(crate) tremolo_phase: u8,
@@ -95,7 +105,10 @@ impl<'a> Reader<'a> {
             pending: Vec::new(),
             pending_ties: Vec::new(),
             current_time: Fraction::new(4, 4),
-            tuplet_ratio: None,
+            mei_measure_ordinal: 0,
+            previous_measure_n: 0,
+            tuplet_ratios: Vec::new(),
+            tuplet_stack: Vec::new(),
             beam_mode: BeamMode::Auto,
             tremolo_phase: 0,
             signatures_pending: true,
@@ -220,6 +233,8 @@ impl<'a> Reader<'a> {
             node.attribute("right"),
             node.attribute("type"),
         );
+        let ordinal = self.mei_measure_ordinal;
+        self.mei_measure_ordinal += 1;
         let index = self.score.measures.len();
         let (numerator, denominator, kind) = self.current_timesig();
         let nominal = Fraction::try_new(numerator, denominator).unwrap_or(Fraction::new(4, 4));
@@ -229,7 +244,7 @@ impl<'a> Reader<'a> {
         measure.number_offset = if info.irregular {
             0
         } else {
-            info.n as i32 - 1 - index as i32
+            info.n as i32 - 1 - ordinal as i32
         };
         if info.irregular {
             measure.exclude_from_numbering = true;
@@ -308,8 +323,21 @@ impl<'a> Reader<'a> {
         // length; only an irregular measure (`@metcon="false"` or no `@n`)
         // carries its real length. Match that so ticks stay aligned.
         let irregular = info.irregular || node.attribute("metcon") == Some("false");
-        let gap = info.n.saturating_sub(index + 1) as i64;
-        if node.attribute("metcon") == Some("false") && gap > 0 {
+        let gap = info.n.saturating_sub(ordinal + 1) as i64;
+        let jump = if info.n > 0 && self.previous_measure_n > 0 {
+            info.n as i64 - self.previous_measure_n
+        } else {
+            1
+        };
+        if info.n > 0 {
+            self.previous_measure_n = info.n as i64;
+        }
+        // `@n` saute les mesures couvertes ; l'écart avec le rang MEI et le
+        // saut de numérotation donnent deux bornes du nombre de mesures
+        // absentes. La plus large restaure le plus de mesures sans décaler
+        // les suivantes (v4/mmrest, v3/testTboxWords1).
+        let hidden = gap.max(jump).max(1) as usize;
+        if (node.attribute("metcon") == Some("false") || jump > 1) && hidden > 1 {
             // `Convert::measureToMEI` (meiconverter.cpp:2254) writes a single
             // `<measure>` for a whole multi-measure rest, and `writeScore`
             // (meiexporter.cpp:292) iterates layout measures: the covered
@@ -322,7 +350,7 @@ impl<'a> Reader<'a> {
             self.score.measures[index].len = nominal;
             self.score.measures[index].end_bar_line = BarLineType::Normal;
             self.score.measures[index].repeat_count = 0;
-            self.expand_mmrest(index, nominal, gap as usize, end_bar_line, repeat_count);
+            self.expand_mmrest(index, nominal, hidden, end_bar_line, repeat_count);
         } else {
             self.score.measures[index].len = if irregular && len > Fraction::ZERO {
                 len
@@ -343,14 +371,28 @@ impl<'a> Reader<'a> {
     ) {
         let start = self.score.measures[index].start_tick;
         let staff_count = self.score.staves.len().max(1);
-        let has_content = self.score.measures[index].segments.iter().any(|segment| {
-            segment
-                .element(Track::new(StaffId::from_index(0), 0))
-                .and_then(SegmentItem::as_chord_rest)
-                .is_some()
-        });
-        if !has_content {
-            Self::insert_measure_rest(&mut self.score.measures[index], start, staff_count, nominal);
+        let shift = nominal * Fraction::from_integer((count - 1) as i64);
+        // Le contenu écrit dans la mesure MEI appartient à la *dernière*
+        // mesure du groupe : MuseScore place le multi-repos au début et les
+        // événements visibles à la fin (`v3/testTboxWords1`).
+        let mut moved = Vec::new();
+        {
+            let first = &mut self.score.measures[index];
+            let mut kept = Vec::new();
+            for mut segment in std::mem::take(&mut first.segments) {
+                if segment.kind == SegmentType::ChordRest || segment.tick > start {
+                    segment.tick += shift;
+                    moved.push(segment);
+                } else {
+                    kept.push(segment);
+                }
+            }
+            first.segments = kept;
+        }
+        for (event_measure, _, tick) in self.id_events.values_mut() {
+            if *event_measure == index && *tick >= start && *tick < start + shift {
+                *tick += shift;
+            }
         }
         for offset in 1..count {
             let tick = start + nominal * Fraction::from_integer(offset as i64);
@@ -359,10 +401,28 @@ impl<'a> Reader<'a> {
             if offset + 1 == count {
                 measure.end_bar_line = end_bar_line;
                 measure.repeat_count = repeat_count;
+                for segment in moved.drain(..) {
+                    measure.add_segment(segment);
+                }
             }
-            Self::insert_measure_rest(&mut measure, tick, staff_count, nominal);
+            if !Self::has_chord_rest(&measure, tick) {
+                Self::insert_measure_rest(&mut measure, tick, staff_count, nominal);
+            }
             self.score.add_measure(measure);
         }
+        if !Self::has_chord_rest(&self.score.measures[index], start) {
+            Self::insert_measure_rest(&mut self.score.measures[index], start, staff_count, nominal);
+        }
+    }
+
+    fn has_chord_rest(measure: &Measure, tick: Fraction) -> bool {
+        measure.segments.iter().any(|segment| {
+            segment.tick == tick
+                && segment
+                    .element(Track::new(StaffId::from_index(0), 0))
+                    .and_then(SegmentItem::as_chord_rest)
+                    .is_some()
+        })
     }
 
     /// Un silence de mesure entière sur la première portée, comme dans le
@@ -494,6 +554,10 @@ impl<'a> Reader<'a> {
             ChordRest::chord(duration)
         };
         cr.ticks = Some(gestural_duration_of(node).unwrap_or(duration).ticks());
+        // L'événement appartient au n-olet le plus interne (`Tuplet::parent`
+        // dans le modèle). Les n-olets externes ne reçoivent que les
+        // événements qui ne sont pas déjà dans un n-olet imbriqué.
+        cr.tuplet = self.tuplet_stack.last().copied();
         if let Some(stem) = convert::stem_from_mei(node.attribute("stem.dir").unwrap_or_default()) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.engraving.stem = stem;
@@ -699,19 +763,13 @@ impl<'a> Reader<'a> {
         *ticks += nominal;
     }
 
-    /// `MeiImporter::readTuplet` (`meiimporter.cpp:2200`). Nested tuplets are
-    /// rejected by MuseScore 4.7.4.
+    /// `MeiImporter::readTuplet` (`meiimporter.cpp:2200`). MuseScore 4.7.4
+    /// rejette les n-olets imbriqués à l'import, mais son export en écrit
+    /// (`Convert::tupletToMEI`, meiconverter.cpp:3639) et la partition de
+    /// référence en contient : le lecteur les conserve en empilant les ratios.
+    /// Les événements appartiennent au n-olet le plus interne ; la durée d'un
+    /// n-olet est la somme de ses propres événements, divisée par son ratio.
     fn read_tuplet(&mut self, node: &Element, measure: usize, track: Track, ticks: &mut Fraction) {
-        if self.tuplet_ratio.is_some() {
-            self.score.report.record(
-                Layers::EXTENSIONS,
-                "nested-tuplet",
-                Some(self.score.measures[measure].start_tick + *ticks),
-                Some(track),
-            );
-            self.read_elements(node, measure, track, ticks);
-            return;
-        }
         let num = node
             .attribute("num")
             .and_then(|value| value.parse::<i64>().ok())
@@ -722,30 +780,42 @@ impl<'a> Reader<'a> {
             .unwrap_or(1);
         let ratio = Fraction::try_new(num, base).unwrap_or(Fraction::ONE);
         let start_tick = self.score.measures[measure].start_tick + *ticks;
-        let before = *ticks;
-        self.tuplet_ratio = Some(ratio);
-        self.read_elements(node, measure, track, ticks);
-        self.tuplet_ratio = None;
         let base_len = node
             .children
             .iter()
             .find_map(duration_of_opt)
             .map(|duration| duration.ticks())
             .unwrap_or(Fraction::QUARTER);
-        let mut tuplet = Tuplet::new(ratio, base_len, start_tick, *ticks - before);
-        tuplet.bracket = node
-            .attribute("bracket.visible")
-            .is_some_and(|value| value != "false");
+        // `TRead::read(Tuplet*)` : `len = baseLen * normalNotes`, avec le
+        // dénominateur non réduit lu dans `@numbase` (read4xx/mod.rs:1963).
+        let len = base_len * Fraction::from_integer(base);
+        let mut tuplet = Tuplet::new(ratio, base_len, start_tick, len);
+        tuplet.actual_notes = num;
+        tuplet.normal_notes = base;
+        tuplet.parent = self.tuplet_stack.last().copied();
+        // `Convert::tupletToMEI` (meiconverter.cpp:3649) écrit
+        // `@bracket.place` dès que la direction est haute ou basse, et
+        // `@bracket.visible="false"` seulement pour un crochet explicitement
+        // masqué.
+        tuplet.bracket = match node.attribute("bracket.visible") {
+            Some("false") => false,
+            Some("true") => true,
+            _ => node.attribute("bracket.place").is_some(),
+        };
+        tuplet.bracket_explicit = node.attribute("bracket.visible").is_some();
         let tuplet_id = self.score.add_tuplet(tuplet);
-        for segment in &mut self.score.measures[measure].segments {
-            if segment.tick < start_tick || segment.tick >= start_tick + (*ticks - before) {
-                continue;
-            }
-            if let Some(item) = segment.element_mut(track) {
-                if let Some(cr) = item.as_chord_rest_mut() {
-                    cr.tuplet = Some(tuplet_id);
-                }
-            }
+        self.tuplet_ratios.push(ratio);
+        self.tuplet_stack.push(tuplet_id);
+        self.read_elements(node, measure, track, ticks);
+        self.tuplet_ratios.pop();
+        self.tuplet_stack.pop();
+        if !self.tuplet_stack.is_empty() {
+            self.score.report.record(
+                Layers::EXTENSIONS,
+                "nested-tuplet",
+                Some(start_tick),
+                Some(track),
+            );
         }
     }
 
@@ -905,8 +975,8 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::addChordRest`: time advance, scaled inside a tuplet.
     fn advance(&self, ticks: &mut Fraction, duration: Duration, _measure: usize) {
         let mut advance = duration.ticks();
-        if let Some(ratio) = self.tuplet_ratio {
-            advance /= ratio;
+        for ratio in &self.tuplet_ratios {
+            advance /= *ratio;
         }
         *ticks += advance;
     }
