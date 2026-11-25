@@ -27,7 +27,8 @@
 
 use scoretk_core::model::{
     AccidentalType, ArticulationType, BarLineType, BeamMode, ClefType, CreditStyle, Duration,
-    DurationType, Fraction, Key, KeySig, Measure, StemDirection, TimeSig, TimeSigType,
+    DurationType, Fraction, Key, KeySig, Measure, NoteHeadGroup, StemDirection, TimeSig,
+    TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -331,6 +332,40 @@ pub fn artic_to_mei(kind: &ArticulationType) -> Option<&'static str> {
         ArticulationType::Open => Some("open"),
         ArticulationType::Stopped => Some("stop"),
         ArticulationType::SnapPizzicato => Some("snap"),
+        _ => None,
+    }
+}
+
+/// `@head.shape` (`data.HEADSHAPE`, MEI 5.1). Only the shapes with a distinct
+/// standard term are carried; the others stay out of reach rather than being
+/// encoded in a private vocabulary.
+pub fn head_shape_to_mei(group: &NoteHeadGroup) -> Option<&'static str> {
+    match group {
+        NoteHeadGroup::Cross | NoteHeadGroup::HeavyCross | NoteHeadGroup::HeavyCrossHat => {
+            Some("x")
+        }
+        NoteHeadGroup::Plus => Some("+"),
+        NoteHeadGroup::Circled | NoteHeadGroup::CircledLarge => Some("circle"),
+        NoteHeadGroup::Diamond | NoteHeadGroup::DiamondOld | NoteHeadGroup::LargeDiamond => {
+            Some("diamond")
+        }
+        NoteHeadGroup::Slash | NoteHeadGroup::Slashed1 | NoteHeadGroup::Slashed2 => Some("slash"),
+        NoteHeadGroup::TriangleUp => Some("isotriangle"),
+        NoteHeadGroup::TriangleDown => Some("piewedge"),
+        _ => None,
+    }
+}
+
+/// Inverse of [`head_shape_to_mei`].
+pub fn head_shape_from_mei(value: &str) -> Option<NoteHeadGroup> {
+    match value {
+        "x" => Some(NoteHeadGroup::Cross),
+        "+" => Some(NoteHeadGroup::Plus),
+        "circle" => Some(NoteHeadGroup::Circled),
+        "diamond" => Some(NoteHeadGroup::Diamond),
+        "slash" => Some(NoteHeadGroup::Slash),
+        "isotriangle" => Some(NoteHeadGroup::TriangleUp),
+        "piewedge" => Some(NoteHeadGroup::TriangleDown),
         _ => None,
     }
 }
@@ -826,6 +861,16 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn note_heads_use_standard_mei_shapes() {
+        use scoretk_core::model::NoteHeadGroup;
+        assert_eq!(head_shape_to_mei(&NoteHeadGroup::Cross), Some("x"));
+        assert_eq!(head_shape_to_mei(&NoteHeadGroup::Plus), Some("+"));
+        assert_eq!(head_shape_to_mei(&NoteHeadGroup::Diamond), Some("diamond"));
+        assert_eq!(head_shape_from_mei("circle"), Some(NoteHeadGroup::Circled));
+        assert_eq!(head_shape_to_mei(&NoteHeadGroup::Do), None);
     }
 
     #[test]

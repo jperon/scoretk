@@ -496,6 +496,12 @@ impl<'a> Reader<'a> {
             transpose.chromatic,
         );
         let mut note = Note::new(info.pitch, info.tpc);
+        if let Some(group) = node
+            .attribute("head.shape")
+            .and_then(convert::head_shape_from_mei)
+        {
+            note.head_group = group;
+        }
         note.accidental = info.accidental.map(|kind| Accidental {
             kind,
             bracket: accid.attribute("enclose") == Some("brack"),

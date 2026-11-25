@@ -443,6 +443,9 @@ fn write_note(
     if let Some(ges) = accid_ges {
         attrs.push(("accid.ges", ges));
     }
+    if let Some(shape) = convert::head_shape_to_mei(&note.head_group) {
+        attrs.push(("head.shape", shape));
+    }
     match chord {
         Some(chord) => {
             xml.start_element("note", &attrs);
