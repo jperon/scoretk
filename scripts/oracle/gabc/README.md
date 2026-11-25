@@ -43,10 +43,24 @@ scripts/oracle/gabc/mesure.sh - /tmp/gabc-selftest --selftest
 scripts/oracle/gabc/mesure.sh \
   /home/jacques/programmes/musique/specs/gabc/lot/lot.tsv /tmp/gabc-oracle \
   --verifier-determinisme --jobs 2
+
+# With the scoretk GABC writer (build the CLI first):
+nix develop -c cargo build -p scoretk-cli
+scripts/oracle/gabc/mesure.sh \
+  /home/jacques/programmes/musique/specs/gabc/lot/lot.tsv /tmp/gabc-oracle-writer \
+  --verifier-determinisme --jobs 2 --writer "$PWD/target/debug/scoretk"
 ```
 
+`--writer` is additive: each valid source is converted
+`GABC → model → GABC` by our own CLI, then parsed again by Gregorio. The
+report contains `cmp_writer` (canonical comparison against Gregorio's dump of
+the original) and `writer_dump_identique` (SHA-256 equality of the two dumps).
+Only the built Gregorio parser and the built scoretk CLI are executed; no
+downloaded script is imported.
+
 At most two workers (`--jobs`, default `min(2, os.cpu_count())`); never run
-two measurements at once. No scoretk reader/writer is involved yet.
+two measurements at once. The scoretk writer is involved only when `--writer`
+is given; the Gregorio reference is unchanged in both modes.
 
 ## Outputs
 

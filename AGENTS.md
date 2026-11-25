@@ -7,10 +7,10 @@ in `docs/agents/` (index at the end of the file).
 
 **scoretk** (GPL-3.0-only) is a score conversion toolkit. A Rust port of the
 converters of **MuseScore Studio**: a generic core, reading `.mscz`/`.mscx`,
-`partwise` MusicXML export, then MuseScore, MusicXML, LilyPond, ABC, MIDI and
-MEI (see `docs/TODO.md`).
+`partwise` MusicXML export, then MuseScore, MusicXML, LilyPond, ABC, MIDI, MEI
+and GABC (see `docs/TODO.md`).
 
-Map of crates and modules (21 members: one core, one facade, its CLI and its
+Map of crates and modules (24 members: one core, one facade, its CLI and its
 wasm package, plus the formats split by direction):
 
 ```
@@ -33,6 +33,9 @@ crates/
   scoretk-mei-common        MEI tables and conversions shared by both directions
   scoretk-mei-import        .mei → model (MEI 5.1, 4.7.4 port)
   scoretk-mei-export        model → .mei
+  scoretk-gabc-common       GABC tables and helpers shared by both directions
+  scoretk-gabc-import       .gabc → model (L6 syllable/neume stream)
+  scoretk-gabc-export       model → .gabc (verbatim L6 payload)
   scoretk                   facade: Format, read/write/convert, hooks
   scoretk-cli               `scoretk` binary (disk I/O)
   scoretk-wasm              wasm-bindgen wrapper
@@ -69,10 +72,13 @@ crates/
   and the behaviour of `abc2xml.py`, no I/O (t41).
 - `crates/scoretk-abc-export` — ABC writing (`.abc`) from the model,
   the behaviour of `xml2abc.py`, no I/O (t41).
+- `crates/scoretk-gabc-common` — GABC tables and helpers shared by the two
+  directions, no conversion logic; `-import` reads into the L6 `Gregorian`
+  payload with a derived L0/L1 view, `-export` writes it back verbatim.
 - `crates/scoretk` — multi-format facade: `Format`, detection by extension
-  or content, `read`/`write`/`convert` into the pivot model; ten symmetric
+  or content, `read`/`write`/`convert` into the pivot model; twelve symmetric
   `<format>-import` / `<format>-export` features (`musescore`, `musicxml`,
-  `midi`, `lilypond`, `abc`), all enabled by default, wired up in
+  `midi`, `lilypond`, `abc`, `mei`, `gabc`), all enabled by default, wired up in
   `src/hooks.rs` and with no mixed alias.
 - `crates/scoretk-cli` — `scoretk` binary (`input -o output`, `--from`,
   `--to`, `-` for stdin/stdout): disk I/O for the facade.
@@ -249,7 +255,7 @@ One line per document; read the one matching the subject before coding.
 - `docs/agents/mei.md` — MEI 5.1 port of MuseScore 4.7.4, corpus references,
   measured coverage/conformity, limits and source upgrade: read before touching
   the `scoretk-mei-*` crates.
-- `docs/agents/gabc.md` — GABC reference lot, licence record, oracle design and measured sanity baseline: read before running or extending `scripts/oracle/gabc/`.
+- `docs/agents/gabc.md` — GABC lot, licence record, Gregorio oracle, reader/writer rules, measured results and limits: read before touching the `scoretk-gabc-*` crates or `scripts/oracle/gabc/`.
 - docs/agents/format-mapping/ — format ↔ model tables per format and model
   gaps (musescore, musicxml, midi, lilypond, abc, gabc, mei, capella,
   guitarpro, humdrum): read before extending a reader or a writer.

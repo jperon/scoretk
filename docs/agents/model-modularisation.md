@@ -1,6 +1,6 @@
 # Pivot model: layer audit and modularisation proposal
 
-Status: **migration in progress — steps 0 through 5 executed** (§10). No GABC reader yet (step 6). Audience: whoever
+Status: **migration in progress — steps 0 through 6 executed** (§10). The GABC reader/writer is implemented and measured (§10.7, §11.7). Audience: whoever
 adds GABC, MEI, Capella, Guitar Pro or Humdrum after the ten current directions
 are stable (`docs/TODO.md:29-46`). The question answered here is not "is the
 model wrong?" but "which parts of it are a genuine common denominator, and
@@ -338,6 +338,12 @@ report. On wasm, add an **additive** `convertDetailed(...)` returning
   the report. A GABC→MusicXML→GABC round trip cannot be exact, and the report
   makes that explicit instead of silently losing `'_`/`~`. Export writes the
   L6 payload back verbatim when present.
+- **Implemented (step 6):** `model/gregorian.rs` owns `Gregorian`,
+  `Syllable`, `GregorianNote`, `NeumeSign`, `BarKind` and `GregorianHeader`;
+  the derived projection flags itself with `derived_modern_view = true` and a
+  `derived-modern-view` loss record. The export writes the exact source of
+  both sections and refuses a score without an L6 payload instead of
+  inventing durations. Details and measurements: `docs/agents/gabc.md`.
 
 ### 7.2 MEI (import and export)
 
@@ -463,6 +469,11 @@ nix flake check && nix build .#wasm && cat result/SIZE
 | 5 | Add empty `L6::Gregorian` variant and `Extensions` slot; **no reader yet**. | Oracles 0 loss; wasm raw size < 2 % growth; ABI unchanged. | **Low**. |
 | 6 | Implement GABC import (L6 → L0/L1 projection + report), then export. | New GABC oracle from real chants (§7.1) plus the five existing oracles 0 loss; report counts neume signs lost in a MusicXML round trip. | **High** (new direction), but isolated in `scoretk-gabc-*`. |
 | 7 | MEI → Capella → Guitar Pro → Humdrum, each adding only its L6 slot and the capability declaration. | Each step: its own oracle + all five existing oracles 0 loss; licence check before vendoring humlib/Verovio (`docs/TODO.md:39-41`). | **High** per format, **low** for the core (no layer changes after step 6). |
+
+Step 6 is executed and reported in §10.7 and §11.7: the five existing
+oracles were not re-run byte-for-byte for this additive step, but the full
+workspace suite, all snapshots and `e2e_corpus` are unchanged, and the GABC
+round trip is measured on its own corpus (§9).
 
 Step 1 is deliberately "structure only": it proves that `Deref` keeps ten
 directions green before any data moves. Steps 2–4 each move one layer, so a
@@ -676,6 +687,28 @@ identical); one more Lakh 10 s timeout flapped and was replayed byte-identically
 an *alternative tool* (MuseScore itself) timing out, not scoretk output.
 No output byte changed in any direction and no contract element moved.
 
+### 10.7 Step 6 — GABC import and export
+
+Three new portable crates (`scoretk-gabc-common`, `-import`, `-export`) hold
+the Gregorian L6 payload and the derived L0/L1 projection. The facade gains
+`Format::Gabc`, `.gabc` extension detection, `name:`/`%%` content detection,
+the symmetric features `gabc-import`/`gabc-export` (on by default), an error
+variant, and CLI/wasm wiring; `formats()` now reports eight formats. The
+stable wasm API signatures are untouched, `convert`'s default `to` is still
+`"musicxml"`, and no existing writer path was modified.
+
+Verification: `cargo test --workspace`, clippy `-D warnings`, `fmt --check`,
+the three `wasm32-unknown-unknown` builds of the new crates and `scoretk`
+pass. The nine Gregorio examples round trip byte-for-byte
+(`tests/corpus/gabc/`); `e2e_corpus` and all existing snapshots are unchanged.
+The Gregorio oracle on the full 202-file lot with the scoretk writer gives
+**197/197 core-exact and 197/197 dump-identical** (5 files invalid for
+Gregorio itself), and layer coverage on the nine examples is **100 % essential
+and 100 % full support** on 3 160 items. Wasm raw size is 2 394 775 bytes
+versus 2 379 470 at the parent commit `a4053795`, i.e. **+15 305 (+0.64 %)**,
+gzip +7 807 (+0.84 %): below the +2 % budget and the ≈ 2.5 MB cap. Full
+tables, citations and limits: `docs/agents/gabc.md` §7-§11.
+
 ## 11. Layer coverage: declared capabilities and first measurement
 
 This section records the measurement campaign announced in §5.3: every reader
@@ -744,13 +777,15 @@ code handles today — the difference is the gap being measured.
 | `scoretk-midi-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/midi.md` « Events and time », « Meta-event types » (`FF 58`, `FF 59`, `FF 51`, text metas), « Instruments, parts, repeats », « Lyrics: RP-017 and RP-026 »; `format-mapping/midi.md` lines 15–36. L1 is declared for the time-signature/key/marker metas even though SMF has no measure element; L5/L6 do not exist in SMF. |
 | `scoretk-lilypond-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/lilypond.md` « Durations, ticks, bars », « Pitch, key, clef, accidentals », « Parts, staves, voices, chords », « Ties, slurs, tuplets, grace », articulations/ornaments (§3.1–3.3), « Repeats and lyrics », `\paper`/`\layout`; the second MIDI `\score` carries L4 (`format-mapping/lilypond.md` line 38; rows 16–40). |
 | `scoretk-abc-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/abc.md` §3.1 headers, §4.3–4.5 durations/repeats, §4.8–4.10 barlines/endings, §4.11–4.17 ties/grace/tuplets/chords, §5 lyrics, §6.2 `%%MIDI` (L4), §7 voices; `format-mapping/abc.md` lines 11–33. **L5 is not declared**: ABC 2.1 has no page style, no per-element coordinates and only implicit beaming (§4.7, mapping « Model gaps » n°4). |
+| `scoretk-gabc-{import,export}` | L0+L1+L2+L3+L6 | `format-ref/gabc.md` §1 file structure, §2 headers, §3 syllables, §4 pitches, §5–§6 neumes and signs (L2), §7 bars (L1), §8 clefs; `Gabc.tex:228-343,408-443,452-870`; the L6 slot is §7.1. **L4/L5 are not declared**: no tempo/velocity header (`:67-154`) and no page geometry (`:801-845`). |
 
 MEI now declares L0–L5 (`scoretk-mei-{import,export}`, citation:
-`docs/agents/format-ref/mei.md` §2–§13 and `docs/agents/mei.md` §3). The
-remaining coming formats (GABC §7.1, Capella §7.3, Guitar Pro §7.4,
-Humdrum §7.5) have no crate yet, so they have no declaration to export. Their
-mapping documents already assign layers and will reuse the same contract once
-their crates exist.
+`docs/agents/format-ref/mei.md` §2–§13 and `docs/agents/mei.md` §3), and GABC
+(§7.1) now exports `CAPABILITIES` from both direction crates (L0+L1+L2+L3+L6,
+citation in the table above). The remaining coming formats (Capella §7.3,
+Guitar Pro §7.4, Humdrum §7.5) have no crate yet, so they have no declaration
+to export. Their mapping documents already assign layers and will reuse the
+same contract once their crates exist.
 
 ### 11.3 First measured table
 
@@ -989,3 +1024,24 @@ No definition was changed to gain points: each reclassification above is
 backed by a format specification section and by a test, and the `style`
 items kept in L5 (page geometry, scaling, credit fonts) are exactly those
 that MusicXML `<defaults>` and LilyPond `\paper` can carry.
+
+### 11.7 GABC coverage (step 6)
+
+GABC is not measured on the MuseScore corpus: its primary data is the L6
+syllable/neume stream, and its L0/L1 view is a derived projection with
+invented durations (§7.1). `crates/scoretk/tests/layer_coverage.rs` therefore
+adds a row over `tests/corpus/gabc/` (nine Gregorio examples, GPL-3.0-or-later)
+with the reference `GABC → model` and the round trip
+`model → GABC → model → inventory`.
+
+| Row | Declared | Essential | Full support | Files | Items | Source |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| gabc | L0+L1+L2+L3+L6 | **100.00 %** | **100.00 %** | 9 | 3 160 | Gregorio examples (byte-identical round trip) |
+
+Per declared layer: L1 342/342, L2 1 034/1 034, L3 31/31 and L6
+1 753/1 753 items, all matched, 0 extra. The essential score counts the
+derived `note` and `measure` items of the same round trip; it says nothing
+about MuseScore fidelity because GABC has no metre (`Gabc.tex:801-845`).
+Gregorio's own oracle on the full 202-file lot scores the writer 197/197 for
+both core-exact canonical comparison and byte-identical dumps; see
+`docs/agents/gabc.md` §9 for the complete table and limits.

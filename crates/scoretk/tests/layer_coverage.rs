@@ -48,6 +48,8 @@ use scoretk::{read, write, Format, Options, Score};
 
 use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
 use scoretk_abc_import::CAPABILITIES as ABC_IMPORT;
+use scoretk_gabc_export::CAPABILITIES as GABC_EXPORT;
+use scoretk_gabc_import::CAPABILITIES as GABC_IMPORT;
 use scoretk_lilypond_export::CAPABILITIES as LY_EXPORT;
 use scoretk_lilypond_import::CAPABILITIES as LY_IMPORT;
 use scoretk_mei_export::CAPABILITIES as MEI_EXPORT;
@@ -424,6 +426,81 @@ fn layer_coverage_table() {
         print_details(declared, &totals);
     }
     println!();
+}
+
+/// GABC is not measured on the MuseScore corpus: its primary data is the L6
+/// syllable/neume stream, not a metrical event spine. The reference is the
+/// Gregorian source itself; the round trip is `GABC → model → GABC → model`.
+fn gabc_totals() -> (Totals, Layers) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("gabc");
+    let mut paths: Vec<PathBuf> = fs::read_dir(root)
+        .expect("GABC corpus directory")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "gabc")
+        })
+        .collect();
+    paths.sort();
+    let declared = GABC_IMPORT.declared().union(GABC_EXPORT.declared());
+    let mut totals = Totals::default();
+    for path in paths {
+        let bytes = fs::read(&path).expect("read GABC example");
+        let reference = read(&bytes, Format::Gabc).expect("GABC import of the example");
+        let reference_inventory = inventory(&reference);
+        let Ok(written) = write(&reference, Format::Gabc, &Options::default()) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let Ok(round_trip) = read(&written, Format::Gabc) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&round_trip);
+        let coverage = compare(&reference_inventory, &candidate, declared);
+        totals.add(&coverage, essential(&reference_inventory, &candidate));
+    }
+    (totals, declared)
+}
+
+#[test]
+fn gabc_layer_coverage_table() {
+    let (totals, declared) = gabc_totals();
+    println!("\n=== GABC layer coverage on the nine Gregorio examples ===");
+    println!(
+        "key = (layer, tick, staff, kind, value); essential = note+measure; \
+         full support = all declared layers"
+    );
+    println!(
+        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}  source",
+        "direction", "declared", "essential", "full-support", "files", "skipped", "ref-items"
+    );
+    print_row(
+        "gabc",
+        declared,
+        &totals,
+        "Gregorio examples (GPL-3.0-or-later)",
+    );
+    print_details(declared, &totals);
+    println!();
+}
+
+#[test]
+fn gabc_full_support_reaches_the_target() {
+    let (totals, _) = gabc_totals();
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    assert!(
+        totals.total.percent() >= 95.0,
+        "GABC full support is {:.2} %",
+        totals.total.percent()
+    );
 }
 
 #[test]

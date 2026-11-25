@@ -162,6 +162,27 @@ scripts of **Willem Vree**:
   `crates/scoretk-abc-common/src/` and in `docs/agents/abc.md` (§ 9 for the
   upgrade, § 16 for the port).
 
+## Code and behaviours reused from Gregorio
+
+The GABC syntax implemented by `scoretk-gabc-common`, `scoretk-gabc-import`
+and `scoretk-gabc-export` is the format of **Gregorio**,
+<https://github.com/gregorio-project/gregorio>, commit
+`b63f074253bd2f6b837f9f9778bba299ac139ec0`. The reference files are
+`doc/Gabc.tex`, `src/gabc/gabc-score-determination.{y,l}`, `src/struct.{c,h}`
+and `src/dump/dump.c`, kept read-only outside the repository.
+
+- Upstream licence: **GNU GPL version 3 or later** (GPL-3.0-or-later,
+  `gregorio/COPYING.md`), Copyright (C) 2007-2026 The Gregorio Project.
+  GPL-3.0-or-later permits distribution under GPL-3.0-only, this project's
+  licence.
+- Nature of the reuse: **rewrite in Rust** of the syntax, the pitch/clef
+  resolution and the bar vocabulary. No Gregorio C source is distributed;
+  each Rust file cites the upstream section it follows. Gregorio's built
+  parser is the reference oracle (`scripts/oracle/gabc/`).
+- The nine files under `tests/corpus/gabc/` (`gregorio_*.gabc`) are copied
+  from Gregorio's `doc/` and `examples/` at the same commit, under the same
+  GPL-3.0-or-later licence; they are declared here as reused data.
+
 ## Reused data
 
 ### Test corpus
@@ -187,6 +208,8 @@ scripts of **Willem Vree**:
   on the corpus, produced by the crate itself (command
   `UPDATE_LILYPOND_SNAPSHOTS=1 cargo test -p scoretk-lilypond-export`). Work of
   the project, licence GPL-3.0-only.
+- `tests/corpus/gabc/*.gabc`: the nine Gregorio example files, copied from
+  `doc/` and `examples/` at commit `b63f074` (GPL-3.0-or-later, see above).
 - `tests/corpus/abc/**/*.abc`: snapshots of the output of `scoretk-abc-export`
   on the corpus, produced by the crate itself (command
   `UPDATE_ABC_SNAPSHOTS=1 cargo test -p scoretk --test abc_corpus`).

@@ -123,6 +123,29 @@ def measure_one(item: tuple[str, Path], args) -> dict:
         k for k, ok in releve["cmp_source"].items()
         if k in ("pitch_multiset", "pitch_sequence", "bars", "text", "signs") and not ok
     ]
+
+    # Optional converter measurement: run scoretk (GABC -> model -> GABC) and
+    # let Gregorio parse the result. The reference stays Gregorio's own dump
+    # of the *original* file; comparing two dumps avoids measuring our Python
+    # source reader's own limitations. Only our built CLI is executed here.
+    if args.writer:
+        converted = work / "scoretk.gabc"
+        code, err = _run([
+            str(args.writer), str(src), "-o", str(converted),
+            "--from", "gabc", "--to", "gabc",
+        ])
+        if code != 0 or not converted.exists():
+            releve["erreur_writer"] = _last_error(err)
+            return releve
+        writer_ref = gregorio_ref(args.gregorio, converted, work, "writer")
+        if not writer_ref["ok"]:
+            releve["erreur_writer"] = writer_ref["erreur"]
+            return releve
+        writer_canon = canonical.parse_dump(
+            writer_ref["dump"].read_text(encoding="utf-8", errors="replace")
+        )
+        releve["cmp_writer"] = canonical.compare(canon_ref, writer_canon)
+        releve["writer_dump_identique"] = writer_ref["sha"] == ref["sha"]
     return releve
 
 
@@ -150,6 +173,10 @@ def main() -> None:
     p.add_argument("--verifier-determinisme", action="store_true")
     p.add_argument("--jobs", type=int, default=min(2, os.cpu_count() or 1))
     p.add_argument("--selftest", action="store_true")
+    p.add_argument(
+        "--writer", type=Path,
+        help="optional scoretk CLI binary to measure GABC -> model -> GABC",
+    )
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -170,32 +197,43 @@ def main() -> None:
     valides = [r for r in releves if "sha_dump" in r]
     deterministes = sum(1 for r in valides if r.get("gregorio_deterministe"))
     exacts = sum(1 for r in valides if r.get("cmp_source", {}).get("core_exact"))
+    written = [r for r in valides if "cmp_writer" in r]
+    writer_exacts = sum(1 for r in written if r["cmp_writer"]["core_exact"])
+    writer_identical = sum(1 for r in written if r.get("writer_dump_identique"))
     resume = [
         "# GABC oracle — Gregorio reference",
         "",
         f"Files: {len(releves)} | Gregorio refs: {len(valides)} | "
         f"Gregorio deterministic: {deterministes}/{len(valides)} | "
         f"our reader core-exact: {exacts}/{len(valides)}",
+        f"scoretk writer: core-exact {writer_exacts}/{len(written)} | "
+        f"Gregorio dump identical {writer_identical}/{len(written)}",
         "",
         "Truth: pitch with clef applied, syllable text and bars "
         "(`canonical.py`); signs are optional N2. Gregorio is the only reference.",
         "",
-        "| id | gregorio | deterministic | source core-exact | first divergence | signs |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| id | gregorio | deterministic | source core-exact | writer core-exact "
+        "| writer dump identical | first divergence | signs |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in releves:
         c = r.get("cmp_source", {})
+        w = r.get("cmp_writer", {})
         resume.append(
             f"| {r['id']} | {'ok' if 'sha_dump' in r else 'FAIL'} | "
             f"{'yes' if r.get('gregorio_deterministe') else 'no'} | "
             f"{'yes' if c.get('core_exact') else 'no'} | "
+            f"{'yes' if w.get('core_exact') else ('no' if w else '—')} | "
+            f"{'yes' if r.get('writer_dump_identique') else ('no' if w else '—')} | "
             f"{c.get('premier_divergence', r.get('erreur', ''))} | "
             f"{'yes' if c.get('signs') else 'no'} |"
         )
     (args.out / "resume.md").write_text("\n".join(resume) + "\n", encoding="utf-8")
     print(
         f"files={len(releves)} gregorio={len(valides)} "
-        f"deterministic={deterministes}/{len(valides)} source_core={exacts}/{len(valides)}"
+        f"deterministic={deterministes}/{len(valides)} source_core={exacts}/{len(valides)} "
+        f"writer_core={writer_exacts}/{len(written)} "
+        f"writer_dump_identical={writer_identical}/{len(written)}"
     )
 
 

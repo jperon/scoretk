@@ -10,8 +10,10 @@ project core (rules, commands, index) remains in `AGENTS.md`.
 `crates/scoretk` facade: no conversion logic, only exposure of
 `read`/`write`/`Format` to JavaScript. It enables **all** the features of the
 facade (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`,
-`abc`), like the `scoretk` CLI: the browser package can therefore read and write
-all seven formats.
+`abc`, `gabc`), like the `scoretk` CLI: the browser package can therefore read
+and write all eight formats. `formats()` reports `gabc` with
+extensions `["gabc"]` and both directions enabled; no other API signature
+changed (AGENTS.md invariant 5).
 
 | Crate | Surface | Nix package |
 | --- | --- | --- |
@@ -56,6 +58,19 @@ pass (2026-11-21):
 The two `esm` and `classic` variants share the same binary byte for byte.
 The package remains **complete, all features enabled**: it stays below
 Cantus's limit (≈ 2.5 Mo raw).
+
+GABC (step 6 of the modularisation plan) was measured with the same pipeline
+against the exact parent commit `a4053795`:
+
+| State | Raw | Gzip -9 |
+| --- | ---: | ---: |
+| Before GABC (`a4053795`) | 2 379 470 | 931 754 |
+| With GABC reader/writer | **2 394 775** | **939 561** |
+| Delta | +15 305 (+0.64 %) | +7 807 (+0.84 %) |
+
+The +2 % budget is respected and the total remains below the ≈ 2.5 MB cap.
+(The older 2 331 942-byte figure of `model-modularisation.md` §10.6 predates
+several fixes on `master`; it is not the right baseline for this delta.)
 
 The previous reference (1 552 892 raw / 641 472 gzip, commit `a7f690c`) predates
 the addition of the ABC and LilyPond readers, the MIDI reader and the ten

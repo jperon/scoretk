@@ -49,7 +49,7 @@
         # (.rs, *.toml, Cargo.lock, .cargo/config, plus les répertoires) : pas
         # besoin de reconstruire quand la doc change. Il faut y ajouter toutes
         # les données de test, quelle que soit leur extension :
-        # - `tests/corpus/` (.mscx/.mscz/.musicxml/.ly/.abc/.mid), lu par les
+        # - `tests/corpus/` (.mscx/.mscz/.musicxml/.ly/.abc/.mid/.gabc), lu par les
         #   tests d'intégration via CARGO_MANIFEST_DIR/../../tests/corpus ;
         # - les fixtures sous `crates/*/tests/` (.mscx, .ly, …), lues à la
         #   compilation par include_str! (section_pause_jump.mscx) ou à

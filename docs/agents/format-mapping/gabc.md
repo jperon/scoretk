@@ -8,9 +8,13 @@ and lexer `.l`, the score structures `src/struct.h`, key/clef rules
 commit `b63f074` in `specs/gabc/gregorio/`, GPL-3.0-or-later
 (`gregorio/COPYING.md`). Pivot types and lines come from
 `crates/scoretk-core/src/model/`; layers **L0…L6** are those of
-[model-modularisation.md](../model-modularisation.md) §5.1. Reader and writer:
-**none yet** — phase 0. Status cells are the *contract to implement*, using
-the legend of the other format-mapping documents.
+[model-modularisation.md](../model-modularisation.md) §5.1. The reader and
+writer now exist (`scoretk-gabc-{common,import,export}`): the reader fills the
+L6 payload, the writer emits its exact source bytes. Status cells remain the
+format-level *contract*: "missing" means the pivot field is not populated by
+this direction, not that the source text is lost (it is preserved verbatim in
+`Gregorian::notation`). See [gabc.md](../gabc.md) §7-§10 for the implemented
+subset and measured limits.
 
 | Format property (spec section) | Model type / field (file:line), layer | Reader | Writer | Notes |
 | --- | --- | --- | --- | --- |

@@ -24,6 +24,17 @@ No third-party crate was added for the MEI directions: the
 `scoretk-mei-*` and `scoretk-xml-common` crates reuse the already listed
 `quick-xml` and `thiserror`.
 
+## Reused specifications outside Cargo
+
+The GABC crates implement Gregorio's syntax (`doc/Gabc.tex`,
+`src/gabc/gabc-score-determination.{y,l}`, `src/struct.{c,h}`), commit
+`b63f074`. Gregorio is **GPL-3.0-or-later**, Copyright (C) The Gregorio
+Project, which permits redistribution under this project's GPL-3.0-only
+(`NOTICE`, `docs/agents/gabc.md`). No Gregorio source file is vendored and no
+new third-party Cargo dependency was introduced by the GABC direction: the
+three new crates are workspace members using only `scoretk-core` and the
+already listed `thiserror`.
+
 ## Table
 
 | Crate | Version | Declared licence | Role |
