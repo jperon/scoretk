@@ -484,6 +484,23 @@ pub fn quantize_chords(
     sigmap: &super::timesigmap::TimeSigMap,
     use_metric_snap: bool,
 ) {
+    quantize_chords_with_off_quant(track, basic_quant, basic_quant, sigmap, use_metric_snap);
+}
+
+/// Variante avec une grille distincte pour les fins de note.
+///
+/// Le mode « fidélité SMF » garde les attaques sur le tick source (grille
+/// exacte) mais quantifie les fins de note sur la grille de MuseScore : une
+/// figure notée n'est pas un fait que le SMF porte, seulement le tick de fin
+/// de la performance. Les deux grilles sont identiques dans le chemin
+/// par défaut, donc ce dernier ne change pas.
+pub fn quantize_chords_with_off_quant(
+    track: &mut MTrack,
+    basic_quant: Fraction,
+    off_quant: Fraction,
+    sigmap: &super::timesigmap::TimeSigMap,
+    use_metric_snap: bool,
+) {
     if track.chords.is_empty() {
         return;
     }
@@ -546,10 +563,10 @@ pub fn quantize_chords(
                         let ratio = tuplet_limits(tuplet.tuplet_number).ratio;
                         find_quantized_tuplet_note_off_time(q_on, note.off_time, tuplet, ratio)
                     }
-                    None => find_quantized_note_off_time(q_on, note.off_time, basic_quant),
+                    None => find_quantized_note_off_time(q_on, note.off_time, off_quant),
                 }
             } else {
-                find_quantized_note_off_time(q_on, note.off_time, basic_quant)
+                find_quantized_note_off_time(q_on, note.off_time, off_quant)
             };
             // Le C++ appelle `preserveLegato` pour les deux cas :
             // `quantizeOffTimeForTuplet` (:529) avec isOffTimeInTuplet = true,
@@ -560,7 +577,7 @@ pub fn quantize_chords(
                 new_chord.voice,
                 next,
                 note.is_in_tuplet,
-                basic_quant,
+                off_quant,
             );
             if q_off - q_on < min_allowed_duration() {
                 q_off = q_on + min_allowed_duration();

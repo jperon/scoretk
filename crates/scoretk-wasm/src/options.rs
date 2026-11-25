@@ -32,6 +32,7 @@ pub(crate) struct ApiOptions {
     pub(crate) expand_repeats: Option<bool>,
     /// Vue moderne du chant grégorien (clé de sol, 5 lignes).
     pub(crate) gabc_modern_clef: Option<bool>,
+    pub(crate) midi_exact_ticks: Option<bool>,
     /// Fichiers d'un dossier, indexés par leur chemin relatif à sa racine.
     /// Utilisés uniquement pour résoudre les `\include` LilyPond.
     pub(crate) includes: Option<BTreeMap<String, Vec<u8>>>,
@@ -53,6 +54,7 @@ impl ApiOptions {
             concert_pitch: boolean(&value, "concertPitch"),
             expand_repeats: boolean(&value, "expandRepeats"),
             gabc_modern_clef: boolean(&value, "gabcModernClef"),
+            midi_exact_ticks: boolean(&value, "midiExactTicks"),
             includes: includes(&value),
         }
     }

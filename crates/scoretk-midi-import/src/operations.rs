@@ -127,6 +127,11 @@ pub struct ImportOptions {
     pub remove_drum_rests: bool,
     /// Cherche une mesure d'anacrouse.
     pub search_pickup_measure: bool,
+    /// Extension additive « fidélité SMF » : quantification sur la grille du
+    /// tick source (1/1920 de ronde) et aucune simplification de durée ni
+    /// réécriture en n-olet. Le flux par défaut reste celui de MuseScore
+    /// 4.7.4 (double croche, détection de n-olets, simplification).
+    pub smf_exact_ticks: bool,
 }
 
 impl Default for ImportOptions {
@@ -151,6 +156,7 @@ impl Default for ImportOptions {
             simplify_durations: true,
             remove_drum_rests: true,
             search_pickup_measure: true,
+            smf_exact_ticks: false,
         }
     }
 }

@@ -105,6 +105,12 @@ struct Cli {
     #[arg(long, value_name = "N", value_parser = parse_quant_value)]
     midi_quant: Option<u16>,
 
+    /// Import MIDI : fidélité SMF additive — quantification au tick source
+    /// (1/1920 de ronde), sans n-olets ni simplification de durée. Le défaut
+    /// reste l'import MuseScore 4.7.4 (double croche).
+    #[arg(long, conflicts_with = "midi_quant")]
+    midi_exact_ticks: bool,
+
     /// Import MIDI : ne pas changer de clef (`changeClef`)
     #[arg(long)]
     midi_no_change_clef: bool,
@@ -171,6 +177,13 @@ fn main() -> ExitCode {
     let mut custom_midi = false;
     if cli.midi_no_simplify {
         midi_options.simplify_durations = false;
+        custom_midi = true;
+    }
+    if cli.midi_exact_ticks {
+        midi_options = scoretk::MidiImportOptions {
+            smf_exact_ticks: true,
+            ..midi_options
+        };
         custom_midi = true;
     }
     if let Some(quant) = cli.midi_quant {

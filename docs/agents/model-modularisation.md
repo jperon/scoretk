@@ -1181,3 +1181,16 @@ declaration audit": the twelve remaining kinds are `note` 284, `rest` 200,
 `title` 60, `key-sig` 37, `staff-text` 24, `instrument` 23, `time-sig` 17,
 `tempo` 14, `lyric` 13, `program` 9, `system-text` 8 and `rehearsal-mark` 7
 (round trip). No output byte changed in any direction.
+
+An additive exact-tick import option (`ImportOptions::smf_exact_ticks`, CLI
+`--midi-exact-ticks`, wasm `midiExactTicks`) now recovers the quantisation
+part without altering the 4.7.4 default (`docs/agents/midi.md` §"Full SMF
+support measured with options"). On the same 56 scores and 2 550 declared
+items, default → option: essential **83.41 → 83.66 %**, full support
+**72.71 → 73.14 %** (`note` losses 284 → 278, `rest` 200 → 195). With flat
+output (`expandRepeats = false`) the same comparison is 84.57 → **84.83 %**
+essential and 73.88 → **74.31 %** full support. A finer quantisation grid
+alone (`Q1024`) is worse than the default (72.39 %), which confirms that the
+gain comes from exact ticks plus the decoupled note-off grid, not from
+changing a denominator. The 21/21 MIDI reference exports, the 21/21 round
+trip, the 4/21 import corpus and `e2e_corpus` 8/8 are unchanged.

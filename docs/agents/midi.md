@@ -274,6 +274,52 @@ import option (§"Full SMF support measured with options"); the text/marker
 losses by the additive `smf_text` export option. Both keep MuseScore 4.7.4
 behaviour as the default.
 
+## Full SMF support measured with options
+
+### Additive exact-tick import (`smf_exact_ticks`)
+
+`ImportOptions::smf_exact_ticks` (default `false`) is an additive extension:
+`read_midi` and the default facade/CLI/wasm path stay byte-for-byte the
+MuseScore 4.7.4 importer. When enabled:
+
+- onsets are quantised on the **source tick grid** (`1/1920` of a whole note,
+  i.e. one MIDI tick at 480 PPQ) instead of the mandatory sixteenth grid;
+- note-offs are still quantised on a 1/32 grid (a written duration is a
+  notation figure, not an SMF field), and the `end-1` tick of MuseScore's
+  `exportmidi.cpp` is compensated by one tick;
+- n-tuplets are not rewritten and durations are not simplified; a performance
+  duration is kept in `ChordRest::ticks` rather than chained into binary
+  figures (which would swallow the following attacks);
+- human-performance beat detection is disabled.
+
+The option is exposed by `scoretk::read_midi_with` (facade), by the CLI flag
+`--midi-exact-ticks` and by the additive wasm `midiExactTicks` property. It is
+measured by `midi_exact_ticks_full_support` in `crates/scoretk/tests/layer_coverage.rs`
+on the same 56 MuseScore scores, with the same writer, layers and kinds:
+
+| Reader / writer | Essential | Full support | `note` loss | `rest` loss |
+| --- | ---: | ---: | ---: | ---: |
+| default import, default writer | 83.41 % | 72.71 % | 284 | 200 |
+| `smf_exact_ticks`, default writer | **83.66 %** | **73.14 %** | 278 | 195 |
+| default import, `expand_repeats = false` | 84.57 % | 73.88 % | 257 | 200 |
+| `smf_exact_ticks`, `expand_repeats = false` | **84.83 %** | **74.31 %** | 251 | 195 |
+| `quant_value = Q1024` alone (finer grid only) | 83.15 % | 72.39 % | 290 | 202 |
+
+A finer grid alone is not enough: it moves onsets without recovering the
+duration chain. The exact-tick path gains 6 `note` and 5 `rest` matches on the
+default writer and 6 + 5 on the flat one. Both defaults and the 21/21 MIDI
+reference exports, the 21/21 round trip, the 4/21 import corpus and
+`e2e_corpus` 8/8 remain unchanged; the option is opt-in.
+
+The remaining gap is not a missing SMF writer feature: a score stores *written*
+ticks while an SMF stores a *performance* (repeats unfolded, gate times,
+tuplets as tick arithmetic — `[SMF §Instruments, parts, repeats]`). The two
+small measurements of §11.6 of `model-modularisation.md` still hold: flat
+output gains 27 notes and projecting the reference through `RepeatList::unwind`
+gains 44. Exact tick recovery can only close the quantisation part of that
+gap; it cannot map a performed attack back to a written segment that SMF does
+not identify.
+
 ## References and compliance test
 
 `scripts/gen-midi-references.sh` exports a short subset of the corpus with

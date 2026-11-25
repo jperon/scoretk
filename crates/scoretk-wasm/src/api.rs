@@ -56,6 +56,8 @@ export interface ConvertOptions {
   concertPitch?: boolean;
   /** Dérouler les reprises, voltas et sauts dans la sortie MIDI. Défaut : `true`. */
   expandRepeats?: boolean;
+  /** Import MIDI : quantification au tick source, sans n-olets ni simplification. Option additive : absente, l'import reste celui de MuseScore 4.7.4 (double croche). */
+  midiExactTicks?: boolean;
   /** Fichiers d'un dossier, indexés par leur chemin relatif à sa racine (ex. `"noaten.ily"`, `"sub/x.ily"`), avec leurs octets UTF-8. Résout les `\include` des sources LilyPond ; ignoré pour les autres formats. Option additive : absente, le comportement est inchangé. */
   includes?: Record<string, Uint8Array>;
   /** Vue moderne du chant grégorien : clé de sol (`8vb` si le registre est bas) et portée à 5 lignes au lieu de la clé d'ut/4 lignes. Additive, défaut `false`. */
@@ -347,6 +349,13 @@ fn read_score(
     if let (true, Some(files)) = (from == scoretk::Format::Ly, options.includes.as_ref()) {
         let mut resolve = lilypond_resolver(files);
         return scoretk::read_lilypond_with_includes(input, &mut resolve).map_err(js_error);
+    }
+    if from == scoretk::Format::Midi && options.midi_exact_ticks == Some(true) {
+        let midi_options = scoretk::MidiImportOptions {
+            smf_exact_ticks: true,
+            ..Default::default()
+        };
+        return scoretk::read_midi_with(input, &midi_options).map_err(js_error);
     }
     scoretk::read(input, from).map_err(js_error)
 }

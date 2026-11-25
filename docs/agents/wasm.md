@@ -609,6 +609,7 @@ interface ConvertOptions {
   software?: string;    // <software> (MusicXML)
   concertPitch?: boolean; // hauteurs en sons réels (MusicXML)
   expandRepeats?: boolean; // dérouler les reprises MIDI (défaut : true)
+  midiExactTicks?: boolean; // import MIDI : quantification au tick source, sans n-olets ni simplification (défaut false)
   includes?: Record<string, Uint8Array>; // folder files by relative path, for LilyPond \include resolution
   gabcModernClef?: boolean; // chant grégorien : clé de sol (8vb si besoin) et 5 lignes, au lieu de la clé d'ut/4 lignes (défaut false)
 }

@@ -122,14 +122,31 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     // Détection d'une performance humaine, comme `Quantize::setIfHumanPerformance`.
     let (is_human, quant_value, max_voice_count, beat_data) =
         detect_human_performance(midi, &tracks, &sigmap, options);
+    // Extension additive « fidélité SMF » (`ImportOptions::smf_exact_ticks`) :
+    // le tick source est l'unité, pas une valeur de note. Un SMF gravé par un
+    // logiciel de notation porte des attaques exactes (divisions de mesure
+    // incluses, p. ex. 160 ticks = 1/3 de noire à 480 PPQ) que la grille de
+    // double croche de MuseScore déplace. Le mode exact désactive donc aussi
+    // la détection de performance humaine, les n-olets et la simplification
+    // qui réécriraient ces ticks. Le défaut reste strictement 4.7.4.
+    let mut is_human = is_human;
+    let mut beat_data = beat_data;
+    if options.smf_exact_ticks {
+        is_human = false;
+        beat_data = None;
+    }
+    let basic_quant = if options.smf_exact_ticks {
+        Fraction::from_ticks(1, UNITS_PER_WHOLE as u32)
+    } else {
+        quant::quant_value_to_fraction(quant_value)
+    };
     // Extension délibérée (docs/agents/midi.md) : un MIDI dont toutes les
     // attaques ET fins de note sont déjà sur la grille est mécanique (par
     // exemple gravé par LilyPond). Les heuristiques de `lengthenNote` et
     // `minimizeNumberOfRests` (importmidi_simplify.cpp:56-165, :211-278)
     // ont été conçues pour des performances humaines : elles altèrent des
     // durées déjà justes. Le chemin MuseScore reste inchangé sinon.
-    let mechanical =
-        mechanical::is_mechanical_file(&tracks, quant::quant_value_to_fraction(quant_value));
+    let mechanical = mechanical::is_mechanical_file(&tracks, basic_quant);
     // `MidiBeat::findBeatLocations` remplace la mesure du fichier par la
     // signature retenue (`setTimeSig`, importmidi_beat.cpp:305-309).
     if let Some(data) = &beat_data {
@@ -165,7 +182,12 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         &mut tracks,
         &sigmap,
         last_tick,
-        quant_value,
+        basic_quant,
+        quant::quant_value_to_fraction(if options.smf_exact_ticks {
+            operations::QuantValue::Q32
+        } else {
+            quant_value
+        }),
         options,
         is_human,
         is_human && beat_data.is_none(),
@@ -177,16 +199,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     // `Simplify::simplifyDurations` teste l'option `simplifyDurations` de la
     // piste (`importmidi_simplify.cpp:298`) : les tests amont `dontSimplify`
     // l'ont à faux (`midiimport_tests.cpp:86`).
-    if options.simplify_durations && !mechanical {
+    let simplify = options.simplify_durations && !mechanical && !options.smf_exact_ticks;
+    if simplify {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
-    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots)
-        && options.simplify_durations
-        && !mechanical
-    {
+    if voice::separate_voices(&mut tracks, &sigmap, max_voice_count, options.use_dots) && simplify {
         simplify::simplify_durations_not_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
-    if options.simplify_durations && !mechanical {
+    if simplify {
         simplify::simplify_durations_for_drums(&mut tracks, &sigmap, is_human, options.use_dots);
     }
     drum::split_unequal_drum_chords(&mut tracks);
@@ -274,8 +294,16 @@ fn create_mtrack_list(
                     len,
                 } => {
                     has_notes = true;
-                    let length =
-                        midifile::to_muse_score_ticks(*len, midi.division, midi.is_division_in_tps);
+                    // `exportmidi.cpp` pose le note-off un tick avant la fin
+                    // réelle (`start + duration - 1`). La quantification
+                    // 4.7.4 absorbe ce tic ; en mode exact, le compenser pour
+                    // que la durée retombent sur la grille d'écriture.
+                    let played = *len + i64::from(options.smf_exact_ticks);
+                    let length = midifile::to_muse_score_ticks(
+                        played,
+                        midi.division,
+                        midi.is_division_in_tps,
+                    );
                     let note =
                         MidiNote::new(i32::from(*pitch), i32::from(*velocity), tick + length, tick);
                     let chord = MidiChord {
@@ -380,16 +408,17 @@ fn detect_human_performance(
 }
 
 /// Quantifie toutes les pistes (`quantizeAllTracks`).
+#[allow(clippy::too_many_arguments)]
 fn quantize_all_tracks(
     tracks: &mut [MTrack],
     sigmap: &TimeSigMap,
     last_tick: Fraction,
-    quant_value: operations::QuantValue,
+    basic_quant: Fraction,
+    off_quant: Fraction,
     options: &ImportOptions,
     is_human: bool,
     use_metric_snap: bool,
 ) -> Vec<Vec<tuplet::TupletInfo>> {
-    let basic_quant = quant::quant_value_to_fraction(quant_value);
     let mut detected_tuplets: Vec<Vec<tuplet::TupletInfo>> = Vec::with_capacity(tracks.len());
     for track in tracks {
         if track.chords.is_empty() {
@@ -422,7 +451,13 @@ fn quantize_all_tracks(
             Fraction::new(4, 3),
             is_human,
         );
-        quant::quantize_chords(track, basic_quant, sigmap, use_metric_snap);
+        quant::quantize_chords_with_off_quant(
+            track,
+            basic_quant,
+            off_quant,
+            sigmap,
+            use_metric_snap,
+        );
         if track.tuplets.is_empty() {
             voice::assign_initial_voices_quantized(
                 track,
@@ -882,9 +917,15 @@ fn process_pending_notes(
         let Some((ratio, figure)) = durations.first().copied() else {
             break;
         };
-        let len = figure.ticks() / ratio;
+        // Exact-tick mode keeps the performance duration in `ChordRest::ticks`
+        // and uses the first notatable figure only for notation. MuseScore's
+        // duration simplification chains binary figures (and ties) to
+        // approximate a gate time such as 0.95 of a whole note; that would
+        // drop the following attacks, which are the SMF data we must keep.
+        let exact = options.smf_exact_ticks;
+        let len = if exact { len } else { figure.ticks() / ratio };
         let mut chord_rest = ChordRest::chord(figure);
-        chord_rest.ticks = Some(figure.ticks());
+        chord_rest.ticks = Some(if exact { len } else { figure.ticks() });
         chord_rest.tuplet = tuplet::tuplet_for_element(track, voice, tick, len)
             .and_then(|key| tuplet_ids.get(&key).copied());
         if options.show_staccato

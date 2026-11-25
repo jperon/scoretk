@@ -45,7 +45,7 @@ use scoretk::model::{
     compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers,
     LAYERS,
 };
-use scoretk::{read, write, Format, Options, Score};
+use scoretk::{read, write, Format, MidiImportOptions, Options, Score};
 
 use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
 use scoretk_abc_import::CAPABILITIES as ABC_IMPORT;
@@ -865,6 +865,77 @@ fn midi_full_loss_table() {
         for ((bits, kind), count) in gaps {
             println!("    {:<28} {:<16} {:>5}", kind, layer_name(bits), count);
         }
+    }
+    println!();
+}
+
+/// Round-trip MIDI measurement with the additive `smf_exact_ticks` import
+/// option, printed next to the default row. Both rows use the same writer,
+/// the same corpus and the same declared SMF kinds; only the reader changes.
+#[test]
+fn midi_exact_ticks_full_support() {
+    let midi = &DIRECTIONS[4];
+    let declared = midi.import.declared().union(midi.export.declared());
+    let kinds = midi
+        .import
+        .declared_kinds()
+        .or(midi.export.declared_kinds());
+    let scores = corpus_scores();
+    let exact_options = MidiImportOptions {
+        smf_exact_ticks: true,
+        ..Default::default()
+    };
+    let q1024 = MidiImportOptions {
+        quant_value: scoretk::QuantValue::Q1024,
+        ..Default::default()
+    };
+
+    println!("\n=== MIDI round trip: default vs smf_exact_ticks (56 scores) ===");
+    let mut flat_options = Options::default();
+    flat_options.midi.expand_repeats = false;
+    for (label, how) in [
+        ("default (MuseScore 4.7.4)", 0),
+        ("smf_exact_ticks", 1),
+        ("Q1024", 2),
+        ("flat (no repeats)", 3),
+        ("flat + exact", 4),
+    ] {
+        let mut totals = Totals::default();
+        for (_, path) in &scores {
+            let score = reference_model(path);
+            let reference = inventory(&score);
+            let options = if how >= 3 {
+                &flat_options
+            } else {
+                &Options::default()
+            };
+            let Ok(bytes) = write(&score, midi.format, options) else {
+                totals.skipped += 1;
+                continue;
+            };
+            let imported = match how {
+                1 | 4 => scoretk::read_midi_with(&bytes, &exact_options),
+                2 => scoretk::read_midi_with(&bytes, &q1024),
+                _ => read(&bytes, midi.format),
+            };
+            let Ok(imported) = imported else {
+                totals.skipped += 1;
+                continue;
+            };
+            let candidate = inventory(&imported);
+            let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+            totals.add(&coverage, essential(&reference, &candidate));
+        }
+        println!(
+            "{label:<26} {:<12} {:>9.2}% {:>12.2}% {:>6} {:>7} {:>8}",
+            layers_label(declared),
+            totals.essential.percent(),
+            totals.total.percent(),
+            totals.files,
+            totals.skipped,
+            totals.total.reference,
+        );
+        print_details(declared, &totals);
     }
     println!();
 }
