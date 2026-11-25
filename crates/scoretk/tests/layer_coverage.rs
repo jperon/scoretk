@@ -748,20 +748,24 @@ fn musicxml_import_alone_reads_musescore_474_references() {
 fn midi_declaration_follows_smf_spec() {
     // SMF 1.0 `format-ref/midi.md` §"Container layout": no bar/measure/staff/
     // voice fields; §"Instruments, parts, repeats": no repeats, voltas,
-    // tuplets, ties or slurs; §"Meta-event types": FF 58/FF 59 (L1), FF 03–
-    // FF 06/FF 51 (L3/L1), RP-017 FF 05 lyrics; §"Events and time": Note On/
-    // Off and velocity, with silence between notes reconstructed as rests.
-    // A kind with no SMF object is outside the declaration, not a loss.
+    // tuplets, ties or slurs; §"Meta-event types": FF 58/FF 59 (L1), FF 01
+    // (generic text), FF 02/FF 03/FF 04 (copyright/track/instrument names),
+    // FF 05 (RP-017 lyrics), FF 06/FF 07 (rehearsal marks / cue points),
+    // FF 51 (tempo); §"Events and time": Note On/Off and velocity, with
+    // silence between notes reconstructed as rests. A kind with no SMF
+    // object is outside the declaration, not a loss.
     let kinds = MIDI_IMPORT
         .declared_kinds()
         .expect("the SMF declares a subset of L1–L4");
     for kind in [
         "time-sig",
         "key-sig",
-        "marker",
+        "rehearsal-mark",
         "note",
         "rest",
         "lyric",
+        "staff-text",
+        "system-text",
         "tempo",
         "title",
         "instrument",
@@ -784,10 +788,85 @@ fn midi_declaration_follows_smf_spec() {
         "tremolo",
         "credit",
         "dynamic-velocity",
+        // `FF 06` is a rehearsal mark (a text item), not a segno/coda repeat
+        // marker: SMF has no repeat objects (§"Instruments, parts, repeats").
+        "marker",
     ] {
         assert!(!kinds.contains(&kind), "{kind} has no SMF object");
     }
     assert_eq!(MIDI_EXPORT.declared_kinds(), MIDI_IMPORT.declared_kinds());
+}
+
+/// Full per-kind loss table for the two MIDI rows (the main table only prints
+/// the eight largest gaps). Diagnostic only, like `layer_coverage_table`: it
+/// never asserts on a percentage.
+#[test]
+fn midi_full_loss_table() {
+    let midi = &DIRECTIONS[4];
+    assert_eq!(midi.name, "midi");
+    let declared = midi.import.declared().union(midi.export.declared());
+    let kinds = midi
+        .import
+        .declared_kinds()
+        .or(midi.export.declared_kinds());
+    let scores = corpus_scores();
+
+    let mut round_trip = Totals::default();
+    for (_, path) in &scores {
+        let score = reference_model(path);
+        let reference = inventory(&score);
+        let Ok(bytes) = write(&score, midi.format, &Options::default()) else {
+            round_trip.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, midi.format) else {
+            round_trip.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+        round_trip.add(&coverage, essential(&reference, &candidate));
+    }
+
+    let mut import = Totals::default();
+    for (name, path) in &scores {
+        let Some((reference_path, format)) = reference_file(name, ReferenceKind::Midi) else {
+            continue;
+        };
+        let reference = inventory(&reference_model(path));
+        let Ok(bytes) = fs::read(&reference_path) else {
+            import.skipped += 1;
+            continue;
+        };
+        let Ok(candidate) = read(&bytes, format) else {
+            import.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+        import.add(&coverage, essential(&reference, &candidate));
+    }
+
+    for (label, totals) in [
+        ("round trip (own writer)", &round_trip),
+        ("import of *.ref.mid", &import),
+    ] {
+        println!(
+            "\n=== MIDI per-kind losses: {label} ({:.2} %, {} skipped) ===",
+            totals.total.percent(),
+            totals.skipped
+        );
+        let mut gaps: Vec<((u8, &'static str), usize)> = totals
+            .missing_kinds
+            .iter()
+            .map(|((bits, kind), count)| ((*bits, *kind), *count))
+            .collect();
+        gaps.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        for ((bits, kind), count) in gaps {
+            println!("    {:<28} {:<16} {:>5}", kind, layer_name(bits), count);
+        }
+    }
+    println!();
 }
 
 #[test]

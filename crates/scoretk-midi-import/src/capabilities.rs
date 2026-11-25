@@ -28,17 +28,21 @@
 //! La couche L1 est trop grossière pour le SMF : `[SMF §Container layout]`
 //! « no bar/measure/staff/voice fields » et `[SMF §Instruments, parts,
 //! repeats]` « no repeats, voltas, tuplets, ties or slurs ». Seuls les types
-//! `time-sig` (`FF 58`), `key-sig` (`FF 59`) et `marker` (`FF 06`) sont
-//! portés (§"Meta-event types"). Les autres types de L1 (mesure, barre,
-//! clef, reprise, tuplet…) n'ont aucun objet SMF correspondant et ne sont
+//! `time-sig` (`FF 58`) et `key-sig` (`FF 59`) sont portés (§"Meta-event
+//! types"). Les autres types de L1 (mesure, barre, clef, reprise, tuplet,
+//! `marker` de reprise…) n'ont aucun objet SMF correspondant et ne sont
 //! donc pas déclarés, conformément à la règle de `model-modularisation.md`
 //! §5.3 (la déclaration est celle du format, pas une cible de score).
-//! De même L2 ne retient que `note` et `rest` (silence entre deux `Note On`,
-//! reconstruit par l'importeur), L3 que `lyric` (`FF 05`, RP-017), `tempo`
-//! (`FF 51`) et `title` (`FF 03`/`FF 04`, RP-026 `{#TITLE=}`), et L4 les
-//! champs réellement encodés (programme, canal, volume `CC 7`, panoramique
-//! `CC 10`, vélocité). Les symboles dynamiques, la gravure et les tables
-//! d'articulation n'existent pas dans un SMF.
+//! `FF 06`/`FF 07` sont des **repères de répétition** (« rehearsal mark /
+//! section name »), pas des marqueurs de reprise : ils portent le type L3
+//! `rehearsal-mark`. De même L2 ne retient que `note` et `rest` (silence entre
+//! deux `Note On`, reconstruit par l'importeur), L3 que `lyric` (`FF 05`,
+//! RP-017), `staff-text`/`system-text` (`FF 01`, « Text event »),
+//! `rehearsal-mark` (`FF 06`/`FF 07`), `tempo` (`FF 51`) et `title`
+//! (`FF 02`/`FF 03`/`FF 04`, RP-026 `{#TITLE=}`), et L4 les champs réellement
+//! encodés (programme, canal, volume `CC 7`, panoramique `CC 10`, vélocité).
+//! Les symboles dynamiques, la gravure et les tables d'articulation
+//! n'existent pas dans un SMF.
 
 use scoretk_core::model::{Capabilities, Layers};
 
@@ -46,10 +50,12 @@ use scoretk_core::model::{Capabilities, Layers};
 pub const SMF_KINDS: &[&str] = &[
     "time-sig",
     "key-sig",
-    "marker",
+    "rehearsal-mark",
     "note",
     "rest",
     "lyric",
+    "staff-text",
+    "system-text",
     "tempo",
     "title",
     "instrument",

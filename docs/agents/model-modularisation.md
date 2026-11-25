@@ -1152,3 +1152,32 @@ styles, credits/frame texts, exact note-head groups and tremolo kinds on the
 LilyPond side. The "reached" labels of §11.6 therefore describe faithful
 **scoretk round trips**, not interoperability with other ABC/LilyPond tools:
 the honest interoperability figures are 92.26 % and 91.84 %.
+
+### 11.9 SMF declaration audit (2026-11-25)
+
+The 14-kind SMF declaration of §11.6 was audited against the local normative
+text (`docs/agents/format-ref/midi.md` §"Source key", §"Meta-event types").
+Two corrections were needed, both backed by a spec citation and a test
+(`midi_declaration_follows_smf_spec`):
+
+- **Add `staff-text`/`system-text`** for `FF 01 len text` ("Text event", types
+  `01`–`0F` reserved for text, `[SMF §Meta-Events]`). It was missing from the
+  declared list although the format carries it; the reader already decoded
+  `FF 01` as MuseScore lyrics, but no writer emitted it.
+- **Replace `marker` with `rehearsal-mark`** for `FF 06` marker / `FF 07` cue
+  point (`[SMF §Meta-Events]`). The inventory's `marker` is a segno/coda
+  repeat marker (L1), and `[SMF §Instruments, parts, repeats]` states that SMF
+  has no repeats, voltas, tuplets, ties or slurs. `FF 06` is a *rehearsal
+  mark / section name*, i.e. an L3 text item.
+
+No definition was weakened to gain points: two spec-carried kinds were added
+and one invented L1 kind was removed. The denominator grows from 2 522 to
+2 550 items over the same 56 scores and the round trip falls from 73.51 % to
+**72.71 %**; import alone from 49.84 % to **51.68 %** (the latter rises because
+the 11 repeat `marker` items, which no MuseScore reference MIDI can carry,
+left the denominator). The full diagnostic table is printed by the new
+`midi_full_loss_table` test and quoted in `docs/agents/midi.md` §"SMF item
+declaration audit": the twelve remaining kinds are `note` 284, `rest` 200,
+`title` 60, `key-sig` 37, `staff-text` 24, `instrument` 23, `time-sig` 17,
+`tempo` 14, `lyric` 13, `program` 9, `system-text` 8 and `rehearsal-mark` 7
+(round trip). No output byte changed in any direction.

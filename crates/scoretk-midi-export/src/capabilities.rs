@@ -21,14 +21,16 @@
 //! types » (`FF 51`, `FF 58`, `FF 59`, textes), « Instruments, parts, repeats »
 //! et « Lyrics: RP-017 and RP-026 » ; `docs/agents/format-mapping/midi.md`
 //! lignes 15–36 : L0–L4, pas de L5/L6. La déclaration décrit le **format**,
-//! pas ce que l'écrivain émet aujourd'hui (les marqueurs `FF 06` manquent).
+//! pas ce que l'écrivain émet par défaut (MuseScore 4.7.4 n'émet aucun texte
+//! générique ni repère de répétition : voir l'option additive `smf_text`).
 //!
 //! Comme pour la lecture, la granularité par type d'item est nécessaire :
 //! `[SMF §Container layout]` exclut mesure/barre/clef, `[SMF §Instruments,
 //! parts, repeats]` exclut reprises/tuplets/liaisons et `[SMF §Meta-event
-//! types]` ne porte que `FF 58`/`FF 59`/`FF 06` en L1, `FF 05`/`FF 51`/
-//! `FF 03`–`FF 04` en L3 et les messages de canal en L4. Voir
-//! `scoretk-midi-import/src/capabilities.rs` pour la liste et les citations.
+//! types]` porte `FF 58`/`FF 59` en L1, `FF 01`/`FF 02`/`FF 03`/`FF 04`/
+//! `FF 05`/`FF 06`/`FF 07`/`FF 51` en L3 et les messages de canal en L4.
+//! Voir `scoretk-midi-import/src/capabilities.rs` pour la liste et les
+//! citations.
 
 use scoretk_core::model::{Capabilities, Layers};
 
@@ -37,10 +39,12 @@ use scoretk_core::model::{Capabilities, Layers};
 pub const SMF_KINDS: &[&str] = &[
     "time-sig",
     "key-sig",
-    "marker",
+    "rehearsal-mark",
     "note",
     "rest",
     "lyric",
+    "staff-text",
+    "system-text",
     "tempo",
     "title",
     "instrument",

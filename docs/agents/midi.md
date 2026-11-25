@@ -214,6 +214,66 @@ binary fixture added).
   `lyrics_export` (four quarter notes, three syllables, pitches and onsets
   unchanged, no `FF 05` without lyrics).
 
+## SMF item declaration audit (2026-11-25)
+
+User decision: MIDI "full support" means 100 % of what the SMF itself can
+carry, not 100 % of what a score would like to store. Measures, barlines,
+credits and layout stay **out of the denominator** (`Capabilities::with_kinds`,
+§11 of `docs/agents/model-modularisation.md`). Every declared kind below is
+cited from the local normative text (`format-ref/midi.md` §"Source key"):
+
+| Inventory kind | SMF carrier | Citation |
+| --- | --- | --- |
+| `time-sig` | `FF 58 04 nn dd cc bb` | `[SMF §Meta-Events]` |
+| `key-sig` | `FF 59 02 sf mi` | `[SMF §Meta-Events]` |
+| `note` | Note On/Off, note number, velocity | `[MIDI §Channel Voice; Table II]` |
+| `rest` | silence between Note Off and the next Note On (no rest object) | `[SMF §Track Chunk]` |
+| `lyric` | `FF 05`, one event per syllable | `[SMF §Meta-Events; RP-017]` |
+| `staff-text`, `system-text` | `FF 01 len text` ("Text event", types `01`–`0F` reserved for text) | `[SMF §Meta-Events]` |
+| `rehearsal-mark` | `FF 06` marker, `FF 07` cue point | `[SMF §Meta-Events]` |
+| `tempo` | `FF 51 03 tttttt` | `[SMF §Meta-Events]` |
+| `title` | `FF 02` copyright, `FF 03` track name, `FF 04` instrument name, `{#TITLE=}` in RP-026 text | `[SMF §Meta-Events; RP-026]` |
+| `instrument` | program change plus track/instrument names (SMF has no MuseScore instrument id) | `[MIDI §Program Change; GM §Sound Set]` |
+| `program`, `channel`, `volume`, `pan`, `velocity` | channel status nibble, `C0`, `CC 7`, `CC 10`, note-on data byte | `[MIDI §Channel Voice; GM §Requirements]` |
+
+The previous declaration listed `marker`, but the inventory's `marker` is a
+**segno/coda repeat marker** (L1). `FF 06` is a rehearsal mark / section name
+(`[SMF §Meta-Events]`), and SMF has no repeats (`[SMF §Instruments, parts,
+repeats]`); the declaration now uses `rehearsal-mark` (L3) instead. The audit
+also **added the missing `FF 01` text** (`staff-text`, `system-text`) and
+`FF 06`/`FF 07` (`rehearsal-mark`). Excluded with a citation: `measure`,
+`barline`, `clef`, `volta`, `tuplet`, `tie`, `slur`, `tremolo`, `credit`
+(`[SMF §Container layout]`, `[SMF §Instruments, parts, repeats]`) and
+`dynamic-velocity` (SMF has attack velocity only). The core test
+`midi_declaration_follows_smf_spec` pins both sides of the list, and
+`midi_full_loss_table` prints the full per-kind loss table (diagnostic only).
+
+Before the audit (14 kinds) the 56-score round trip scored **73.51 %**;
+after adding four spec-carried kinds and correcting `marker` it scores
+**72.71 %** over 2 550 items — a lower percentage with a *more honest*
+denominator, not a regression of any output byte. Import alone is
+51.68 % over the 21 MuseScore reference MIDIs. The complete loss table:
+
+| Kind | Layer | Round trip | Import alone |
+| --- | --- | ---: | ---: |
+| `note` | L2 | 284 | 53 |
+| `rest` | L2 | 200 | 35 |
+| `title` | L3 | 60 | 22 |
+| `key-sig` | L1 | 37 | 5 |
+| `staff-text` (`FF 01`) | L3 | 24 | — |
+| `instrument` | L4 | 23 | 7 |
+| `time-sig` | L1 | 17 | 7 |
+| `tempo` | L3 | 14 | 10 |
+| `lyric` | L3 | 13 | — |
+| `program` | L4 | 9 | 5 |
+| `system-text` (`FF 01`) | L3 | 8 | — |
+| `rehearsal-mark` (`FF 06`) | L3 | 7 | — |
+
+The `note`/`rest` losses are addressed by the additive `smf_exact_ticks`
+import option (§"Full SMF support measured with options"); the text/marker
+losses by the additive `smf_text` export option. Both keep MuseScore 4.7.4
+behaviour as the default.
+
 ## References and compliance test
 
 `scripts/gen-midi-references.sh` exports a short subset of the corpus with
