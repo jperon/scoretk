@@ -170,10 +170,14 @@ impl<'a> Reader<'a> {
                     } else {
                         typed
                     };
+                    // `MeiImporter::readSectionElements` traite aussi les
+                    // `<scoreDef>` (et `<pb>`/`<sb>`) contenus dans un
+                    // `<ending>` : MuseScore 4.7.4 y écrit par exemple un
+                    // changement de metre (`measureToMEI` garde `@n` et
+                    // `writeEnding` englobe la mesure). Ne lire que les
+                    // mesures decorale la mesure suivante d'un quart de temps.
                     let first = self.score.measures.len();
-                    for measure in child.children_named("measure") {
-                        self.read_measure(measure);
-                    }
+                    self.read_section_elements(child);
                     let last = self.score.measures.len();
                     if last > first {
                         let start = self.score.measures[first].start_tick;

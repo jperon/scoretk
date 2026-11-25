@@ -881,6 +881,95 @@ fn mei_full_loss_table() {
     println!();
 }
 
+/// Per-file diagnostic for the priority kinds of the MEI campaign: prints
+/// every missing reference item with its measure (tick) and staff, for the
+/// round trip and for the import of MuseScore's own `.ref.mei`. Diagnostic
+/// only, like `mei_full_loss_table`: it never asserts on a percentage.
+#[test]
+fn mei_core_loss_diagnostic() {
+    const KINDS: &[&str] = &[
+        "note",
+        "rest",
+        "measure",
+        "tuplet-member",
+        "key-sig",
+        "tempo",
+        "marker",
+        "jump",
+        "tremolo",
+        "articulation",
+        "credit",
+        "credit-position",
+        "note-head",
+    ];
+
+    fn report(
+        label: &str,
+        score_name: &str,
+        reference: &scoretk::model::LayerInventory,
+        imported: &scoretk::model::LayerInventory,
+    ) {
+        let mut expected: BTreeMap<_, usize> = BTreeMap::new();
+        let mut actual: BTreeMap<_, usize> = BTreeMap::new();
+        for (bucket, inventory) in [(&mut expected, reference), (&mut actual, imported)] {
+            for item in &inventory.items {
+                if KINDS.contains(&item.kind) {
+                    *bucket
+                        .entry((
+                            item.layer.bits(),
+                            item.tick,
+                            item.staff,
+                            item.kind,
+                            item.value.clone(),
+                        ))
+                        .or_insert(0) += 1;
+                }
+            }
+        }
+        let mut lines = Vec::new();
+        for (key, wanted) in expected {
+            let found = actual.get_mut(&key).map_or(0, |count| {
+                let taken = (*count).min(wanted);
+                *count -= taken;
+                taken
+            });
+            for _ in found..wanted {
+                lines.push(format!(
+                    "    {:<16} tick {:<8} staff {:<3} {}",
+                    key.3,
+                    key.1
+                        .map(|tick| tick.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                    key.2.map(|s| s.to_string()).unwrap_or_else(|| "-".into()),
+                    key.4,
+                ));
+            }
+        }
+        if !lines.is_empty() {
+            println!("\n--- {label}: {score_name} ---");
+            for line in lines {
+                println!("{line}");
+            }
+        }
+    }
+
+    for (name, path) in corpus_scores() {
+        let reference = inventory(&reference_model(&path));
+        let bytes = write(&reference_model(&path), Format::Mei, &Options::default())
+            .expect("MEI round trip");
+        let round_trip = inventory(&read(&bytes, Format::Mei).expect("MEI read"));
+        report("round trip", &name, &reference, &round_trip);
+
+        let Some((reference_path, format)) = reference_file(&name, ReferenceKind::Mei) else {
+            continue;
+        };
+        let bytes = fs::read(&reference_path).expect("read MEI reference");
+        let imported = inventory(&read(&bytes, format).expect("MEI read"));
+        report("import *.ref.mei", &name, &reference, &imported);
+    }
+    println!();
+}
+
 #[test]
 fn mei_import_alone_reads_musescore_474_references() {
     let mut checked = 0;

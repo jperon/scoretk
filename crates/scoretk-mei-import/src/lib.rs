@@ -163,4 +163,38 @@ mod tests {
         assert!(style.hide_empty_staves);
         assert_eq!(style.title_font_size, 24.0);
     }
+
+    /// MuseScore 4.7.4 place un `<scoreDef>` de changement de mesure à
+    /// l'intérieur de l'<ending> qui contient la mesure (`writeEnding`,
+    /// meiexporter.cpp:795) ; `readSectionElements` doit le voir, sinon la
+    /// mesure suivante est decalee d'un quart de temps.
+    #[test]
+    fn reads_a_score_def_inside_an_ending() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section>
+              <measure n="1"><staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff></measure>
+              <ending n="1">
+                <scoreDef meter.count="3" meter.unit="4"/>
+                <measure n="2"><staff n="1"><layer n="1"><note dur="4" pname="d" oct="4"/></layer></staff></measure>
+              </ending>
+              <measure n="3"><staff n="1"><layer n="1"><note dur="4" pname="e" oct="4"/></layer></staff></measure>
+            </section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with an ending");
+        assert_eq!(score.measures.len(), 3);
+        assert_eq!(
+            score.measures[0].len,
+            scoretk_core::model::Fraction::new(4, 4)
+        );
+        assert_eq!(
+            score.measures[1].len,
+            scoretk_core::model::Fraction::new(3, 4)
+        );
+        assert_eq!(
+            score.measures[2].start_tick,
+            scoretk_core::model::Fraction::new(7, 4)
+        );
+    }
 }
