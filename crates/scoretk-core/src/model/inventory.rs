@@ -274,6 +274,14 @@ fn tempo_float(value: f64) -> String {
     format!("{value:.5}")
 }
 
+/// `<defaults><page-layout>` stocke la largeur et la hauteur en dixièmes
+/// entiers (MusicXML 4.0, §"Page layout") : environ 1/144 pouce de
+/// résolution. Quatre décimales sont plus fines que le format, et évitent un
+/// faux écart 8.49998 / 8.50000 après conversion inches → tenths → inches.
+fn page_float(value: f64) -> String {
+    format!("{value:.4}")
+}
+
 /// Builds the comparable inventory of a score.
 ///
 /// Traversal follows the event spine (measures → segments → tracks) so every
@@ -968,7 +976,12 @@ pub fn inventory(score: &Score) -> LayerInventory {
         ),
     ] {
         if (value - baseline).abs() > 1e-9 {
-            style_item(&mut result, name, format!("{name}:{}", style_float(value)));
+            let formatted = if matches!(name, "page_width_in" | "page_height_in") {
+                page_float(value)
+            } else {
+                style_float(value)
+            };
+            style_item(&mut result, name, format!("{name}:{formatted}"));
         }
     }
     for (name, value, baseline) in [
@@ -1213,6 +1226,13 @@ mod tests {
         assert_eq!(super::tempo_float(400.0 / 60.0), "6.66667");
         assert_eq!(super::tempo_float(6.66667), "6.66667");
         assert_eq!(super::tempo_float(1.533330), "1.53333");
+    }
+
+    #[test]
+    fn page_values_are_normalised_to_musicxml_tenths_precision() {
+        assert_eq!(super::page_float(8.5), "8.5000");
+        assert_eq!(super::page_float(8.49998), "8.5000");
+        assert_eq!(super::page_float(11.6929), "11.6929");
     }
 
     #[test]

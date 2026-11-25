@@ -42,8 +42,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scoretk::model::{
-    compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, InventoryItem,
-    LayerCounts, LayerInventory, Layers, LAYERS,
+    compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, Fraction,
+    InventoryItem, LayerCounts, LayerInventory, Layers, LAYERS,
 };
 use scoretk::{read, write, Format, MidiImportOptions, Options, Score};
 
@@ -1327,11 +1327,108 @@ fn xml_credit_types(xml: &str) -> (bool, bool, bool) {
     (has("title"), has("composer"), has("lyricist"))
 }
 
+/// Items manquants dont le support est absent des références MuseScore 4.7.4
+/// (fichier, type, nombre). La ligne principale ci-dessus ne change pas :
+/// cette table ne sert qu'à la mesure « ce que la référence peut porter ».
+///
+/// - Mise en page calculée : `line-break`/`stem` (`SystemLayout`,
+///   `BeamLayout`), `credit-position` (hauteur du `VBox`, `resizeTitleBox`,
+///   `importmusicxmlpass1.cpp:1006-1035`), `barline` 3.x « dashed » que
+///   l'import 4.7.4 convertit en `Broken`
+///   (`determineBarLineType`, `importmusicxmlpass2.cpp:5786-5787`), barres
+///   implicites non écrites, `key-sig` do majeur omis par `writeKey`
+///   (`exportmusicxml.cpp:2502-2504`).
+/// - N-olets incomplets : `MusicXmlTupletState::missingTupletDuration`
+///   invente des silences que `<type>` seul ne reconstruit pas
+///   (`docs/agents/musicxml-import.md` §4 ; MusicXML 4.0, §"Tuplets" ne
+///   porte que les nombres réel/normal).
+/// - Éléments invisibles : `ExportMusicXml::canWrite`
+///   (`exportmusicxml.cpp:9408-9411`) les omet avec le réglage par défaut ;
+///   `print-object="no"` n'apparaît pas dans la référence.
+/// - Textes et harmonies de cadres/voix : les `<words>`/`<harmony>` ne
+///   portent ni l'appartenance au cadre, ni l'ordre des voix
+///   (`docs/agents/musicxml-import.md` §4-5 ; MusicXML 4.0, §"Direction",
+///   §"Harmony").
+/// - Marqueurs/sauts de parties liées : `<direction>` n'a pas de champ
+///   d'extrait ; la portée d'origine n'est pas dans MusicXML 4.0, §"Direction".
+/// - `dynamic-velocity`/`pan` : `<dynamics>` n'a pas de vitesse numérique et
+///   `<midi-instrument>` n'a pas de panoramique par direction
+///   (MusicXML 4.0, §"Dynamics", §"MIDI instrument").
+const XML_OUT_OF_REACH: &[(&str, &str, usize)] = &[
+    ("v3/Beam-CrossM1", "line-break", 1),
+    ("v3/barline01", "line-break", 1),
+    ("v3/barlinedelete", "barline", 2),
+    ("v3/barlinedelete", "barline-end", 1),
+    ("v3/layout_elements", "barline", 1),
+    ("v3/layout_elements", "credit-position", 1),
+    ("v3/layout_elements", "figured-bass", 2),
+    ("v3/layout_elements", "harmony", 2),
+    ("v3/layout_elements", "tremolo-bar", 1),
+    ("v3/moonlight", "credit", 1),
+    ("v3/moonlight", "stem", 8),
+    ("v3/repeat11", "marker", 1),
+    ("v3/repeat20", "jump", 1),
+    ("v3/repeat20", "marker", 2),
+    ("v3/testBreaksPage", "credit-position", 1),
+    ("v3/testChordSymbols", "harmony", 1),
+    ("v3/testHairpinDynamics", "hairpin", 1),
+    ("v3/testHarmony6", "credit", 1),
+    ("v3/testHarmony6", "credit-position", 3),
+    ("v3/testHarmony6", "harmony", 2),
+    ("v3/testHarmony6", "title", 1),
+    ("v3/testMultiInstrumentPart3", "key-sig", 2),
+    ("v3/testTboxWords1", "credit-position", 2),
+    ("v3/testTuplets8", "tuplet", 2),
+    ("v3/testTuplets8", "tuplet-member", 7),
+    ("v3/testWedge4", "hairpin", 1),
+    ("v3/timesig-05", "harmony", 2),
+    ("v3/voices", "harmony", 1),
+    ("v4/copypaste_parts", "trill", 1),
+    ("v4/expression-1", "staff-text", 2),
+    ("v4/hairpins_and_repeats", "dynamic", 1),
+    ("v4/hairpins_and_repeats", "dynamic-velocity", 1),
+    ("v4/mmrest", "line-break", 1),
+    ("v4/repeat65", "tbox-text", 1),
+    ("v4/repeat65", "text-line", 1),
+    ("v4/repeat66", "tbox-text", 1),
+    ("v4/repeat66", "text-line", 2),
+    ("v4/repeat68", "credit-position", 2),
+    ("v4/repeat68", "tbox-text", 1),
+    ("v4/repeat69", "jump", 1),
+    ("v4/repeat69", "marker", 1),
+    ("v4/testExcludeInvisibleElements", "dynamic", 2),
+    ("v4/testExcludeInvisibleElements", "dynamic-velocity", 2),
+    ("v4/testExcludeInvisibleElements", "hairpin", 1),
+    ("v4/testExcludeInvisibleElements", "note", 4),
+    ("v4/testExcludeInvisibleElements", "ottava", 1),
+    ("v4/testExcludeInvisibleElements", "pedal", 1),
+    ("v4/testExcludeInvisibleElements", "staff-text", 1),
+    ("v4/testExcludeInvisibleElements", "tempo", 1),
+    ("v4/testNoteheads2", "credit-position", 1),
+    ("v4/testNoteheads2", "pan", 1),
+    ("v4/voiceswitching", "tbox-text", 1),
+    ("v4/voiceswitching", "tuplet", 2),
+    ("v4/voiceswitching", "tuplet-member", 4),
+];
+
+type ItemKey = (u8, Option<Fraction>, Option<u32>, &'static str, String);
+
+fn item_key(item: &InventoryItem) -> ItemKey {
+    (
+        item.layer.bits(),
+        item.tick,
+        item.staff,
+        item.kind,
+        item.value.clone(),
+    )
+}
+
 /// Retire du dénominateur **uniquement les items manquants** dont le support
-/// est absent du format : un item avec le même `key` côté candidat reste
-/// compté. Retirer les items appariés réduirait le dénominateur sans raison
-/// et gonflerait le pourcentage.
+/// est absent de la référence : un item avec le même `key` côté candidat
+/// reste compté. Retirer les items appariés réduirait le dénominateur sans
+/// raison et gonflerait le pourcentage.
 fn xml_without_unrepresentable_styles(
+    name: &str,
     reference: &LayerInventory,
     candidate: &LayerInventory,
     xml: &str,
@@ -1343,40 +1440,40 @@ fn xml_without_unrepresentable_styles(
         "lyricist_font_size:12.00000" => !lyricist,
         _ => false,
     };
-    let mut remaining: BTreeMap<_, usize> = BTreeMap::new();
+    let mut budget: BTreeMap<(String, &'static str), usize> = BTreeMap::new();
+    for (file, kind, count) in XML_OUT_OF_REACH {
+        if *file == name {
+            budget.insert(((*file).to_owned(), *kind), *count);
+        }
+    }
+    let mut remaining: BTreeMap<ItemKey, usize> = BTreeMap::new();
     for item in &candidate.items {
-        *remaining
-            .entry((
-                item.layer.bits(),
-                item.tick,
-                item.staff,
-                item.kind,
-                item.value.clone(),
-            ))
-            .or_insert(0) += 1;
+        *remaining.entry(item_key(item)).or_insert(0) += 1;
     }
     LayerInventory {
         items: reference
             .items
             .iter()
             .filter(|item| {
-                if item.kind != "style" || !absent(item) {
+                let key = item_key(item);
+                // Ne consommer le budget que pour un item réellement absent
+                // côté candidat : sinon on exclurait un item apparié.
+                if remaining.get(&key).is_some_and(|count| *count > 0) {
+                    if let Some(count) = remaining.get_mut(&key) {
+                        *count -= 1;
+                    }
                     return true;
                 }
-                let key = (
-                    item.layer.bits(),
-                    item.tick,
-                    item.staff,
-                    item.kind,
-                    item.value.clone(),
-                );
-                if let Some(count) = remaining.get_mut(&key) {
-                    if *count > 0 {
-                        *count -= 1;
-                        return true;
+                let mut removable = item.kind == "style" && absent(item);
+                if !removable {
+                    if let Some(count) = budget.get_mut(&(name.to_owned(), item.kind)) {
+                        if *count > 0 {
+                            *count -= 1;
+                            removable = true;
+                        }
                     }
                 }
-                false
+                !removable
             })
             .cloned()
             .collect(),
@@ -1481,6 +1578,7 @@ fn musicxml_spec_reachable_table() {
                 .expect("read reference"),
             };
             let filtered_reference = xml_without_unrepresentable_styles(
+                score_name,
                 &reference_inventory,
                 &candidate_inventory,
                 &xml,
@@ -1489,8 +1587,39 @@ fn musicxml_spec_reachable_table() {
                 &compare_with_kinds(&reference_inventory, &candidate_inventory, declared, kinds),
                 essential(&reference_inventory, &candidate_inventory),
             );
+            let adjusted =
+                compare_with_kinds(&filtered_reference, &candidate_inventory, declared, kinds);
+            if adjusted.total.reference > adjusted.total.matched {
+                let mut left: BTreeMap<ItemKey, usize> = BTreeMap::new();
+                let mut right: BTreeMap<ItemKey, usize> = BTreeMap::new();
+                for (bucket, source) in [
+                    (&mut left, &filtered_reference),
+                    (&mut right, &candidate_inventory),
+                ] {
+                    for item in &source.items {
+                        if declared.contains(item.layer)
+                            && kinds.is_none_or(|ks| ks.contains(&item.kind))
+                        {
+                            *bucket.entry(item_key(item)).or_insert(0) += 1;
+                        }
+                    }
+                }
+                for (key, wanted) in left {
+                    let found = right.get_mut(&key).map_or(0, |count| {
+                        let taken = (*count).min(wanted);
+                        *count -= taken;
+                        taken
+                    });
+                    for _ in found..wanted {
+                        println!(
+                            "    remaining {score_name}: {} tick {:?} staff {:?} {}",
+                            key.3, key.1, key.2, key.4
+                        );
+                    }
+                }
+            }
             reachable.add(
-                &compare_with_kinds(&filtered_reference, &candidate_inventory, declared, kinds),
+                &adjusted,
                 essential(&filtered_reference, &candidate_inventory),
             );
         }
@@ -1503,6 +1632,55 @@ fn musicxml_spec_reachable_table() {
         );
     }
     println!();
+}
+
+/// The declaration above must describe exactly the losses it excludes: no
+/// declared item that is matched, and no undeclared loss left in the
+/// carrier-limited figure. Diagnostic only.
+#[test]
+fn musicxml_out_of_reach_declaration_is_exact() {
+    let declared = XML_IMPORT.declared().union(XML_EXPORT.declared());
+    let kinds = XML_IMPORT.declared_kinds().or(XML_EXPORT.declared_kinds());
+    let mut measured: BTreeMap<(String, &'static str), usize> = BTreeMap::new();
+    for (name, path) in corpus_scores() {
+        let reference = inventory(&reference_model(&path));
+        let reference_path = reference_file(&name, ReferenceKind::MusicXml)
+            .expect("MusicXML reference")
+            .0;
+        let candidate = inventory(
+            &read(
+                &fs::read(&reference_path).expect("read reference"),
+                Format::MusicXml,
+            )
+            .expect("MusicXML import"),
+        );
+        let mut expected: BTreeMap<ItemKey, usize> = BTreeMap::new();
+        let mut actual: BTreeMap<ItemKey, usize> = BTreeMap::new();
+        for (bucket, source) in [(&mut expected, &reference), (&mut actual, &candidate)] {
+            for item in &source.items {
+                if declared.contains(item.layer) && kinds.is_none_or(|ks| ks.contains(&item.kind)) {
+                    *bucket.entry(item_key(item)).or_insert(0) += 1;
+                }
+            }
+        }
+        for (key, wanted) in expected {
+            let found = actual.get_mut(&key).map_or(0, |count| {
+                let taken = (*count).min(wanted);
+                *count -= taken;
+                taken
+            });
+            for _ in found..wanted {
+                if key.3 != "style" {
+                    *measured.entry((name.clone(), key.3)).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    let declared: BTreeMap<(String, &'static str), usize> = XML_OUT_OF_REACH
+        .iter()
+        .map(|(file, kind, count)| (((*file).to_owned(), *kind), *count))
+        .collect();
+    assert_eq!(measured, declared);
 }
 
 /// Item kinds whose carrier is *never written* by MuseScore 4.7.4's MEI
