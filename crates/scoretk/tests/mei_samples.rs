@@ -213,6 +213,90 @@ fn round_trip_totals(paths: &[PathBuf]) -> Totals {
     totals
 }
 
+/// Diagnostic ciblé : pour les kinds dominants, quels fichiers et quels
+/// `(tick, staff, value)` manquent ? Test de mesure, aucune assertion.
+#[test]
+fn mei_samples_core_loss_diagnostic() {
+    let Some(paths) = available_lot() else {
+        return;
+    };
+    const KINDS: &[&str] = &["note", "rest", "stem", "lyric", "tie", "slur", "time-sig"];
+    // Fichier → kind → (nombre manquant, exemples).
+    let mut by_file: BTreeMap<String, BTreeMap<&'static str, (usize, Vec<String>)>> =
+        BTreeMap::new();
+    for path in &paths {
+        let bytes = fs::read(path).expect("read MEI sample");
+        let Ok(model) = read(&bytes, Format::Mei) else {
+            continue;
+        };
+        let reference = inventory(&model);
+        let Ok(written) = write(&model, Format::Mei, &Options::default()) else {
+            continue;
+        };
+        let Ok(candidate) = read(&written, Format::Mei) else {
+            continue;
+        };
+        let candidate = inventory(&candidate);
+        let mut expected: BTreeMap<(&'static str, String, String, String), usize> = BTreeMap::new();
+        let mut actual: BTreeMap<(&'static str, String, String, String), usize> = BTreeMap::new();
+        for (bucket, source) in [(&mut expected, &reference), (&mut actual, &candidate)] {
+            for item in &source.items {
+                if KINDS.contains(&item.kind) {
+                    let key = (
+                        item.kind,
+                        item.tick.map(|tick| tick.to_string()).unwrap_or_default(),
+                        item.staff.map(|s| s.to_string()).unwrap_or_default(),
+                        item.value.clone(),
+                    );
+                    *bucket.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+        let name = path
+            .file_name()
+            .expect("sample name")
+            .to_string_lossy()
+            .into_owned();
+        for &kind in KINDS {
+            let mut missing = 0;
+            let mut examples = Vec::new();
+            for (key, wanted) in &expected {
+                if key.0 != kind {
+                    continue;
+                }
+                let found = actual.get_mut(key).map_or(0, |count| {
+                    let taken = (*count).min(*wanted);
+                    *count -= taken;
+                    taken
+                });
+                for _ in found..*wanted {
+                    missing += 1;
+                    if examples.len() < 3 {
+                        examples.push(format!("tick {} staff {} = {}", key.1, key.2, key.3));
+                    }
+                }
+            }
+            if missing > 0 {
+                by_file
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(kind, (missing, examples));
+            }
+        }
+    }
+    for &kind in KINDS {
+        let mut ranked: Vec<_> = by_file
+            .iter()
+            .filter_map(|(name, kinds)| kinds.get(kind).map(|entry| (name, entry)))
+            .collect();
+        ranked.sort_by_key(|entry| std::cmp::Reverse(entry.1.0));
+        println!("\n=== {kind}: largest losses by file ===");
+        for (name, (count, examples)) in ranked.into_iter().take(8) {
+            println!("  {name}: {count} missing; {}", examples.join(" | "));
+        }
+    }
+}
+
 #[test]
 fn mei_samples_round_trip_table() {
     let Some(paths) = available_lot() else {

@@ -388,3 +388,31 @@ metadata), `contentItem` 190. Largest ignored attributes: `@curvedir` on
 The row is deliberately not compared with the 95.03 % of §3: that figure uses
 MuseScore's own exporter as oracle, while this one starts from external MEI
 that uses many standard constructs MuseScore never writes.
+
+### 9.4 First fix: staff index from sorted `staff@n` (commit after `d42791d1`)
+
+The diagnostic attributed 33 732 lost `note`, 16 406 `stem`, 4 373 `rest`,
+1 173 `tie` and most `slur`/`lyric` items to a **single** cause: the reader
+indexed the staves by the document order of `<staffDef>` (which scoretk's own
+writer groups by part), whereas MuseScore 4.7.4's
+`MeiImporter::buildStaffLayerMap` (`meiimporter.cpp:3309`) collects
+`//staff/@n` into a sorted `std::set` and `getStaffIndex` (`:211`) returns the
+position in that set. A MEI file whose parts are not in staff-number order
+(e.g. `Das_Veilchen_0Parameters.mei`: Voice = staff 1, Piano = staves 2–3)
+therefore placed every event on the wrong staff after a round trip.
+
+`build_staff_layer_map` now follows the C++ (`BTreeSet` of `staff@n` from
+`//staff`, index = rank), with a unit test that reverses the `<staffDef>`
+order. No declaration was narrowed.
+
+| Kind (round trip) | Before | After |
+| --- | ---: | ---: |
+| `note` | 33 732 | 9 518 |
+| `stem` | 16 406 | 219 |
+| `rest` | 4 373 | 114 |
+| `tie` | 1 173 | 0 |
+| `slur` | 1 038 | 267 |
+| Full support | 77.64 % | **91.77 %** |
+
+Remaining leaders: `lyric` 14 934, `note` 9 518, `time-sig` 956,
+`key-sig` 406, `articulation` 376.

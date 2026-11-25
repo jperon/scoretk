@@ -110,6 +110,36 @@ mod tests {
         assert_eq!(score.notes[0].pitch, 60);
     }
 
+    /// `MeiImporter::buildStaffLayerMap` (meiimporter.cpp:3309) trie les
+    /// `staff@n` : l'ordre des `<staffDef>` (regroupés par `staffGrp`) n'est
+    /// pas l'index de la portée dans le modèle.
+    #[test]
+    fn staff_index_follows_sorted_staff_n_not_staff_def_order() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp>
+              <staffDef n="2" lines="5"/>
+              <staffDef n="1" lines="5"/>
+            </staffGrp></scoreDef>
+            <section><measure n="1">
+              <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+              <staff n="2"><layer n="1"><note dur="4" pname="d" oct="4"/></layer></staff>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with reversed staffDef order");
+        let items = scoretk_core::model::inventory(&score);
+        let notes: Vec<_> = items
+            .items
+            .iter()
+            .filter(|item| item.kind == "note")
+            .collect();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].staff, Some(0), "staff n=1 is index 0");
+        assert_eq!(notes[0].value, "60");
+        assert_eq!(notes[1].staff, Some(1), "staff n=2 is index 1");
+        assert_eq!(notes[1].value, "62");
+    }
+
     #[test]
     fn tempo_bpm_becomes_beats_per_second() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">

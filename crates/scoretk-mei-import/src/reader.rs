@@ -22,7 +22,7 @@
 
 //! Structure du lecteur : `readScore`, `readScoreDef`, `readMeasure`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
     Accidental, BarLineType, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration,
@@ -122,19 +122,25 @@ impl<'a> Reader<'a> {
     }
 
     /// `MeiImporter::buildStaffLayerMap` (`meiimporter.cpp:3309`).
+    ///
+    /// Le C++ collecte `//staff/@n` dans un `std::set` **ordonné**, puis
+    /// `getStaffIndex` (`:211`) renvoie la position de `@n` dans cet ensemble.
+    /// L'ordre des `<staffDef>` (qui peuvent être regroupés par `staffGrp`
+    /// dans un ordre différent, par exemple dans l'export de scoretk) n'est
+    /// donc pas l'index de portée : utiliser l'ordre des `staffDef` décalait
+    /// toutes les notes d'un fichier MEI externe dont les parties ne sont pas
+    /// dans l'ordre numérique des portées.
     fn build_staff_layer_map(&mut self, score_node: &Element) {
-        let Some(def) = first_descendant(score_node, "scoreDef") else {
-            return;
-        };
-        let mut index = 0;
-        for staff_def in descendants_named(def, "staffDef") {
-            let n = staff_def
+        let mut staff_ns: BTreeSet<i32> = BTreeSet::new();
+        for staff in descendants_named(score_node, "staff") {
+            let n = staff
                 .attribute("n")
                 .and_then(|value| value.parse::<i32>().ok())
-                .unwrap_or(index as i32 + 1);
-            if self.staff_by_n.insert(n, index).is_none() {
-                index += 1;
-            }
+                .unwrap_or(1);
+            staff_ns.insert(n);
+        }
+        for (index, n) in staff_ns.into_iter().enumerate() {
+            self.staff_by_n.insert(n, index);
         }
     }
 
