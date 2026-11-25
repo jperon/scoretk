@@ -303,6 +303,10 @@ impl Gregorian {
         score.staves[staff.index()].lines = self.staff_lines;
         let track = Track::new(staff, 0);
 
+        // `Gabc.tex:241-245,314-317` : un espace après la dernière syllabe
+        // termine le mot. Le `<syllabic>` MusicXML se déduit donc du groupe
+        // de syllabes, pas de la seule syllabe courante.
+        let syllabics = self.syllabics();
         // Une entrée par lettre de hauteur (`a`…`n`, `p` ; `o` est l'oriscus).
         let mut alterations = [0i8; 16];
         let mut start = Fraction::ZERO;
@@ -363,7 +367,7 @@ impl Gregorian {
                     if !text.is_empty() {
                         chord_rest
                             .lyrics
-                            .push(Lyrics::new(0, LyricsSyllabic::Single, text));
+                            .push(Lyrics::new(0, syllabics[index], text));
                     }
                     syllable_sung = true;
                 }
@@ -424,6 +428,45 @@ impl Gregorian {
             None,
         );
         score
+    }
+
+    /// `<syllabic>` de chaque syllabe chantée (`Gabc.tex:241-245,314-317`).
+    ///
+    /// Un mot est une suite de syllabes se terminant par `space_after` ; les
+    /// groupes qui ne contiennent que des barres n'en font pas partie.
+    fn syllabics(&self) -> Vec<LyricsSyllabic> {
+        let mut result = vec![LyricsSyllabic::Single; self.syllables.len()];
+        let mut word: Vec<usize> = Vec::new();
+        let assign = |word: &[usize], result: &mut Vec<LyricsSyllabic>| {
+            for (position, index) in word.iter().enumerate() {
+                result[*index] = if word.len() == 1 {
+                    LyricsSyllabic::Single
+                } else if position == 0 {
+                    LyricsSyllabic::Begin
+                } else if position + 1 == word.len() {
+                    LyricsSyllabic::End
+                } else {
+                    LyricsSyllabic::Middle
+                };
+            }
+        };
+        for (index, syllable) in self.syllables.iter().enumerate() {
+            if syllable.text.trim().is_empty()
+                && syllable
+                    .notes
+                    .iter()
+                    .all(|note| alteration_value(note).is_some())
+            {
+                continue;
+            }
+            word.push(index);
+            if syllable.space_after {
+                assign(&word, &mut result);
+                word.clear();
+            }
+        }
+        assign(&word, &mut result);
+        result
     }
 }
 
@@ -692,6 +735,57 @@ mod tests {
             Some((BarKind::DivisioMinor, 1))
         );
         assert_eq!(BarKind::parse_prefix("g"), None);
+    }
+
+    #[test]
+    fn a_word_produces_begin_middle_end_syllabics() {
+        // `Gabc.tex:241-245` : `Ma-rí-a` est un mot de trois syllabes.
+        let payload = Gregorian {
+            syllables: ["Ma", "rí", "a", "sol"]
+                .into_iter()
+                .map(|text| Syllable {
+                    text: text.to_owned(),
+                    notes: vec![GregorianNote::default()],
+                    space_after: text == "a" || text == "sol",
+                    ..Syllable::default()
+                })
+                .collect(),
+            ..Gregorian::default()
+        };
+        assert_eq!(
+            payload.syllabics(),
+            [
+                LyricsSyllabic::Begin,
+                LyricsSyllabic::Middle,
+                LyricsSyllabic::End,
+                LyricsSyllabic::Single,
+            ]
+        );
+        let score = payload.build_derived_score();
+        let lyrics: Vec<_> = score
+            .measures
+            .iter()
+            .flat_map(|measure| &measure.segments)
+            .filter_map(|segment| {
+                segment
+                    .element(Track::new(super::super::StaffId::from_raw(0), 0))
+                    .and_then(|item| match item {
+                        SegmentItem::ChordRest(chord_rest) => {
+                            chord_rest.lyrics.first().map(|lyric| lyric.syllabic)
+                        }
+                        _ => None,
+                    })
+            })
+            .collect();
+        assert_eq!(
+            lyrics,
+            [
+                LyricsSyllabic::Begin,
+                LyricsSyllabic::Middle,
+                LyricsSyllabic::End,
+                LyricsSyllabic::Single,
+            ]
+        );
     }
 
     #[test]

@@ -145,9 +145,13 @@ fn emit(gregorian: &Gregorian) -> String {
             out.push_str(&sign.raw);
         }
         out.push(')');
-        // Spaces and line ends are word separators and are significant
-        // (`Gabc.tex:60-61,241-245`): the parsed flag decides which one.
-        out.push(if syllable.space_after { ' ' } else { '\n' });
+        // Un saut de ligne est un séparateur de mot au même titre qu'un
+        // espace (`Gabc.tex:60-61,241-245`) : en insérer un ici changerait
+        // le `<syllabic>` dérivé au prochain aller-retour. Sans marqueur de
+        // fin de mot, la syllabe suivante suit immédiatement.
+        if syllable.space_after {
+            out.push(' ');
+        }
     }
     out
 }
@@ -242,7 +246,7 @@ mod tests {
         assert_eq!(
             write_gabc(&score).expect("GABC output"),
             "name: Veni;\nlanguage: latin;\nbook: Graduale\nRomanum;;\n\
-             %%\n\n(c3)\nVE(g.h') ni(g::)\n"
+             %%\n\n(c3)\nVE(g.h') ni(g::)"
         );
     }
 
@@ -272,9 +276,6 @@ mod tests {
             bars: vec![BarKind::DivisioFinalis],
             ..scoretk_core::model::Syllable::default()
         });
-        assert_eq!(
-            emit(&gregorian),
-            "name: Factus;\n%%\n\n DE(c4g)\n us(c3g::)\n"
-        );
+        assert_eq!(emit(&gregorian), "name: Factus;\n%%\n\n DE(c4g) us(c3g::)");
     }
 }

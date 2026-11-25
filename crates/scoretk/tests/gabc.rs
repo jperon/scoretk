@@ -198,6 +198,24 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
     assert_eq!(playback.timemap.notes.len(), 8);
 }
 
+/// `Gabc.tex:241-245,314-317` : `Ma-rí-a` est un mot, pas trois syllabes
+/// isolées ; MusicXML porte begin/middle/end.
+#[test]
+fn gabc_word_syllabics_reach_musicxml() {
+    const WORDS: &str = "name:t;\n%%\n(c4) Ma(g)rí(h)a(i) sol(g) (::)\n";
+    let score = read(WORDS.as_bytes(), Format::Gabc).expect("GABC import");
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    for value in ["begin", "middle", "end", "single"] {
+        assert!(
+            xml.contains(&format!("<syllabic>{value}</syllabic>")),
+            "missing syllabic {value}: {xml}"
+        );
+    }
+}
+
 /// `Gabc.tex:742-797` : punctum mora × 2, épisème horizontal × 1,5 ; les
 /// deux ensemble donnent une blanche pointée. La durée de base est la noire.
 #[test]
