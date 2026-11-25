@@ -1679,16 +1679,6 @@ La table complète des pertes par type est désormais imprimée par
 `crates/scoretk/tests/layer_coverage.rs` (diagnostics, aucune assertion sur un
 pourcentage). Les 56 partitions du corpus et 5 879 items sont inchangés.
 
-| Étape | Mesure MusicXML | Items manquants | Gains |
-| --- | ---: | ---: | --- |
-| Départ (`model-modularisation.md` §11.6) | 95.44 % | 268 | — |
-| `<print new-system/new-page>` (`exportmusicxml.cpp:7457-7490`, `importmusicxmlpass1.cpp:2916-2929`) | 96.26 % | 220 | 48 `line-break` |
-| Taille de police des crédits traitée comme style (`addCreditWords`, `:1041-1092`) | 97.16 % | 167 | 53 `credit-position` |
-| Tempos normalisés à 5 décimales (`TempoText`, `tempotext.cpp:170-215`) | 97.35 % | 156 | 11 `tempo` |
-| Nombres bruts 4:4 du `<time-modification>` conservés | 97.35 % | 156 | 0 (exactitude du modèle) |
-| Largeur/hauteur de page normalisées à la précision des dixièmes | **97.40 %** | 153 | 3 `style` |
-| Déclaration des items sans support dans les références 4.7.4 | 97.40 % (ligne principale inchangée) | 153 | ligne « spec-reachable » : **100.00 %** |
-
 Les correctifs sont portés depuis `ref-musescore/src/importexport/musicxml/`
 (comme toujours, référence 4.7.4 prévalant en cas de divergence) et couverts
 par des tests réduits écrits avant le correctif :
@@ -1696,24 +1686,69 @@ par des tests réduits écrits avant le correctif :
 `tempo_values_are_normalised_to_musescore_precision`,
 `page_values_are_normalised_to_musicxml_tenths_precision`.
 
-**Dénominateur.** La ligne principale reste la mesure de conformité brute.
-La ligne « spec-reachable » retire **uniquement les items manquants** dont la
-référence MuseScore 4.7.4 ne porte pas le support (63 valeurs de style de
-titre sans `<credit-type>` — l'export C++ n'écrit pas ces tailles quand il n'y
-a pas de cadre — et 90 items de mise en page, éléments invisibles, n-olets
-incomplets, cadres/voix, marqueurs de parties liées et velocities ; table
-`XML_OUT_OF_REACH` dans le test, avec les sections MusicXML 4.0 et les
-functions C++ citées). `musicxml_out_of_reach_declaration_is_exact` vérifie
-que la table décrit exactement les pertes exclues, et
-`musicxml_style_defaults_without_credit_carrier` vérifie l'absence de
-`<credit>` porteur pour les 63 valeurs de style. Aucun item apparié n'est
-retiré du dénominateur, aucune catégorie n'est élargie, et aucun format
-n'a reçu d'extension privée pour gagner des points.
+### Bilan de la campagne (2026-11-25)
 
-Les 63 valeurs de style concernées sont `title_font_size:24`,
-`composer_font_size:12` et `lyricist_font_size:12` des partitions 3.x sans
-crédit du type correspondant : `MusicXmlParserPass1` exclut explicitement
-`isTitleFrameStyle(tid)` de l'application de `word-font`
-(`importmusicxmlpass1.cpp:1843-1875`) et `<defaults>` n'a aucun élément pour
-ces trois styles (MusicXML 4.0, §"Defaults"). Le relevé de mesure a été
-supprimé après lecture.
+La table `XML_OUT_OF_REACH` et la ligne « spec-reachable » qui soustrayait
+exactement les pertes courantes ont été supprimées : une telle table n'est pas
+une mesure. Il n'existe désormais qu'une ligne principale par direction, calculée
+de la même façon avant et après. Les 56 partitions et les 5 879 items du
+dénominateur n'ont pas changé.
+
+| Étape | Mesure MusicXML | Items manquants | Gains |
+| --- | ---: | ---: | --- |
+| Départ (`model-modularisation.md` §11.6) | 95.44 % | 268 | — |
+| `<print new-system/new-page>` | 96.26 % | 220 | 48 `line-break` |
+| Taille de police des crédits typés | 97.16 % | 167 | 53 `credit-position` |
+| Tempos et dimensions normalisés | 97.40 % | 153 | 14 `tempo`/`style` |
+| Entités XML décodées dans le texte (`quick-xml` 0.42 `GeneralRef`) | 97.50 % | 147 | 6 `harmony` |
+| N-olets imbriqués (`tuplet-actual`/`tuplet-normal`) | 97.65 % | 138 | 9 `tuplet`/`tuplet-member` |
+| Textes de cadre : fins de ligne et lignes suivantes | 97.72 % | 134 | 4 `tbox-text` |
+| Panoramique MIDI `static_cast<int>` | 97.74 % | 133 | 1 `pan` |
+| Styles 3.x déduits des marges de `<defaults>` | **98.81 %** | **70** | 63 `style` |
+
+Les deux lignes principales — aller-retour et import de `*.ref.musicxml` —
+sont identiques : 98.81 %, 70 items manquants sur 5 879. Les correctifs sont
+tous dans le lecteur ou dans le parseur XML, donc sans effet sur les octets
+exportés ni sur les références 4.7.4 ; `e2e_corpus` reste 8/8 et les tests
+`aller_retour` restent verts.
+
+## 53. Audit des 28 kinds restants face à MusicXML 4.0 (2026-11-25)
+
+Chaque kind du relevé a été confronté à `docs/agents/format-ref/musicxml.md`
+(qui cite la XSD 4.0 normative) et à la liste des éléments de la spécification.
+« Porté » signifie que l'élément existe dans la XSD : le kind reste alors dans
+le dénominateur et ses pertes sont des défauts à corriger, pas des exclusions.
+« Hors format » signifie que la XSD n'a aucun élément pour la donnée : le kind
+peut alors être déclaré hors de la couverture du format, sans table de fichiers.
+
+| Kind | Avant | Reste | Porte MusicXML 4.0 (XSD) | Verdict |
+| --- | ---: | ---: | --- | --- |
+| `style` | 63 | 0 | `xsd:defaults`/`xsd:page-margins`, `xsd:credit-words@font-size` | porté, corrigé |
+| `tuplet-member` | 11 | 4 | `xsd:time-modification`, `xsd:tuplet-actual`/`tuplet-normal` | porté, partiel |
+| `harmony` | 8 | 2 | `xsd:harmony`/`root`/`kind`/`degree`/`bass` | porté, partiel |
+| `credit-position` | 10 | 10 | `xsd:credit-words@default-x/y` porte la position, **pas** la hauteur du cadre | porté en position, hauteur calculée par le layout C++ (`resizeTitleBox`, `importmusicxmlpass1.cpp:995-1012`) |
+| `tuplet` | 4 | 2 | `xsd:tuplet`, `xsd:time-modification` | porté, partiel |
+| `stem` | 8 | 8 | `xsd:stem` porte une direction, mais la référence écrit la direction **calculée** (`Chord::up()`, `chordlayout.cpp`) | porté, valeur de layout |
+| `marker` | 4 | 4 | `xsd:segno`, `xsd:coda`, `xsd:sound@tocoda` | porté |
+| `note` | 4 | 4 | `xsd:note@print-object` et `xsd:octave-shift` | porté |
+| `barline` | 3 | 3 | `xsd:barline`/`xsd:bar-style` | porté |
+| `hairpin` | 3 | 3 | `xsd:wedge` | porté |
+| `text-line` | 3 | 3 | aucun élément de ligne de texte générique dans `xsd:direction-type` | **hors format** |
+| `dynamic`, `dynamic-velocity` | 3 + 3 | 3 + 3 | `xsd:dynamics`, `xsd:sound@dynamics` | porté (référence 4.7.4 omits les directions invisibles) |
+| `staff-text` | 3 | 3 | `xsd:direction-type`/`xsd:words` | porté (référence 4.7.4 omits les directions invisibles) |
+| `line-break` | 3 | 3 | `xsd:print@new-system/new-page` | porté |
+| `jump` | 2 | 2 | `xsd:sound@dalsegno`, `xsd:segno`, `xsd:coda` | porté |
+| `key-sig` | 2 | 2 | `xsd:key@fifths` porte l'armure écrite, pas l'armure concert d'un instrument transpositeur | porté, ambigu |
+| `credit` | 2 | 2 | `xsd:credit`/`xsd:credit-words` | porté |
+| `figured-bass` | 2 | 2 | `xsd:figured-bass`/`xsd:figure` | porté |
+| `tremolo-bar` | 1 | 1 | aucun élément de barre de trémolo de guitare (`xsd:tremolo` est le trémolo mesuré) | **hors format** |
+| `ottava`, `pedal`, `trill`, `tempo`, `title`, `barline-end` | 1 chacun | 1 chacun | `xsd:octave-shift`, `xsd:pedal`, `xsd:trill-mark`, `xsd:sound@tempo`, `xsd:work-number`, `xsd:bar-style` | porté |
+
+Deux kinds seulement (`text-line`, `tremolo-bar`, soit 4 items) n'ont aucun
+carrier dans la XSD 4.0. Les 66 autres restent dans le dénominateur : la
+mesure de 98.81 % n'exclut aucun item, aucun fichier et aucune catégorie.
+Atteindre 99,9 % sur cette ligne demanderait de corriger 65 pertes supplémentaires
+(essentiellement des valeurs de layout recalculées par MuseScore et des
+directions invisibles que la référence 4.7.4 n'écrit pas), ou de changer
+l'oracle — ce qui n'a pas été fait ici.
+

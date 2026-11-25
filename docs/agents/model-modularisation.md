@@ -1214,7 +1214,7 @@ two legal but different gates). Neither is a missing SMF feature.
 All options remain opt-in: the 21/21 MIDI reference exports, the 21/21 round
 trip, the 4/21 import corpus and `e2e_corpus` 8/8 are unchanged.
 
-### 11.10 MuseScore and MusicXML: 99.9 % of what the format can carry (2026-11-25)
+### 11.10 MuseScore and MusicXML: measured coverage without an exclusion table (2026-11-25)
 
 `xml_full_loss_table` / `xml_loss_diagnostic` in
 `crates/scoretk/tests/layer_coverage.rs` print every missing item with its
@@ -1222,27 +1222,22 @@ layer, tick, staff and value for the MuseScore and MusicXML rows (56 scores,
 no skip). They were used to work the largest losses first, with a reduced
 test before each fix and a C++/spec citation in the code.
 
-| Direction | Declared | Before (§11.6) | Raw after | Missing raw | Carrier-limited | Missing |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| mscx / mscz | L0–L6 | 99.51 % | **100.00 %** | 0 / 6 310 | 100.00 % | 0 |
-| musicxml / mxl (round trip) | L0–L5 | 95.44 % | 97.40 % | 153 / 5 879 | **100.00 %** | 0 |
-| musicxml / mxl (import `*.ref.musicxml`) | L0–L5 | 95.44 % | 97.40 % | 153 / 5 879 | **100.00 %** | 0 |
+| Direction | Declared | Before (§11.6) | After | Missing |
+| --- | --- | ---: | ---: | ---: |
+| mscx / mscz | L0–L6 | 99.51 % | **100.00 %** | 0 / 6 310 |
+| musicxml / mxl (round trip) | L0–L5 | 95.44 % | **98.81 %** | 70 / 5 879 |
+| musicxml / mxl (import `*.ref.musicxml`) | L0–L5 | 95.44 % | **98.81 %** | 70 / 5 879 |
 
-The carrier-limited figure does **not** change the declaration: it removes
-only the *missing* items whose carrier is absent from MuseScore 4.7.4's own
-reference file (the main row above remains the unchanged compliance
-measurement). `musicxml_out_of_reach_declaration_is_exact` compares the
-declared `(file, kind, count)` table with the measured losses, and
-`musicxml_style_defaults_without_credit_carrier` checks that the 63 excluded
-`style` items have no `<credit-type>` carrier in the reference files. The
-citations are in `XML_OUT_OF_REACH`: MusicXML 4.0 §"Defaults", §"Tuplets",
-§"Direction", §"Dynamics", §"MIDI instrument", and MuseScore's
-`importmusicxmlpass1.cpp:1843-1875` (title-frame styles are excluded from
-`word-font`), `:1006-1035` (VBox height from layout),
-`importmusicxmlpass2.cpp:5786-5787` (3.x "dashed" → 4.7.4 `Broken`),
-`exportmusicxml.cpp:2502-2504` (C-major key omitted), `:9408-9411`
-(invisible elements). Items with the same key on the candidate side are
-never removed, so the numerator is not inflated.
+The `XML_OUT_OF_REACH` table and the carrier-limited row have been removed:
+a table that excludes exactly the current failures is not a measurement.
+Every item remains in the denominator. The kind-by-kind audit against the
+MusicXML 4.0 XSD is in `docs/agents/musicxml-export.md` §53; only
+`text-line` and `tremolo-bar` have no element in the specification, and they
+were **not** removed from the figure. The 63 v3 title-frame style values are
+now recovered from the `<defaults>` page margins (an additive reader fix, no
+reference file changed), the nested tuplets from `<tuplet-actual>`, the
+harmony text from `<root>`/`<kind>`/`<bass>`, and the frame text line breaks
+from `<words>`.
 
 MuseScore's gain is a pure writer/reader fidelity fix: `minEmptyMeasures`
 (`style/styledef.cpp:572`) is now written by `MscWriter::writeStyleFile`

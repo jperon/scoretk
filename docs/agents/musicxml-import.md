@@ -255,11 +255,19 @@ traitées pendant la campagne `layer_coverage` (détails et mesure dans
   (MusicXML stocke des dixièmes entiers) : 11 `tempo` et 3 `style` gagnés,
   sans modifier les fichiers exportés.
 
-La mesure brute passe de **95.44 % à 97.40 %** (268 → 153 items manquants).
-Les 153 restants sont déclarés *hors support des références MuseScore 4.7.4*
-dans `layer_coverage.rs::XML_OUT_OF_REACH` avec les sections de la spec et
-les functions C++ correspondantes ; la ligne « spec-reachable » atteint
-**100.00 %**. En particulier les n-olets incomplets de `v3/testTuplets8`
-restent irrécupérables : `MusicXmlTupletState::missingTupletDuration` invente
-des silences que `<type>` seul ne reconstruit pas (§4 ci-dessus). Aucun item
-apparié n'est retiré du dénominateur et aucune extension privée n'est comptée.
+La mesure brute passe de **95.44 % à 98.81 %** (268 → 70 items manquants),
+sur l'aller-retour comme sur l'import de `*.ref.musicxml`. Les correctifs
+supplémentaires de cette campagne sont : le décodage des entités XML dans le
+texte (`quick-xml` 0.42 émet `Event::GeneralRef`), la reconstruction des deux
+rapports des n-olets imbriqués, la conservation des fins de ligne des textes de
+cadre, la conversion `static_cast<int>` du panoramique MIDI et, pour les 63
+valeurs de style de titre, l'inférence depuis les marges 10/20 mm de
+`<defaults>` quand aucun crédit typé ne porte explicitement la taille.
+
+La table `XML_OUT_OF_REACH`, qui excluait exactement les pertes courantes, a
+été supprimée avec les deux lignes de mesure « spec-reachable » qui en
+découlaient. L'audit kind par kind contre la XSD 4.0 est dans
+`docs/agents/musicxml-export.md` §53 : seuls `text-line` et `tremolo-bar` n'ont
+aucun élément dans la spécification ; aucun item n'est retiré du dénominateur.
+Les 70 pertes restantes sont documentées kind par kind dans le même relevé.
+
