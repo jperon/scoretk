@@ -1,0 +1,13 @@
+[package]
+name = "scoretk-xml-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Utilitaires XML partagés par les lecteurs et écrivains de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+quick-xml = { workspace = true }
+thiserror = { workspace = true }

@@ -314,7 +314,7 @@ pub fn detect(input: &[u8]) -> JsValue {
     }
 }
 
-/// Décrit les sept formats reconnus et leurs capacités compilées.
+/// Décrit les huit formats reconnus et leurs capacités compilées.
 #[wasm_bindgen(skip_typescript)]
 pub fn formats() -> js_sys::Array {
     let array = js_sys::Array::new();

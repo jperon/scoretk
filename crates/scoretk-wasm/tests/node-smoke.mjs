@@ -122,11 +122,11 @@ function midiNotePitches(bytes) {
 const identity = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
 assert.equal(wasm.version(), identity.version, 'version() doit suivre package.json');
 
-// 2. formats() décrit les sept formats, tous lisibles et écrivables ici.
+// 2. formats() décrit les huit formats, tous lisibles et écrivables ici.
 const formats = wasm.formats();
-assert.equal(formats.length, 7, 'formats() doit décrire sept formats');
+assert.equal(formats.length, 8, 'formats() doit décrire huit formats');
 const names = new Set(formats.map((format) => format.name));
-for (const name of ['mscz', 'mscx', 'musicxml', 'mxl', 'ly', 'abc', 'midi']) {
+for (const name of ['mscz', 'mscx', 'musicxml', 'mxl', 'mei', 'ly', 'abc', 'midi']) {
   assert.ok(names.has(name), `formats() doit contenir ${name}`);
 }
 for (const format of formats) {

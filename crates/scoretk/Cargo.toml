@@ -23,6 +23,8 @@ default = [
     "lilypond-export",
     "abc-import",
     "abc-export",
+    "mei-import",
+    "mei-export",
 ]
 
 # Points d'accroche des convertisseurs optionnels. Tant qu'une feature est
@@ -39,6 +41,8 @@ lilypond-import = ["dep:scoretk-lilypond-import"]
 lilypond-export = ["dep:scoretk-lilypond-export"]
 abc-import = ["dep:scoretk-abc-import"]
 abc-export = ["dep:scoretk-abc-export"]
+mei-import = ["dep:scoretk-mei-import"]
+mei-export = ["dep:scoretk-mei-export"]
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
@@ -52,6 +56,8 @@ scoretk-lilypond-import = { path = "../scoretk-lilypond-import", optional = true
 scoretk-lilypond-export = { path = "../scoretk-lilypond-export", optional = true }
 scoretk-abc-import = { path = "../scoretk-abc-import", optional = true }
 scoretk-abc-export = { path = "../scoretk-abc-export", optional = true }
+scoretk-mei-import = { path = "../scoretk-mei-import", optional = true }
+scoretk-mei-export = { path = "../scoretk-mei-export", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 
@@ -71,6 +77,8 @@ scoretk-lilypond-import = { path = "../scoretk-lilypond-import" }
 scoretk-lilypond-export = { path = "../scoretk-lilypond-export" }
 scoretk-abc-import = { path = "../scoretk-abc-import" }
 scoretk-abc-export = { path = "../scoretk-abc-export" }
+scoretk-mei-import = { path = "../scoretk-mei-import" }
+scoretk-mei-export = { path = "../scoretk-mei-export" }
 quick-xml = { workspace = true }
 similar = "3"
 zip = { workspace = true }

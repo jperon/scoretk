@@ -33,7 +33,7 @@
 //!
 //! # Formats
 //!
-//! [`Format`] énumère les sept formats visés. La reconnaissance se fait par
+//! [`Format`] énumère les huit formats visés. La reconnaissance se fait par
 //! extension ([`Format::from_extension`], [`Format::from_path`]) ou par le
 //! contenu ([`Format::detect`]). Chaque sens a sa feature, qui branche
 //! exactement un crate (`docs/agents/scoretk.md` § 3) :
@@ -43,11 +43,12 @@
 //! | MuseScore `.mscz` / `.mscx` | `musescore-import` | `musescore-export` |
 //! | MusicXML `.musicxml` / `.xml` | `musicxml-import` | `musicxml-export` |
 //! | MusicXML `.mxl` | `musicxml-import` | `musicxml-export` |
+//! | MEI `.mei` | `mei-import` | `mei-export` |
 //! | LilyPond `.ly` | `lilypond-import` | `lilypond-export` |
 //! | ABC `.abc` | `abc-import` | `abc-export` |
 //! | MIDI | `midi-import` | `midi-export` |
 //!
-//! Les dix features sont actives par défaut. Un format dont la feature du sens
+//! Les douze features sont actives par défaut. Un format dont la feature du sens
 //! demandé est désactivée renvoie [`Error::FormatNonPrisEnCharge`] : la façade
 //! ne produit jamais de sortie vide ni de conversion silencieusement partielle.
 //!
@@ -158,6 +159,7 @@ pub fn read_with_report(bytes: &[u8], format: Format) -> Result<(Score, model::C
         Format::Mscz | Format::Mscx => hooks::read_musescore(bytes, format)?,
         Format::MusicXml => hooks::read_musicxml(bytes)?,
         Format::Mxl => hooks::read_mxl(bytes)?,
+        Format::Mei => hooks::read_mei(bytes)?,
         Format::Ly => hooks::read_lilypond(bytes)?,
         Format::Abc => hooks::read_abc(bytes)?,
         Format::Midi => hooks::read_midi(bytes)?,
@@ -218,6 +220,7 @@ pub fn write_with_report(
     let bytes = match format {
         Format::MusicXml => hooks::write_musicxml(score, options)?,
         Format::Mxl => hooks::write_mxl(score, options)?,
+        Format::Mei => hooks::write_mei(score)?,
         Format::Midi => hooks::write_midi(score, options)?,
         Format::Mscx => hooks::write_mscx(score)?,
         Format::Mscz => hooks::write_mscz(score)?,

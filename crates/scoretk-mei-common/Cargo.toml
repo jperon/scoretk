@@ -1,0 +1,14 @@
+[package]
+name = "scoretk-mei-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Tables et conversions MEI partagées par la lecture et l'écriture"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-xml-common = { path = "../scoretk-xml-common" }
+thiserror = { workspace = true }

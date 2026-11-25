@@ -69,19 +69,22 @@ fn list_formats() {
     let output = binary().arg("--list-formats").output().expect("exécution");
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).expect("UTF-8");
-    for format in ["mscz", "mscx", "musicxml", "mxl", "ly", "abc", "midi"] {
+    for format in [
+        "mscz", "mscx", "musicxml", "mxl", "mei", "ly", "abc", "midi",
+    ] {
         assert!(text.contains(format), "tableau sans {format} : {text}");
     }
     assert!(text.contains("LECTURE"));
     assert!(text.contains("ÉCRITURE"));
 
     // État réel des features activées par la CLI : les sept formats se lisent
-    // et s'écrivent (`.mxl` en lecture depuis t43).
+    // et s'écrivent (`.mxl` en lecture depuis t43, `.mei` depuis t44).
     let oui = ("oui".to_owned(), "oui".to_owned());
     assert_eq!(sens_format(&text, "mscz"), oui, "{text}");
     assert_eq!(sens_format(&text, "musicxml"), oui, "{text}");
     assert_eq!(sens_format(&text, "midi"), oui, "{text}");
     assert_eq!(sens_format(&text, "mxl"), oui, "{text}");
+    assert_eq!(sens_format(&text, "mei"), oui, "{text}");
     assert_eq!(sens_format(&text, "ly"), oui, "{text}");
     assert_eq!(sens_format(&text, "abc"), oui, "{text}");
 }

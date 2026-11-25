@@ -537,6 +537,8 @@ dependencies = [
  "scoretk-core",
  "scoretk-lilypond-export",
  "scoretk-lilypond-import",
+ "scoretk-mei-export",
+ "scoretk-mei-import",
  "scoretk-midi-export",
  "scoretk-midi-import",
  "scoretk-musescore-export",
@@ -623,6 +625,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-mei-common"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-xml-common",
+ "thiserror",
+]
+
+[[package]]
+name = "scoretk-mei-export"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-mei-common",
+ "scoretk-mei-import",
+ "scoretk-musescore-import",
+ "scoretk-xml-common",
+]
+
+[[package]]
+name = "scoretk-mei-import"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-mei-common",
+ "scoretk-mei-export",
+ "scoretk-musescore-import",
+ "scoretk-xml-common",
+]
+
+[[package]]
 name = "scoretk-midi-common"
 version = "0.1.0"
 dependencies = [
@@ -687,6 +720,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "scoretk-core",
+ "scoretk-xml-common",
  "thiserror",
  "zip",
 ]
@@ -700,6 +734,7 @@ dependencies = [
  "scoretk-core",
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
+ "scoretk-xml-common",
  "similar 3.2.1",
  "thiserror",
  "zip",
@@ -712,6 +747,14 @@ dependencies = [
  "js-sys",
  "scoretk",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "scoretk-xml-common"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "thiserror",
 ]
 
 [[package]]

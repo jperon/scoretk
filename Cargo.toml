@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/scoretk-core",
+    "crates/scoretk-xml-common",
     "crates/scoretk-musescore-import",
     "crates/scoretk-musescore-export",
     "crates/scoretk-musicxml-import",
@@ -15,6 +16,9 @@ members = [
     "crates/scoretk-abc-common",
     "crates/scoretk-abc-import",
     "crates/scoretk-abc-export",
+    "crates/scoretk-mei-common",
+    "crates/scoretk-mei-import",
+    "crates/scoretk-mei-export",
     "crates/scoretk",
     "crates/scoretk-cli",
     "crates/scoretk-wasm",

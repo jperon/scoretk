@@ -33,6 +33,8 @@
 //! | `lilypond-export` | `scoretk-lilypond-export` | [`write_lilypond`] |
 //! | `abc-import` | `scoretk-abc-import` | [`read_abc`] |
 //! | `abc-export` | `scoretk-abc-export` | [`write_abc`] |
+//! | `mei-import` | `scoretk-mei-import` | [`read_mei`] |
+//! | `mei-export` | `scoretk-mei-export` | [`write_mei`] |
 //!
 //! Chaque fonction a deux définitions exclusives : la vraie sous
 //! `#[cfg(feature = "…")]`, et un repli sous `#[cfg(not(feature = "…"))]` qui
@@ -314,5 +316,35 @@ non_branche!(
     "abc-export",
     write_abc(score: &Score) -> Result<Vec<u8>>,
     Format::Abc,
+    Ecriture
+);
+
+// --- MEI (lecture) --------------------------------------------------------
+
+#[cfg(feature = "mei-import")]
+pub(crate) fn read_mei(bytes: &[u8]) -> Result<Score> {
+    scoretk_mei_import::read_mei(bytes).map_err(|error| Error::Mei(error.to_string()))
+}
+
+non_branche!(
+    "mei-import",
+    read_mei(bytes: &[u8]) -> Result<Score>,
+    Format::Mei,
+    Lecture
+);
+
+// --- MEI (écriture) -------------------------------------------------------
+
+#[cfg(feature = "mei-export")]
+pub(crate) fn write_mei(score: &Score) -> Result<Vec<u8>> {
+    scoretk_mei_export::write_mei(score)
+        .map(String::into_bytes)
+        .map_err(|error| Error::Mei(error.to_string()))
+}
+
+non_branche!(
+    "mei-export",
+    write_mei(score: &Score) -> Result<Vec<u8>>,
+    Format::Mei,
     Ecriture
 );

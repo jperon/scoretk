@@ -72,6 +72,8 @@ pub enum Format {
     MusicXml,
     /// MusicXML compressé (`.mxl`, archive ZIP avec `META-INF/container.xml`).
     Mxl,
+    /// MEI 5.1 (`mei-basic`), espace de noms `music-encoding.org/ns/mei`.
+    Mei,
     /// LilyPond (`.ly`).
     Ly,
     /// ABC (`.abc`).
@@ -82,11 +84,12 @@ pub enum Format {
 
 impl Format {
     /// Tous les formats, dans l'ordre d'affichage de `--list-formats`.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Mscz,
         Self::Mscx,
         Self::MusicXml,
         Self::Mxl,
+        Self::Mei,
         Self::Ly,
         Self::Abc,
         Self::Midi,
@@ -99,6 +102,7 @@ impl Format {
             Self::Mscx => "mscx",
             Self::MusicXml => "musicxml",
             Self::Mxl => "mxl",
+            Self::Mei => "mei",
             Self::Ly => "ly",
             Self::Abc => "abc",
             Self::Midi => "midi",
@@ -112,6 +116,7 @@ impl Format {
             Self::Mscx => &["mscx"],
             Self::MusicXml => &["musicxml", "xml"],
             Self::Mxl => &["mxl"],
+            Self::Mei => &["mei"],
             Self::Ly => &["ly"],
             Self::Abc => &["abc"],
             Self::Midi => &["mid", "midi"],
@@ -128,6 +133,7 @@ impl Format {
         match self {
             Self::Mscz | Self::Mscx => cfg!(feature = "musescore-import"),
             Self::MusicXml | Self::Mxl => cfg!(feature = "musicxml-import"),
+            Self::Mei => cfg!(feature = "mei-import"),
             Self::Ly => cfg!(feature = "lilypond-import"),
             Self::Abc => cfg!(feature = "abc-import"),
             Self::Midi => cfg!(feature = "midi-import"),
@@ -142,6 +148,7 @@ impl Format {
     pub const fn supports_write(self) -> bool {
         match self {
             Self::MusicXml | Self::Mxl => cfg!(feature = "musicxml-export"),
+            Self::Mei => cfg!(feature = "mei-export"),
             Self::Mscz | Self::Mscx => cfg!(feature = "musescore-export"),
             Self::Midi => cfg!(feature = "midi-export"),
             Self::Ly => cfg!(feature = "lilypond-export"),
@@ -159,6 +166,7 @@ impl Format {
             "mscx" => Some(Self::Mscx),
             "musicxml" | "xml" => Some(Self::MusicXml),
             "mxl" => Some(Self::Mxl),
+            "mei" => Some(Self::Mei),
             "ly" | "lilypond" => Some(Self::Ly),
             "abc" => Some(Self::Abc),
             "mid" | "midi" => Some(Self::Midi),
@@ -185,9 +193,10 @@ impl Format {
     ///    `.xml`/`.musicxml` ;
     /// 2. `MThd` : MIDI ;
     /// 3. `<museScore` : `.mscx` ;
-    /// 4. `<score-partwise`/`<score-timewise` ou `<?xml` : MusicXML ;
-    /// 5. `\version` : LilyPond ;
-    /// 6. `%abc` ou un en-tête `X:` : ABC.
+    /// 4. l'espace de noms MEI (`music-encoding.org/ns/mei`) : MEI ;
+    /// 5. `<score-partwise`/`<score-timewise` ou `<?xml` : MusicXML ;
+    /// 6. `\version` : LilyPond ;
+    /// 7. `%abc` ou un en-tête `X:` : ABC.
     ///
     /// Renvoie `None` si rien ne correspond : la façade préfère une erreur à
     /// une supposition fausse.
@@ -203,13 +212,15 @@ impl Format {
         if contains(text, b"<museScore") {
             return Some(Self::Mscx);
         }
+        if contains(text, b"music-encoding.org/ns/mei") || contains(text, b"<mei ") {
+            return Some(Self::Mei);
+        }
         if contains(text, b"<score-partwise") || contains(text, b"<score-timewise") {
             return Some(Self::MusicXml);
         }
         if contains(text, b"<?xml") {
-            // XML non identifié plus précisément : MusicXML est le seul format
-            // XML que scoretk manipule, et l'appelant peut toujours forcer
-            // `--from`.
+            // XML non identifié plus précisément : MusicXML est le format
+            // XML par défaut ; l'appelant peut toujours forcer `--from`.
             return Some(Self::MusicXml);
         }
         if text.starts_with(b"\\version") {

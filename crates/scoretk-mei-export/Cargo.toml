@@ -1,0 +1,18 @@
+[package]
+name = "scoretk-mei-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Écriture MEI 5.1 (mei-basic) depuis le modèle de scoretk"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-core = { path = "../scoretk-core" }
+scoretk-xml-common = { path = "../scoretk-xml-common" }
+scoretk-mei-common = { path = "../scoretk-mei-common" }
+
+[dev-dependencies]
+scoretk-musescore-import = { path = "../scoretk-musescore-import" }
+scoretk-mei-import = { path = "../scoretk-mei-import" }

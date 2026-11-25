@@ -69,3 +69,14 @@ pub enum Error {
 
 /// Résultat du lecteur MusicXML.
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// L'arbre XML partagé renvoie des erreurs déjà présentes dans ce type.
+impl From<scoretk_xml_common::Error> for Error {
+    fn from(error: scoretk_xml_common::Error) -> Self {
+        match error {
+            scoretk_xml_common::Error::Xml(error) => Self::Xml(error),
+            scoretk_xml_common::Error::Attribute(error) => Self::Attribute(error),
+            scoretk_xml_common::Error::NoRoot => Self::UnknownRoot(String::new()),
+        }
+    }
+}
