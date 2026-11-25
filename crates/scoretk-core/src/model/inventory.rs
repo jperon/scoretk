@@ -247,6 +247,15 @@ fn float(value: f64) -> String {
     format!("{value:.6}")
 }
 
+/// `StyleSettings` values survive a format round trip with MuseScore's
+/// six-significant-digit formatting (`format_style_number` in
+/// `scoretk-musicxml-export/src/layout.rs`). Comparing six *decimals* would
+/// report a false loss for 0.7874016 → 0.787402, so style values are
+/// normalised to five decimals.
+fn style_float(value: f64) -> String {
+    format!("{value:.5}")
+}
+
 /// Builds the comparable inventory of a score.
 ///
 /// Traversal follows the event spine (measures → segments → tracks) so every
@@ -727,8 +736,8 @@ pub fn inventory(score: &Score) -> LayerInventory {
                 credit.justify,
                 credit.valign,
                 credit.page,
-                credit.font_size.map(float).unwrap_or_default(),
-                float(credit.vbox_height)
+                credit.font_size.map(style_float).unwrap_or_default(),
+                style_float(credit.vbox_height)
             ),
         );
     }
@@ -750,7 +759,7 @@ pub fn inventory(score: &Score) -> LayerInventory {
                 index,
                 text.measure,
                 text.placement,
-                text.font_size.map(float).unwrap_or_default()
+                text.font_size.map(style_float).unwrap_or_default()
             ),
         );
     }
@@ -941,7 +950,7 @@ pub fn inventory(score: &Score) -> LayerInventory {
         ),
     ] {
         if (value - baseline).abs() > 1e-9 {
-            style_item(&mut result, name, format!("{name}:{}", float(value)));
+            style_item(&mut result, name, format!("{name}:{}", style_float(value)));
         }
     }
     for (name, value, baseline) in [
@@ -1078,6 +1087,18 @@ mod tests {
             .expect("page geometry stays a format item");
         assert_eq!(page.layer, Layers::ENGRAVING);
         assert!(page.value.starts_with("spatium_mm:"));
+    }
+
+    #[test]
+    fn style_values_are_normalised_to_musescore_precision() {
+        let mut score = Score::new();
+        score.engraving.style.page_odd_bottom_margin_in = 0.7874016;
+        let found = inventory(&score)
+            .items
+            .into_iter()
+            .find(|item| item.kind == "style")
+            .expect("a style item");
+        assert_eq!(found.value, "page_odd_bottom_margin_in:0.78740");
     }
 
     #[test]

@@ -709,7 +709,9 @@ builds the instrument only; it changes no reader, no writer and no output byte.
   the event spine used to reach the others), so it is neutral in the ratios;
   L6 counts only for MuseScore, which declares it. The `tuplet-bracket`
   value is the rendered decision (`bracket`) only: `bracket_explicit` records
-  how the file encodes it, not a second engraving fact.
+  how the file encodes it, not a second engraving fact. Style floats are
+  normalised to five decimals, MuseScore's writer using six significant digits:
+  comparing six decimals would turn `0.7874016` → `0.787402` into a false loss.
 - **Matching.** Two inventories are multisets of item keys. An item in the
   candidate matches a reference item only if **all five** components are
   equal; duplicates are counted, so two identical attacks are two items.
