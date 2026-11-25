@@ -44,9 +44,17 @@ use scoretk_xml_common::Element;
 /// Lit un document MEI en mémoire et renvoie le modèle pivot.
 pub fn read_mei(bytes: &[u8]) -> Result<Score, Error> {
     let root = scoretk_xml_common::parse(bytes)?;
-    if root.name != "mei" {
+    // `MeiImporter::read` (meiimporter.cpp:1011) part d'un document `<mei>`.
+    // MEI 5.1 définit aussi `mei-all_anyStart.rng` : les racines `meiHead`,
+    // `meiCorpus`, `music` (et tout élément avec `@meiversion="5.1+anyStart"`)
+    // sont valides. Les exemples officiels `docStarts` utilisent ces racines ;
+    // les refuser était une mesure de notre oracle, pas une perte MEI.
+    const ANY_START: &[&str] = &["mei", "meiHead", "meiCorpus", "music"];
+    if !ANY_START.contains(&root.name.as_str())
+        && root.attribute("meiversion") != Some("5.1+anyStart")
+    {
         return Err(Error::Unsupported(format!(
-            "racine « {} » (attendu mei)",
+            "racine « {} » (attendu une racine MEI 5.1)",
             root.name
         )));
     }
@@ -91,6 +99,22 @@ mod tests {
     #[test]
     fn rejects_a_non_mei_root() {
         assert!(read_mei(b"<score-partwise/>").is_err());
+    }
+
+    /// `mei-all_anyStart.rng` (MEI 5.1) autorise `<meiHead>` comme racine.
+    #[test]
+    fn reads_an_any_start_document() {
+        let bytes = br#"<meiHead xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <fileDesc><titleStmt><title>Un titre</title></titleStmt></fileDesc>
+          <music><body><mdiv><score>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="c" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music>
+        </meiHead>"#;
+        let score = read_mei(bytes).expect("anyStart MEI");
+        assert_eq!(score.metadata.work_title, "Un titre");
+        assert_eq!(score.notes.len(), 1);
     }
 
     #[test]

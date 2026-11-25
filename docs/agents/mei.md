@@ -487,3 +487,18 @@ the initial `scoreDef`), with a unit test.
 
 Remaining leaders: `articulation` 376, `note` 329, `slur` 267, `stem` 219,
 `rest` 114, `tuplet-member` 114.
+
+### 9.8 Fifth fix: MEI `anyStart` documents
+
+Two of the 130 validated files (`docStarts/Doc_starts_with_meiHead.mei`,
+`Doc_starts_with_music.mei`) were schema-valid MEI 5.1 but rejected because
+`read_mei` required root `<mei>`. The RelaxNG schema `mei-all_anyStart.rng`
+(and its Schematron rule at line 21588) allows `mei`, `meiHead`, `meiCorpus`
+and `music` as document roots. The reader now accepts these four roots (or
+`@meiversion="5.1+anyStart"`) and `readMeiHead` uses the root itself when it is
+`<meiHead>`. This is a measured extension beyond MuseScore 4.7.4, whose
+importer starts at `<mei>` only.
+
+The measurement tests now assert **130 files read, 0 skipped, 0 unreadable**;
+the full support stays at **99.43 %**. The 37 header fragments remain in
+`EXCLUDED.tsv` (no `<score>`) and are still read by `mei_samples_never_panic`.

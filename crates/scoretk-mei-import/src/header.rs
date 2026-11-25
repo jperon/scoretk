@@ -38,7 +38,14 @@ const SCOREDEF_IDX: usize = usize::MAX;
 impl<'a> Reader<'a> {
     /// `MeiImporter::readMeiHead` (`meiimporter.cpp:933`).
     pub(crate) fn read_mei_head(&mut self) {
-        let Some(head) = self.root.child("meiHead") else {
+        // Avec `mei-all_anyStart.rng`, la racine peut être `<meiHead>` :
+        // dans ce cas c'est elle qui porte le header, pas un enfant de `<mei>`.
+        let head = if self.root.name == "meiHead" {
+            Some(self.root)
+        } else {
+            self.root.child("meiHead")
+        };
+        let Some(head) = head else {
             return;
         };
         let Some(file_desc) = head.child("fileDesc") else {

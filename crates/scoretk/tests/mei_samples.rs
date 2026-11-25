@@ -304,10 +304,8 @@ fn mei_samples_round_trip_table() {
     };
     let totals = round_trip_totals(&paths);
     totals.print_losses("MEI -> model -> MEI -> model");
-    assert_eq!(totals.files + totals.skipped, 130);
-    // Avant le correctif « docStarts » : deux documents valides dont la racine
-    // est `meiHead` / `music` sont refusés par `read_mei` (racine `mei` exigée).
-    assert!(totals.skipped <= 2, "{} skipped", totals.skipped);
+    assert_eq!(totals.files, 130);
+    assert_eq!(totals.skipped, 0);
     assert!(totals.total.reference > 0);
 }
 
@@ -346,9 +344,7 @@ fn mei_samples_import_completeness_table() {
         println!("    {:<20} @{:<24} {:>7}", element, attribute, count);
     }
     println!();
-    // Deux documents `mei-all_anyStart` ont une racine `meiHead` / `music` :
-    // le lecteur n'accepte encore que `mei` (corrigé dans une étape suivante).
-    assert!(unreadable.len() <= 2, "unreadable samples: {unreadable:?}");
+    assert!(unreadable.is_empty(), "unreadable samples: {unreadable:?}");
     assert!(all.present_element_total() > 100_000);
     assert!(all.ignored_element_total() > 0);
 }
@@ -374,18 +370,12 @@ fn mei_samples_never_panic() {
             failed.push(path.clone());
         }
     }
-    // Les 130 partitions du lot sont lisibles, sauf les deux documents
-    // `docStarts` dont la racine n'est pas `mei` (étape de correction suivante).
-    // Les fragments exclus peuvent renvoyer `Error::NoScore` sans paniquer.
-    let known_roots = [
-        "docStarts/Doc_starts_with_meiHead.mei",
-        "docStarts/Doc_starts_with_music.mei",
-    ]
-    .map(|name| cache_dir().join(name));
-    assert!(failed.len() <= excluded.len() + known_roots.len());
+    // Les 130 partitions du lot sont lisibles ; seuls les fragments sans
+    // `<score>` (déjà documentés) peuvent renvoyer `Error::NoScore`.
+    assert!(failed.len() <= excluded.len());
     for path in failed {
         assert!(
-            excluded.contains(&path) || known_roots.contains(&path),
+            excluded.contains(&path),
             "a lot file failed to read: {}",
             path.display()
         );
