@@ -198,6 +198,37 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
     assert_eq!(playback.timemap.notes.len(), 8);
 }
 
+/// Option additive `gabcModernClef` : clé de sol (avec `8vb` pour un registre
+/// bas) et 5 lignes ; défaut = clé d'ut et 4 lignes (`Gabc.tex:847-870`).
+#[test]
+fn gabc_modern_clef_option_is_additive() {
+    const SOURCE: &str = "name:t;\n%%\n(c4) A(g)h(i) (::)\n";
+    let score = read(SOURCE.as_bytes(), Format::Gabc).expect("GABC import");
+    let default = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert!(default.contains("<sign>C</sign>"), "{default}");
+    assert!(
+        default.contains("<staff-lines>4</staff-lines>"),
+        "{default}"
+    );
+    let modern_options = Options {
+        gabc_modern_clef: true,
+        ..Options::default()
+    };
+    let modern = String::from_utf8(
+        write(&score, Format::MusicXml, &modern_options).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert!(modern.contains("<sign>G</sign>"), "{modern}");
+    assert!(
+        modern.contains("<clef-octave-change>-1</clef-octave-change>"),
+        "a low Gregorian range needs 8vb: {modern}"
+    );
+    assert!(!modern.contains("<staff-lines>4</staff-lines>"), "{modern}");
+}
+
 /// `Gabc.tex:1088-1091` : `[alt:…]` est un texte au-dessus de la portée.
 #[test]
 fn gabc_above_text_becomes_musicxml_words() {

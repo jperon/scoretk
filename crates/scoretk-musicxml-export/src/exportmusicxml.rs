@@ -107,6 +107,10 @@ pub struct ExportOptions {
     /// Désactivé par défaut pour ne pas diverger des références MuseScore
     /// 4.7.4, qui n'écrivent aucun `id` sur ces éléments.
     pub stable_ids: bool,
+    /// Vue « moderne » du chant grégorien (option additive `gabcModernClef`) :
+    /// clef de sol (avec `8vb` si le registre est bas) et portée à 5 lignes.
+    /// Sans l'option, la clé d'ut et les 4 lignes du `.gabc` sont conservées.
+    pub gabc_modern_clef: bool,
 }
 
 impl Default for ExportOptions {
@@ -116,6 +120,7 @@ impl Default for ExportOptions {
             encoding_date: DEFAULT_ENCODING_DATE.to_owned(),
             concert_pitch: None,
             stable_ids: false,
+            gabc_modern_clef: false,
         }
     }
 }
@@ -2489,6 +2494,29 @@ impl Context<'_> {
 
     /// Clef à afficher (concert ou transposée).
     fn active_clef(&self, clef: &Clef) -> ClefType {
+        if self.modern_gabc()
+            && matches!(
+                clef.concert,
+                ClefType::C1
+                    | ClefType::C2
+                    | ClefType::C3
+                    | ClefType::C4
+                    | ClefType::C5
+                    | ClefType::F
+                    | ClefType::FBaritone
+                    | ClefType::FSubbass
+            )
+        {
+            // Vue moderne optionnelle : clé de sol, avec `8vb` quand le
+            // registre grégorien descend sous le do médian (XSD 4.0
+            // `clef-octave-change`). Sans option, la clé d'ut reste celle du
+            // `.gabc` (`Gabc.tex:847-870`).
+            return if self.score.notes.iter().any(|note| note.pitch < 60) {
+                ClefType::G8Vb
+            } else {
+                ClefType::G
+            };
+        }
         if self.concert_pitch {
             clef.concert
         } else if clef.transposed != ClefType::Invalid {
@@ -2496,6 +2524,12 @@ impl Context<'_> {
         } else {
             clef.concert
         }
+    }
+
+    /// Vrai si la vue moderne du chant est demandée par l'option additive.
+    fn modern_gabc(&self) -> bool {
+        self.options.gabc_modern_clef
+            && matches!(self.score.extensions.format, Some(Extension::Gregorian(_)))
     }
 
     /// Écrit `<clef>` (`clef`).
@@ -2611,7 +2645,8 @@ impl Context<'_> {
                 / 100.0;
             let size = (mag * 100.0).round() as i64;
             // TODO(parité): tablature et couleurs/visibilité des lignes.
-            if staff.lines == 5 && !hidden_staff && size == 100 {
+            let lines = if self.modern_gabc() { 5 } else { staff.lines };
+            if lines == 5 && !hidden_staff && size == 100 {
                 continue;
             }
             out.attr(true);
@@ -2624,7 +2659,7 @@ impl Context<'_> {
                 attributes.push(("print-object", "no"));
             }
             out.xml.start_element("staff-details", &attributes);
-            out.xml.tag("staff-lines", &staff.lines.to_string());
+            out.xml.tag("staff-lines", &lines.to_string());
             // `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) :
             // `<staff-size scaling="mag*100">mag*100</staff-size>`.
             if size != 100 {

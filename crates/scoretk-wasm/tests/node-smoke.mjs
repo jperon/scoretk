@@ -359,6 +359,14 @@ assert.equal(
 // L'alteration `x` de `gixi` ne produit aucune note et ne décale pas les
 // positions des notes chantées suivantes.
 assert.equal(gabcPlayback.timeline.notes.length, 5, 'une alteration n\'est pas une note');
+const gabcModern = text(
+  wasm.convert(encoder.encode(gabcSource), { from: 'gabc', gabcModernClef: true }),
+);
+assert.ok(gabcModern.includes('<sign>G</sign>'), 'gabcModernClef passe en clé de sol');
+assert.ok(
+  !gabcModern.includes('<staff-lines>4</staff-lines>'),
+  'gabcModernClef affiche une portée à 5 lignes',
+);
 
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +

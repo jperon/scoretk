@@ -68,6 +68,7 @@ pub fn convert_with_report(
         encoding_date: options.export.encoding_date.clone(),
         concert_pitch: options.export.concert_pitch,
         midi: MidiOptions::default(),
+        gabc_modern_clef: options.export.gabc_modern_clef,
     };
     write_with_report(&score, format, &write_options)
 }

@@ -58,6 +58,8 @@ export interface ConvertOptions {
   expandRepeats?: boolean;
   /** Fichiers d'un dossier, indexés par leur chemin relatif à sa racine (ex. `"noaten.ily"`, `"sub/x.ily"`), avec leurs octets UTF-8. Résout les `\include` des sources LilyPond ; ignoré pour les autres formats. Option additive : absente, le comportement est inchangé. */
   includes?: Record<string, Uint8Array>;
+  /** Vue moderne du chant grégorien : clé de sol (`8vb` si le registre est bas) et portée à 5 lignes au lieu de la clé d'ut/4 lignes. Additive, défaut `false`. */
+  gabcModernClef?: boolean;
 }
 
 /** Changement de tempo de la performance. */
@@ -149,6 +151,9 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
     if let Some(expand_repeats) = options.expand_repeats {
         write_options.midi.expand_repeats = expand_repeats;
     }
+    if let Some(modern) = options.gabc_modern_clef {
+        write_options.gabc_modern_clef = modern;
+    }
 
     scoretk::write(&score, to, &write_options).map_err(js_error)
 }
@@ -197,6 +202,9 @@ pub fn convert_detailed(input: &[u8], options: Option<ConvertOptions>) -> Result
     }
     if let Some(expand_repeats) = options.expand_repeats {
         write_options.midi.expand_repeats = expand_repeats;
+    }
+    if let Some(modern) = options.gabc_modern_clef {
+        write_options.gabc_modern_clef = modern;
     }
     let (bytes, report) =
         scoretk::write_with_report(&score, to, &write_options).map_err(js_error)?;
@@ -284,6 +292,9 @@ pub fn convert_with_timeline(
     }
     if let Some(expand_repeats) = options.expand_repeats {
         write_options.midi.expand_repeats = expand_repeats;
+    }
+    if let Some(modern) = options.gabc_modern_clef {
+        write_options.gabc_modern_clef = modern;
     }
 
     let playback = scoretk::write_playback(&score, &write_options).map_err(js_error)?;

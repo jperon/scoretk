@@ -56,6 +56,10 @@ pub struct Options {
     pub concert_pitch: Option<bool>,
     /// Réglages de la sortie MIDI (reprises).
     pub midi: MidiOptions,
+    /// Vue moderne optionnelle du chant grégorien : clé de sol (`8vb` si le
+    /// registre est bas) et portée à 5 lignes au lieu de la clé d'ut et des
+    /// 4 lignes du `.gabc`. Additif : `false` par défaut.
+    pub gabc_modern_clef: bool,
 }
 
 impl Default for Options {
@@ -76,6 +80,7 @@ impl Default for Options {
             encoding_date,
             concert_pitch,
             midi: MidiOptions::default(),
+            gabc_modern_clef: false,
         }
     }
 }
@@ -92,6 +97,7 @@ impl Options {
             // références MuseScore 4.7.4 n'en contiennent pas. Seul
             // `write_playback` force `stable_ids`.
             stable_ids: false,
+            gabc_modern_clef: self.gabc_modern_clef,
         }
     }
 }
