@@ -230,15 +230,41 @@ in §6 and `crates/scoretk/tests/layer_coverage.rs`.
 | --- | --- | --- |
 | Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **0/9 byte-identical** (expected); structured inventory 100 % self-consistency. Gregorio accepts 6/6 of the examples it accepts at all, **6/6 core-exact**, **0/6 dump-identical** in `mesure.jsonl` (3 examples are invalid for Gregorio itself) |
 | Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 435 items (L1 342, L2 1 033, L3 308, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
-| **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **essential 83.00 %, full support 59.07 %**, 9/9 outputs differ from their source; L1 45.03 % (154/342), L2 95.74 % (989/1 033), L3 95.78 % (295/308), L6 33.73 % (591/1 752) |
+| **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **before: essential 83.00 %, full support 59.07 %** (L1 45.03 %, L2 95.74 %, L3 95.78 %, L6 33.73 %) → **after: essential 100 %, full support 100 %** (L1 342/342, L2 1 033/1 033, L3 308/308, L6 1 752/1 752, 0 extra), 9/9 outputs still differ from their source |
 | Gregorio vs itself, full 202-file lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio itself) |
-| **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **writer core-exact 193/194 = 99.48 %**, **dump SHA identical 0/194**, 3 writer outputs rejected by Gregorio, 0 tool crashes |
+| **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **before: 193/194 = 99.48 %, 3 writer outputs rejected** → **after: writer core-exact 194/194 = 100 %**, **dump SHA identical 0/194**, **0 writer output rejected**, 0 tool crashes; the same five *source* files are rejected by Gregorio itself and excluded from both sides |
 | Python source sanity reader (phase 0) | same run, `cmp_source` | 133/197 = 67.51 % (was 132/197; the canonical form now keeps Dominican-bar digits and ignores custos pitches) |
-| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 403 979 raw / 945 055 gzip vs 2 379 470 / 931 754 at `a4053795`: **+24 509 raw (+1.03 %), +13 301 gzip (+1.43 %)**, under the ≈ 2.5 MB cap and the +2 % budget |
+| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 494 030 raw / 983 191 gzip vs 2 403 979 / 945 055 before this campaign: **+90 051 raw (+3.75 %), +38 136 gzip (+4.03 %)**; still under the ≈ 2.5 MB raw cap, but above the former +2 % budget (both readers now carry the chant bridge) |
 
 No existing snapshot or `e2e_corpus` result changed. The direct 100 % is a
 consistent re-parse of the same structured fields; only the cross row and
 Gregorio's independent dump measure an actual conversion.
+
+### 9.1 What MusicXML 4.0 actually carries for chant
+
+The cross gain comes from **structured fields**, never from copying the `.gabc`
+source into a `<words>` blob. The writer emits one XML element per fact and
+the reader reconstructs the L6 payload field by field; `no_raw_gabc_source_in_xml`
+asserts that no GABC delimiter (`%%`, `(`, `)`) or verbatim group reaches the
+XML. The derived L0/L1 spine is rebuilt from the restored payload by
+`Gregorian::build_derived_score`, because GABC has no metre or fixed duration
+to carry (`Gabc.tex:801-845`).
+
+| GABC fact | MusicXML 4.0 carrier | Citation |
+| --- | --- | --- |
+| Title, author and remaining headers | `<work>/<work-title>`, `<identification>/<creator>`, then `<other-direction>` for e.g. `mode`, `office-part` | XSD 4.0 `other-direction` (“any direction symbols not yet in the MusicXML format”); `Gabc.tex:67-154` |
+| Clef token (`c3`, `cb3`, `c1@c4`) | `<clef>` in the derived view + `gabc:clef` atomic token in `<other-direction>` | `Gabc.tex:847-870`, `src/struct.c:1273-1288`; XSD 4.0 `clef`, `other-direction` |
+| Absence of metre | `<time print-object="no"><senza-misura/></time>` | XSD 4.0 `time` / `senza-misura` (“explicitly indicates that no time signature is present”); `Gabc.tex:801-845` |
+| Syllable text and word space | `<lyric>` with `syllabic` for the sung word; `gabc:syllable` in `<other-direction>` for markup and exact text | XSD 4.0 `lyric`, `syllabic`; `Gabc.tex:228-245,314-343` |
+| Pitch letter and neume shape | derived `<pitch>` + `gabc:note` in `<notations>/<other-notation>`; `<notehead>x</notehead>` when the enumeration has the shape | XSD 4.0 `notehead-value` (`x`), `other-notation` (“extended representation, though without application interoperability”); `Gabc.tex:408-443,452-700` |
+| Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`) | XSD 4.0 `other-technical`; `Gabc.tex:702-797` |
+| Separation bars and their exact token | `<barline>/<bar-style>` for the modern view; `gabc:syllable` `b=` fields for `;1`…`;8`, `::`, `:?`, … | XSD 4.0 `barline`; `Gabc.tex:801-845`, `src/dump/dump.c:805-821` |
+
+Field values are escaped as `\\`, `\|`, `\l` (`<`), `\g` (`>`), `\n`, `\r`:
+the shared XML reader loses `&gt;` in text, so the chant bridge uses its own
+reversible escapes rather than changing the writer used for MuseScore 4.7.4
+references. Nothing is scored as a gain unless the XML actually carries the
+field (`out_of_reach_gabc_facts_have_no_xml_field`).
 
 ### Why the numbers moved
 
@@ -258,8 +284,16 @@ report (`mesure.jsonl`, never by the total):
   conversion stacked every syllable at the same onset and lost all words.
   With absolute ticks (`pass2.rs:495-518` convention) and the first lyric on
   each neume, the cross row moved from 30.60 %/31.54 % to
-  **83.00 %/59.07 %**; the L1 loss (45.03 %) remains a by-design gap, since
-  GABC measures are not MusicXML measures.
+  **83.00 %/59.07 %**. That intermediate L1 loss was a transport gap, not a
+  by-design one: it disappeared once the L6 payload crossed MusicXML (below).
+- The remaining cross gap was the *transport*, not the projection: MusicXML
+  was writing only the derived modern view, so every neume letter, glyph,
+  sign, bar token and markup string was rebuilt from pitches and lost its
+  GABC identity. Writing those fields as the structured extensions of §9.1
+  and restoring them in the MusicXML reader raised the honest cross row from
+  83.00 %/59.07 % to **100 %/100 %**. This is not a raw-string copy: all nine
+  outputs still differ from their sources and `no_raw_gabc_source_in_xml`
+  forbids GABC delimiters in the XML.
 - A custos has a `pitch` line in Gregorio's dump but is not a sung note
   (`Gabc.tex:872-884`); it shifted the canonical sequence at clef changes.
   `parse_dump` now skips `GRE_CUSTOS` pitches. The reader also no longer
@@ -270,19 +304,27 @@ report (`mesure.jsonl`, never by the total):
 
 - GABC has no metre, no measure numbering and no fixed durations
   (`Gabc.tex:801-845`): L0/L1 notes and measures are a derived projection,
-  not comparable to MuseScore's metric spine. This is the main reason the
-  cross row is at 83.00 % essential: measure ticks and note ticks change when
-  the derived quarter-note projection round trips through MusicXML, and that
-  score must not be read as MuseScore compliance.
+  not comparable to MuseScore's metric spine. The cross row now reaches
+  100 % because the derived view is **rebuilt from the restored L6 payload**,
+  not because a metre was invented in MusicXML: that score must still not be
+  read as MuseScore compliance.
 - The L6 payload does not model neume grouping order inside a group, `<v>`
   and `[…]` TeX attributes, custos/line breaks, NABC cuts or word-level
   typography beyond the raw syllable text. The writer therefore cannot emit
   them, and the dumps differ byte for byte even when the canonical musical
-  facts agree (0/194 identical dumps).
-- One residual file (`gb18458`) is not core-exact: five notes are lost in
-  `@[ehg]` fusion groups (`Gabc.tex:603-666`); `strip_attributes` drops the
-  fused pitches. Adding a fusion layer to `GregorianNote` is the fix, not a
-  change of the oracle.
+  facts agree (0/194 identical dumps). **These are declared out of reach, not
+  silent gaps**: custos and line breaks are layout, not sung notes
+  (`Gabc.tex:872-906`; `canonical.py` also skips `GRE_CUSTOS`), bracketed
+  layout/tuning/TeX attributes are not grammatical notes
+  (`:689-700,908-931,1093-1118`), NABC cuts belong to the NABC extension
+  (`gabc-score-determination.y:870-907`), and the ordering of bars inside a
+  group is not represented by `Syllable`. The test
+  `out_of_reach_gabc_facts_have_no_xml_field` checks that no MusicXML field
+  pretends to carry them; `custos_line_break_and_nabc_cut_are_not_notes`
+  checks that they never become notes. `gb18458` was fixed at the reader by
+  keeping the primitive letters of `@[…]` fusion groups
+  (`Gabc.tex:603-666`), not by changing the oracle: 194/194 writer outputs are
+  now core-exact.
 - The derived concert pitch uses the first clef only; later clef changes
   stay in the L6 `clefs`/`Syllable::clef` fields but are not re-applied to L0
   notes (`Gabc.tex:847-870`; `gabc-score-determination.c:89-100`).
