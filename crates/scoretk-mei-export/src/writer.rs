@@ -370,6 +370,29 @@ fn write_layer(
             xml.tag_empty("meterSig", &refs);
         }
     }
+    // `<clef>` inside a layer carries a clef change within the measure.
+    for segment in &measure.segments {
+        if segment.tick == measure.start_tick {
+            continue;
+        }
+        if let Some(SegmentItem::Clef(clef)) = segment.element(track) {
+            let (shape, line, dis, place) = convert::clef_to_mei(clef.concert);
+            let line_owned = line.to_string();
+            let mut attrs = vec![("shape", shape), ("line", &line_owned)];
+            if let Some(dis) = dis {
+                attrs.push(("dis", dis));
+            }
+            if let Some(place) = place {
+                attrs.push(("dis.place", place));
+            }
+            let stamp = format!(
+                "{:.3}",
+                convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
+            );
+            attrs.push(("tstamp", &stamp));
+            xml.tag_empty("clef", &attrs);
+        }
+    }
     let mut open_tuplet: Option<scoretk_core::model::TupletId> = None;
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
@@ -618,6 +641,25 @@ fn write_control_events(
                 }
                 Annotation::RehearsalMark(mark) => {
                     xml.tag_with("reh", &refs, mark.text.plain());
+                }
+                Annotation::Fermata(fermata) => {
+                    let form = match fermata.kind {
+                        scoretk_core::model::FermataType::Short
+                        | scoretk_core::model::FermataType::VeryShort
+                        | scoretk_core::model::FermataType::ShortHenze => "short",
+                        scoretk_core::model::FermataType::Long
+                        | scoretk_core::model::FermataType::VeryLong
+                        | scoretk_core::model::FermataType::LongHenze => "long",
+                        scoretk_core::model::FermataType::Curlew => "curlew",
+                        scoretk_core::model::FermataType::Normal => "",
+                    };
+                    if form.is_empty() {
+                        xml.tag_empty("fermata", &refs);
+                    } else {
+                        let mut fermata_attrs = refs.clone();
+                        fermata_attrs.push(("form", form));
+                        xml.tag_empty("fermata", &fermata_attrs);
+                    }
                 }
                 Annotation::Harmony(harmony) => {
                     xml.tag_with("harm", &refs, &harmony.text);

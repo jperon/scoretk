@@ -251,7 +251,7 @@ impl<'a> Reader<'a> {
                     Self::insert_segment(
                         &mut measure,
                         staff_count,
-                        Fraction::ZERO,
+                        start,
                         SegmentType::Clef,
                         staff_idx,
                         SegmentItem::Clef(Clef::new(clef)),
@@ -261,7 +261,7 @@ impl<'a> Reader<'a> {
                     Self::insert_segment(
                         &mut measure,
                         staff_count,
-                        Fraction::ZERO,
+                        start,
                         SegmentType::KeySig,
                         staff_idx,
                         SegmentItem::KeySig(scoretk_core::model::KeySig::new(key)),
@@ -270,7 +270,7 @@ impl<'a> Reader<'a> {
                 Self::insert_segment(
                     &mut measure,
                     staff_count,
-                    Fraction::ZERO,
+                    start,
                     SegmentType::TimeSig,
                     staff_idx,
                     SegmentItem::TimeSig(TimeSig {
@@ -389,6 +389,7 @@ impl<'a> Reader<'a> {
                 "mRpt" => self.read_m_rpt(node, measure, track, ticks),
                 "tuplet" => self.read_tuplet(node, measure, track, ticks),
                 "clef" => self.read_clef_element(node, measure, track, ticks),
+                "meterSig" => self.read_meter_sig(node, measure, track, ticks),
                 "bTrem" | "fTrem" => self.read_tremolo(node, measure, track, ticks),
                 "graceGrp" => self.read_grace_group(node, measure, track, ticks),
                 "accid" | "artic" | "arpeg" | "fermata" | "fing" | "dir" | "dynam" | "reh"
@@ -682,6 +683,53 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// `<meterSig>` (MEI 5.1, `model.meterSigLike`): an in-measure meter change.
+    fn read_meter_sig(
+        &mut self,
+        node: &Element,
+        measure: usize,
+        track: Track,
+        ticks: &mut Fraction,
+    ) {
+        let unit = node
+            .attribute("unit")
+            .and_then(|value| value.parse::<i32>().ok());
+        let (_, kind) =
+            convert::meter_from_mei(node.attribute("count"), unit, node.attribute("sym"));
+        let numerator = node
+            .attribute("count")
+            .and_then(|value| value.split('+').next())
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(4);
+        let denominator = unit.unwrap_or(4);
+        let offset = node
+            .attribute("tstamp")
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|stamp| {
+                convert::tstamp_to_fraction(
+                    stamp,
+                    convert::tstamp_denominator(&self.score.measures[measure]),
+                )
+            })
+            .unwrap_or(*ticks);
+        let time = scoretk_core::model::TimeSig {
+            numerator,
+            denominator,
+            kind,
+            ..scoretk_core::model::TimeSig::new(1, 1)
+        };
+        let staff_count = self.score.staves.len();
+        let tick = self.score.measures[measure].start_tick + offset;
+        Self::insert_segment(
+            &mut self.score.measures[measure],
+            staff_count,
+            tick,
+            SegmentType::TimeSig,
+            track.staff().raw() as usize,
+            SegmentItem::TimeSig(time),
+        );
+    }
+
     /// `MeiImporter::readClef` (`meiimporter.cpp:1879`).
     fn read_clef_element(
         &mut self,
@@ -698,7 +746,17 @@ impl<'a> Reader<'a> {
             node.attribute("dis"),
             node.attribute("dis.place"),
         );
-        let tick = self.score.measures[measure].start_tick + *ticks;
+        let offset = node
+            .attribute("tstamp")
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|stamp| {
+                convert::tstamp_to_fraction(
+                    stamp,
+                    convert::tstamp_denominator(&self.score.measures[measure]),
+                )
+            })
+            .unwrap_or(*ticks);
+        let tick = self.score.measures[measure].start_tick + offset;
         let staff_count = self.score.staves.len();
         Self::insert_segment(
             &mut self.score.measures[measure],
