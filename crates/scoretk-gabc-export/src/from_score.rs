@@ -310,8 +310,10 @@ fn bar_kind(bar: BarLineType) -> Option<BarKind> {
         B::End => Some(BarKind::DivisioFinalis),
         B::StartRepeat | B::EndRepeat | B::EndStartRepeat => Some(BarKind::DivisioMaior),
         B::Dotted | B::Dashed => Some(BarKind::DivisioMaiorDot),
-        B::Short | B::Broken => Some(BarKind::DivisioMinima),
-        _ => None,
+        // `Tick` est le style MusicXML de la divisio minima (`,`), `Short`
+        // celui de la divisio minor (`;`) : les deux redeviennent des barres
+        // de séparation GABC, pas des mesures métriques.
+        B::Tick | B::Short | B::Broken => Some(BarKind::DivisioMinima),
     }
 }
 

@@ -2013,7 +2013,28 @@ impl Context<'_> {
                             source.gregorian_syllable,
                             source.gregorian_note,
                         );
-                        chant::write_note_signs(out, gregorian_note, source.gregorian_syllable);
+                        // Une barre de séparation ferme la mesure sur la
+                        // dernière note *chantée* du groupe source.
+                        let breath = gregorian
+                            .syllables
+                            .get(source.gregorian_syllable)
+                            .is_some_and(|syllable| {
+                                !syllable.bars.is_empty()
+                                    && syllable.notes.iter().skip(source.gregorian_note + 1).all(
+                                        |note| {
+                                            note.signs.iter().all(|sign| {
+                                                sign.kind
+                                                    != scoretk_core::model::SignKind::Alteration
+                                            })
+                                        },
+                                    )
+                            });
+                        chant::write_note_signs(
+                            out,
+                            gregorian_note,
+                            source.gregorian_syllable,
+                            breath,
+                        );
                     }
                 }
             }

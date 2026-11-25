@@ -211,26 +211,41 @@ pub(crate) fn write_note_notation(
 
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,
 /// `complexType other-technical`).
-pub(crate) fn write_note_signs(out: &mut Out, note: &GregorianNote, syllable_index: usize) {
-    if note.signs.is_empty() {
+pub(crate) fn write_note_signs(
+    out: &mut Out,
+    note: &GregorianNote,
+    syllable_index: usize,
+    breath: bool,
+) {
+    if note.signs.is_empty() && !breath {
         return;
     }
-    out.xml
-        .start_element("notations", &[("print-object", "no")]);
-    out.xml.start_element("technical", &[]);
-    for sign in &note.signs {
-        out.xml.tag_with(
-            "other-technical",
-            &[("print-object", "no")],
-            &format!(
-                "{PREFIX}sign:{}|{}",
-                field('s', &sign.raw),
-                field('i', &syllable_index.to_string())
-            ),
-        );
+    if !note.signs.is_empty() {
+        out.xml
+            .start_element("notations", &[("print-object", "no")]);
+        out.xml.start_element("technical", &[]);
+        for sign in &note.signs {
+            out.xml.tag_with(
+                "other-technical",
+                &[("print-object", "no")],
+                &format!(
+                    "{PREFIX}sign:{}|{}",
+                    field('s', &sign.raw),
+                    field('i', &syllable_index.to_string())
+                ),
+            );
+        }
+        out.xml.end_element();
+        out.xml.end_element();
     }
-    out.xml.end_element();
-    out.xml.end_element();
+    if breath {
+        // XSD 4.0 `breath-mark` : une barre de séparation est une respiration
+        // (`Gabc.tex:801-845`), pas une fin de mesure métrique. Le MIDI
+        // correspondant porte la pause dans `SegmentItem::Breath`.
+        out.xml.start_element("notations", &[]);
+        out.xml.tag_empty("breath-mark", &[]);
+        out.xml.end_element();
+    }
 }
 
 fn write_direction(out: &mut Out, text: &str) {

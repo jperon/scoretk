@@ -32,9 +32,9 @@
 //! stays portable to `wasm32-unknown-unknown`.
 
 use super::{
-    BarLineType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Layers,
-    Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part, Score, Segment, SegmentItem,
-    SegmentType, Track,
+    BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration,
+    Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part, Placement, Score,
+    Segment, SegmentItem, SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -388,6 +388,19 @@ impl Gregorian {
                     .unwrap_or_else(|| Measure::new(measure_index, start, Fraction::ONE));
                 let mut opened = opened.with_len(Fraction::new(sung.max(1) as i64, 4));
                 opened.end_bar_line = derived_bar_line(*bar);
+                // Une barre de séparation est une respiration : le MIDI
+                // insère une pause (0,5 s, choix de projection documenté)
+                // et le MusicXML écrit `<breath-mark/>` sur la dernière note.
+                let mut breath = Segment::new(SegmentType::Breath, opened.end_tick(), 1);
+                breath.set_element(
+                    track,
+                    SegmentItem::Breath(Breath {
+                        kind: BreathType::Comma,
+                        placement: Placement::Above,
+                        pause_ms: Some(500),
+                    }),
+                );
+                opened.add_segment(breath);
                 start = opened.end_tick();
                 score.add_measure(opened);
                 measure_index += 1;
@@ -540,10 +553,17 @@ fn derived_tpc(step: i32) -> i8 {
 /// (`Gabc.tex:801-845`); the rich vocabulary stays in the payload.
 fn derived_bar_line(bar: BarKind) -> BarLineType {
     match bar {
-        BarKind::DivisioFinalis => BarLineType::End,
-        BarKind::DivisioMaior | BarKind::DivisioMaiorDot => BarLineType::Double,
+        // `Gabc.tex:801-821` : minima = « quarter bar », minor = « half bar »,
+        // maior = « full bar », finalis = barre finale. MusicXML les porte
+        // respectivement comme `tick`, `short`, `light-light` et
+        // `light-heavy` (XSD 4.0 `bar-style` ; mapping MuseScore dans
+        // `engraving/rw/write/repeats.cpp`).
+        BarKind::DivisioMinima | BarKind::DivisioMinimaLedger => BarLineType::Tick,
+        BarKind::DivisioMinor => BarLineType::Short,
         BarKind::Dominican(_) => BarLineType::Dotted,
-        _ => BarLineType::Normal,
+        BarKind::DivisioMaior | BarKind::DivisioMaiorDot => BarLineType::Double,
+        BarKind::DivisioFinalis => BarLineType::End,
+        BarKind::Virgula | BarKind::VirgulaLedger | BarKind::DivisioMinimis => BarLineType::Tick,
     }
 }
 

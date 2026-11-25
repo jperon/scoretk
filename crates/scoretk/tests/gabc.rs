@@ -184,6 +184,18 @@ fn gabc_measures_follow_separation_bars_not_syllables() {
         "chant must be explicitly unmetered: {xml}"
     );
     assert!(!xml.contains("<beats>"), "no displayed meter: {xml}");
+    // `Gabc.tex:801-821` : minima (quarter bar) → tick, minor (half bar) →
+    // short, maior (full bar) → light-light, finalis → light-heavy.
+    for style in ["tick", "short", "light-light", "light-heavy"] {
+        assert!(
+            xml.contains(&format!("<bar-style>{style}</bar-style>")),
+            "missing bar-style {style}: {xml}"
+        );
+    }
+    assert!(xml.contains("<breath-mark"), "bars are breaths: {xml}");
+    let playback = scoretk::write_playback(&score, &Options::default()).expect("playback");
+    assert_eq!(playback.timemap.pauses.len(), 4, "one MIDI breath per bar");
+    assert_eq!(playback.timemap.notes.len(), 8);
 }
 
 /// Positions source UTF-16 : identifiants MusicXML et carte des temps sont
