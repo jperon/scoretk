@@ -77,6 +77,7 @@ pub mod duration;
 pub mod figured_bass;
 pub mod fraction;
 pub mod fret_diagram;
+pub mod gregorian;
 pub mod hairpin;
 pub mod ids;
 pub mod instrument_channel;
@@ -112,6 +113,9 @@ pub use duration::{Duration, DurationType};
 pub use figured_bass::{FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier};
 pub use fraction::{Fraction, Tick};
 pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker, FretMarkerType};
+pub use gregorian::{
+    BarKind, Gregorian, GregorianHeader, GregorianNote, NeumeSign, SignKind, Syllable,
+};
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};
 pub use instrument_channel::InstrumentChannel;
@@ -124,7 +128,7 @@ pub use layers::metric::{
 };
 pub use layers::{
     Capabilities, ChordEngraving, ChordRestEngraving, ConversionReport, Engraving, Extension,
-    Extensions, Gregorian, Layers, Loss, NotePlayback, Playback, Text,
+    Extensions, Layers, Loss, NotePlayback, Playback, Text,
 };
 pub use lyrics::{Lyrics, LyricsSyllabic};
 pub use measure::{Measure, MeasureRepeatMark};

@@ -31,6 +31,7 @@ pub use metric::Metric;
 
 use super::chord::{BeamMode, StemDirection};
 use super::fraction::Fraction;
+use super::gregorian::Gregorian;
 use super::ids::Track;
 use super::note::VeloType;
 use super::playback::PlaybackTransposition;
@@ -312,14 +313,9 @@ pub struct Extensions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Extension {
     /// Gregorian chant (GABC): the neume/syllable data is primary and the
-    /// modern-notation projection into L0/L1 is derived. Marker only until
-    /// the GABC reader ships.
+    /// modern-notation projection into L0/L1 is derived (see `model/gregorian.rs`).
     Gregorian(Gregorian),
 }
-
-/// Empty GABC payload: the reader is deliberately not implemented yet.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Gregorian {}
 
 #[cfg(test)]
 mod tests {

@@ -1002,6 +1002,86 @@ pub fn inventory(score: &Score) -> LayerInventory {
         );
     }
 
+    // L6: the GABC syllable/neume stream is primary data, not a projection.
+    // `Gabc.tex:67-154` (headers), `:228-343` (syllables), `:408-443`
+    // (pitch letters), `:702-845` (signs and separation bars) and `:847-870`
+    // (clefs). The derived modern view in L0/L1 is inventoried as ordinary
+    // notes/measures; the `derived_modern_view` flag records its status.
+    if let Some(super::layers::Extension::Gregorian(gregorian)) = &score.extensions.format {
+        for header in &gregorian.headers {
+            result.push(
+                Layers::EXTENSIONS,
+                None,
+                None,
+                "gregorian-header",
+                format!("{}:{}", header.name, header.value),
+            );
+        }
+        for (index, clef) in gregorian.clefs.iter().enumerate() {
+            result.push(
+                Layers::EXTENSIONS,
+                None,
+                None,
+                "gregorian-clef",
+                format!("{index}:{clef}"),
+            );
+        }
+        for (index, syllable) in gregorian.syllables.iter().enumerate() {
+            result.push(
+                Layers::EXTENSIONS,
+                None,
+                None,
+                "gregorian-syllable",
+                format!("{index}:{}", syllable.text),
+            );
+            if let Some(rubric) = &syllable.rubric {
+                result.push(
+                    Layers::EXTENSIONS,
+                    None,
+                    None,
+                    "gregorian-rubric",
+                    format!("{index}:{rubric}"),
+                );
+            }
+            for note in &syllable.notes {
+                result.push(
+                    Layers::EXTENSIONS,
+                    None,
+                    None,
+                    "gregorian-note",
+                    format!("{}:{}", note.letter, note.glyph),
+                );
+                for sign in &note.signs {
+                    result.push(
+                        Layers::EXTENSIONS,
+                        None,
+                        None,
+                        "gregorian-sign",
+                        sign.raw.clone(),
+                    );
+                }
+            }
+            for sign in &syllable.signs {
+                result.push(
+                    Layers::EXTENSIONS,
+                    None,
+                    None,
+                    "gregorian-sign",
+                    sign.raw.clone(),
+                );
+            }
+            for bar in &syllable.bars {
+                result.push(
+                    Layers::EXTENSIONS,
+                    None,
+                    None,
+                    "gregorian-bar",
+                    bar.as_str(),
+                );
+            }
+        }
+    }
+
     result
 }
 
@@ -1130,6 +1210,67 @@ mod tests {
         assert_eq!(counts.reference, 2);
         assert_eq!(counts.matched, 2);
         assert_eq!(counts.percent(), 100.0);
+    }
+
+    #[test]
+    fn gregorian_payload_is_a_declared_l6_item_set() {
+        use super::super::gregorian::{
+            BarKind, Gregorian, GregorianHeader, GregorianNote, NeumeSign, SignKind, Syllable,
+        };
+        use super::super::layers::Extension;
+
+        fn score_with_chant() -> Score {
+            let mut score = Score::new();
+            score.extensions.format = Some(Extension::Gregorian(Gregorian {
+                headers: vec![GregorianHeader {
+                    name: "name".to_owned(),
+                    value: "Veni".to_owned(),
+                }],
+                staff_lines: 4,
+                clefs: vec!["c3".to_owned()],
+                syllables: vec![Syllable {
+                    text: "Ve(g)ni(h)".to_owned(),
+                    rubric: None,
+                    notes: vec![GregorianNote {
+                        letter: 'g',
+                        glyph: String::new(),
+                        signs: vec![NeumeSign::new(SignKind::PunctumMora, ".")],
+                    }],
+                    signs: Vec::new(),
+                    bars: vec![BarKind::DivisioFinalis],
+                    space_after: false,
+                }],
+                header_source: "name: Veni;\n".to_owned(),
+                notation: "(c3) Ve(g)ni(h) (::)".to_owned(),
+                derived_modern_view: true,
+            }));
+            score
+        }
+
+        let reference = inventory(&score_with_chant());
+        for kind in [
+            "gregorian-header",
+            "gregorian-clef",
+            "gregorian-syllable",
+            "gregorian-note",
+            "gregorian-sign",
+            "gregorian-bar",
+        ] {
+            assert_eq!(reference.count_kind(kind), 1, "{kind}");
+        }
+        assert_eq!(reference.items[0].layer, Layers::EXTENSIONS);
+        let empty = LayerInventory::new();
+        assert_eq!(
+            compare(&reference, &empty, Layers::EXTENSIONS)
+                .total
+                .reference,
+            6
+        );
+        // L0/L1-only directions do not see the payload.
+        assert_eq!(
+            compare(&reference, &empty, Layers::METRIC).total.reference,
+            0
+        );
     }
 
     #[test]
