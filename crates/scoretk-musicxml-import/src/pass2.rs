@@ -1763,25 +1763,58 @@ fn start_tuplets(
         .map(|modification| Fraction::new(modification.denominator(), modification.numerator()))
         .filter(|ratio| *ratio != Fraction::new(1, 2));
 
-    for notation in notations {
-        if !notation.start {
-            continue;
+    // Deux `<tuplet type="start">` sur la même note décrivent des n-olets
+    // imbriqués. MuseScore 4.7.4 n'en garde qu'un (`tuplets[voice]` dans
+    // `importmusicxmlpass2.cpp:7363`) et lui donne le rapport combiné du
+    // `<time-modification>` ; le format porte pourtant les deux rapports : le
+    // `<tuplet-actual>/<tuplet-normal>` de chaque n-olet qui le donne, et le
+    // produit des rapports pour celui qui ne le donne pas. Exemple de
+    // `v3/testTuplets8` : 15:8 au total, 5:4 explicite au n-olet 2, donc 3:2
+    // pour le n-olet 1. Les nombres affichés suivent le même partage.
+    let starts: Vec<&TupletNotation> = notations.iter().filter(|notation| notation.start).collect();
+    let explicit: Vec<Option<Fraction>> = starts
+        .iter()
+        .map(|notation| match (notation.actual, notation.normal) {
+            (Some(actual), Some(normal)) if normal != 0 => Some(Fraction::new(actual, normal)),
+            _ => None,
+        })
+        .collect();
+    let nested = starts.len() > 1;
+    let mut product = Fraction::ONE;
+    for ratio in explicit.iter().flatten() {
+        product *= *ratio;
+    }
+    let derived = combined.and_then(|ratio| {
+        if product.is_zero() {
+            None
+        } else {
+            Some(ratio / product)
         }
+    });
+
+    for (position, notation) in starts.iter().enumerate() {
+        // Un n-olet déjà ouvert sur la même voix fournit son propre rapport au
+        // n-olet qui suit ; les notations simultanées viennent d'être partagées
+        // ci-dessus et n'ont donc pas à être divisées une seconde fois.
         let mut outer = Fraction::ONE;
         for open in &state.tuplets {
             outer *= open.ratio;
         }
-        let ratio = match combined {
-            Some(combined) => combined / outer,
-            None => Fraction::ONE,
+        let ratio = if outer != Fraction::ONE {
+            combined.unwrap_or(Fraction::ONE) / outer
+        } else {
+            explicit[position]
+                .or(derived)
+                .unwrap_or_else(|| combined.unwrap_or(Fraction::ONE))
         };
+        let raw = if nested { None } else { tuplet_notes };
         let actual_notes = notation
             .actual
-            .or_else(|| tuplet_notes.map(|(actual, _)| actual))
+            .or_else(|| raw.map(|(actual, _)| actual))
             .unwrap_or(ratio.numerator());
         let normal_notes = notation
             .normal
-            .or_else(|| tuplet_notes.map(|(_, normal)| normal))
+            .or_else(|| raw.map(|(_, normal)| normal))
             .unwrap_or(ratio.denominator());
         let base_len = notation.base_len.unwrap_or_else(|| duration.ticks());
         let mut tuplet = Tuplet::new(ratio, base_len, tick, Fraction::ZERO);
