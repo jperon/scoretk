@@ -47,14 +47,15 @@ use crate::Result;
 use scoretk_core::model::chord::ChordRestKind;
 use scoretk_core::model::stable_ids::{stable_grace_note_id, stable_measure_id, stable_note_id};
 use scoretk_core::model::{
-    Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Fraction,
-    GraceChord, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
+    Accidental, AccidentalType, Annotation, Chord, ChordRest, Clef, ClefType, Duration, Extension,
+    Fraction, GraceChord, GraceType, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part, Placement, Score, Segment,
     SegmentItem, SegmentType, SpannerType, StaffId, StemDirection, Tempo, TempoKind, Tick, TimeSig,
     TimeSigType, Track, Tuplet, TupletId, TupletNumberType, VOICES,
 };
 
 use super::beams;
+use super::chant;
 use super::figured_bass;
 use super::harmony;
 use super::layout;
@@ -155,7 +156,7 @@ pub(crate) struct Out {
 }
 
 impl Out {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             xml: XmlWriter::new(),
             div: 1,
@@ -1016,6 +1017,20 @@ impl<'a> Context<'a> {
         if part_index == 0 {
             // `write_tbox` ferme les attributs lui-même s'il écrit un texte.
             textlines::write_tboxes(out, self, measure_index);
+        }
+
+        // Chant grégorien : les faits que MusicXML sait porter sont écrits
+        // comme des directions et notations structurées, jamais comme une
+        // copie de la source `.gabc` (`musicxml-4.0.xsd` : other-direction,
+        // other-notation, other-technical ; `Gabc.tex:228-343,801-870`).
+        if part_index == 0 {
+            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
+                out.attr(false);
+                if measure_index == 0 {
+                    chant::write_header_directions(out, gregorian);
+                }
+                chant::write_syllable_direction(out, gregorian, measure_index);
+            }
         }
 
         self.write_measure_staves(
@@ -1881,6 +1896,19 @@ impl Context<'_> {
             }
 
             write_notehead(out, note, chord, duration);
+            // Le seul glyphe grégorien que l'énumération MusicXML nomme
+            // directement (`notehead-value = "x"`, XSD 4.0) est écrit comme
+            // tel ; les autres restent dans `<other-notation>` ci-dessous.
+            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
+                if gregorian
+                    .syllables
+                    .get(ids.measure_index)
+                    .and_then(|syllable| syllable.notes.get(index))
+                    .is_some_and(|gregorian_note| gregorian_note.glyph == "x")
+                {
+                    out.xml.tag("notehead", "x");
+                }
+            }
 
             // `staff + note->chord()->staffMove()` : un accord croisé change
             // de portée sans changer de piste.
@@ -1973,6 +2001,17 @@ impl Context<'_> {
                 &mut notations,
             );
             notations.finish(&mut out.xml);
+
+            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
+                if let Some(gregorian_note) = gregorian
+                    .syllables
+                    .get(ids.measure_index)
+                    .and_then(|syllable| syllable.notes.get(index))
+                {
+                    chant::write_note_notation(out, gregorian_note);
+                    chant::write_note_signs(out, gregorian_note);
+                }
+            }
 
             if first && grace.is_none() {
                 for lyric in &chord_rest.lyrics {
@@ -2194,6 +2233,18 @@ impl Context<'_> {
 
     /// Écrit les armures et indications de mesure (`keysigTimesig`).
     fn keysig_timesig(&self, out: &mut Out, measure: &Measure, part: &Part) {
+        if measure.start_tick.is_zero()
+            && matches!(self.score.extensions.format, Some(Extension::Gregorian(_)))
+        {
+            // Le chant grégorien n'a pas de mesure métrique (`Gabc.tex:801-845`).
+            // MusicXML 4.0 l'exprime explicitement par `<senza-misura/>` dans
+            // un `<time print-object="no">` (XSD 4.0, `complexType time`) :
+            // aucune durée inventée n'est annoncée comme une signature.
+            out.attr(true);
+            out.xml.start_element("time", &[("print-object", "no")]);
+            out.xml.tag_empty("senza-misura", &[]);
+            out.xml.end_element();
+        }
         let mut keysigs: Vec<(usize, &KeySig)> = Vec::new();
         let mut timesigs: Vec<(usize, &TimeSig)> = Vec::new();
 

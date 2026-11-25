@@ -46,6 +46,7 @@ pub use capabilities::CAPABILITIES;
 pub use error::{Error, Result};
 
 mod beams;
+mod chant;
 mod exportmusicxml;
 mod figured_bass;
 mod fret;
