@@ -37,7 +37,10 @@ fn load(name: &str) -> Score {
 
 fn options(expand_repeats: bool) -> Options {
     Options {
-        midi: MidiOptions { expand_repeats },
+        midi: MidiOptions {
+            expand_repeats,
+            ..Default::default()
+        },
         ..Options::default()
     }
 }

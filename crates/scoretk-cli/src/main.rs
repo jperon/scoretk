@@ -105,6 +105,11 @@ struct Cli {
     #[arg(long, value_name = "N", value_parser = parse_quant_value)]
     midi_quant: Option<u16>,
 
+    /// Export MIDI : écrit les textes et repères que le SMF porte (`FF 01`,
+    /// `FF 02`, `FF 06`), absents de l'export MuseScore 4.7.4.
+    #[arg(long)]
+    midi_text: bool,
+
     /// Import MIDI : fidélité SMF additive — quantification au tick source
     /// (1/1920 de ronde), sans n-olets ni simplification de durée. Le défaut
     /// reste l'import MuseScore 4.7.4 (double croche).
@@ -250,6 +255,7 @@ fn main() -> ExitCode {
         encoding_date: cli.encoding_date.unwrap_or_else(today_utc),
         midi: MidiOptions {
             expand_repeats: !cli.no_expand_repeats,
+            smf_text: cli.midi_text,
         },
         ..Options::default()
     };

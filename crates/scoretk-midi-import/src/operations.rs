@@ -132,6 +132,11 @@ pub struct ImportOptions {
     /// réécriture en n-olet. Le flux par défaut reste celui de MuseScore
     /// 4.7.4 (double croche, détection de n-olets, simplification).
     pub smf_exact_ticks: bool,
+    /// Extension additive : interprète `FF 01` comme du texte générique
+    /// (`@ST:` texte de portée, `@SY:` texte système, `@TK:` métadonnée) et
+    /// `FF 06` comme un repère de répétition, au lieu de la lecture 4.7.4 qui
+    /// traite tout `FF 01` comme une parole. Faux par défaut.
+    pub smf_text: bool,
 }
 
 impl Default for ImportOptions {
@@ -157,6 +162,7 @@ impl Default for ImportOptions {
             remove_drum_rests: true,
             search_pickup_measure: true,
             smf_exact_ticks: false,
+            smf_text: false,
         }
     }
 }

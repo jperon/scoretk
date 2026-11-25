@@ -881,42 +881,55 @@ fn midi_exact_ticks_full_support() {
         .declared_kinds()
         .or(midi.export.declared_kinds());
     let scores = corpus_scores();
-    let exact_options = MidiImportOptions {
+    let default_write = Options::default();
+    let text_read = MidiImportOptions {
+        smf_text: true,
+        ..Default::default()
+    };
+    let text_write = Options {
+        midi: scoretk::MidiOptions {
+            smf_text: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let flat_text_write = Options {
+        midi: scoretk::MidiOptions {
+            smf_text: true,
+            expand_repeats: false,
+        },
+        ..Default::default()
+    };
+    let exact = MidiImportOptions {
         smf_exact_ticks: true,
         ..Default::default()
     };
-    let q1024 = MidiImportOptions {
-        quant_value: scoretk::QuantValue::Q1024,
+    let exact_text = MidiImportOptions {
+        smf_exact_ticks: true,
+        smf_text: true,
         ..Default::default()
     };
 
-    println!("\n=== MIDI round trip: default vs smf_exact_ticks (56 scores) ===");
-    let mut flat_options = Options::default();
-    flat_options.midi.expand_repeats = false;
-    for (label, how) in [
-        ("default (MuseScore 4.7.4)", 0),
-        ("smf_exact_ticks", 1),
-        ("Q1024", 2),
-        ("flat (no repeats)", 3),
-        ("flat + exact", 4),
-    ] {
+    println!("\n=== MIDI round trip: SMF options on the same 56 scores ===");
+    let cases: Vec<(&str, &Options, Option<&MidiImportOptions>)> = vec![
+        ("default (4.7.4)", &default_write, None),
+        ("smf_exact_ticks", &default_write, Some(&exact)),
+        ("smf_text (writer+reader)", &text_write, Some(&text_read)),
+        ("exact + text", &text_write, Some(&exact_text)),
+        ("flat + exact + text", &flat_text_write, Some(&exact_text)),
+    ];
+    for (label, write_options, read_options) in cases {
         let mut totals = Totals::default();
         for (_, path) in &scores {
             let score = reference_model(path);
             let reference = inventory(&score);
-            let options = if how >= 3 {
-                &flat_options
-            } else {
-                &Options::default()
-            };
-            let Ok(bytes) = write(&score, midi.format, options) else {
+            let Ok(bytes) = write(&score, midi.format, write_options) else {
                 totals.skipped += 1;
                 continue;
             };
-            let imported = match how {
-                1 | 4 => scoretk::read_midi_with(&bytes, &exact_options),
-                2 => scoretk::read_midi_with(&bytes, &q1024),
-                _ => read(&bytes, midi.format),
+            let imported = match read_options {
+                Some(options) => scoretk::read_midi_with(&bytes, options),
+                None => read(&bytes, midi.format),
             };
             let Ok(imported) = imported else {
                 totals.skipped += 1;

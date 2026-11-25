@@ -30,12 +30,16 @@ pub struct MidiOptions {
     /// Déroule les reprises, voltas et sauts dans la sortie MIDI. Vrai par
     /// défaut, comme l'option `io/midi/expandRepeats` de MuseScore.
     pub expand_repeats: bool,
+    /// Écrit les textes et repères que le SMF porte (`FF 01`, `FF 02`,
+    /// `FF 06`) en plus des métadonnées habituelles. Faux par défaut.
+    pub smf_text: bool,
 }
 
 impl Default for MidiOptions {
     fn default() -> Self {
         Self {
             expand_repeats: true,
+            smf_text: false,
         }
     }
 }

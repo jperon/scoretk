@@ -304,6 +304,7 @@ fn repeats_repeat_measures() {
             &score,
             MidiOptions {
                 expand_repeats: false,
+                ..Default::default()
             },
         )
         .unwrap_or_else(|error| panic!("{name} : écriture MIDI impossible : {error}"));

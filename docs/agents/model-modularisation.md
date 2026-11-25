@@ -1192,5 +1192,14 @@ output (`expandRepeats = false`) the same comparison is 84.57 → **84.83 %**
 essential and 73.88 → **74.31 %** full support. A finer quantisation grid
 alone (`Q1024`) is worse than the default (72.39 %), which confirms that the
 gain comes from exact ticks plus the decoupled note-off grid, not from
-changing a denominator. The 21/21 MIDI reference exports, the 21/21 round
-trip, the 4/21 import corpus and `e2e_corpus` 8/8 are unchanged.
+changing a denominator.
+
+A second additive option closes the text half of the declaration:
+`MidiOptions::smf_text` (writer) and `ImportOptions::smf_text` (reader) carry
+`FF 01` text, `FF 02` copyright and `FF 06` rehearsal marks. On the same
+56 scores it raises L3 text coverage from **15.44 % to 69.80 %** (every
+`staff-text`, `system-text` and `rehearsal-mark` item, plus 47 of 60 `title`
+items), i.e. full support **72.71 → 75.88 %**. With both options and flat
+output the figures are **84.83 % essential / 77.53 % full support**. All
+options are opt-in: the 21/21 MIDI reference exports, the 21/21 round trip,
+the 4/21 import corpus and `e2e_corpus` 8/8 are unchanged.

@@ -67,6 +67,7 @@ pub mod meter;
 pub mod operations;
 pub mod quant;
 pub mod simplify;
+pub mod smf_text;
 pub mod tempo;
 pub mod timesigmap;
 pub mod tuplet;
@@ -237,11 +238,14 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     let first_tick = find_first_chord_tick(&track_list);
     let last_tick = create_measures(score, &sigmap, first_tick, last_tick);
     process_non_lyric_meta(score, &mut track_list, midi, &sigmap);
+    if options.smf_text {
+        smf_text::process_text_meta(score, &track_list, midi);
+    }
     set_track_info(score, &mut track_list);
     create_keys(score, &mut track_list);
     key::recognize_main_key_sig(score, &mut track_list);
     create_notes(score, &mut track_list, last_tick, options);
-    process_lyric_meta(score, &mut track_list, midi, &sigmap);
+    process_lyric_meta(score, &mut track_list, midi, &sigmap, options);
     clef::create_clefs(score, &track_list, options);
     create_time_signatures(score, &sigmap);
     lyrics::set_lyrics_to_score(score, &track_list);
@@ -624,7 +628,7 @@ fn create_measures(
 }
 
 /// Indication de mesure d'une mesure (nominale), pour un tick donné.
-fn measure_index_for_tick(score: &Score, tick: Fraction) -> Option<usize> {
+pub(crate) fn measure_index_for_tick(score: &Score, tick: Fraction) -> Option<usize> {
     if let Some(index) = score
         .measures
         .iter()
@@ -1241,6 +1245,7 @@ fn process_lyric_meta(
     tracks: &mut [MTrack],
     midi: &MidiFile,
     _sigmap: &TimeSigMap,
+    options: &ImportOptions,
 ) {
     for track in tracks.iter_mut() {
         let mut lyrics = Vec::new();
@@ -1249,7 +1254,7 @@ fn process_lyric_meta(
             let EventKind::Meta { kind, data } = &raw.kind else {
                 continue;
             };
-            if *kind != meta::LYRIC && *kind != meta::TEXT {
+            if *kind != meta::LYRIC && !(*kind == meta::TEXT && !options.smf_text) {
                 continue;
             }
             // Un texte vide est conservé : RP-017 en fait un mélisme (ou un

@@ -58,6 +58,8 @@ export interface ConvertOptions {
   expandRepeats?: boolean;
   /** Import MIDI : quantification au tick source, sans n-olets ni simplification. Option additive : absente, l'import reste celui de MuseScore 4.7.4 (double croche). */
   midiExactTicks?: boolean;
+  /** Export MIDI : écrit les textes génériques, copyrights et repères (`FF 01`/`FF 02`/`FF 06`). Option additive : absente, l'export reste celui de MuseScore 4.7.4. */
+  midiText?: boolean;
   /** Fichiers d'un dossier, indexés par leur chemin relatif à sa racine (ex. `"noaten.ily"`, `"sub/x.ily"`), avec leurs octets UTF-8. Résout les `\include` des sources LilyPond ; ignoré pour les autres formats. Option additive : absente, le comportement est inchangé. */
   includes?: Record<string, Uint8Array>;
   /** Vue moderne du chant grégorien : clé de sol (`8vb` si le registre est bas) et portée à 5 lignes au lieu de la clé d'ut/4 lignes. Additive, défaut `false`. */
@@ -156,6 +158,9 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
     if let Some(modern) = options.gabc_modern_clef {
         write_options.gabc_modern_clef = modern;
     }
+    if let Some(midi_text) = options.midi_text {
+        write_options.midi.smf_text = midi_text;
+    }
 
     scoretk::write(&score, to, &write_options).map_err(js_error)
 }
@@ -207,6 +212,9 @@ pub fn convert_detailed(input: &[u8], options: Option<ConvertOptions>) -> Result
     }
     if let Some(modern) = options.gabc_modern_clef {
         write_options.gabc_modern_clef = modern;
+    }
+    if let Some(midi_text) = options.midi_text {
+        write_options.midi.smf_text = midi_text;
     }
     let (bytes, report) =
         scoretk::write_with_report(&score, to, &write_options).map_err(js_error)?;
@@ -297,6 +305,9 @@ pub fn convert_with_timeline(
     }
     if let Some(modern) = options.gabc_modern_clef {
         write_options.gabc_modern_clef = modern;
+    }
+    if let Some(midi_text) = options.midi_text {
+        write_options.midi.smf_text = midi_text;
     }
 
     let playback = scoretk::write_playback(&score, &write_options).map_err(js_error)?;

@@ -53,6 +53,7 @@ mod ornaments;
 mod pause_map;
 mod render;
 pub mod repeat_list;
+mod smf_text;
 pub mod timemap;
 mod velocity;
 mod writer;
@@ -69,12 +70,17 @@ pub struct MidiOptions {
     /// Déroule les reprises, voltas et sauts (`RepeatList::unwind`). Vrai par
     /// défaut, comme l'option `io/midi/expandRepeats` de MuseScore.
     pub expand_repeats: bool,
+    /// Extension additive « fidélité SMF » : écrit les textes et repères que
+    /// le format porte (`FF 01`, `FF 02`, `FF 06`, `FF 07`) en plus des noms
+    /// de piste et des paroles. Faux par défaut, comme MuseScore 4.7.4.
+    pub smf_text: bool,
 }
 
 impl Default for MidiOptions {
     fn default() -> Self {
         Self {
             expand_repeats: true,
+            smf_text: false,
         }
     }
 }
@@ -134,7 +140,7 @@ fn write_midi_impl(
     } else {
         RepeatList::flatten(score)
     };
-    let rendered = render::render(score, &repeat_list, capture)?;
+    let rendered = render::render(score, &repeat_list, capture, options.smf_text)?;
     let bytes = writer::write_smf(&rendered.performance)?;
     Ok((bytes, rendered.timemap))
 }

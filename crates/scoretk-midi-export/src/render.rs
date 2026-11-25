@@ -48,6 +48,7 @@ use super::harmony;
 use super::ornaments;
 use super::pause_map::PauseMap;
 use super::repeat_list::{RepeatList, DIVISION, UNITS_PER_WHOLE};
+use super::smf_text;
 use super::timemap::{Attack, Builder, Timemap};
 use super::velocity::{ChangeDirection, ChangeMethod, VelocityMaps};
 
@@ -84,6 +85,12 @@ pub(crate) enum EventKind {
     KeySignature(i8, bool),
     /// Parole `FF 05`, avec l'espace final des syllabes terminales déjà posé.
     Lyric(String),
+    /// Extension additive `smf_text` : `FF 01` texte générique.
+    Text(String),
+    /// Extension additive `smf_text` : `FF 06` repère / `FF 07` cue point.
+    Marker(String),
+    /// Extension additive `smf_text` : `FF 02` copyright.
+    Copyright(String),
     Tempo(u32),
     ControlChange {
         channel: u8,
@@ -140,6 +147,7 @@ pub(crate) fn render(
     score: &Score,
     repeat_list: &RepeatList,
     capture_timemap: bool,
+    smf_text: bool,
 ) -> Result<Rendered> {
     let channels = channels(score);
     let velocities = build_velocities(score);
@@ -240,6 +248,48 @@ pub(crate) fn render(
                 kind: EventKind::Lyric(text.clone()),
             },
         );
+
+        // Extension additive `smf_text` : textes génériques (FF 01), repères
+        // de répétition (FF 06) et métadonnées. MuseScore 4.7.4 ne les écrit
+        // pas : le chemin par défaut reste identique octet pour octet.
+        if smf_text {
+            if staff_index == 0 {
+                for (tick, text) in smf_text::metadata_events(score) {
+                    track.events.push(Event {
+                        tick,
+                        kind: EventKind::Text(text),
+                    });
+                }
+                if !score.metadata.copyright.is_empty() {
+                    track.events.push(Event {
+                        tick: 0,
+                        kind: EventKind::Copyright(score.metadata.copyright.clone()),
+                    });
+                }
+            }
+            let texts = smf_text::staff_text_events(score, staff.id);
+            push_unwound(
+                track,
+                repeat_list,
+                &pause_map,
+                &texts,
+                |tick, text: &String| Event {
+                    tick,
+                    kind: EventKind::Text(text.clone()),
+                },
+            );
+            let markers = smf_text::marker_events(score, staff.id);
+            push_unwound(
+                track,
+                repeat_list,
+                &pause_map,
+                &markers,
+                |tick, text: &String| Event {
+                    tick,
+                    kind: EventKind::Marker(text.clone()),
+                },
+            );
+        }
 
         // Tempo, une seule fois (les pauses ont déjà produit leurs
         // évènements dans `tempo`).

@@ -270,11 +270,33 @@ denominator, not a regression of any output byte. Import alone is
 | `rehearsal-mark` (`FF 06`) | L3 | 7 | — |
 
 The `note`/`rest` losses are addressed by the additive `smf_exact_ticks`
-import option (§"Full SMF support measured with options"); the text/marker
-losses by the additive `smf_text` export option. Both keep MuseScore 4.7.4
-behaviour as the default.
+import option and the text/marker/title losses by the additive `smf_text`
+export+import option (§"Full SMF support measured with options"). Both keep
+MuseScore 4.7.4 behaviour as the default.
 
 ## Full SMF support measured with options
+
+### Additive text/marker export and import (`smf_text`)
+
+`MidiOptions::smf_text` (writer) and `ImportOptions::smf_text` (reader), both
+default `false`, carry the remaining text metas of `[SMF §Meta-Events]`:
+
+- `FF 01` generic text for `Annotation::StaffText`/`Expression` (prefix
+  `@ST:`) and `Annotation::SystemText` (prefix `@SY:`);
+- `FF 01` with `@TK:<field>:<value>` for the eleven string metadata fields
+  inventoried as `title` (`work_title`, `subtitle`, `composer`, …); copyright
+  uses the standard `FF 02`;
+- `FF 06` marker for `Annotation::RehearsalMark`.
+
+The prefixes are private semantics inside a standard text payload, the same
+pattern as ABC's `%%scoretk` directives: another sequencer displays the text
+unchanged; scoretk's additive reader maps it back to the exact model field.
+The default writer emits none of these (MuseScore 4.7.4 fidelity) and the
+default reader still treats `FF 01` as lyrics. `smf_text_full_round_trip` in
+`crates/scoretk-midi-export/tests/smf_text.rs` pins both sides: 0 text metas
+by default, all three kinds with the option, exact annotation counts and
+metadata after re-import. Facade: `MidiOptions::smf_text`; CLI:
+`--midi-text`; wasm: `midiText`.
 
 ### Additive exact-tick import (`smf_exact_ticks`)
 
@@ -297,19 +319,22 @@ The option is exposed by `scoretk::read_midi_with` (facade), by the CLI flag
 measured by `midi_exact_ticks_full_support` in `crates/scoretk/tests/layer_coverage.rs`
 on the same 56 MuseScore scores, with the same writer, layers and kinds:
 
-| Reader / writer | Essential | Full support | `note` loss | `rest` loss |
+| Reader / writer | Essential | Full support | L3 text | `title` loss |
 | --- | ---: | ---: | ---: | ---: |
-| default import, default writer | 83.41 % | 72.71 % | 284 | 200 |
-| `smf_exact_ticks`, default writer | **83.66 %** | **73.14 %** | 278 | 195 |
-| default import, `expand_repeats = false` | 84.57 % | 73.88 % | 257 | 200 |
-| `smf_exact_ticks`, `expand_repeats = false` | **84.83 %** | **74.31 %** | 251 | 195 |
-| `quant_value = Q1024` alone (finer grid only) | 83.15 % | 72.39 % | 290 | 202 |
+| default import, default writer | 83.41 % | 72.71 % | 15.44 % | 60 |
+| `smf_exact_ticks`, default writer | 83.66 % | 73.14 % | 15.44 % | 60 |
+| `smf_text` writer + reader | 83.41 % | 75.88 % | **69.80 %** | 13 |
+| `smf_exact_ticks` + `smf_text` | **83.66 %** | **76.31 %** | 69.80 % | 13 |
+| flat (`expand_repeats = false`) + both | **84.83 %** | **77.53 %** | 70.47 % | 12 |
 
-A finer grid alone is not enough: it moves onsets without recovering the
-duration chain. The exact-tick path gains 6 `note` and 5 `rest` matches on the
-default writer and 6 + 5 on the flat one. Both defaults and the 21/21 MIDI
+Two earlier diagnostic rows confirm that this is not a denominator effect:
+`expand_repeats = false` alone gives 84.57 % / 73.88 %, and a finer grid alone
+(`quant_value = Q1024`) is *worse* than the default (83.15 % / 72.39 %). The
+text option closes every `staff-text` (24), `system-text` (8) and
+`rehearsal-mark` (7) loss and 47 of the 60 `title` losses; the exact-tick
+option closes 6 `note` and 5 `rest` losses. All defaults and the 21/21 MIDI
 reference exports, the 21/21 round trip, the 4/21 import corpus and
-`e2e_corpus` 8/8 remain unchanged; the option is opt-in.
+`e2e_corpus` 8/8 remain unchanged; every option is opt-in.
 
 The remaining gap is not a missing SMF writer feature: a score stores *written*
 ticks while an SMF stores a *performance* (repeats unfolded, gate times,
