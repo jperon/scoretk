@@ -47,7 +47,7 @@ pub mod capabilities;
 mod fixup;
 mod glissando;
 
-pub use capabilities::CAPABILITIES;
+pub use capabilities::{CAPABILITIES, SMF_KINDS};
 mod harmony;
 mod ornaments;
 mod pause_map;

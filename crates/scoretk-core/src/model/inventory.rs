@@ -1216,6 +1216,18 @@ mod tests {
     }
 
     #[test]
+    fn kind_declaration_excludes_kinds_the_format_cannot_carry() {
+        let mut reference = LayerInventory::new();
+        reference.push(Layers::METRIC, None, None, "measure", "1/1:1/1");
+        reference.push(Layers::METRIC, None, None, "key-sig", "0:Unknown");
+        let own = reference.clone();
+        let smf = compare_with_kinds(&reference, &own, Layers::METRIC, Some(&["key-sig"]));
+        assert_eq!(smf.total.reference, 1);
+        assert_eq!(smf.total.matched, 1);
+        assert_eq!(compare(&reference, &own, Layers::METRIC).total.reference, 2);
+    }
+
+    #[test]
     fn essential_counts_only_notes_and_measures() {
         let mut reference = LayerInventory::new();
         reference.push(Layers::EVENTS, None, None, "note", "60");

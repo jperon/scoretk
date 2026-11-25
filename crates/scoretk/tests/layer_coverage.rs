@@ -646,6 +646,52 @@ fn musicxml_import_alone_reads_musescore_474_references() {
 }
 
 #[test]
+fn midi_declaration_follows_smf_spec() {
+    // SMF 1.0 `format-ref/midi.md` §"Container layout": no bar/measure/staff/
+    // voice fields; §"Instruments, parts, repeats": no repeats, voltas,
+    // tuplets, ties or slurs; §"Meta-event types": FF 58/FF 59 (L1), FF 03–
+    // FF 06/FF 51 (L3/L1), RP-017 FF 05 lyrics; §"Events and time": Note On/
+    // Off and velocity, with silence between notes reconstructed as rests.
+    // A kind with no SMF object is outside the declaration, not a loss.
+    let kinds = MIDI_IMPORT
+        .declared_kinds()
+        .expect("the SMF declares a subset of L1–L4");
+    for kind in [
+        "time-sig",
+        "key-sig",
+        "marker",
+        "note",
+        "rest",
+        "lyric",
+        "tempo",
+        "title",
+        "instrument",
+        "program",
+        "channel",
+        "volume",
+        "pan",
+        "velocity",
+    ] {
+        assert!(kinds.contains(&kind), "{kind} is carried by SMF");
+    }
+    for kind in [
+        "measure",
+        "barline",
+        "clef",
+        "volta",
+        "tuplet",
+        "tie",
+        "slur",
+        "tremolo",
+        "credit",
+        "dynamic-velocity",
+    ] {
+        assert!(!kinds.contains(&kind), "{kind} has no SMF object");
+    }
+    assert_eq!(MIDI_EXPORT.declared_kinds(), MIDI_IMPORT.declared_kinds());
+}
+
+#[test]
 fn reference_sources_distinguish_self_written_snapshots() {
     for kind in [ReferenceKind::Ly, ReferenceKind::Abc] {
         assert!(

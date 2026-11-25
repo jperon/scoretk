@@ -22,15 +22,42 @@
 //! et « Lyrics: RP-017 and RP-026 » ; `docs/agents/format-mapping/midi.md`
 //! lignes 15–36 : L0–L4, pas de L5/L6. La déclaration décrit le **format**,
 //! pas ce que l'écrivain émet aujourd'hui (les marqueurs `FF 06` manquent).
+//!
+//! Comme pour la lecture, la granularité par type d'item est nécessaire :
+//! `[SMF §Container layout]` exclut mesure/barre/clef, `[SMF §Instruments,
+//! parts, repeats]` exclut reprises/tuplets/liaisons et `[SMF §Meta-event
+//! types]` ne porte que `FF 58`/`FF 59`/`FF 06` en L1, `FF 05`/`FF 51`/
+//! `FF 03`–`FF 04` en L3 et les messages de canal en L4. Voir
+//! `scoretk-midi-import/src/capabilities.rs` pour la liste et les citations.
 
 use scoretk_core::model::{Capabilities, Layers};
 
+/// Types d'items qu'un SMF peut porter (citations ci-dessus ; la liste est
+/// identique à celle de `scoretk-midi-import/src/capabilities.rs`).
+pub const SMF_KINDS: &[&str] = &[
+    "time-sig",
+    "key-sig",
+    "marker",
+    "note",
+    "rest",
+    "lyric",
+    "tempo",
+    "title",
+    "instrument",
+    "program",
+    "channel",
+    "volume",
+    "pan",
+    "velocity",
+];
+
 /// Couches écrivables vers un SMF.
-pub const CAPABILITIES: Capabilities = Capabilities::new(
+pub const CAPABILITIES: Capabilities = Capabilities::with_kinds(
     Layers::NONE,
     Layers::COMMON
         .union(Layers::METRIC)
         .union(Layers::EVENTS)
         .union(Layers::TEXT)
         .union(Layers::PLAYBACK),
+    SMF_KINDS,
 );

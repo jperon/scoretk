@@ -24,15 +24,49 @@
 //! n'a ni mesures explicites, ni tuplets, ni gravure : L5 et L6 ne sont pas
 //! déclarés ; L1 est déclaré pour les méta-événements de mesure, de tonalité
 //! et de marqueur. La déclaration décrit le **format**, pas le lecteur actuel.
+//!
+//! La couche L1 est trop grossière pour le SMF : `[SMF §Container layout]`
+//! « no bar/measure/staff/voice fields » et `[SMF §Instruments, parts,
+//! repeats]` « no repeats, voltas, tuplets, ties or slurs ». Seuls les types
+//! `time-sig` (`FF 58`), `key-sig` (`FF 59`) et `marker` (`FF 06`) sont
+//! portés (§"Meta-event types"). Les autres types de L1 (mesure, barre,
+//! clef, reprise, tuplet…) n'ont aucun objet SMF correspondant et ne sont
+//! donc pas déclarés, conformément à la règle de `model-modularisation.md`
+//! §5.3 (la déclaration est celle du format, pas une cible de score).
+//! De même L2 ne retient que `note` et `rest` (silence entre deux `Note On`,
+//! reconstruit par l'importeur), L3 que `lyric` (`FF 05`, RP-017), `tempo`
+//! (`FF 51`) et `title` (`FF 03`/`FF 04`, RP-026 `{#TITLE=}`), et L4 les
+//! champs réellement encodés (programme, canal, volume `CC 7`, panoramique
+//! `CC 10`, vélocité). Les symboles dynamiques, la gravure et les tables
+//! d'articulation n'existent pas dans un SMF.
 
 use scoretk_core::model::{Capabilities, Layers};
 
+/// Types d'items qu'un SMF peut porter (citations ci-dessus).
+pub const SMF_KINDS: &[&str] = &[
+    "time-sig",
+    "key-sig",
+    "marker",
+    "note",
+    "rest",
+    "lyric",
+    "tempo",
+    "title",
+    "instrument",
+    "program",
+    "channel",
+    "volume",
+    "pan",
+    "velocity",
+];
+
 /// Couches lisibles depuis un SMF.
-pub const CAPABILITIES: Capabilities = Capabilities::new(
+pub const CAPABILITIES: Capabilities = Capabilities::with_kinds(
     Layers::COMMON
         .union(Layers::METRIC)
         .union(Layers::EVENTS)
         .union(Layers::TEXT)
         .union(Layers::PLAYBACK),
     Layers::NONE,
+    SMF_KINDS,
 );

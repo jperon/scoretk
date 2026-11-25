@@ -51,7 +51,7 @@
 pub mod capabilities;
 pub mod midifile;
 
-pub use capabilities::CAPABILITIES;
+pub use capabilities::{CAPABILITIES, SMF_KINDS};
 
 pub mod beat_locator;
 pub mod beatroot;
