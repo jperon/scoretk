@@ -675,3 +675,182 @@ identical); one more Lakh 10 s timeout flapped and was replayed byte-identically
 (`23efbd9f…`, 6 626 353 bytes). The MuseScore `ly` lot's only row difference is
 an *alternative tool* (MuseScore itself) timing out, not scoretk output.
 No output byte changed in any direction and no contract element moved.
+
+## 11. Layer coverage: declared capabilities and first measurement
+
+This section records the measurement campaign announced in §5.3: every reader
+and writer must eventually implement **all the layers its format can carry**,
+and the result is reported as two percentages per direction. This first pass
+builds the instrument only; it changes no reader, no writer and no output byte.
+
+### 11.1 Exact definitions
+
+- **Item.** One comparable fact of the model, stored in `model::InventoryItem`
+  as `(layer, tick, staff, kind, value)`: `layer` is exactly one of L0–L6,
+  `tick` is an exact `Fraction` when the item is positioned, `staff` is the
+  staff index when the item belongs to a staff, `kind` is a stable ASCII label
+  (`"note"`, `"measure"`, `"key-sig"`, `"dynamic"`, `"style"`, …) and `value`
+  is its canonical value (pitch, label, formatted fraction…). `Score →
+  LayerInventory` performs an in-memory traversal of measures → segments →
+  tracks and of the arenas; no I/O enters the core (invariant 1).
+- **Item kinds.** L1: `measure`, `time-sig`, `key-sig`, `clef`, `barline*`,
+  `repeat-count`, `multi-measure-rest`, `measure-repeat`, `section-break`,
+  `marker`, `jump`, `tuplet`. L2: `note`, `rest`, `grace*`, `tie`, `tuplet-member`,
+  `articulation`, `ornament`, `tremolo`, `arpeggio`, `chord-line`, `fermata`,
+  `slur`, `hairpin`, `ottava`, `pedal`, `text-line`, `trill`, `glissando`,
+  `spanner`, `breath`. L3: `lyric`, `dynamic`, `tempo`, `staff-text`,
+  `system-text`, `rehearsal-mark`, `instrument-change`, `harmony`,
+  `figured-bass`, `annotation`, `title`, `credit`, `tbox-text`. L4:
+  `instrument`, `program`, `channel`, `volume`, `pan`, `midi-articulation`,
+  `velocity`, `user-velocity`, `dynamic-velocity`, `articulate`,
+  `playback-transposition`. L5: `style`, `credit-position`, `tbox-position`,
+  `beam`, `stem`, `note-head`, `line-break`, `tuplet-bracket`. L0 has no
+  separate item kind (it is the event spine used to reach the others) and L6
+  is still a zero-sized marker: those layers are declared but contribute no
+  item yet, so they are neutral in the ratios.
+- **Matching.** Two inventories are multisets of item keys. An item in the
+  candidate matches a reference item only if **all five** components are
+  equal; duplicates are counted, so two identical attacks are two items.
+  `matched = Σ min(reference_count, candidate_count)` per key. A changed
+  tick, staff or value is a loss plus an extra item, not a silent match.
+- **Essential %** = matched `note` + `measure` items / reference items of
+  those two kinds. This is today's musical-core notion of compliance.
+- **Full-support %** = matched items / reference items, restricted to the
+  layers the format **declares**, at the whole-corpus level.
+- **Per-layer %** = the same ratio for one declared layer. A layer with zero
+  reference items is 100 % by convention and is not printed.
+- **Reference model** = `tests/corpus/{v3,v4}/*.mscx` read by MuseScore import.
+  The round-trip row is `reference → write X → read X → compare`. The
+  import-alone row reads an existing reference file with the format's reader
+  and compares it with the same model, restricted to the layers that reader
+  declares.
+
+`Capabilities { reads, writes }` (§5.3) lives in the core; each of the ten
+direction crates exports a `CAPABILITIES` constant. An import crate declares
+`reads = format layers, writes = NONE`; an export crate the reverse. The
+declared layers are those of the **format's specification**, not those the
+code handles today — the difference is the gap being measured.
+
+### 11.2 Declared matrix
+
+| Direction crate | Format layers (reads ∪ writes) | Citation (spec, not code) |
+| --- | --- | --- |
+| `scoretk-musescore-{import,export}` | L0+L1+L2+L3+L4+L5+L6 | `format-ref/musescore.md` § « Section index »: §4 parts/clefs, §5 measures, §7 chords/beams, §10 key/time/barlines, §12 slurs/hairpins/voltas, §13 lyrics/dynamics, §15 excerpts, §18 frames; `format-mapping/musescore.md` lines 14–37. L6 covers excerpts and graphical objects. |
+| `scoretk-musicxml-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/musicxml.md` « Document shape » (L3/L5), « Pitch, accidentals, key », « Clef, time, staves, parts », « Notes, rests, chords, beams », « Ties, slurs, tuplets, grace », « Repeats, jumps, directions, lyrics »; `format-mapping/musicxml.md` lines 16–47. `<defaults>`/`<credit>`/`<beam>` justify L5, `<midi-instrument>`/`<play>` justify L4; no L6 payload. |
+| `scoretk-midi-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/midi.md` « Events and time », « Meta-event types » (`FF 58`, `FF 59`, `FF 51`, text metas), « Instruments, parts, repeats », « Lyrics: RP-017 and RP-026 »; `format-mapping/midi.md` lines 15–36. L1 is declared for the time-signature/key/marker metas even though SMF has no measure element; L5/L6 do not exist in SMF. |
+| `scoretk-lilypond-{import,export}` | L0+L1+L2+L3+L4+L5 | `format-ref/lilypond.md` « Durations, ticks, bars », « Pitch, key, clef, accidentals », « Parts, staves, voices, chords », « Ties, slurs, tuplets, grace », articulations/ornaments (§3.1–3.3), « Repeats and lyrics », `\paper`/`\layout`; the second MIDI `\score` carries L4 (`format-mapping/lilypond.md` line 38; rows 16–40). |
+| `scoretk-abc-{import,export}` | L0+L1+L2+L3+L4 | `format-ref/abc.md` §3.1 headers, §4.3–4.5 durations/repeats, §4.8–4.10 barlines/endings, §4.11–4.17 ties/grace/tuplets/chords, §5 lyrics, §6.2 `%%MIDI` (L4), §7 voices; `format-mapping/abc.md` lines 11–33. **L5 is not declared**: ABC 2.1 has no page style, no per-element coordinates and only implicit beaming (§4.7, mapping « Model gaps » n°4). |
+
+Coming formats (GABC §7.1, MEI §7.2, Capella §7.3, Guitar Pro §7.4,
+Humdrum §7.5) have no crate yet, so they have no declaration to export. Their
+mapping documents already assign layers and will reuse the same contract once
+their crates exist.
+
+### 11.3 First measured table
+
+Command:
+`nix develop -c env CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 cargo test -p scoretk --test layer_coverage -- --nocapture`.
+The test only panics on a broken setup; it never asserts on a percentage.
+Corpus: 56 `.mscx` scores (v3 + v4); 21 MIDI references; 56 LilyPond and 56
+ABC snapshot files. No file was skipped.
+
+Round trip (`model → write X → read X`):
+
+| Direction | Declared | Essential | Full support | L1 | L2 | L3 | L4 | L5 | Items |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| mscx | L0–L6 | 100.00 % | 95.36 % | 100.00 | 100.00 | 99.66 | 100.00 | 72.79 | 6310 |
+| mscz | L0–L6 | 100.00 % | 95.36 % | 100.00 | 100.00 | 99.66 | 100.00 | 72.79 | 6310 |
+| musicxml | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 6310 |
+| mxl | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 6310 |
+| midi | L0–L4 | 83.41 % | 63.61 % | 62.67 | 76.28 | 7.77 | 18.45 | — | 5237 |
+| lilypond | L0–L5 | 99.27 % | 79.32 % | 85.71 | 97.19 | 65.54 | 21.59 | 50.61 | 6310 |
+| abc | L0–L4 | 98.92 % | 81.08 % | 83.41 | 96.32 | 50.34 | 0.00 | — | 5237 |
+
+Import alone (existing reference file → reader → compare):
+
+| Format | Declared | Essential | Full support | L1 | L2 | L3 | L4 | L5 | Files / items |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| musicxml | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 |
+| mxl | L0–L5 | 99.83 % | 78.32 % | 90.97 | 99.25 | 88.18 | 31.55 | 21.81 | 56 / 6310 |
+| midi | L0–L4 | 71.04 % | 32.52 % | 43.95 | 43.31 | 2.47 | 16.67 | — | 21 / 781 |
+| lilypond | L0–L5 | 99.27 % | 79.32 % | 85.71 | 97.19 | 65.54 | 21.59 | 50.61 | 56 / 6310 |
+| abc | L0–L4 | 98.92 % | 81.08 % | 83.41 | 96.32 | 50.34 | 0.00 | — | 56 / 5237 |
+
+The `mxl` import-alone row reads the same `.ref.musicxml` files as `musicxml`
+(the reader accepts both containers), so both rows are expected to be equal.
+The LilyPond and ABC snapshots under `tests/corpus/{ly,abc}/` were produced by
+scoretk's own writers, not by an independent tool: their import-alone rows
+are *self-consistency* measurements, not external compliance evidence. Only
+the MusicXML and MIDI references come from MuseScore 4.7.4.
+
+### 11.4 Ranked per-layer gaps (round trip)
+
+Missing item counts, highest first; they are the queue for the next tasks.
+
+| Rank / direction | Layer | Item kind | Missing |
+| --- | --- | --- | ---: |
+| 1 mscx / mscz | L5 engraving | `tuplet-bracket` | 262 |
+| 2 mscx / mscz | L5 engraving | `style` | 30 |
+| 3 mscx / mscz | L3 text | `title` | 1 |
+| 1 musicxml / mxl | L5 engraving | `style` | 434 |
+| 2 musicxml / mxl | L4 playback | `midi-articulation` | 367 |
+| 3 musicxml / mxl | L5 engraving | `tuplet-bracket` | 283 |
+| 4 musicxml / mxl | L1 metric | `barline` | 85 |
+| 5 musicxml / mxl | L5 engraving | `credit-position` | 63 |
+| 1 midi | L4 playback | `midi-articulation` | 367 |
+| 2 midi | L2 events | `note` | 284 |
+| 3 midi | L2 events | `rest` | 200 |
+| 4 midi | L1 metric | `measure` | 100 |
+| 5 midi | L1 metric | `barline` | 85 |
+| 1 lilypond | L5 engraving | `style` | 444 |
+| 2 lilypond | L4 playback | `midi-articulation` | 367 |
+| 3 lilypond | L1 metric | `barline` | 85 |
+| 4 lilypond | L4 playback | `dynamic-velocity` | 43 |
+| 5 lilypond | L5 engraving | `note-head` | 41 |
+| 1 abc | L4 playback | `midi-articulation` | 367 |
+| 2 abc | L1 metric | `barline` | 85 |
+| 3 abc | L3 text | `credit` | 67 |
+| 4 abc | L4 playback | `instrument` | 63 |
+| 5 abc | L4 playback | `program` | 63 |
+
+Import-alone MIDI has a different profile: `midi-articulation` 143 (L4),
+`note` 53 and `rest` 35 (L2), `credit` 28 (L3), `measure` 22 (L1). The
+MuseScore 4.7.4 references unfold and quantise differently from scoretk's
+writer, so its essential score (71.04 %) is lower than the round-trip one.
+
+Reading the table:
+
+1. **`midi-articulation` (L4, 367 items) is the largest cross-format gap.**
+   MuseScore files carry a per-instrument articulation/velocity table; no
+   other declared format writes it back. This is the first target for the
+   L4 work (`%%MIDI` in ABC, `<midi-instrument>` details in MusicXML,
+   playback rendering in MIDI).
+2. **`style` (L5, 434–444 items)** is lost by MusicXML and LilyPond; part of
+   it is legitimately unrepresentable in ABC/MIDI (L5 not declared there),
+   so the fix must be driven by each format's declaration, not by the raw
+   count.
+3. **`tuplet-bracket` (L5, 262 items)** is lost by the MuseScore round trip
+   itself: the reader records `bracket`/`bracket_explicit` but the writer
+   re-computes `bracket` from the beam groups. It is a writer fidelity bug,
+   not a format limitation.
+4. **`barline` (L1, 85 items)** and `key-sig` (37 in ABC) are metric items
+   lost on import/export by the non-MuseScore formats.
+5. **MIDI L3 (7.77 % round trip, 2.47 % import alone)** is dominated by
+   credits and titles: SMF carries track names and text metas, but the
+   mapping to `Score::metadata`/`Credit` is only partial.
+
+### 11.5 What this measurement does not yet do
+
+- A zero denominator means "nothing comparable", reported as 100 %; it must
+  not be read as a perfect implementation of the layer.
+- The percentages are corpus-weighted item ratios, not byte equality and not
+  a perceptual judgement. An item that moves to a different tick counts as
+  lost even when the music sounds the same; this is intentional because the
+  layers are addressed by tick.
+- The declared matrix is coarse: a format may carry only part of a layer
+  (ABC's implicit beams, MIDI's time-signature metas without measures). The
+  declaration is per layer, as §5.3 specifies; finer per-item declarations
+  would be a later refinement.
+- No reader or writer was changed by this campaign. §11.4 is the input to the
+  next tasks, which must close those gaps one layer at a time, re-running
+  this table after each change.
