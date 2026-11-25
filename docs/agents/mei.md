@@ -317,3 +317,38 @@ No new model layer, no changed wasm contract, no new licence or NOTICE entry:
 all changes are inside the three MEI crates and two integration tests. The
 wasm build of `scoretk` passes after each commit; `nix build .#wasm` was not
 re-run, so §6's size measurement is unchanged.
+
+## 9. Measurement against what MEI can express (2026-11-25, branch `mei2`)
+
+The 4.7.4 references measure **MuseScore's exporter**, not the reader's
+coverage of MEI. Their 93.5 % ceiling (§3) is a property of the oracle:
+`writeScoreDef` emits no page geometry, `writeNote` no note-head attribute,
+`dynamToMEI` no velocity (§7.3/§8.3). The second, independent oracle is the
+official **MEI Sample Encodings** repository, which is not produced by
+MuseScore.
+
+### 9.1 Source, licence, pin
+
+- Origin: <https://github.com/music-encoding/sample-encodings>, directory
+  `MEI_5.1`, commit `f3f1baba02e32279b25dad660b82c834bac034b4`.
+- Licence: **ECL-2.0**, Copyright (c) Music Encoding Initiative (MEI) Board
+  (upstream `LICENSE`); ECL-2.0 permits redistribution with attribution and a
+  copy of the licence, and is GPL-3 compatible. Recorded in `NOTICE` and
+  `docs/licences-tierces.md`.
+- The files are **not vendored** (32 MiB of XML). `scripts/fetch-mei-samples.sh`
+  fetches the pinned commit to `$SCORETK_MEI_SAMPLES` (default
+  `$HOME/.cache/scoretk/mei-samples`, outside the repo and the build paths)
+  and verifies every SHA-256 of `tests/corpus/mei-samples/MANIFEST.tsv`.
+  They are untrusted data, only parsed as XML, never executed.
+
+### 9.2 Lot selection
+
+All 167 `.mei` files of `MEI_5.1` validate against MEI 5.1's
+`mei-all_anyStart.rng` (`jing`, schema repo `music-encoding/schema`, `5.1`).
+The MEI 5.1 folder contains **no** neume or mensural encoding (checked for
+`<neume>`, `<neumeGrp>`, `<nounc>`, `<syllable>`, `<mensuration>`,
+`<proport>`, `<ligatura>`): no separate basket is needed, and excluding them
+would have been vacuous. The lot is the 130 files with a `<score>`; the 37
+others are header-only or document-start fragments with no music events and
+are listed with their reason in `EXCLUDED.tsv`. The manifests live under
+`tests/corpus/`, hence inside the flake `tests/corpus` filter.

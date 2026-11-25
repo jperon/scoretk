@@ -35,6 +35,22 @@ new third-party Cargo dependency was introduced by the GABC direction: the
 three new crates are workspace members using only `scoretk-core` and the
 already listed `thiserror`.
 
+### MEI Sample Encodings (measurement data, not linked)
+
+`tests/corpus/mei-samples/` version only two manifests: the official encodings
+it describes are fetched by `scripts/fetch-mei-samples.sh` at commit
+`f3f1baba02e32279b25dad660b82c834bac034b4` into `$SCORETK_MEI_SAMPLES`
+(outside the repository). Origin:
+<https://github.com/music-encoding/sample-encodings>, directory `MEI_5.1`,
+Copyright (c) Music Encoding Initiative (MEI) Board, licence **ECL-2.0**
+(upstream `LICENSE`: the Apache-2.0 terms with a modified patent grant). This
+is the same licence as the MEI 5.1 RelaxNG schemas already used as a format
+reference, which this document previously classified as GPL-3 compatible.
+ECL-2.0 §4 requires retaining the copyright/attribution notice and providing a
+copy of the licence to recipients; `NOTICE` carries the attribution and this
+section records the licence. The files are read-only measurement data: no code
+is executed and no artefact links them. No Cargo dependency was added.
+
 ## Table
 
 | Crate | Version | Declared licence | Role |
