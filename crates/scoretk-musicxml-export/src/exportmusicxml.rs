@@ -1299,6 +1299,22 @@ impl<'a> Context<'a> {
         }
     }
 
+    /// Vrai pour une vue moderne dérivée d'un payload grégorien (L6).
+    ///
+    /// Les retenues progressives avant un quilisma sont des durées
+    /// d'exécution (`ChordRest::ticks`, utilisées par le MIDI) et non des
+    /// durées notées : la projection grégorienne garde une noire par lettre
+    /// chantée (`docs/agents/gabc.md` §7). Les écrire dans `<duration>`
+    /// décalerait toute la grille d'attaques et casserait l'aller-retour par
+    /// du MusicXML standard, qui ne connaît ni le quilisma ni les mesures
+    /// inventées du chant.
+    fn derived_chant(&self) -> bool {
+        matches!(
+            &self.score.extensions.format,
+            Some(Extension::Gregorian(gregorian)) if gregorian.derived_modern_view
+        )
+    }
+
     /// Durée réelle (`globalTicks`), n-olets appliqués.
     ///
     /// MuseScore divise la durée notée par le ratio de chaque n-olet parent.
@@ -1306,9 +1322,13 @@ impl<'a> Context<'a> {
     /// facteur correspondant vaut donc un. Quand `<duration>` diffère de la
     /// figure (trémolo, figure étirée), sa valeur fait foi.
     fn global_ticks(&self, chord_rest: &ChordRest, measure: &Measure) -> Fraction {
-        let mut ticks = chord_rest
-            .ticks
-            .unwrap_or_else(|| self.notated_ticks(chord_rest, measure));
+        let mut ticks = if self.derived_chant() {
+            self.notated_ticks(chord_rest, measure)
+        } else {
+            chord_rest
+                .ticks
+                .unwrap_or_else(|| self.notated_ticks(chord_rest, measure))
+        };
         let mut tuplet = chord_rest.tuplet;
         let mut depth = 0;
         while let Some(id) = tuplet {

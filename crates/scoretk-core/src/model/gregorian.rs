@@ -33,8 +33,8 @@
 
 use super::{
     BarLineType, Breath, BreathType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration,
-    DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, Track,
+    DurationType, Fraction, Layers, Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Ornament,
+    OrnamentType, Part, Placement, Score, Segment, SegmentItem, SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -358,10 +358,35 @@ impl Gregorian {
                 // durée fixe (`:801-845`).
                 let duration = derived_duration(note);
                 let mut chord_rest = ChordRest::chord(duration);
-                chord_rest.kind = ChordRestKind::Chord(Chord {
+                // Un quilisma est vu comme un ornement (`gabctk.py:1051-1095`
+                // : `\prall` en LilyPond, `P` en ABC) et non comme une durée.
+                // L'ornement est donc porté par la projection moderne et
+                // traverse MusicXML dans `<ornaments><inverted-mordent/>`.
+                let mut chord = Chord {
                     notes: vec![id],
                     ..Chord::default()
-                });
+                };
+                if note
+                    .signs
+                    .iter()
+                    .any(|sign| sign.kind == SignKind::Quilisma)
+                {
+                    chord
+                        .ornaments
+                        .push(Ornament::new(OrnamentType::InvertedMordent));
+                }
+                chord_rest.kind = ChordRestKind::Chord(chord);
+                // Les notes avant un quilisma sont retenues progressivement ;
+                // `ticks` porte la durée réelle quand elle diffère de la
+                // figure notée (`ChordRest::ticks`, convention MuseScore).
+                let held = quilisma_hold(syllable, note_index);
+                if held != Fraction::ONE {
+                    // La retenue est une durée d'exécution : elle ne décale
+                    // pas la grille d'attaques déjà inventée par la projection
+                    // (une noire par lettre), sinon un aller-retour par du
+                    // MusicXML standard perdrait toutes les mesures dérivées.
+                    chord_rest.ticks = Some(duration.ticks() * held);
+                }
                 // Segment ticks are absolute in the pivot (`pass2.rs:495-518`),
                 // not relative to the measure.
                 let tick = start + cursor;
@@ -471,6 +496,74 @@ impl Gregorian {
         assign(&word, &mut result);
         result
     }
+}
+
+/// Facteurs d'allongement des notes *précédant* un quilisma sur la même
+/// syllabe (`gabctk.py:35` `DUREE_AVANT_QUILISMA`, `:1051-1059` ; décision de
+/// l'utilisateur du 2026-11-25). Le facteur à distance `k` est `1 + 2^-k` :
+/// la note immédiatement avant le quilisma est doublée (`k = 0`), la suivante
+/// vers l'arrière est multipliée par 1,5 (`k = 1`), puis 1,25, 1,125, …
+///
+/// Ces facteurs sont des choix de projection moderne, au même titre que le
+/// punctum mora (×2) et l'épisème horizontal (×1,5) décrits ci-dessous ; GABC
+/// n'a aucune durée fixe (`Gabc.tex:801-845`). Voir `docs/agents/gabc.md` §7.
+pub const QUILISMA_HOLD_IMMEDIATE: Fraction = Fraction::from_integer(2);
+/// distance 1 : 1 + 1/2.
+pub const QUILISMA_HOLD_SECOND: Fraction = Fraction::from_ratio(3, 2);
+/// distance 2 : 1 + 1/4.
+pub const QUILISMA_HOLD_THIRD: Fraction = Fraction::from_ratio(5, 4);
+/// distance 3 : 1 + 1/8.
+pub const QUILISMA_HOLD_FOURTH: Fraction = Fraction::from_ratio(9, 8);
+/// Les quatre premiers facteurs, pour les syllabes courantes. Au-delà,
+/// [`quilisma_hold_factor`] prolonge la même série.
+pub const QUILISMA_HOLD_FACTORS: [Fraction; 4] = [
+    QUILISMA_HOLD_IMMEDIATE,
+    QUILISMA_HOLD_SECOND,
+    QUILISMA_HOLD_THIRD,
+    QUILISMA_HOLD_FOURTH,
+];
+
+/// Facteur `1 + 2^-distance` appliqué à une note avant un quilisma.
+fn quilisma_hold_factor(distance: usize) -> Fraction {
+    if let Some(factor) = QUILISMA_HOLD_FACTORS.get(distance) {
+        return *factor;
+    }
+    // Au-delà de 16 notes chantées, l'écart est déjà sous la précision d'une
+    // figure notée : on plafonne la série au lieu de déborder les `i64`.
+    let exponent = (distance as u32).min(16);
+    let denominator = 1i64 << exponent;
+    Fraction::new(denominator + 1, denominator)
+}
+
+/// Facteur d'allongement d'une note avant un quilisma de la même syllabe.
+/// Un quilisma n'atteint jamais la syllabe précédente : la marche arrière
+/// s'arrête à la note courante (`Gabc.tex:228-245`). Les alterations ne sont
+/// pas des notes chantées (`:512-540`) et ne comptent donc pas dans la
+/// distance. En cas de plusieurs quilismas, le facteur le plus grand gagne.
+/// Calculé sans allocation, ce qui garde la projection légère en wasm.
+fn quilisma_hold(syllable: &Syllable, note_index: usize) -> Fraction {
+    let mut factor = Fraction::ONE;
+    for (quilisma, note) in syllable.notes.iter().enumerate() {
+        if quilisma <= note_index
+            || !note
+                .signs
+                .iter()
+                .any(|sign| sign.kind == SignKind::Quilisma)
+        {
+            continue;
+        }
+        let mut distance = 0;
+        for index in (note_index + 1..quilisma).rev() {
+            if alteration_value(&syllable.notes[index]).is_none() {
+                distance += 1;
+            }
+        }
+        let candidate = quilisma_hold_factor(distance);
+        if candidate > factor {
+            factor = candidate;
+        }
+    }
+    factor
 }
 
 /// Durée projetée d'une note (`Gabc.tex:742-797`).
@@ -871,6 +964,139 @@ mod tests {
         // g-flat, g-flat inside the word, then natural after the word,
         // g-sharp after `#`, natural again after the bar.
         assert_eq!(pitches, [54, 54, 55, 56, 55]);
+    }
+
+    fn note_with_quilisma(letter: char, quilisma: bool) -> GregorianNote {
+        GregorianNote {
+            letter,
+            signs: if quilisma {
+                vec![NeumeSign::new(SignKind::Quilisma, "w")]
+            } else {
+                Vec::new()
+            },
+            ..GregorianNote::default()
+        }
+    }
+
+    fn events(score: &Score) -> Vec<&ChordRest> {
+        let track = Track::new(super::super::StaffId::from_raw(0), 0);
+        score
+            .measures
+            .iter()
+            .flat_map(|measure| &measure.segments)
+            .filter_map(move |segment| match segment.element(track) {
+                Some(SegmentItem::ChordRest(chord_rest)) => Some(chord_rest),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn quilisma_factors_are_the_named_series() {
+        assert_eq!(QUILISMA_HOLD_IMMEDIATE, Fraction::from_integer(2));
+        assert_eq!(QUILISMA_HOLD_SECOND, Fraction::new(3, 2));
+        assert_eq!(QUILISMA_HOLD_THIRD, Fraction::new(5, 4));
+        assert_eq!(QUILISMA_HOLD_FOURTH, Fraction::new(9, 8));
+        assert_eq!(QUILISMA_HOLD_FACTORS[0], quilisma_hold_factor(0));
+        assert_eq!(QUILISMA_HOLD_FACTORS[3], quilisma_hold_factor(3));
+        assert_eq!(quilisma_hold_factor(4), Fraction::new(17, 16));
+    }
+
+    #[test]
+    fn quilisma_is_an_inverted_mordent_ornament() {
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![Syllable {
+                text: "De".to_owned(),
+                notes: vec![
+                    note_with_quilisma('g', false),
+                    note_with_quilisma('h', true),
+                ],
+                space_after: true,
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        let chords: Vec<&Chord> = events(&score)
+            .into_iter()
+            .filter_map(|event| event.chord_ref())
+            .collect();
+        assert!(chords[0].ornaments.is_empty());
+        assert_eq!(
+            chords[1].ornaments,
+            vec![Ornament::new(OrnamentType::InvertedMordent)]
+        );
+    }
+
+    #[test]
+    fn three_notes_before_a_quilisma_are_held_progressively() {
+        // `1 + 2^-k` en remontant depuis le quilisma : la note immédiatement
+        // avant est doublée (1/2), puis 1,5 (3/8) et 1,25 (5/16) ; la note
+        // chantée du quilisma garde sa durée de base (noire).
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![Syllable {
+                text: "gloria".to_owned(),
+                notes: vec![
+                    note_with_quilisma('g', false),
+                    note_with_quilisma('h', false),
+                    note_with_quilisma('i', false),
+                    note_with_quilisma('j', true),
+                ],
+                space_after: true,
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        let ticks: Vec<Fraction> = events(&score)
+            .iter()
+            .map(|event| event.ticks.unwrap_or_else(|| event.duration.ticks()))
+            .collect();
+        assert_eq!(
+            ticks,
+            [
+                Fraction::new(5, 16),
+                Fraction::new(3, 8),
+                Fraction::new(1, 2),
+                Fraction::QUARTER,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_quilisma_as_second_note_stops_at_the_syllable_start() {
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![
+                Syllable {
+                    text: "et".to_owned(),
+                    notes: vec![note_with_quilisma('g', false)],
+                    space_after: true,
+                    ..Syllable::default()
+                },
+                Syllable {
+                    text: "in".to_owned(),
+                    notes: vec![
+                        note_with_quilisma('h', false),
+                        note_with_quilisma('i', true),
+                    ],
+                    space_after: true,
+                    ..Syllable::default()
+                },
+            ],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        let events = events(&score);
+        assert_eq!(events[0].ticks, None, "pas d'allongement entre syllabes");
+        assert_eq!(events[1].ticks, Some(Fraction::new(1, 2)));
+        assert_eq!(
+            events[2].ticks, None,
+            "la note du quilisma n'est pas allongée"
+        );
+        assert_eq!(events.len(), 3);
     }
 
     #[test]

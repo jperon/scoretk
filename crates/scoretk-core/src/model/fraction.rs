@@ -97,6 +97,17 @@ impl Fraction {
         }
     }
 
+    /// Construit une fraction déjà réduite de façon constante.
+    ///
+    /// Réservé aux constantes du noyau dont le numérateur et le dénominateur
+    /// sont connus et déjà irréductibles : aucun contrôle n'est fait ici.
+    pub const fn from_ratio(numerator: i64, denominator: i64) -> Self {
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
     /// Convertit un nombre d'unités en fraction.
     ///
     /// `units_per_whole` est le nombre d'unités par ronde. Pour des divisions

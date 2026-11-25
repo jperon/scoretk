@@ -31,8 +31,9 @@
 //! in `docs/agents/gabc.md` §8/§10.
 
 use scoretk_core::model::{
-    BarKind, BarLineType, ChordRestKind, Duration, Gregorian, GregorianHeader, GregorianNote,
-    LyricsSyllabic, NeumeSign, Score, SegmentItem, SignKind, Syllable,
+    BarKind, BarLineType, ChordRestKind, ClefType, Duration, Gregorian, GregorianHeader,
+    GregorianNote, LyricsSyllabic, NeumeSign, OrnamentType, Score, SegmentItem, SignKind, Syllable,
+    Track,
 };
 use scoretk_gabc_common::syntax;
 
@@ -51,6 +52,9 @@ struct Event {
     text: String,
     space_after: bool,
     bar: Option<BarKind>,
+    /// `<ornaments><inverted-mordent/></ornaments>` sur une note de chant :
+    /// convention gabctk du quilisma (`gabctk.py:1051-1095`, `w` dans GABC).
+    quilisma: bool,
 }
 
 /// Builds the payload the writer will serialise. Missing L4/L5 data is not
@@ -69,7 +73,11 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
         _ => 19,
     };
     let events = collect_events(score, staff);
-    let clef = choose_clef(&events, max_height);
+    // Quand la partition vient de la vue dérivée grégorienne, sa clé C/F sur
+    // portée de quatre lignes est une donnée de la source (`Gabc.tex:847-870`)
+    // transportée par `<clef>` en MusicXML standard. La reprendre évite de
+    // recalculer une clé par tessiture, ce qui décalerait toutes les lettres.
+    let clef = score_gabc_clef(score, staff).unwrap_or_else(|| choose_clef(&events, max_height));
     let key = syntax::clef_key(clef);
 
     // Le lecteur GABC traite `x`/`#`/`y` comme des glyphes d'alteration non
@@ -107,7 +115,11 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
                     });
                     effect[slot] = wanted;
                 }
-                let (glyph, signs) = signs_for_duration(event.duration);
+                let (mut glyph, mut signs) = signs_for_duration(event.duration);
+                if event.quilisma {
+                    glyph.push('w');
+                    signs.push(NeumeSign::new(SignKind::Quilisma, "w"));
+                }
                 notes.push(GregorianNote {
                     letter,
                     glyph,
@@ -172,6 +184,35 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
     }
 }
 
+/// Clé grégorienne déjà portée par la partition (vue dérivée d'un L6), sous
+/// la forme du jeton GABC que le lecteur sait relire.
+fn score_gabc_clef(score: &Score, staff: usize) -> Option<&'static str> {
+    let staff_id = score.staves.get(staff)?.id;
+    if score.staves.get(staff)?.lines != 4 {
+        return None;
+    }
+    let track = Track::new(staff_id, 0);
+    let clef = score
+        .measures
+        .iter()
+        .flat_map(|measure| &measure.segments)
+        .find_map(|segment| match segment.element(track) {
+            Some(SegmentItem::Clef(clef)) => Some(clef.concert),
+            _ => None,
+        })?;
+    match clef {
+        ClefType::C1 => Some("c1"),
+        ClefType::C2 => Some("c2"),
+        ClefType::C3 => Some("c3"),
+        ClefType::C4 => Some("c4"),
+        ClefType::C5 => Some("c5"),
+        ClefType::F => Some("f4"),
+        ClefType::FBaritone => Some("f3"),
+        ClefType::FSubbass => Some("f5"),
+        _ => None,
+    }
+}
+
 /// Staff with most notes; ties go to the lowest index. Voices other than 0
 /// and chords with several notes are dropped (documented loss).
 fn choose_staff(score: &Score) -> usize {
@@ -201,7 +242,23 @@ fn choose_staff(score: &Score) -> usize {
         .map_or(0, |(index, _)| index)
 }
 
+/// Une partition sans indication de mesure, sur portée à quatre lignes, est
+/// traitée comme du chant grégorien : un `inverted-mordent` y est le quilisma
+/// de la convention gabctk (`gabctk.py:1051-1095`, choix de l'utilisateur).
+/// Ailleurs l'ornement reste un ornement et n'est pas réécrit en `w`.
+fn is_chant(score: &Score) -> bool {
+    let unmetered = !score.measures.iter().any(|measure| {
+        measure.segments.iter().any(|segment| {
+            segment
+                .iter_elements()
+                .any(|(_, item)| matches!(item, SegmentItem::TimeSig(_)))
+        })
+    });
+    unmetered && score.staves.iter().any(|staff| staff.lines == 4)
+}
+
 fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
+    let chant = is_chant(score);
     let mut events: Vec<Event> = Vec::new();
     for measure in &score.measures {
         let first = events.len();
@@ -228,6 +285,11 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
                         matches!(lyric.syllabic, LyricsSyllabic::Single | LyricsSyllabic::End)
                     }),
                     bar: None,
+                    quilisma: chant
+                        && chord
+                            .ornaments
+                            .iter()
+                            .any(|ornament| ornament.kind == OrnamentType::InvertedMordent),
                 });
             }
         }
@@ -245,6 +307,7 @@ fn collect_events(score: &Score, staff: usize) -> Vec<Event> {
                 text: String::new(),
                 space_after: false,
                 bar: Some(bar),
+                quilisma: false,
             });
         }
     }
@@ -314,15 +377,26 @@ fn choose_clef(events: &[Event], max_height: i32) -> &'static str {
         .enumerate()
         .min_by_key(|(rank, clef)| {
             let key = syntax::clef_key(clef);
-            let heights: Vec<i32> = events
-                .iter()
-                .filter_map(|event| event.note.map(|(step, _)| step + key + 5))
-                .collect();
-            let outside = heights
-                .iter()
-                .filter(|height| **height < 3 || **height > max_height)
-                .count();
-            let span = heights.iter().max().unwrap_or(&0) - heights.iter().min().unwrap_or(&0);
+            // Une seule passe : éviter un `Vec` par clé réduit le code
+            // compilé pour wasm autant que les allocations.
+            let mut outside = 0;
+            let mut lowest = i32::MAX;
+            let mut highest = i32::MIN;
+            for event in events {
+                if let Some((step, _)) = event.note {
+                    let height = step + key + 5;
+                    if !(3..=max_height).contains(&height) {
+                        outside += 1;
+                    }
+                    lowest = lowest.min(height);
+                    highest = highest.max(height);
+                }
+            }
+            let span = if lowest <= highest {
+                highest - lowest
+            } else {
+                0
+            };
             (outside, span, *rank)
         })
         .map_or("c3", |(_, clef)| *clef)
@@ -339,7 +413,8 @@ fn bar_kind(bar: BarLineType) -> Option<BarKind> {
         // `Tick` est le style MusicXML de la divisio minima (`,`), `Short`
         // celui de la divisio minor (`;`) : les deux redeviennent des barres
         // de séparation GABC, pas des mesures métriques.
-        B::Tick | B::Short | B::Broken => Some(BarKind::DivisioMinima),
+        B::Tick | B::Broken => Some(BarKind::DivisioMinima),
+        B::Short => Some(BarKind::DivisioMinor),
     }
 }
 
@@ -347,8 +422,8 @@ fn bar_kind(bar: BarLineType) -> Option<BarKind> {
 mod tests {
     use super::*;
     use scoretk_core::model::{
-        Chord, ChordRest, Duration, Fraction, Lyrics, Measure, Note, Part, Segment, SegmentType,
-        Track,
+        Chord, ChordRest, Duration, Fraction, Lyrics, Measure, Note, Ornament, Part, Segment,
+        SegmentType, Track,
     };
 
     fn score_with_notes(
@@ -423,6 +498,32 @@ mod tests {
     }
 
     #[test]
+    fn an_inverted_mordent_on_a_chant_note_becomes_a_quilisma() {
+        // L'aller-retour par du MusicXML standard : `<ornaments>` est le
+        // seul transport du quilisma quand les champs privés `gabc:` sont
+        // retirés (`docs/agents/gabc.md` §9.1).
+        let mut score = score_with_notes(&[(60, 14)], &["Do"], &[]);
+        let track = Track::new(score.staves[0].id, 0);
+        let measure = &mut score.measures[0];
+        let segment = measure
+            .segments
+            .iter_mut()
+            .find(|segment| segment.element(track).is_some())
+            .expect("a note segment");
+        if let Some(SegmentItem::ChordRest(chord_rest)) = segment.element_mut(track) {
+            if let Some(chord) = chord_rest.chord_mut() {
+                chord
+                    .ornaments
+                    .push(Ornament::new(OrnamentType::InvertedMordent));
+            }
+        }
+        let gregorian = from_score(&score);
+        let note = &gregorian.syllables[0].notes[0];
+        assert_eq!(note.glyph, "w");
+        assert_eq!(note.signs, vec![NeumeSign::new(SignKind::Quilisma, "w")]);
+    }
+
+    #[test]
     fn an_empty_score_still_yields_a_valid_header_block() {
         let gregorian = from_score(&Score::new());
         assert_eq!(gregorian.headers[0].value, "Cantus");
@@ -438,6 +539,7 @@ mod tests {
                 text: String::new(),
                 space_after: false,
                 bar: None,
+                quilisma: false,
             })
             .collect::<Vec<_>>();
         assert!(["c2", "c3", "c4", "f3", "f4"].contains(&choose_clef(&events, 15)));
