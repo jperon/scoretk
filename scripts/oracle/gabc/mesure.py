@@ -160,6 +160,15 @@ def selftest(args) -> None:
     b = canonical.parse_source(SELFGABC)
     result = canonical.compare(b, a)
     assert result["core_exact"], result
+    # A Dominican bar must not disappear from the canonical form: its digit
+    # is the only difference between `;` and `;1` (`src/struct.h:158`).
+    dominican = canonical.parse_dump("bar 6 (B_DIVISIO_MINOR_D1)\n")
+    assert dominican["bars"] == ["DIVISIO_MINOR_D1"], dominican
+    # A custos has a pitch in the dump but is not a sung note.
+    custos = canonical.parse_dump(
+        "type 8 (GRE_CUSTOS)\npitch a\n---\ntype 1 (GRE_NOTE)\npitch g\n"
+    )
+    assert [note["letter"] for note in custos["notes"]] == ["g"], custos
     again = gregorio_ref(args.gregorio, src, tmp / "again")
     assert again.get("ok") and again["sha"] == ref["sha"], "Gregorio is not deterministic"
     print(f"selftest : OK (core={result['core_exact']}, signs={result['signs']}, deterministic=True)")

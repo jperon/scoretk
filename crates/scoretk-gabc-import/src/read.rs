@@ -137,6 +137,19 @@ fn parse_notation(body: &str) -> (Vec<Syllable>, Vec<String>) {
             // Kept until `)` closes the group; a single buffer handles
             // comments and escapes uniformly.
             text = pending;
+        } else if char == '<' && chars[index..].iter().collect::<String>().starts_with("<v>") {
+            // Verbatim TeX `<v>…</v>` is typography, not a note group: a
+            // literal `(` inside it must not open a group
+            // (`Gabc.tex:297-309,1093-1102`, pitfall 9 of format-ref). Keep
+            // the whole tag as syllable text so the writer emits it back.
+            let rest: String = chars[index..].iter().collect();
+            if let Some(end) = rest.find("</v>") {
+                let end = index + end + 4;
+                text.push_str(&chars[index..end].iter().collect::<String>());
+                index = end;
+                continue;
+            }
+            text.push(char);
         } else if char == '%' {
             // A comment runs to end of line and suppresses the end-of-line
             // space (`Gabc.tex:63-64`).
@@ -227,6 +240,12 @@ fn parse_group(raw_code: &str) -> (Syllable, Vec<String>) {
                 }
                 index += 1;
             }
+            continue;
+        }
+        if is_pitch(char) && matches!(chars.get(index + 1), Some('+')) {
+            // `[a-np]+` is a manual custos, not a note
+            // (`Gabc.tex:872-884`; `gabc-notes-determination.l:1158-1162`).
+            index += 2;
             continue;
         }
         if is_pitch(char) {
@@ -332,7 +351,8 @@ mod tests {
     fn custos_line_break_and_nabc_cut_are_not_notes() {
         assert!(group("z").notes.is_empty());
         assert!(group("Z-").notes.is_empty());
-        assert_eq!(group("g+|h").notes.len(), 2);
+        assert!(group("g+").notes.is_empty());
+        assert_eq!(group("g+|h").notes.len(), 1);
     }
 
     #[test]
@@ -341,6 +361,17 @@ mod tests {
         assert_eq!(parsed.1, ["c3"]);
         assert_eq!(parsed.0.bars, [BarKind::DivisioMaior]);
         assert_eq!(parsed.0.notes.len(), 1);
+    }
+
+    #[test]
+    fn a_parenthesis_inside_verbatim_tex_is_not_a_note_group() {
+        let source = "name: x;\n%%\n(v3) <v>(</v>Al(f)le(g) (::)\n";
+        let (header, notation) = syntax::split_sections(source).expect("sections");
+        let gregorian = parse_payload(&header, &notation).expect("payload");
+        assert_eq!(gregorian.syllables[0].text, "<v>(</v>Al");
+        assert_eq!(gregorian.syllables[0].notes.len(), 1);
+        assert_eq!(gregorian.syllables[1].text, "le");
+        assert_eq!(gregorian.syllables[1].notes.len(), 1);
     }
 
     #[test]

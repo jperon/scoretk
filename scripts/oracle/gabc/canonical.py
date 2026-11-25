@@ -153,8 +153,14 @@ def parse_dump(text: str) -> dict:
     key = cle_key(clef)
     neume, syllable = 0, 0
     text_parts: list[str] = []
+    custos = False
     for line in text.splitlines():
         stripped = line.strip()
+        if stripped.startswith("type "):
+            # A `GRE_CUSTOS` has a `pitch` too, but it is a layout mark, not a
+            # sung note (`Gabc.tex:872-884`): counting it would shift the
+            # canonical pitch sequence at every clef change.
+            custos = "GRE_CUSTOS" in stripped
         if stripped.startswith("initial_key"):
             match = re.search(r"\(([cf])(\d)\)", stripped)
             if match:
@@ -181,6 +187,8 @@ def parse_dump(text: str) -> dict:
             continue
         if stripped.startswith("pitch "):
             value = stripped.split(None, 1)[1].strip()
+            if custos:
+                continue
             if re.fullmatch(r"[a-np]", value):
                 notes.append({"step": hauteur(value) - key - 5, "letter": value, "neume": neume, "syllable": syllable})
             continue
@@ -188,7 +196,10 @@ def parse_dump(text: str) -> dict:
             signs.append("LIQUESCENTIA")
             continue
         if stripped.startswith("bar "):
-            match = re.search(r"\((B_[A-Z_]+)\)", stripped)
+            # Dominican bars carry a digit (`B_DIVISIO_MINOR_D1`,
+            # `src/struct.h:158`); dropping them silently would make a wrong
+            # `;` spelling look equal to `;1`.
+            match = re.search(r"\((B_[A-Z0-9_]+)\)", stripped)
             if match:
                 bars.append(match.group(1).removeprefix("B_"))
             continue

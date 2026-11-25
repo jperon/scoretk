@@ -700,15 +700,17 @@ stable wasm API signatures are untouched, `convert`'s default `to` is still
 
 Verification: `cargo test --workspace`, clippy `-D warnings`, `fmt --check`,
 the three `wasm32-unknown-unknown` builds of the new crates and `scoretk`
-pass. The nine Gregorio examples round trip byte-for-byte
-(`tests/corpus/gabc/`); `e2e_corpus` and all existing snapshots are unchanged.
-The Gregorio oracle on the full 202-file lot with the scoretk writer gives
-**197/197 core-exact and 197/197 dump-identical** (5 files invalid for
-Gregorio itself), and layer coverage on the nine examples is **100 % essential
-and 100 % full support** on 3 160 items. Wasm raw size is 2 394 775 bytes
-versus 2 379 470 at the parent commit `a4053795`, i.e. **+15 305 (+0.64 %)**,
-gzip +7 807 (+0.84 %): below the +2 % budget and the ≈ 2.5 MB cap. Full
-tables, citations and limits: `docs/agents/gabc.md` §7-§11.
+pass. The nine Gregorio examples round trip through the *structured fields*, not
+byte-for-byte (`tests/corpus/gabc/`); `e2e_corpus` and all existing snapshots
+are unchanged. After the correction of the self-comparison, the Gregorio
+oracle on the full 202-file lot gives **193/194 core-exact and 0/194
+dump-identical** (5 files invalid for Gregorio itself, 3 more rejected after
+re-serialisation), layer coverage is **100 % / 100 %** on the direct row and
+**30.60 % essential / 31.54 % full support** on the GABC → MusicXML → GABC
+cross row (3 158 items). Wasm raw size is 2 402 453 bytes versus 2 379 470 at
+the parent commit `a4053795`, i.e. **+22 983 (+0.97 %)**, gzip +11 510
+(+1.23 %): below the +2 % budget and the ≈ 2.5 MB cap. Full tables,
+citations and limits: `docs/agents/gabc.md` §7-§11.
 
 ## 11. Layer coverage: declared capabilities and first measurement
 
@@ -1026,23 +1028,31 @@ backed by a format specification section and by a test, and the `style`
 items kept in L5 (page geometry, scaling, credit fonts) are exactly those
 that MusicXML `<defaults>` and LilyPond `\paper` can carry.
 
-### 11.7 GABC coverage (step 6)
+### 11.7 GABC coverage (step 6, corrected measurement)
 
 GABC is not measured on the MuseScore corpus: its primary data is the L6
 syllable/neume stream, and its L0/L1 view is a derived projection with
-invented durations (§7.1). `crates/scoretk/tests/layer_coverage.rs` therefore
-adds a row over `tests/corpus/gabc/` (nine Gregorio examples, GPL-3.0-or-later)
-with the reference `GABC → model` and the round trip
-`model → GABC → model → inventory`.
+invented durations (§7.1). `crates/scoretk/tests/layer_coverage.rs` adds two
+rows over `tests/corpus/gabc/` (nine Gregorio examples, GPL-3.0-or-later):
+the direct `GABC → model → GABC → model` and a **cross** conversion
+`GABC → MusicXML → GABC → model`. The writer now serialises the structured
+payload instead of copying the source, so a byte-identical round trip is
+neither expected nor measured.
 
 | Row | Declared | Essential | Full support | Files | Items | Source |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| gabc | L0+L1+L2+L3+L6 | **100.00 %** | **100.00 %** | 9 | 3 160 | Gregorio examples (byte-identical round trip) |
+| gabc (direct) | L0+L1+L2+L3+L6 | **100.00 %** | **100.00 %** | 9 | 3 158 | structured fields re-parsed, **not** a byte comparison |
+| gabc → xml → gabc (cross) | L0+L1+L2+L3+L6 | **30.60 %** | **31.54 %** | 9 | 3 158 | 9/9 outputs differ from the source; real conversion |
 
-Per declared layer: L1 342/342, L2 1 034/1 034, L3 31/31 and L6
-1 753/1 753 items, all matched, 0 extra. The essential score counts the
-derived `note` and `measure` items of the same round trip; it says nothing
-about MuseScore fidelity because GABC has no metre (`Gabc.tex:801-845`).
-Gregorio's own oracle on the full 202-file lot scores the writer 197/197 for
-both core-exact canonical comparison and byte-identical dumps; see
-`docs/agents/gabc.md` §9 for the complete table and limits.
+Per declared layer of the cross row: L1 45.03 % (154/342), L2 27.11 %
+(280/1 033), L3 58.06 % (18/31), L6 31.05 % (544/1 752); the direct row
+matches all 3 158 items. The cross row's loss is structural: MusicXML has no
+neume stream, so the second GABC is projected from concert pitch, lyrics and
+bars (`from_score.rs`), losing signs, shape groups, custos and typography.
+The essential score also drops because the derived quarter-note measures are
+re-notated by MusicXML. GABC has no metre (`Gabc.tex:801-845`).
+
+Gregorio's independent oracle on the full 202-file lot scores the writer
+**193/194 = 99.48 % core-exact but 0/194 byte-identical dumps**; see
+`docs/agents/gabc.md` §9–§10 for the per-file causes (Dominican bars,
+verbatim `<v>`, custos, and the one residual `@[…]` fusion file).

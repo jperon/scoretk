@@ -213,38 +213,71 @@ that Gregorio's own parser accepts the output.
 bars, clefs) and the L6 slot of the model. L4 (no tempo/velocity header,
 `:67-154`) and L5 (no page geometry, `:801-845`) are not declared.
 
-## 9. Measured results (2026-11-25)
+## 9. Measured results (2026-11-25, corrected)
 
-| Measurement | Command | Result |
+**The previous 100 % claims are withdrawn.** They compared the input with
+itself because the writer emitted `header_source + notation`. All figures
+below are re-measured with the structured writer; the commands are the ones
+in §6 and `crates/scoretk/tests/layer_coverage.rs`.
+
+| Measurement | Command | Honest result |
 | --- | --- | --- |
-| Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **9/9 byte-identical**, 100 % inventory match |
-| Layer coverage on the nine examples | `cargo test -p scoretk --test layer_coverage -- --nocapture` | **essential 100 %, full support 100 %** on 3 160 items (L1 342, L2 1 034, L3 31, L6 1 753), declared L0+L1+L2+L3+L6 |
-| Gregorio vs itself, full lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio) |
-| scoretk writer vs Gregorio dumps, full lot | `mesure.sh … --writer <cli> --jobs 2` | **writer core-exact 197/197 = 100 %, dump SHA identical 197/197**, 0 writer errors |
-| Python source sanity reader (phase 0) | same run, `cmp_source` | 132/197 = 67.0 % (unchanged baseline, see §5) |
-| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 394 775 raw / 939 561 gzip vs 2 379 470 / 931 754 at `a4053795`: **+15 305 raw (+0.64 %), +7 807 gzip (+0.84 %)**, total under the ≈ 2.5 MB cantus cap; below the +2 % budget |
+| Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **0/9 byte-identical** (expected); structured inventory 100 % self-consistency. Gregorio accepts 6/6 of the examples it accepts at all, **6/6 core-exact**, **0/6 dump-identical** in `mesure.jsonl` (3 examples are invalid for Gregorio itself) |
+| Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 158 items (L1 342, L2 1 033, L3 31, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
+| **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **essential 30.60 %, full support 31.54 %**, 9/9 outputs differ from their source; L1 45.03 % (154/342), L2 27.11 % (280/1 033), L3 58.06 % (18/31), L6 31.05 % (544/1 752) |
+| Gregorio vs itself, full 202-file lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio itself) |
+| **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **writer core-exact 193/194 = 99.48 %**, **dump SHA identical 0/194**, 3 writer outputs rejected by Gregorio, 0 tool crashes |
+| Python source sanity reader (phase 0) | same run, `cmp_source` | 133/197 = 67.51 % (was 132/197; the canonical form now keeps Dominican-bar digits and ignores custos pitches) |
+| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 402 453 raw / 943 264 gzip vs 2 379 470 / 931 754 at `a4053795`: **+22 983 raw (+0.97 %), +11 510 gzip (+1.23 %)**, under the ≈ 2.5 MB cap and the +2 % budget |
 
-No existing snapshot or `e2e_corpus` result changed: the new format is
-additive (new crates, new format variant, L6 payload only on scores read
-from GABC).
+No existing snapshot or `e2e_corpus` result changed. The direct 100 % is a
+consistent re-parse of the same structured fields; only the cross row and
+Gregorio's independent dump measure an actual conversion.
+
+### Why the numbers moved
+
+Two genuine reader defects and one oracle defect were found by the per-file
+report (`mesure.jsonl`, never by the total):
+
+- Gregorio's lexer accepts `[,;][1-8]` as Dominican bars
+  (`gabc-notes-determination.l:1246-1248`) although `Gabc.tex:818-820`
+  documents only `;n`. The reader now emits `;n` for both spellings, and the
+  canonical dump parser keeps the digit in `B_DIVISIO_MINOR_Dn`
+  (`struct.h:158`): `gb7950`, `gb8150` fixed.
+- `<v>…</v>` is verbatim TeX: a literal `(` inside it is not a note group
+  (`Gabc.tex:297-309,1093-1102`). The reader now copies the whole tag as
+  syllable text: `gb7851` fixed (24 notes and 3 syllables had been swallowed).
+- A custos has a `pitch` line in Gregorio's dump but is not a sung note
+  (`Gabc.tex:872-884`); it shifted the canonical sequence at clef changes.
+  `parse_dump` now skips `GRE_CUSTOS` pitches. The reader also no longer
+  mistakes `[a-np]+` (`g+`, `f+`) for a note: `gb98`, `gb1456`, `gb1553`,
+  `gb1747` fixed.
 
 ## 10. Limits
 
 - GABC has no metre, no measure numbering and no fixed durations
   (`Gabc.tex:801-845`): L0/L1 notes and measures are a derived projection,
-  not comparable to MuseScore's metric spine. GABC is therefore measured on
-  its own corpus in `layer_coverage.rs`, not on `tests/corpus/{v3,v4}`.
+  not comparable to MuseScore's metric spine. This is the main reason the
+  cross row is at 30.60 % essential: measure ticks and note ticks change when
+  the derived quarter-note projection round trips through MusicXML.
+- The L6 payload does not model neume grouping order inside a group, `<v>`
+  and `[…]` TeX attributes, custos/line breaks, NABC cuts or word-level
+  typography beyond the raw syllable text. The writer therefore cannot emit
+  them, and the dumps differ byte for byte even when the canonical musical
+  facts agree (0/194 identical dumps).
+- One residual file (`gb18458`) is not core-exact: five notes are lost in
+  `@[ehg]` fusion groups (`Gabc.tex:603-666`); `strip_attributes` drops the
+  fused pitches. Adding a fusion layer to `GregorianNote` is the fix, not a
+  change of the oracle.
 - The derived concert pitch uses the first clef only; later clef changes
-  stay in the L6 `clefs` list but are not re-applied to L0 notes
-  (`Gabc.tex:847-870`; `gabc-score-determination.c:89-100`). This does not
-  affect the oracle, which reads the verbatim GABC, nor the round trip.
+  stay in the L6 `clefs`/`Syllable::clef` fields but are not re-applied to L0
+  notes (`Gabc.tex:847-870`; `gabc-score-determination.c:89-100`).
 - Export without an L6 payload now projects concert pitch, first-voice
   lyrics and bar lines into GABC; neume shapes, rhythmic signs and polyphony
-  cannot be recovered from that data and are lost (§8). The earlier refusal
-  was replaced because it made the conversion impossible rather than honest.
-- The Python `canonical.parse_source` sanity reader is still at 132/197;
-  improving it is independent of the Rust writer score (the writer is
-  measured through Gregorio's own dump of its output).
+  cannot be recovered from that data and are lost (§8).
+- The Python `canonical.parse_source` sanity reader is at 133/197; improving
+  it is independent of the Rust writer score (the writer is measured through
+  Gregorio's own dump of its output).
 - Five lot files are invalid for Gregorio itself and are excluded from both
   sides (§5).
 
@@ -262,5 +295,8 @@ To upgrade:
    key), add the rule with its new `Gabc.tex` line to
    `docs/agents/format-ref/gabc.md`, a unit test in `scoretk-gabc-common`
    or `scoretk-gabc-import`, and update §7/§8 of this page;
-5. never regenerate the lot from GregoBase with another filter or version
+5. when the dump vocabulary changes, re-check `canonical.py`'s two reader
+   rules (Dominican-bar digits with `[A-Z0-9_]`, and `GRE_CUSTOS` pitches,
+   which are layout, not notes) and its `--selftest` assertions;
+6. never regenerate the lot from GregoBase with another filter or version
    without an explicit decision (§1).

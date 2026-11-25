@@ -503,6 +503,111 @@ fn gabc_full_support_reaches_the_target() {
     );
 }
 
+/// Cross conversion `GABC → MusicXML → GABC → model`, on the same nine
+/// sources. Unlike `gabc_totals`, this cannot preserve the L6 payload: a
+/// MusicXML score has no neume stream, so the second GABC is rebuilt by
+/// `from_score` from concert pitches, lyrics and bars. The result measures
+/// what a real conversion keeps, not what a verbatim copy keeps.
+fn gabc_cross_totals() -> (Totals, Layers, usize) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("gabc");
+    let mut paths: Vec<PathBuf> = fs::read_dir(root)
+        .expect("GABC corpus directory")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "gabc")
+        })
+        .collect();
+    paths.sort();
+    let declared = GABC_IMPORT.declared().union(GABC_EXPORT.declared());
+    let mut totals = Totals::default();
+    let mut rewritten = 0;
+    for path in paths {
+        let bytes = fs::read(&path).expect("read GABC example");
+        let reference = read(&bytes, Format::Gabc).expect("GABC import");
+        let reference_inventory = inventory(&reference);
+        let xml = match write(&reference, Format::MusicXml, &Options::default()) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let from_xml = match read(&xml, Format::MusicXml) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let gabc = match write(&from_xml, Format::Gabc, &Options::default()) {
+            Ok(value) => value,
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        if gabc != bytes {
+            rewritten += 1;
+        }
+        let candidate = match read(&gabc, Format::Gabc) {
+            Ok(value) => inventory(&value),
+            Err(_) => {
+                totals.skipped += 1;
+                continue;
+            }
+        };
+        let coverage = compare(&reference_inventory, &candidate, declared);
+        totals.add(&coverage, essential(&reference_inventory, &candidate));
+    }
+    (totals, declared, rewritten)
+}
+
+#[test]
+fn gabc_cross_round_trip_table() {
+    let (totals, declared, rewritten) = gabc_cross_totals();
+    println!("\n=== GABC cross round trip: GABC → MusicXML → GABC (nine examples) ===");
+    println!(
+        "key = (layer, tick, staff, kind, value); {rewritten}/9 outputs differ from their source"
+    );
+    println!(
+        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}  source",
+        "direction", "declared", "essential", "full-support", "files", "skipped", "ref-items"
+    );
+    print_row(
+        "gabc→xml→gabc",
+        declared,
+        &totals,
+        "Gregorio examples (cross conversion, no payload copy)",
+    );
+    print_details(declared, &totals);
+    println!();
+}
+
+#[test]
+fn gabc_cross_round_trip_is_not_a_self_comparison() {
+    let (totals, _, rewritten) = gabc_cross_totals();
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    // If the writer copied its input, this would be 0/9.
+    assert_eq!(
+        rewritten, 9,
+        "the cross round trip must re-serialise the GABC"
+    );
+    assert!(totals.total.reference > 0);
+    println!(
+        "GABC cross round trip: essential {:.2} %, full support {:.2} %",
+        totals.essential.percent(),
+        totals.total.percent()
+    );
+}
+
 #[test]
 fn musicxml_import_alone_reads_musescore_474_references() {
     // The import-alone row must not silently reuse scoretk's round-trip

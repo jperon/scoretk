@@ -97,7 +97,11 @@ impl BarKind {
             return Some((Self::DivisioMinimis, 2));
         }
         let bytes = code.as_bytes();
-        if bytes.len() >= 2 && bytes[0] == b';' && (b'1'..=b'8').contains(&bytes[1]) {
+        // Gregorio's lexer accepts `[,;][1-8]` as a Dominican bar
+        // (`src/gabc/gabc-notes-determination.l:1246-1248`), although
+        // `Gabc.tex:818-820` documents only `;n`.
+        if bytes.len() >= 2 && matches!(bytes[0], b';' | b',') && (b'1'..=b'8').contains(&bytes[1])
+        {
             return Some((Self::Dominican(bytes[1] - b'0'), 2));
         }
         match bytes.first().copied()? {
@@ -290,6 +294,14 @@ mod tests {
         }
         // Out-of-range Dominican digits fall back to a divisio minor plus
         // an unparsed trailing character, as in the source grammar.
+        assert_eq!(
+            BarKind::parse_prefix(",1"),
+            Some((BarKind::Dominican(1), 2))
+        );
+        assert_eq!(
+            BarKind::parse_prefix(";3"),
+            Some((BarKind::Dominican(3), 2))
+        );
         assert_eq!(
             BarKind::parse_prefix(";9"),
             Some((BarKind::DivisioMinor, 1))
