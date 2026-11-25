@@ -144,9 +144,8 @@ pub(crate) fn render_voice(
         // bar 3 : `[K:E clef=treble]` au lieu de `[K:C clef=treble]`, ce qui
         // transformait le F naturel suivant en F dièse). ABC 2.1 §4.6,
         // spec lignes 921-933 ; `xml2abc.py` écrit `[K:C][K:treble]`.
-        let (new_clef, _, _) = writer::measure_context(score, measure_index, Some(staff));
-        let (_, new_key, new_time) =
-            writer::measure_context(score, measure_index, Some(context_staff));
+        let (new_clef, new_key, _) = writer::measure_context(score, measure_index, Some(staff));
+        let (_, _, new_time) = writer::measure_context(score, measure_index, Some(context_staff));
         let mut key_changed = false;
         if let Some(value) = new_key {
             if value.concert_key != key.concert_key || value.mode != key.mode {
@@ -982,9 +981,14 @@ fn draw_context_changes(
                 scoretk_core::model::SegmentItem::Clef(_) => 2,
                 _ => continue,
             };
-            if (kind == 2 && track.staff().index() != staff)
-                || (kind != 2 && track.staff().index() != context_staff)
-            {
+            // ABC 2.1 §3.2/§7.3 : un champ `[K:…]` inséré dans une voix ne
+            // concerne que cette voix. Les armures sont donc lues sur la
+            // portée de la voix courante, pas sur la première portée de la
+            // partie ; seule la mesure `M:` reste globale au morceau.
+            if (kind == 2 || kind == 0) && track.staff().index() != staff {
+                continue;
+            }
+            if kind == 1 && track.staff().index() != context_staff {
                 continue;
             }
             if changes
