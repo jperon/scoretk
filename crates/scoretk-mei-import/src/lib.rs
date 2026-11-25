@@ -32,6 +32,7 @@ mod barlines;
 mod capabilities;
 mod controls;
 mod header;
+mod neumes;
 mod reader;
 
 pub use audit::{audit_mei, mapped_element_names, ImportAudit};
@@ -57,6 +58,12 @@ pub fn read_mei(bytes: &[u8]) -> Result<Score, Error> {
             "racine « {} » (attendu une racine MEI 5.1)",
             root.name
         )));
+    }
+    // Le module NEUMES de MEI 5.1 est une autre manière d'organiser une
+    // `<section>` : `<syllable>`/`<neume>` y remplacent les `<measure>` CMN.
+    // La détection est structurelle, jamais une convention `@type` privée.
+    if first_descendant(&root, "syllable").is_some() || first_descendant(&root, "neume").is_some() {
+        return neumes::read(&root);
     }
     reader::Reader::read(&root)
 }

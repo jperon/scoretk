@@ -633,10 +633,11 @@ fn gabc_cross_totals(strip_extensions: bool) -> (Totals, Layers, usize) {
 }
 
 /// GABC → MEI → GABC → model, measured like the GABC direct/cross rows of
-/// `model-modularisation.md` §11.7. Until the MEI neumes module is implemented,
-/// the MEI writer only sees the derived modern view, so the L6 payload cannot
-/// cross the format: this is the baseline of the neumes campaign.
-fn gabc_mei_totals() -> (Totals, Layers, usize) {
+/// `model-modularisation.md` §11.7. The `strip` variant deletes every private
+/// `gabc-*` `<annot>` before re-reading, so the second row scores what a
+/// third-party MEI reader sees. Before the neumes module the MEI writer only
+/// emitted the derived modern view: that is the baseline of the campaign.
+fn gabc_mei_totals(strip: bool) -> (Totals, Layers, usize) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -666,6 +667,21 @@ fn gabc_mei_totals() -> (Totals, Layers, usize) {
                 totals.skipped += 1;
                 continue;
             }
+        };
+        let mei = if strip {
+            let text = String::from_utf8(mei).expect("UTF-8 MEI");
+            let stripped: String = text
+                .lines()
+                .filter(|line| !line.contains("type=\"gabc-"))
+                .map(|line| format!("{line}\n"))
+                .collect();
+            assert!(
+                !stripped.contains("type=\"gabc-"),
+                "no private MEI carrier may survive the strip"
+            );
+            stripped.into_bytes()
+        } else {
+            mei
         };
         let from_mei = match read(&mei, Format::Mei) {
             Ok(value) => value,
@@ -699,29 +715,58 @@ fn gabc_mei_totals() -> (Totals, Layers, usize) {
 
 #[test]
 fn gabc_mei_round_trip_table() {
-    let (totals, declared, rewritten) = gabc_mei_totals();
+    let (totals, declared, rewritten) = gabc_mei_totals(false);
+    let (stripped, _, _) = gabc_mei_totals(true);
     println!("\n=== GABC cross round trip: GABC → MEI → GABC (nine examples) ===");
     println!(
         "key = (layer, tick, staff, kind, value); {rewritten}/9 outputs differ from their source"
+    );
+    println!(
+        "{:<14} {:<12} {:>10} {:>13} {:>6} {:>7} {:>8}  source",
+        "direction", "declared", "essential", "full-support", "files", "skipped", "ref-items"
     );
     print_row(
         "gabc→mei→gabc",
         declared,
         &totals,
-        "Gregorio examples (cross conversion, MEI 5.1 neumes module)",
+        "Gregorio examples (MEI 5.1 neumes + atomic gabc-* annotations)",
     );
     print_details(declared, &totals);
+    print_row(
+        "gabc→mei→gabc",
+        declared,
+        &stripped,
+        "same files, gabc-* annotations stripped (standard MEI only)",
+    );
+    print_details(declared, &stripped);
     println!();
 }
 
 #[test]
 fn gabc_mei_round_trip_is_measured() {
-    let (totals, _, rewritten) = gabc_mei_totals();
+    let (totals, _, rewritten) = gabc_mei_totals(false);
     assert_eq!(totals.files, 9);
     assert_eq!(totals.skipped, 0);
     assert_eq!(
         rewritten, 9,
         "the MEI cross trip must re-serialise the GABC"
+    );
+}
+
+#[test]
+fn gabc_mei_round_trip_reaches_full_support_target() {
+    let (totals, _, rewritten) = gabc_mei_totals(false);
+    assert_eq!(totals.files, 9);
+    assert_eq!(totals.skipped, 0);
+    assert_eq!(
+        rewritten, 9,
+        "no raw-string copy may stand in for a conversion"
+    );
+    assert!(
+        totals.essential.percent() >= 95.0 && totals.total.percent() >= 95.0,
+        "GABC → MEI → GABC : essential {:.2} %, full support {:.2} %",
+        totals.essential.percent(),
+        totals.total.percent()
     );
 }
 

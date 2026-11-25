@@ -23,6 +23,7 @@
 
 mod capabilities;
 mod header;
+mod neumes;
 mod writer;
 
 pub use capabilities::CAPABILITIES;

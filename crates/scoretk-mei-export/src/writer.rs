@@ -33,13 +33,19 @@ use scoretk_core::model::{
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
 
-use crate::{header, MeiOptions};
+use crate::{header, neumes, MeiOptions};
 
 /// `MeiExporter::write` (`meiexporter.cpp:100`).
 pub(crate) fn write(
     score: &Score,
     options: &MeiOptions,
 ) -> Result<String, scoretk_mei_common::Error> {
+    // Une partition qui porte le flux L6 grégorien est écrite avec le module
+    // NEUMES de MEI 5.1, pas avec la vue moderne dérivée. Le chemin CMN reste
+    // strictement inchangé pour toutes les autres partitions.
+    if let Some(scoretk_core::model::Extension::Gregorian(gregorian)) = &score.extensions.format {
+        return neumes::write(gregorian, options);
+    }
     let mut xml = XmlWriter::new();
     header::mei_start(&mut xml, &options.encoding_date);
     header::write_header(&mut xml, score, &options.encoding_date, options);

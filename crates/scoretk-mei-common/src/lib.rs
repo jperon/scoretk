@@ -29,5 +29,6 @@
 pub mod convert;
 pub mod error;
 pub mod ids;
+pub mod neumes;
 
 pub use error::{Error, Result};
