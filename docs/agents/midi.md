@@ -332,6 +332,13 @@ default `false`, prefer the standard carriers of `[SMF §Meta-Events]`:
 - `FF 01` generic text for staff/system text (`@ST:`/`@SY:`) and the remaining
   metadata fields (`@TK:<field>:<value>`).
 
+Two standard carriers were checked but deliberately not used: `FF 07` cue
+point has no counterpart annotation in the pivot model (only
+`Annotation::RehearsalMark`, written as `FF 06`), and `FF 04` instrument name
+would duplicate the `C0` program change without restoring a MuseScore
+instrument **id**, which has no SMF representation. The `instrument` kind is
+therefore measured by its program/name value, not by the id.
+
 The `@…` prefixes are **private semantics** inside a standard `FF 01` payload,
 like ABC's `%%scoretk` directives: another sequencer displays the text, but
 only scoretk maps it back to an exact model field. The "with private prefixes
