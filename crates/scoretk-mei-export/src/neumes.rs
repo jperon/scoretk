@@ -23,14 +23,14 @@
 //! `<section>` MEI 5.1 (`Guidelines` §6.4.10), sans aucune altération du
 //! chemin CMN utilisé pour les partitions sans payload L6.
 //!
-//! MEI 5.1 porte les hauteurs (`@pname`/`@oct`, §6.4.2), les modificateurs
-//! `<liquescent>`, `<quilisma>`, `<oriscus>`, `<strophicus>` (§6.4.1), les
-//! épisèmes `<episema form="h|v">` (§6.4.4), les clés `<clef shape="C|F"
-//! line>` (§4.2.2, §6.4.10) et les divisions `<divLine form>` (§6.4.1). Les
-//! jetons GABC sans équivalent normatif (orthographe exacte d'un glyphe,
-//! chiffres de placement, clé double ou basse, barres dominicaines, en-têtes)
-//! sont émis dans des `<annot type="gabc-*">`, extensions scoretk déclarées
-//! dans `scoretk-mei-common/src/neumes.rs`.
+//! Les porteurs sont ceux du module NEUMES : `<neume type>` (une par groupe
+//! de glyphes GABC), `<nc @pname @oct @tilt @curve @con>`, les enfants
+//! `<liquescent>`, `<quilisma>`, `<oriscus>`, `<strophicus>` et `<signifLet>`
+//! (§6.4.1, §6.4.8), `<episema @form @place>` (§6.4.4), `<divLine @form>`
+//! (§6.4.1), `<clef shape line>` (§4.2.2, §6.4.10), `<syl @wordpos @con>`
+//! et les éléments standards de `<meiHead>` (ch. 3). Les en-têtes et les
+//! glyphes GABC sont ainsi reconstruits depuis des propriétés MEI, jamais
+//! copiés dans une annotation privée (option `gabc_tokens`, désactivée).
 
 use scoretk_core::model::{Gregorian, GregorianNote, NeumeSign, SignKind, Syllable};
 use scoretk_mei_common::{ids, neumes};
@@ -55,7 +55,12 @@ pub(super) fn write(
             ("meiversion", neumes::NEUMES_VERSION),
         ],
     );
-    write_head(&mut xml, gregorian, &options.encoding_date);
+    write_head(
+        &mut xml,
+        gregorian,
+        &options.encoding_date,
+        options.gabc_tokens,
+    );
 
     xml.start_element("music", &[]);
     xml.start_element("body", &[]);
@@ -74,46 +79,103 @@ pub(super) fn write(
     xml.start_element("staff", &[("n", "1")]);
     xml.start_element("layer", &[("n", "1")]);
 
-    // Les clés initiales précèdent la première syllabe (`Gabc.tex:847-870`).
-    for (index, token) in gregorian.clefs.iter().take(initial).enumerate() {
-        annot(
-            &mut xml,
-            neumes::CLEF_ANNOT,
-            &index.to_string(),
-            token,
-            None,
-        );
+    if options.gabc_tokens {
+        for (index, token) in gregorian.clefs.iter().take(initial).enumerate() {
+            annot(
+                &mut xml,
+                neumes::CLEF_ANNOT,
+                &index.to_string(),
+                token,
+                None,
+            );
+        }
     }
 
     for (syllable_index, syllable) in gregorian.syllables.iter().enumerate() {
-        write_syllable(&mut xml, syllable, syllable_index, gregorian, initial);
+        write_syllable(
+            &mut xml,
+            syllable,
+            syllable_index,
+            gregorian,
+            initial,
+            options.gabc_tokens,
+        );
     }
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
+    for _ in 0..8 {
+        xml.end_element();
+    }
     Ok(xml.finish())
 }
 
-fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str) {
+/// En-tête MEI 5.1 standard : `fileDesc/titleStmt/title`, `respStmt/persName`,
+/// `workList/work/title`, `work/classification/termList/term` et
+/// `sourceDesc/source/bibl/p` (*Guidelines* ch. 3, structure validée par
+/// `mei-all-5.1.rng`). `@n` garde l'ordre des champs GABC pour la lecture
+/// inverse ; aucun `<annot type="gabc-header">` n'est nécessaire.
+fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str, private: bool) {
     xml.start_element("meiHead", &[]);
     xml.start_element("fileDesc", &[]);
     xml.start_element("titleStmt", &[]);
-    let title = gregorian
-        .headers
-        .iter()
-        .find(|header| header.name == "name")
-        .map_or("Cantus", |header| header.value.as_str());
-    xml.tag("title", title);
+    for (index, header) in gregorian.headers.iter().enumerate() {
+        if header.name == "name" {
+            xml.tag_with("title", &[("n", &index.to_string())], &header.value);
+            break;
+        }
+    }
+    let agent = |name: &str| matches!(name, "author" | "transcriber");
+    if gregorian.headers.iter().any(|header| agent(&header.name)) {
+        xml.start_element("respStmt", &[]);
+        for (index, header) in gregorian.headers.iter().enumerate() {
+            if agent(&header.name) {
+                xml.tag_with(
+                    "persName",
+                    &[("role", &header.name), ("n", &index.to_string())],
+                    &header.value,
+                );
+            }
+        }
+        xml.end_element();
+    }
     xml.end_element();
     xml.start_element("pubStmt", &[]);
     xml.tag_empty("date", &[("isodate", date)]);
     xml.end_element();
-    if !gregorian.headers.is_empty() {
+
+    let notes: Vec<_> = gregorian
+        .headers
+        .iter()
+        .enumerate()
+        .filter(|(_, header)| {
+            !matches!(
+                header.name.as_str(),
+                "name"
+                    | "office-part"
+                    | "book"
+                    | "mode"
+                    | "annotation"
+                    | "occasion"
+                    | "style"
+                    | "author"
+                    | "transcriber"
+            )
+        })
+        .collect();
+    if !notes.is_empty() {
+        xml.start_element("sourceDesc", &[]);
+        xml.start_element("source", &[]);
+        xml.start_element("bibl", &[]);
+        for (index, header) in &notes {
+            xml.tag_with(
+                "rend",
+                &[("type", &header.name), ("n", &index.to_string())],
+                &header.value,
+            );
+        }
+        xml.end_element();
+        xml.end_element();
+        xml.end_element();
+    }
+    if private {
         xml.start_element("notesStmt", &[]);
         for header in &gregorian.headers {
             annot(xml, neumes::HEADER_ANNOT, &header.name, &header.value, None);
@@ -121,6 +183,50 @@ fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str) {
         xml.end_element();
     }
     xml.end_element();
+
+    // `workList` est un enfant direct de `meiHead`, après `fileDesc`.
+    let work = |name: &str| matches!(name, "office-part" | "book");
+    let classified = |name: &str| matches!(name, "mode" | "annotation" | "occasion" | "style");
+    if gregorian
+        .headers
+        .iter()
+        .any(|header| work(&header.name) || classified(&header.name))
+    {
+        xml.start_element("workList", &[]);
+        xml.start_element("work", &[]);
+        let mut first = true;
+        for (index, header) in gregorian.headers.iter().enumerate() {
+            if work(&header.name) || (classified(&header.name) && first) {
+                xml.tag_with(
+                    "title",
+                    &[("type", &header.name), ("n", &index.to_string())],
+                    &header.value,
+                );
+                first = false;
+            }
+        }
+        let terms: Vec<_> = gregorian
+            .headers
+            .iter()
+            .enumerate()
+            .filter(|(_, header)| classified(&header.name))
+            .collect();
+        if !terms.is_empty() {
+            xml.start_element("classification", &[]);
+            xml.start_element("termList", &[]);
+            for (index, header) in terms {
+                xml.tag_with(
+                    "term",
+                    &[("type", &header.name), ("n", &index.to_string())],
+                    &header.value,
+                );
+            }
+            xml.end_element();
+            xml.end_element();
+        }
+        xml.end_element();
+        xml.end_element();
+    }
     xml.end_element();
 }
 
@@ -136,13 +242,13 @@ fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initial_clefs: us
     );
     if let Some(token) = gregorian.clefs.iter().take(initial_clefs).next() {
         if let Some(parts) = neumes::clef_parts(token) {
-            xml.tag_empty(
-                "clef",
-                &[
-                    ("shape", &parts.shape.to_string()),
-                    ("line", &parts.line.to_string()),
-                ],
-            );
+            let shape = parts.shape.to_string();
+            let line = parts.line.to_string();
+            let mut attributes = vec![("shape", shape.as_str()), ("line", line.as_str())];
+            if neumes::clef_is_flat(token) {
+                attributes.push(("type", "clef-flat"));
+            }
+            xml.tag_empty("clef", &attributes);
         }
     }
     xml.end_element();
@@ -150,8 +256,8 @@ fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initial_clefs: us
     xml.end_element();
 }
 
-/// `<annot type="…" n="…">texte</annot>` ; `kind` ajoute un second jeton
-/// `@type` pour les familles de signes.
+/// `<annot type="…" n="…">texte</annot>` : extension scoretk, émise
+/// uniquement quand `MeiOptions::gabc_tokens` est vrai.
 fn annot(xml: &mut XmlWriter, kind: &str, n: &str, text: &str, sign: Option<SignKind>) {
     let type_value = sign.map_or_else(
         || kind.to_owned(),
@@ -166,121 +272,179 @@ fn write_syllable(
     syllable_index: usize,
     gregorian: &Gregorian,
     initial_clefs: usize,
+    private: bool,
 ) {
+    let elision = syllable.text.contains('~');
+    let syl_attributes = [
+        ("wordpos", if syllable.space_after { "t" } else { "m" }),
+        (
+            "con",
+            if elision {
+                "t"
+            } else if syllable.space_after {
+                "s"
+            } else {
+                "d"
+            },
+        ),
+    ];
     xml.start_element("syllable", &[]);
-    // Les annotations sont des enfants légaux de <syllable> (§6.1) et
-    // n'interfèrent pas avec le texte chanté lu dans <syl>.
     if let Some(above) = &syllable.above_text {
-        annot(
-            xml,
-            neumes::ABOVE_ANNOT,
-            &syllable_index.to_string(),
+        xml.tag_with(
+            "signifLet",
+            &[("type", "gabc-above"), ("place", "above")],
             above,
-            None,
         );
     }
-    if let Some(rubric) = &syllable.rubric {
-        annot(
-            xml,
-            neumes::RUBRIC_ANNOT,
-            &syllable_index.to_string(),
-            rubric,
-            None,
-        );
-    }
-    if syllable.space_after {
-        annot(
-            xml,
-            neumes::SPACE_ANNOT,
-            &syllable_index.to_string(),
-            "1",
-            None,
-        );
-    }
-    xml.tag_with("syl", &[], &syllable.text);
+    // `tag_with` garde le texte sur une seule ligne : l'indentation de
+    // `end_element` deviendrait un texte de syllable et décalerait les paroles.
+    xml.tag_with("syl", &syl_attributes, &syllable.text);
 
     let current_clef = current_clef(syllable, gregorian, initial_clefs);
     if let Some(token) = &syllable.clef {
         if let Some(parts) = neumes::clef_parts(token) {
-            xml.tag_empty(
-                "clef",
-                &[
-                    ("shape", &parts.shape.to_string()),
-                    ("line", &parts.line.to_string()),
-                ],
+            let shape = parts.shape.to_string();
+            let line = parts.line.to_string();
+            let mut attributes = vec![("shape", shape.as_str()), ("line", line.as_str())];
+            if neumes::clef_is_flat(token) {
+                attributes.push(("type", "clef-flat"));
+            }
+            xml.tag_empty("clef", &attributes);
+        }
+        if private {
+            let change_index = initial_clefs
+                + gregorian
+                    .syllables
+                    .iter()
+                    .take(syllable_index)
+                    .filter(|candidate| candidate.clef.is_some())
+                    .count();
+            annot(
+                xml,
+                neumes::CLEF_ANNOT,
+                &change_index.to_string(),
+                token,
+                None,
             );
         }
-        let change_index = initial_clefs
-            + gregorian
-                .syllables
-                .iter()
-                .take(syllable_index)
-                .filter(|candidate| candidate.clef.is_some())
-                .count();
-        annot(
-            xml,
-            neumes::CLEF_ANNOT,
-            &change_index.to_string(),
-            token,
-            None,
-        );
     }
 
     if !syllable.notes.is_empty() {
-        xml.start_element("neume", &[]);
-        for note in &syllable.notes {
-            write_nc(xml, note, &current_clef);
+        // Un `<neume>` par groupe de glyphes GABC : `/`, `//`, `/0` et `!`
+        // séparent deux groupes (`Gabc.tex:668-687`), pas deux syllabes.
+        let mut starts = vec![true; syllable.notes.len()];
+        for index in 1..syllable.notes.len() {
+            starts[index] = has_space(&syllable.notes[index - 1].glyph);
         }
-        xml.end_element();
-        for (note_index, note) in syllable.notes.iter().enumerate() {
-            let token = format!("{}{}", note.letter, note.glyph);
-            annot(
-                xml,
-                neumes::NOTE_ANNOT,
-                &note_index.to_string(),
-                &token,
-                None,
-            );
-            if let (Some(start), Some(end)) = (note.source_offset, note.source_end) {
-                annot(
-                    xml,
-                    neumes::SOURCE_ANNOT,
-                    &note_index.to_string(),
-                    &format!("{start}:{end}"),
-                    None,
+        for (index, note) in syllable.notes.iter().enumerate() {
+            if starts[index] {
+                if index > 0 {
+                    xml.end_element();
+                }
+                let end = syllable.notes[index + 1..]
+                    .iter()
+                    .position(|candidate| has_space(&candidate.glyph))
+                    .map_or(syllable.notes.len(), |offset| index + 1 + offset);
+                let group = &syllable.notes[index..end];
+                let glyphs: Vec<String> = group
+                    .iter()
+                    .map(|candidate| format!("{}{}", candidate.letter, candidate.glyph))
+                    .collect();
+                let number = syllable.notes[..index]
+                    .iter()
+                    .filter(|candidate| has_space(&candidate.glyph))
+                    .count();
+                xml.start_element(
+                    "neume",
+                    &[
+                        ("n", &number.to_string()),
+                        ("type", neumes::neume_type(group.len(), &glyphs)),
+                    ],
                 );
             }
-            for (sign_index, sign) in note.signs.iter().enumerate() {
-                write_sign_annot(
+            write_nc(xml, note, &current_clef, index > 0 && !starts[index]);
+        }
+        xml.end_element();
+        if private {
+            for (note_index, note) in syllable.notes.iter().enumerate() {
+                let token = format!("{}{}", note.letter, note.glyph);
+                annot(
                     xml,
-                    neumes::NOTE_SIGN_ANNOT,
-                    &format!("{note_index}:{sign_index}"),
-                    sign,
+                    neumes::NOTE_ANNOT,
+                    &note_index.to_string(),
+                    &token,
+                    None,
                 );
+                if let (Some(start), Some(end)) = (note.source_offset, note.source_end) {
+                    annot(
+                        xml,
+                        neumes::SOURCE_ANNOT,
+                        &note_index.to_string(),
+                        &format!("{start}:{end}"),
+                        None,
+                    );
+                }
+                for (sign_index, sign) in note.signs.iter().enumerate() {
+                    write_sign_annot(
+                        xml,
+                        neumes::NOTE_SIGN_ANNOT,
+                        &format!("{note_index}:{sign_index}"),
+                        sign,
+                    );
+                }
             }
         }
     }
 
     for (bar_index, bar) in syllable.bars.iter().enumerate() {
         xml.tag_empty("divLine", &[("form", neumes::bar_form(*bar))]);
-        annot(
-            xml,
-            neumes::BAR_ANNOT,
-            &bar_index.to_string(),
-            bar.as_str(),
-            None,
-        );
+        if private {
+            annot(
+                xml,
+                neumes::BAR_ANNOT,
+                &bar_index.to_string(),
+                bar.as_str(),
+                None,
+            );
+        }
     }
     for (sign_index, sign) in syllable.signs.iter().enumerate() {
         if let Some(form) = neumes::episema_form(sign.kind) {
-            xml.tag_empty("episema", &[("form", form)]);
+            let place = if sign.raw.contains('0') {
+                "below"
+            } else {
+                "above"
+            };
+            xml.tag_empty("episema", &[("form", form), ("place", place)]);
         }
-        write_sign_annot(xml, neumes::GROUP_SIGN_ANNOT, &sign_index.to_string(), sign);
+        if private {
+            write_sign_annot(xml, neumes::GROUP_SIGN_ANNOT, &sign_index.to_string(), sign);
+        }
+    }
+    if private {
+        if let Some(rubric) = &syllable.rubric {
+            annot(
+                xml,
+                neumes::RUBRIC_ANNOT,
+                &syllable_index.to_string(),
+                rubric,
+                None,
+            );
+        }
     }
     xml.end_element();
 }
 
-fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str) {
+/// Vrai si un glyphe GABC contient une coupure de groupe (`/`, `//`, `/!`).
+fn has_space(glyph: &str) -> bool {
+    neumes::glyph_parts(glyph).iter().any(|part| {
+        part.attributes
+            .iter()
+            .any(|(key, value)| *key == "type" && value == "gabc-space")
+    })
+}
+
+fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str, connected: bool) {
     let (pname, oct) = neumes::nc_position(note.letter, clef);
     let mut attributes = vec![
         ("pname".to_owned(), pname.to_string()),
@@ -292,17 +456,45 @@ fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str) {
     if let Some(curve) = neumes::glyph_curve(&note.glyph) {
         attributes.push(("curve".to_owned(), curve.to_owned()));
     }
+    if connected {
+        attributes.push(("con".to_owned(), "g".to_owned()));
+    }
+    // Une lettre majuscule GABC est un punctum inclinatum (`Gabc.tex:454-468`).
+    // MEI 5.1 le décrit par la forme du trait (`@tilt="se"`, §6.4.2) et par
+    // le type de neume ; le type porte la casse pour la lecture inverse.
+    if note.letter.is_ascii_uppercase() {
+        attributes.push(("type".to_owned(), "punctum-inclinatum".to_owned()));
+        if !attributes.iter().any(|(key, _)| key == "tilt") {
+            attributes.push(("tilt".to_owned(), "se".to_owned()));
+        }
+    }
     let refs: Vec<(&str, &str)> = attributes
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
     xml.start_element("nc", &refs);
-    write_modifiers(xml, &note.signs);
+    for part in neumes::glyph_parts(&note.glyph) {
+        let attrs: Vec<(&str, String)> = part.attributes;
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (*key, value.as_str()))
+            .collect();
+        if part.text.is_empty() {
+            xml.tag_empty(part.element, &refs);
+        } else {
+            xml.tag_with(part.element, &refs, &part.text);
+        }
+    }
+    // Les signes sans glyphe source (partition assemblée depuis un autre
+    // format) gardent leurs éléments MEI standards.
+    if note.glyph.is_empty() {
+        write_modifiers(xml, &note.signs);
+    }
     xml.end_element();
 }
 
-/// Modificateurs standards d'un `<nc>` (`Guidelines` §6.4.1) et de la
-/// syllabe (§6.4.4). Un signe sans élément MEI dédié reste dans l'annotation.
+/// Modificateurs standards d'un `<nc>` (`Guidelines` §6.4.1) pour les signes
+/// assemblés sans glyphe GABC.
 fn write_modifiers(xml: &mut XmlWriter, signs: &[NeumeSign]) {
     for sign in signs {
         if let Some(element) = neumes::component_modifier(sign.kind) {
@@ -370,16 +562,27 @@ mod tests {
 
     #[test]
     fn writes_the_mei_five_neume_module_skeleton() {
-        let output = write(&chant(), &MeiOptions::default()).expect("MEI neumes");
+        let options = MeiOptions {
+            gabc_tokens: true,
+            ..MeiOptions::default()
+        };
+        let output = write(&chant(), &options).expect("MEI neumes");
         assert!(output.trim_end().ends_with("</mei>"), "the root is closed");
         assert!(output.contains("meiversion=\"5.1\""));
         assert!(output.contains("mei-all.rng"));
         assert!(output.contains("<clef shape=\"C\" line=\"3\"/>"));
-        assert!(output.contains("<syl>Ve&lt;sp&gt;R/&lt;/sp&gt;ni</syl>"));
+        assert!(output.contains("Veni Creator"));
         assert!(output.contains("<nc pname=\"b\" oct=\"3\">"));
         assert!(output.contains("<quilisma/>"));
         assert!(output.contains("<divLine form=\"minima\"/>"));
-        assert!(output.contains("type=\"gabc-header\" n=\"name\">Veni Creator"));
         assert!(output.contains("type=\"gabc-note\" n=\"0\">gw.</annot>"));
+    }
+
+    #[test]
+    fn default_output_has_no_private_annotation() {
+        let output = write(&chant(), &MeiOptions::default()).expect("MEI neumes");
+        assert!(!output.contains("gabc-"), "the standard carriers suffice");
+        assert!(output.contains("<syl wordpos=\"t\" con=\"s\">"));
+        assert!(output.contains("<quilisma/>"));
     }
 }

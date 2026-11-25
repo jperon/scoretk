@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use scoretk::model::Extension;
 use scoretk::{read, write, Format, Options, Score};
+use scoretk_mei_export::MeiOptions;
 
 fn gabc_corpus() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -46,7 +47,13 @@ fn gabc_crosses_mei_with_the_whole_structured_payload() {
     for path in gabc_corpus() {
         let source = fs::read(&path).expect("GABC source");
         let original = read(&source, Format::Gabc).expect("GABC read");
-        let mei = write(&original, Format::Mei, &Options::default()).expect("MEI neumes write");
+        let options = MeiOptions {
+            gabc_tokens: true,
+            ..MeiOptions::default()
+        };
+        let mei = scoretk_mei_export::write_mei_with(&original, &options)
+            .expect("MEI neumes write")
+            .into_bytes();
         let text = String::from_utf8(mei.clone()).expect("UTF-8 MEI");
         assert!(text.contains("meiversion=\"5.1\""));
         assert!(text.contains("<syllable>"));
@@ -67,24 +74,70 @@ fn gabc_crosses_mei_with_the_whole_structured_payload() {
 }
 
 #[test]
-fn standard_mei_neumes_are_read_without_the_private_tokens() {
-    let path = &gabc_corpus()[0];
-    let source = fs::read(path).expect("GABC source");
-    let original = read(&source, Format::Gabc).expect("GABC read");
-    let mei = write(&original, Format::Mei, &Options::default()).expect("MEI neumes write");
-    let stripped: String = String::from_utf8(mei)
-        .expect("UTF-8 MEI")
-        .lines()
-        .filter(|line| !line.contains("type=\"gabc-"))
-        .map(|line| format!("{line}\n"))
-        .collect();
-    let from_mei = read(stripped.as_bytes(), Format::Mei).expect("standard MEI neumes read");
-    let Some(Extension::Gregorian(gregorian)) = &from_mei.extensions.format else {
-        panic!("the neume reader must fill the L6 slot");
-    };
-    assert!(!gregorian.syllables.is_empty());
-    assert!(gregorian.syllables.iter().any(|s| !s.notes.is_empty()));
-    assert_eq!(from_mei.notes.len(), original.notes.len());
+fn standard_mei_neumes_carry_the_payload_without_any_private_annotation() {
+    for path in gabc_corpus() {
+        let source = fs::read(&path).expect("GABC source");
+        let original = read(&source, Format::Gabc).expect("GABC read");
+        let mei = write(&original, Format::Mei, &Options::default()).expect("MEI neumes write");
+        let text = String::from_utf8(mei.clone()).expect("UTF-8 MEI");
+        assert!(
+            !text.contains("<annot type=\"gabc-"),
+            "{} : the default MEI must not carry a private GABC payload",
+            path.display()
+        );
+        assert!(
+            text.contains("<neume "),
+            "{} : neume groups",
+            path.display()
+        );
+        assert!(
+            text.contains("<nc "),
+            "{} : neume components",
+            path.display()
+        );
+        let Some(Extension::Gregorian(source_gregorian)) = &original.extensions.format else {
+            panic!("GABC payload");
+        };
+        if source_gregorian
+            .syllables
+            .iter()
+            .any(|syllable| !syllable.bars.is_empty())
+        {
+            assert!(
+                text.contains("<divLine "),
+                "{} : separation bars",
+                path.display()
+            );
+        }
+        assert!(text.contains("<title "), "{} : header", path.display());
+        assert!(text.contains("<syl "), "{} : lyrics", path.display());
+        let from_mei = read(&mei, Format::Mei).expect("standard MEI neumes read");
+        let (Some(Extension::Gregorian(expected)), Some(Extension::Gregorian(actual))) =
+            (&original.extensions.format, &from_mei.extensions.format)
+        else {
+            panic!("both scores carry an L6 payload");
+        };
+        // Les décalages UTF-16 de la source sont la seule donnée sans
+        // porteur MEI 5.1 : ils ne font pas partie de l'inventaire comparé.
+        let mut expected = expected.clone();
+        let mut actual = actual.clone();
+        for gregorian in [&mut expected, &mut actual] {
+            for syllable in &mut gregorian.syllables {
+                for note in &mut syllable.notes {
+                    note.source_offset = None;
+                    note.source_end = None;
+                }
+            }
+        }
+        assert_eq!(
+            actual,
+            expected,
+            "{} : standard MEI carriers",
+            path.display()
+        );
+        assert_eq!(from_mei.notes.len(), original.notes.len());
+        assert_eq!(from_mei.measures.len(), original.measures.len());
+    }
 }
 
 #[test]

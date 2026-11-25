@@ -22,9 +22,11 @@
 //! Lecture neumatique : reconstruction du payload L6 à partir de
 //! `<syllable>`/`<syl>`/`<neume>`/`<nc>` (`Guidelines` §6.4.10), puis
 //! reconstitution de la vue moderne dérivée par
-//! `Gregorian::build_derived_score`. Les extensions atomiques `gabc-*` sont
-//! préférées quand elles sont présentes ; en leur absence, la lecture se
-//! base uniquement sur les éléments MEI 5.1 standard.
+//! `Gregorian::build_derived_score`. Les éléments MEI 5.1 standard suffisent :
+//! les glyphes sont reconstruits depuis les enfants normatifs de `<nc>`
+//! (§6.4.1, §6.4.8), les en-têtes depuis `<meiHead>` (ch. 3) et les barres
+//! depuis `<divLine @form>` (§6.4.1). Les annotations `gabc-*` ne servent
+//! qu'à relire les anciens fichiers produits avec l'extension privée.
 
 use std::collections::BTreeMap;
 
@@ -57,7 +59,18 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
             // Le texte exact est conservé (espaces de bord compris) :
             // `text_trimmed()` supprimerait les espaces de mot de GABC.
             syllable.text = syl.text.clone();
+            let con = syl.attribute("con").unwrap_or("");
+            let wordpos = syl.attribute("wordpos").unwrap_or("");
+            syllable.space_after = con == "s" || wordpos == "t";
         }
+        syllable.rubric = rubric(&syllable.text);
+        for child in &syllable_node.children {
+            if child.name == "signifLet" && child.attribute("type") == Some("gabc-above") {
+                syllable.above_text = Some(child.text.clone());
+            }
+        }
+
+        // Anciennes annotations : uniquement si le porteur standard manque.
         for annot in syllable_node
             .children
             .iter()
@@ -65,10 +78,10 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         {
             let (kind, _) = annot_type(annot);
             match kind {
-                neumes::ABOVE_ANNOT => {
+                neumes::ABOVE_ANNOT if syllable.above_text.is_none() => {
                     syllable.above_text = Some(annot.text.clone());
                 }
-                neumes::RUBRIC_ANNOT => {
+                neumes::RUBRIC_ANNOT if syllable.rubric.is_none() => {
                     syllable.rubric = Some(annot.text.clone());
                 }
                 neumes::SPACE_ANNOT => {
@@ -111,7 +124,9 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
             for nc in neume.children.iter().filter(|node| node.name == "nc") {
                 let index = syllable.notes.len();
                 let mut note = nc_note(nc, &current_clef, note_anotts.get(&index));
-                note.signs = nc_signs(nc, index, &sign_anotts);
+                if note.signs.is_empty() {
+                    note.signs = nc_signs(nc, index, &sign_anotts);
+                }
                 if let Some(annot) = source_anotts.get(&index) {
                     let mut parts = annot.text.split(':');
                     note.source_offset = parts.next().and_then(|value| value.parse().ok());
@@ -137,7 +152,13 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         for node in &syllable_node.children {
             if node.name == "episema" {
                 let raw = match node.attribute("form") {
-                    Some("v") => "'",
+                    Some("v") => {
+                        if node.attribute("place") == Some("below") {
+                            "'0"
+                        } else {
+                            "'"
+                        }
+                    }
                     _ => "_",
                 };
                 group_signs.push((group_signs.len(), NeumeSign::new(episema_kind(raw), raw)));
@@ -228,28 +249,80 @@ fn sign_from_annot(annot: &Element) -> NeumeSign {
     )
 }
 
+/// En-têtes GABC reconstruits depuis les éléments standards de `<meiHead>`
+/// (*Guidelines* ch. 3) : `@n` est l'index source, `@role`/`@type` le nom du
+/// champ. Les `<annot type="gabc-header">` ne sont lus qu'en leur absence.
 fn read_headers(root: &Element, gregorian: &mut Gregorian) {
-    let mut anotts = Vec::new();
-    collect(root, "annot", &mut anotts);
-    for annot in anotts {
-        let (kind, _) = annot_type(annot);
-        if kind == neumes::HEADER_ANNOT {
-            if let Some(name) = annot.attribute("n") {
+    let mut found: Vec<(usize, GregorianHeader)> = Vec::new();
+    let mut nodes = Vec::new();
+    collect(root, "title", &mut nodes);
+    collect(root, "term", &mut nodes);
+    collect(root, "persName", &mut nodes);
+    collect(root, "rend", &mut nodes);
+    for node in nodes {
+        let Some(index) = node
+            .attribute("n")
+            .and_then(|value| value.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let name = match node.name.as_str() {
+            "title" => node.attribute("type").unwrap_or("name").to_owned(),
+            "term" | "rend" => node.attribute("type").unwrap_or("").to_owned(),
+            "persName" => node.attribute("role").unwrap_or("").to_owned(),
+            _ => continue,
+        };
+        if !name.is_empty() {
+            found.push((
+                index,
+                GregorianHeader {
+                    name,
+                    value: node.text.clone(),
+                },
+            ));
+        }
+    }
+    found.sort_by_key(|(index, _)| *index);
+    gregorian.headers = found.into_iter().map(|(_, header)| header).collect();
+
+    if gregorian.headers.is_empty() {
+        let mut anotts = Vec::new();
+        collect(root, "annot", &mut anotts);
+        for annot in anotts {
+            let (kind, _) = annot_type(annot);
+            if kind == neumes::HEADER_ANNOT {
+                if let Some(name) = annot.attribute("n") {
+                    gregorian.headers.push(GregorianHeader {
+                        name: name.to_owned(),
+                        value: annot.text.clone(),
+                    });
+                }
+            }
+        }
+        if gregorian.headers.is_empty() {
+            if let Some(title) = find_first(root, "title") {
                 gregorian.headers.push(GregorianHeader {
-                    name: name.to_owned(),
-                    value: annot.text.clone(),
+                    name: "name".to_owned(),
+                    value: title.text_trimmed().to_owned(),
                 });
             }
         }
     }
-    if gregorian.headers.is_empty() {
-        if let Some(title) = find_first(root, "title") {
-            gregorian.headers.push(GregorianHeader {
-                name: "name".to_owned(),
-                value: title.text_trimmed().to_owned(),
-            });
+}
+
+fn rubric(text: &str) -> Option<String> {
+    for tag in ["sp", "alt"] {
+        let open = format!("<{tag}>");
+        if let Some(start) = text.find(&open) {
+            let close = format!("</{tag}>");
+            let end = text[start..]
+                .find(&close)
+                .map(|offset| start + offset + close.len())
+                .unwrap_or(text.len());
+            return Some(text[start..end].to_owned());
         }
     }
+    None
 }
 
 fn read_staff_lines(root: &Element, gregorian: &mut Gregorian) {
@@ -295,57 +368,91 @@ fn initial_clefs(root: &Element, layer: &Element, gregorian: &mut Gregorian) -> 
 }
 
 fn clef_token(clef: &Element) -> String {
-    neumes::clef_token(
+    let mut token = neumes::clef_token(
         clef.attribute("shape").unwrap_or("C"),
         clef.attribute("line")
             .and_then(|value| value.parse::<u8>().ok())
             .unwrap_or(3),
-    )
+    );
+    if clef.attribute("type") == Some("clef-flat") {
+        token.insert(1, 'b');
+    }
+    token
 }
 
-/// Une note GABC reconstruite depuis `<nc>` et ses annotations.
+/// Note GABC reconstruite depuis `<nc>` et ses modifiers MEI 5.1 standard.
 fn nc_note(nc: &Element, clef: &str, private: Option<&&Element>) -> GregorianNote {
-    if let Some(annot) = private {
+    let letter = if let Some(annot) = private {
         let mut chars = annot.text.chars();
-        if let Some(letter) = chars.next() {
+        let letter = chars.next();
+        // Ancienne annotation : le glyphe y est encore copié, mais les
+        // éléments standard restent prioritaires quand ils sont présents.
+        let from_elements = element_glyph(nc);
+        if let Some(letter) = letter {
             return GregorianNote {
                 letter,
-                glyph: chars.collect(),
+                glyph: if from_elements.is_empty() {
+                    chars.collect()
+                } else {
+                    from_elements
+                },
                 ..GregorianNote::default()
             };
         }
+        letter
+    } else {
+        None
+    };
+    let mut letter = letter
+        .or_else(|| neumes::nc_letter(nc.attribute("pname"), parse_oct(nc), clef))
+        .unwrap_or('g');
+    // Une lettre majuscule GABC est un punctum inclinatum (`Gabc.tex:454-468`),
+    // encodé par `@type` (et `@tilt="se"`, *Guidelines* §6.4.2).
+    if nc.attribute("type") == Some("punctum-inclinatum") {
+        letter = letter.to_ascii_uppercase();
     }
-    let letter = neumes::nc_letter(nc.attribute("pname"), parse_oct(nc), clef).unwrap_or('g');
-    let mut glyph = String::new();
-    for child in &nc.children {
-        let shape = match child.name.as_str() {
-            "liquescent" => "~",
-            "oriscus" => "o",
-            "quilisma" => "w",
-            "strophicus" => "s",
-            "episema" => match child.attribute("form") {
-                Some("v") => "'",
-                _ => "_",
-            },
-            _ => continue,
-        };
-        glyph.push_str(shape);
-    }
-    // Les signes sont reconstruits par `nc_signs` : cette fonction ne garde
-    // que la lettre et le glyphe, qui sont les champs comparés de l'inventaire.
     GregorianNote {
         letter,
-        glyph,
+        glyph: element_glyph(nc),
         ..GregorianNote::default()
     }
+}
+
+/// Concatène les jetons GABC déduits des enfants normatifs de `<nc>`.
+fn element_glyph(nc: &Element) -> String {
+    let mut glyph = String::new();
+    for child in &nc.children {
+        if let Some(part) = neumes::part_from_mei(child) {
+            glyph.push_str(&part.raw);
+        }
+    }
+    if glyph.is_empty() {
+        // Neume tiers sans glyphe GABC : les modificateurs standards donnent
+        // tout de même une lecture musicale correcte.
+        for child in &nc.children {
+            let shape = match child.name.as_str() {
+                "liquescent" => "~",
+                "oriscus" => "o",
+                "quilisma" => "w",
+                "strophicus" => "s",
+                "episema" => match child.attribute("form") {
+                    Some("v") => "'",
+                    _ => "_",
+                },
+                _ => continue,
+            };
+            glyph.push_str(shape);
+        }
+    }
+    glyph
 }
 
 fn parse_oct(nc: &Element) -> Option<u8> {
     nc.attribute("oct")?.parse().ok()
 }
 
-/// Signes d'une note : jetons exacts quand ils sont présents, sinon éléments
-/// MEI 5.1 standard.
+/// Signes d'une note : éléments MEI 5.1 standard, ou annotations pour les
+/// anciens fichiers.
 fn nc_signs(
     nc: &Element,
     note_index: usize,
@@ -370,24 +477,17 @@ fn nc_signs(
     }
     let mut signs = Vec::new();
     for child in &nc.children {
-        let (raw, kind) = match child.name.as_str() {
-            "liquescent" => ("~", SignKind::Liquescentia),
-            "oriscus" => ("o", SignKind::Oriscus),
-            "quilisma" => ("w", SignKind::Quilisma),
-            "strophicus" => ("s", SignKind::Stropha),
-            "episema" => match child.attribute("form") {
-                Some("v") => ("'", SignKind::Ictus),
-                _ => ("_", SignKind::HorizontalEpisema),
-            },
-            _ => continue,
-        };
-        signs.push(NeumeSign::new(kind, raw));
+        if let Some(part) = neumes::part_from_mei(child) {
+            if let Some(kind) = part.kind {
+                signs.push(NeumeSign::new(kind, part.raw));
+            }
+        }
     }
     signs
 }
 
 fn episema_kind(raw: &str) -> SignKind {
-    if raw == "'" {
+    if raw.starts_with('\'') {
         SignKind::Ictus
     } else {
         SignKind::HorizontalEpisema
@@ -420,70 +520,42 @@ mod tests {
     use super::*;
 
     const MEI: &str = r#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
-      <meiHead><fileDesc><titleStmt><title>Veni</title></titleStmt><pubStmt/>
-        <notesStmt><annot type="gabc-header" n="name">Veni</annot>
-        <annot type="gabc-header" n="mode">2</annot></notesStmt></fileDesc></meiHead>
+      <meiHead><fileDesc><titleStmt><title n="0">Veni</title></titleStmt><pubStmt/>
+        <classification><termList><term type="mode" n="1">2</term></termList></classification>
+        </fileDesc></meiHead>
       <music><body><mdiv><score>
         <scoreDef><staffGrp><staffDef n="1" lines="4">
           <clef shape="C" line="3"/></staffDef></staffGrp></scoreDef>
         <section><staff n="1"><layer n="1">
-          <annot type="gabc-clef" n="0">c3</annot>
-          <syllable><syl>Ve&lt;sp&gt;R/&lt;/sp&gt;ni</syl>
-            <annot type="gabc-rubric" n="0">&lt;sp&gt;R/&lt;/sp&gt;</annot>
-            <annot type="gabc-space" n="0">1</annot>
-            <neume><nc pname="b" oct="3"><quilisma/></nc></neume>
-            <annot type="gabc-note" n="0">gw.</annot>
-            <annot type="gabc-note-sign Quilisma" n="0:0">w</annot>
-            <annot type="gabc-note-sign PunctumMora" n="0:1">.</annot>
-            <divLine form="minima"/><annot type="gabc-bar" n="0">,</annot>
+          <syllable><syl wordpos="t" con="s">Ve&lt;sp&gt;R/&lt;/sp&gt;ni</syl>
+            <neume n="0" type="punctum"><nc pname="b" oct="3"><quilisma/><signifLet type="PunctumMora"/></nc></neume>
+            <divLine form="minima"/>
           </syllable>
         </layer></staff></section>
       </score></mdiv></body></music></mei>"#;
 
     #[test]
-    fn rebuilds_the_exact_gregorian_payload() {
+    fn rebuilds_the_gregorian_payload_from_standard_carriers() {
         let root = scoretk_xml_common::parse(MEI.as_bytes()).expect("parse MEI neumes");
         let score = read(&root).expect("read neumes");
         let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
             panic!("L6 payload is present");
         };
         assert_eq!(gregorian.clefs, vec!["c3"]);
-        assert_eq!(gregorian.syllables.len(), 1);
+        assert_eq!(gregorian.headers.len(), 2);
+        assert_eq!(gregorian.headers[0].name, "name");
+        assert_eq!(gregorian.headers[1].name, "mode");
         let syllable = &gregorian.syllables[0];
         assert_eq!(syllable.text, "Ve<sp>R/</sp>ni");
         assert_eq!(syllable.rubric.as_deref(), Some("<sp>R/</sp>"));
         assert!(syllable.space_after);
-        assert_eq!(syllable.notes.len(), 1);
         assert_eq!(syllable.notes[0].letter, 'g');
         assert_eq!(syllable.notes[0].glyph, "w.");
         assert_eq!(syllable.notes[0].signs.len(), 2);
-        assert_eq!(syllable.notes[0].signs[0].raw, "w");
+        assert_eq!(syllable.notes[0].signs[0].kind, SignKind::Quilisma);
         assert_eq!(syllable.notes[0].signs[1].kind, SignKind::PunctumMora);
         assert_eq!(syllable.bars, vec![BarKind::DivisioMinima]);
         assert!(gregorian.derived_modern_view);
         assert_eq!(score.notes.len(), 1, "the derived modern view is rebuilt");
-    }
-
-    #[test]
-    fn reads_standard_mei_without_the_private_tokens() {
-        let stripped = MEI
-            .replace(
-                r#"            <annot type="gabc-note" n="0">gw.</annot>
-            <annot type="gabc-note-sign Quilisma" n="0:0">w</annot>
-            <annot type="gabc-note-sign PunctumMora" n="0:1">.</annot>
-"#,
-                "",
-            )
-            .replace(r#"<annot type="gabc-bar" n="0">,</annot>"#, "");
-        let root = scoretk_xml_common::parse(stripped.as_bytes()).expect("parse MEI neumes");
-        let score = read(&root).expect("read neumes");
-        let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
-            panic!("L6 payload is present");
-        };
-        let note = &gregorian.syllables[0].notes[0];
-        assert_eq!(note.letter, 'g');
-        assert_eq!(note.glyph, "w");
-        assert_eq!(note.signs.len(), 1);
-        assert_eq!(note.signs[0].kind, SignKind::Quilisma);
     }
 }

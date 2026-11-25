@@ -53,7 +53,7 @@ use scoretk_gabc_export::CAPABILITIES as GABC_EXPORT;
 use scoretk_gabc_import::CAPABILITIES as GABC_IMPORT;
 use scoretk_lilypond_export::CAPABILITIES as LY_EXPORT;
 use scoretk_lilypond_import::CAPABILITIES as LY_IMPORT;
-use scoretk_mei_export::CAPABILITIES as MEI_EXPORT;
+use scoretk_mei_export::{MeiOptions, CAPABILITIES as MEI_EXPORT};
 use scoretk_mei_import::CAPABILITIES as MEI_IMPORT;
 use scoretk_midi_export::CAPABILITIES as MIDI_EXPORT;
 use scoretk_midi_import::CAPABILITIES as MIDI_IMPORT;
@@ -633,11 +633,14 @@ fn gabc_cross_totals(strip_extensions: bool) -> (Totals, Layers, usize) {
 }
 
 /// GABC → MEI → GABC → model, measured like the GABC direct/cross rows of
-/// `model-modularisation.md` §11.7. The `strip` variant deletes every private
-/// `gabc-*` `<annot>` before re-reading, so the second row scores what a
-/// third-party MEI reader sees. Before the neumes module the MEI writer only
-/// emitted the derived modern view: that is the baseline of the campaign.
-fn gabc_mei_totals(strip: bool) -> (Totals, Layers, usize) {
+/// `model-modularisation.md` §11.7. `private = false` (the default) writes
+/// only the standard MEI 5.1 Neumes module; `private = true` also emits the
+/// scoretk `gabc-*` annotations, which duplicate each atomic GABC token.
+/// The first row is the honest interoperability figure: the second one is
+/// kept only to quantify what the private extension adds. Before the neumes
+/// module the MEI writer only emitted the derived modern view: that is the
+/// baseline of the campaign.
+fn gabc_mei_totals(private: bool) -> (Totals, Layers, usize) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -661,28 +664,22 @@ fn gabc_mei_totals(strip: bool) -> (Totals, Layers, usize) {
         let bytes = fs::read(&path).expect("read GABC example");
         let reference = read(&bytes, Format::Gabc).expect("GABC import");
         let reference_inventory = inventory(&reference);
-        let mei = match write(&reference, Format::Mei, &Options::default()) {
-            Ok(value) => value,
+        let options = MeiOptions {
+            gabc_tokens: private,
+            ..MeiOptions::default()
+        };
+        let mei = match scoretk_mei_export::write_mei_with(&reference, &options) {
+            Ok(value) => value.into_bytes(),
             Err(_) => {
                 totals.skipped += 1;
                 continue;
             }
         };
-        let mei = if strip {
-            let text = String::from_utf8(mei).expect("UTF-8 MEI");
-            let stripped: String = text
-                .lines()
-                .filter(|line| !line.contains("type=\"gabc-"))
-                .map(|line| format!("{line}\n"))
-                .collect();
-            assert!(
-                !stripped.contains("type=\"gabc-"),
-                "no private MEI carrier may survive the strip"
-            );
-            stripped.into_bytes()
-        } else {
-            mei
-        };
+        assert_eq!(
+            String::from_utf8_lossy(&mei).contains("<annot type=\"gabc-"),
+            private,
+            "the private GABC carriers must follow the option"
+        );
         let from_mei = match read(&mei, Format::Mei) {
             Ok(value) => value,
             Err(_) => {
@@ -715,8 +712,8 @@ fn gabc_mei_totals(strip: bool) -> (Totals, Layers, usize) {
 
 #[test]
 fn gabc_mei_round_trip_table() {
-    let (totals, declared, rewritten) = gabc_mei_totals(false);
-    let (stripped, _, _) = gabc_mei_totals(true);
+    let (standard, declared, rewritten) = gabc_mei_totals(false);
+    let (private, _, _) = gabc_mei_totals(true);
     println!("\n=== GABC cross round trip: GABC → MEI → GABC (nine examples) ===");
     println!(
         "key = (layer, tick, staff, kind, value); {rewritten}/9 outputs differ from their source"
@@ -728,17 +725,17 @@ fn gabc_mei_round_trip_table() {
     print_row(
         "gabc→mei→gabc",
         declared,
-        &totals,
-        "Gregorio examples (MEI 5.1 neumes + atomic gabc-* annotations)",
+        &standard,
+        "Gregorio examples (standard MEI 5.1 Neumes module, no gabc-* annotations)",
     );
-    print_details(declared, &totals);
+    print_details(declared, &standard);
     print_row(
         "gabc→mei→gabc",
         declared,
-        &stripped,
-        "same files, gabc-* annotations stripped (standard MEI only)",
+        &private,
+        "same files, with private extension (gabc-* atomic annotations)",
     );
-    print_details(declared, &stripped);
+    print_details(declared, &private);
     println!();
 }
 
