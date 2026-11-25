@@ -29,8 +29,8 @@
 //! `<kind text>` et des `<degree>`.
 
 use scoretk_core::model::{
-    Annotation, FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier, Fraction,
-    Harmony, Placement, Score, SegmentType, Track,
+    note::tpc, Annotation, FiguredBass, FiguredBassContLine, FiguredBassItem, FiguredBassModifier,
+    Fraction, Harmony, Placement, Score, SegmentType, Track,
 };
 
 use crate::pass2::{self, tpc_from_step};
@@ -170,8 +170,25 @@ pub(crate) fn read_harmony(
         name.push(')');
     }
 
-    let mut harmony = Harmony::new(name.clone());
-    harmony.name = name;
+    // `Harmony::text()` (`engraving/dom/harmony.cpp`) affiche la fondamentale
+    // issue du `<root>`, puis le texte de la qualité et enfin la basse. Le
+    // portage ne gardait que la qualité : `Cm` devenait `m` et une basse `/F`
+    // disparaissait. La racine est au contraire absente pour les harmonies
+    // romaines, Nashville ou `kind="none"` (tpc invalide). `name` reste le
+    // suffixe analysé par l'export (`m`) ; seul `text` porte l'affichage complet.
+    let quality_name = name.clone();
+    if harmony_kind == "normal" && root_tpc != tpc::INVALID {
+        let mut full = tpc::name(root_tpc);
+        full.push_str(&name);
+        name = full;
+    }
+    if let Some(bass) = bass_tpc.filter(|bass| *bass != tpc::INVALID) {
+        name.push('/');
+        name.push_str(&tpc::name(bass));
+    }
+
+    let mut harmony = Harmony::new(name);
+    harmony.name = quality_name;
     harmony.root_tpc = root_tpc;
     harmony.bass_tpc = bass_tpc;
     harmony.kind = harmony_kind;

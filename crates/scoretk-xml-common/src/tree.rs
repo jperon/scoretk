@@ -121,6 +121,34 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                     current.text.push_str(event.as_ref());
                 }
             }
+            Ok(Event::GeneralRef(event)) => {
+                // `quick-xml` 0.42 n'étend pas les références d'entité dans le
+                // texte : `&lt;`, `&amp;` et les références numériques arrivent
+                // comme des événements `GeneralRef` distincts. Les ignorer
+                // supprime des caractères entiers des paroles, crédits et
+                // symboles d'accord (par exemple `<kind text="&lt;&gt;&amp;&quot;">`).
+                let name = event.as_ref();
+                let decoded = match name {
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "amp" => Some('&'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    _ => name
+                        .strip_prefix('#')
+                        .and_then(|digits| {
+                            if let Some(hex) = digits.strip_prefix('x') {
+                                u32::from_str_radix(hex, 16).ok()
+                            } else {
+                                digits.parse().ok()
+                            }
+                        })
+                        .and_then(char::from_u32),
+                };
+                if let (Some(current), Some(character)) = (stack.last_mut(), decoded) {
+                    current.text.push(character);
+                }
+            }
             Ok(Event::Eof) => break,
             Ok(_) => {}
             Err(error) => return Err(Error::Xml(error)),
@@ -182,5 +210,19 @@ mod tests {
         assert_eq!(root.name, "score-partwise");
         assert_eq!(root.child("part").unwrap().attribute("id"), Some("P1"));
         assert!(root.child("part").unwrap().has_child("measure"));
+    }
+
+    #[test]
+    fn entities_in_text_are_decoded() {
+        let root = parse(
+            br#"<x><text>&lt;&gt;&amp;&quot;&apos;&#65;&#x42;</text><text>a &amp; b</text></x>"#,
+        )
+        .unwrap();
+        assert_eq!(root.child_text("text"), Some("<>&\"'AB"));
+        let all: Vec<&str> = root
+            .children_named("text")
+            .map(Element::text_trimmed)
+            .collect();
+        assert_eq!(all, ["<>&\"'AB", "a & b"]);
     }
 }

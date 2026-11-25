@@ -83,6 +83,34 @@ pub mod tpc {
     pub const E_SHARP: i8 = 25;
     /// Si dièse (`TPC_B_S`).
     pub const B_SHARP: i8 = 26;
+
+    /// Nom porté par une fondamentale d'accord (`tpc2name`,
+    /// `engraving/dom/pitchspelling.cpp`).
+    ///
+    /// Sert à reconstruire le texte d'une harmonie depuis son `<root>` : la
+    /// classe tonale donne l'orthographe (`E_FLAT` → `Eb`), pas seulement la
+    /// hauteur. Renvoie une chaîne vide pour `INVALID`.
+    pub fn name(tpc: i8) -> String {
+        const STEPS: [char; 7] = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+        let offset = i32::from(tpc) - i32::from(F);
+        let step = STEPS[offset.rem_euclid(7) as usize];
+        let alteration = offset.div_euclid(7);
+        let suffix = match alteration {
+            -3 => "bbb",
+            -2 => "bb",
+            -1 => "b",
+            0 => "",
+            1 => "#",
+            2 => "##",
+            3 => "###",
+            _ => "",
+        };
+        if tpc == INVALID {
+            String::new()
+        } else {
+            format!("{step}{suffix}")
+        }
+    }
 }
 
 /// Tête de note.
