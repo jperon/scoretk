@@ -26,8 +26,8 @@
 //! `@tstamp` is a one-based index in beats of the current meter.
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, BeamMode, ClefType, DurationType, Fraction, Key, KeySig, Measure,
-    StemDirection, TimeSig, TimeSigType,
+    AccidentalType, BarLineType, BeamMode, ClefType, CreditStyle, DurationType, Fraction, Key,
+    KeySig, Measure, StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -199,6 +199,42 @@ pub fn stem_to_mei(direction: StemDirection) -> Option<&'static str> {
         StemDirection::Down => Some("down"),
         StemDirection::Auto => None,
     }
+}
+
+/// `Convert::textToMEI` (`meiconverter.cpp:3409`).
+///
+/// Returns the cell index (top-left → bottom-right, row major), the `@type`
+/// written on the inner `<rend>`, and its `@fontsize` term when the style has
+/// one. MuseScore places the texts by style, not by their engraved position.
+pub fn text_to_mei(style: &CreditStyle) -> (u8, &'static str, Option<&'static str>) {
+    match style {
+        CreditStyle::Title => (1, "title", Some("x-large")),
+        CreditStyle::Subtitle => (1, "subtitle", Some("large")),
+        CreditStyle::Composer => (8, "composer", None),
+        CreditStyle::Lyricist => (6, "poet", None),
+        CreditStyle::Other(name) if name.eq_ignore_ascii_case("instrument_excerpt") => {
+            (0, "instrument_excerpt", None)
+        }
+        CreditStyle::Other(_) => (4, "frame", None),
+    }
+}
+
+/// Cell of `Convert::textToMEI` → the `@valign`/`@halign` of the outer `<rend>`
+/// (`meiexporter.cpp:417-433`).
+pub fn cell_to_align(cell: u8) -> (&'static str, &'static str) {
+    let valign = if cell < 3 {
+        "top"
+    } else if cell < 6 {
+        "middle"
+    } else {
+        "bottom"
+    };
+    let halign = match cell % 3 {
+        0 => "left",
+        1 => "center",
+        _ => "right",
+    };
+    (valign, halign)
 }
 
 /// `Convert::beamFromMEI` (`meiconverter.cpp:626`).
@@ -692,6 +728,24 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn frame_texts_are_placed_in_mei_cells() {
+        use scoretk_core::model::CreditStyle;
+        assert_eq!(
+            text_to_mei(&CreditStyle::Title),
+            (1, "title", Some("x-large"))
+        );
+        assert_eq!(
+            text_to_mei(&CreditStyle::Subtitle),
+            (1, "subtitle", Some("large"))
+        );
+        assert_eq!(text_to_mei(&CreditStyle::Composer), (8, "composer", None));
+        assert_eq!(text_to_mei(&CreditStyle::Lyricist), (6, "poet", None));
+        assert_eq!(cell_to_align(1), ("top", "center"));
+        assert_eq!(cell_to_align(6), ("bottom", "left"));
+        assert_eq!(cell_to_align(8), ("bottom", "right"));
     }
 
     #[test]

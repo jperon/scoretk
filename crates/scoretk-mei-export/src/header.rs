@@ -62,9 +62,48 @@ pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str) {
     xml.end_element();
 }
 
+/// `MeiExporter::writePgHead` (`meiexporter.cpp:386`).
+///
+/// Only the first-frame texts are carried: MuseScore writes one `<pgHead>`
+/// from the first `VBox`, grouping the texts into nine alignment cells.
+pub(crate) fn write_pg_head(xml: &mut XmlWriter, score: &Score) {
+    let mut cells: [Vec<(&str, Option<&str>, &str)>; 9] = Default::default();
+    for credit in &score.engraving.credits {
+        if credit.page != 1 {
+            continue;
+        }
+        let (cell, name, fontsize) = convert::text_to_mei(&credit.style);
+        cells[cell as usize].push((name, fontsize, credit.text.plain()));
+    }
+    if cells.iter().all(|cell| cell.is_empty()) {
+        return;
+    }
+    xml.start_element("pgHead", &[("func", "first")]);
+    for (index, rends) in cells.iter().enumerate() {
+        if rends.is_empty() {
+            continue;
+        }
+        let (valign, halign) = convert::cell_to_align(index as u8);
+        xml.start_element("rend", &[("halign", halign), ("valign", valign)]);
+        for (position, (name, fontsize, text)) in rends.iter().enumerate() {
+            if position > 0 {
+                xml.tag_empty("lb", &[]);
+            }
+            let mut attrs = vec![("type", *name)];
+            if let Some(fontsize) = fontsize {
+                attrs.push(("fontsize", *fontsize));
+            }
+            xml.tag_with("rend", &attrs, text);
+        }
+        xml.end_element();
+    }
+    xml.end_element();
+}
+
 /// `MeiExporter::writeScoreDef` (`meiexporter.cpp:324`).
 pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
     xml.start_element("scoreDef", &[]);
+    write_pg_head(xml, score);
     xml.start_element("staffGrp", &[]);
     for (index, part) in score.parts.iter().enumerate() {
         if !part.long_name.is_empty() || !part.short_name.is_empty() {
@@ -159,4 +198,35 @@ pub(crate) fn mei_start(xml: &mut XmlWriter, date: &str) {
             ("meiversion", ids::MEI_VERSION),
         ],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scoretk_core::model::{Credit, CreditStyle, RichText};
+
+    #[test]
+    fn pg_head_groups_first_page_texts_into_cells() {
+        let mut score = Score::new();
+        score
+            .engraving
+            .credits
+            .push(Credit::new(RichText::new("Title"), CreditStyle::Title));
+        score.engraving.credits.push(Credit::new(
+            RichText::new("Composer"),
+            CreditStyle::Composer,
+        ));
+        let mut later = Credit::new(RichText::new("Later"), CreditStyle::Title);
+        later.page = 2;
+        score.engraving.credits.push(later);
+        let mut xml = XmlWriter::new();
+        write_pg_head(&mut xml, &score);
+        let output = xml.finish();
+        assert!(output.contains("<pgHead func=\"first\">"));
+        assert!(output.contains("halign=\"center\" valign=\"top\""));
+        assert!(output.contains("type=\"title\" fontsize=\"x-large\">Title"));
+        assert!(output.contains("halign=\"right\" valign=\"bottom\""));
+        assert!(output.contains("type=\"composer\">Composer"));
+        assert!(!output.contains("Later"));
+    }
 }
