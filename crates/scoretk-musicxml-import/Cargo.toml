@@ -10,6 +10,7 @@ homepage.workspace = true
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
+scoretk-gabc-common = { path = "../scoretk-gabc-common" }
 scoretk-xml-common = { path = "../scoretk-xml-common" }
 quick-xml = { workspace = true }
 thiserror = { workspace = true }

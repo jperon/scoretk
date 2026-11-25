@@ -139,7 +139,9 @@ pub use notation::{
     GlissandoType, LineStyle, Ornament, OrnamentAccidental, OrnamentType, Slur, SpannerNotation,
     Tremolo, TremoloKind, Trill, TrillType,
 };
-pub use note::{tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType, VeloType};
+pub use note::{
+    tpc, Accidental, AccidentalType, Note, NoteHeadGroup, NoteHeadType, NoteSource, VeloType,
+};
 pub use part::{
     recognize_musicxml_id, transpose_tpc, Instrument, MidiArticulation, Part, Staff, StaffBracket,
     Transpose,

@@ -47,7 +47,11 @@ struct Collected {
     clef: Option<String>,
     staff_lines: u8,
     syllables: BTreeMap<usize, Syllable>,
-    notes: BTreeMap<usize, Vec<GregorianNote>>,
+    /// Syllabe → (rang source → note). Le rang source est indispensable :
+    /// la projection saute les alterations qui ne sont pas chantées.
+    notes: BTreeMap<usize, BTreeMap<usize, GregorianNote>>,
+    /// Dernière note lue par syllabe, pour attacher les signes séparés.
+    last_note: BTreeMap<usize, usize>,
     found: bool,
 }
 
@@ -69,8 +73,15 @@ pub(crate) fn restore(root: &Element, score: &mut Score) {
         for note in measure.children_named("note") {
             for notations in note.children_named("notations") {
                 for other in notations.children_named("other-notation") {
-                    if let Some(note) = read_note(&other.text) {
-                        collected.notes.entry(measure_index).or_default().push(note);
+                    if let Some((syllable_index, note_index, note)) =
+                        read_note(&other.text, measure_index, &collected)
+                    {
+                        collected
+                            .notes
+                            .entry(syllable_index)
+                            .or_default()
+                            .insert(note_index, note);
+                        collected.last_note.insert(syllable_index, note_index);
                         collected.found = true;
                     }
                 }
@@ -114,6 +125,32 @@ fn read_direction(text: &str, collected: &mut Collected) {
                 .unwrap_or(4);
             collected.found = true;
         }
+        "alter" => {
+            // Une alteration est un glyphe de la source (`:481-489`) : aucun
+            // `<note>` ne la porte dans la projection, mais son rang source
+            // doit être restauré pour l'aller-retour L6.
+            let index = value(&fields, 'i')
+                .and_then(|index| index.parse().ok())
+                .unwrap_or(0);
+            let note_index = value(&fields, 'a')
+                .and_then(|index| index.parse().ok())
+                .unwrap_or(0);
+            let letter = value(&fields, 'l').and_then(|letter| letter.chars().next());
+            if let Some(letter) = letter {
+                let glyph = value(&fields, 'g').unwrap_or_default().to_owned();
+                let note = GregorianNote {
+                    letter,
+                    signs: scoretk_gabc_common::syntax::parse_signs(&glyph),
+                    glyph,
+                };
+                collected
+                    .notes
+                    .entry(index)
+                    .or_default()
+                    .insert(note_index, note);
+                collected.found = true;
+            }
+        }
         "syllable" => {
             let index = value(&fields, 'i')
                 .and_then(|index| index.parse().ok())
@@ -137,16 +174,38 @@ fn read_direction(text: &str, collected: &mut Collected) {
     }
 }
 
-fn read_note(text: &str) -> Option<GregorianNote> {
+/// Lit `gabc:note:l=…|g=…|i=<syllabe>|a=<rang>` ; les deux derniers champs
+/// sont absents des documents écrits avant la projection moderne, où la
+/// mesure et la syllabe coincideient et où les notes étaient séquentielles.
+fn read_note(
+    text: &str,
+    measure_index: usize,
+    collected: &Collected,
+) -> Option<(usize, usize, GregorianNote)> {
     let (kind, fields) = decode(text)?;
     if kind != "note" {
         return None;
     }
-    Some(GregorianNote {
-        letter: value(&fields, 'l')?.chars().next()?,
-        glyph: value(&fields, 'g').unwrap_or_default().to_owned(),
-        signs: Vec::new(),
-    })
+    let syllable_index = value(&fields, 'i')
+        .and_then(|index| index.parse().ok())
+        .unwrap_or(measure_index);
+    let note_index = value(&fields, 'a')
+        .and_then(|index| index.parse().ok())
+        .unwrap_or_else(|| {
+            collected
+                .notes
+                .get(&syllable_index)
+                .map_or(0, BTreeMap::len)
+        });
+    Some((
+        syllable_index,
+        note_index,
+        GregorianNote {
+            letter: value(&fields, 'l')?.chars().next()?,
+            glyph: value(&fields, 'g').unwrap_or_default().to_owned(),
+            signs: Vec::new(),
+        },
+    ))
 }
 
 fn read_sign(text: &str, collected: &mut Collected, measure_index: usize) {
@@ -157,12 +216,17 @@ fn read_sign(text: &str, collected: &mut Collected, measure_index: usize) {
         return;
     }
     if let Some(raw) = value(&fields, 's') {
-        if let Some(note) = collected
-            .notes
-            .get_mut(&measure_index)
-            .and_then(|notes| notes.last_mut())
-        {
-            note.signs.push(sign_from_raw(raw));
+        let syllable_index = value(&fields, 'i')
+            .and_then(|index| index.parse().ok())
+            .unwrap_or(measure_index);
+        if let Some(note_index) = collected.last_note.get(&syllable_index).copied() {
+            if let Some(note) = collected
+                .notes
+                .get_mut(&syllable_index)
+                .and_then(|notes| notes.get_mut(&note_index))
+            {
+                note.signs.push(sign_from_raw(raw));
+            }
         }
         collected.found = true;
     }
@@ -199,7 +263,14 @@ fn build_payload(collected: Collected) -> Gregorian {
     for index in 0..count {
         let mut syllable = collected.syllables.get(&index).cloned().unwrap_or_default();
         if let Some(notes) = collected.notes.get(&index) {
-            syllable.notes = notes.clone();
+            let Some(&last) = notes.keys().max() else {
+                continue;
+            };
+            let mut restored = vec![GregorianNote::default(); last + 1];
+            for (note_index, note) in notes {
+                restored[*note_index] = note.clone();
+            }
+            syllable.notes = restored;
         }
         syllables.push(syllable);
     }

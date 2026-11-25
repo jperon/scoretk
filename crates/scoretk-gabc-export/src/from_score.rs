@@ -32,7 +32,7 @@
 
 use scoretk_core::model::{
     BarKind, BarLineType, ChordRestKind, Gregorian, GregorianHeader, GregorianNote, LyricsSyllabic,
-    Score, SegmentItem, Syllable,
+    NeumeSign, Score, SegmentItem, SignKind, Syllable,
 };
 use scoretk_gabc_common::syntax;
 
@@ -70,28 +70,49 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
     let clef = choose_clef(&events, max_height);
     let key = syntax::clef_key(clef);
 
+    // Le lecteur GABC traite `x`/`#`/`y` comme des glyphes d'alteration non
+    // chantés (`Gabc.tex:481-489,512-540`) : pour projeter une hauteur
+    // alterée venant d'un autre format, on écrit d'abord le glyphe puis la
+    // note chantée de même lettre. L'alteration s'applique ensuite à toutes
+    // les notes de cette lettre jusqu'à la fin du mot ou à la barre.
+    let mut effect = [0i8; 16];
     let mut syllables: Vec<Syllable> = events
         .into_iter()
         .map(|event| {
-            let notes = event
-                .note
-                .map(|(step, diff)| {
-                    let height = step + key + 5;
-                    GregorianNote {
-                        letter: letter_for_height(height.clamp(3, max_height)),
-                        glyph: match diff {
-                            -2 => "X",
-                            -1 => "x",
-                            1 => "#",
-                            2 => "##",
-                            _ => "",
-                        }
-                        .to_owned(),
-                        signs: Vec::new(),
-                    }
-                })
-                .into_iter()
-                .collect();
+            let mut notes = Vec::new();
+            if let Some((step, diff)) = event.note {
+                let height = step + key + 5;
+                let letter = letter_for_height(height.clamp(3, max_height));
+                let wanted = if diff < 0 {
+                    -1
+                } else if diff > 0 {
+                    1
+                } else {
+                    0
+                };
+                let slot = (letter as u8).wrapping_sub(b'a') as usize % 16;
+                if effect[slot] != wanted {
+                    let raw = match wanted {
+                        -1 => "x",
+                        1 => "#",
+                        _ => "y",
+                    };
+                    notes.push(GregorianNote {
+                        letter,
+                        glyph: raw.to_owned(),
+                        signs: vec![NeumeSign::new(SignKind::Alteration, raw)],
+                    });
+                    effect[slot] = wanted;
+                }
+                notes.push(GregorianNote {
+                    letter,
+                    glyph: String::new(),
+                    signs: Vec::new(),
+                });
+            }
+            if event.space_after || event.bar.is_some() {
+                effect = [0; 16];
+            }
             Syllable {
                 text: event.text,
                 clef: None,

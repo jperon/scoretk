@@ -760,6 +760,7 @@ dependencies = [
  "flate2",
  "quick-xml",
  "scoretk-core",
+ "scoretk-gabc-common",
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "scoretk-xml-common",

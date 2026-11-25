@@ -40,7 +40,7 @@
 //! (`gabc-score-determination.y:870-907`) et ordre exact des barres à
 //! l'intérieur d'un groupe.
 
-use scoretk_core::model::{Gregorian, GregorianNote};
+use scoretk_core::model::{Gregorian, GregorianNote, SignKind};
 
 use crate::exportmusicxml::Out;
 
@@ -135,6 +135,27 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
     }
     out.attr(false);
     write_direction(out, &text);
+    // Une alteration (`Gabc.tex:481-489,512-540`) est un glyphe, pas une note
+    // chantée : la projection dérivée ne produit donc aucun `<note>` pour
+    // elle. Son rang source est transporté séparément pour que l'aller-retour
+    // L6 reste exact ; aucun consommateur tiers n'a besoin de ce champ.
+    for (note_index, note) in syllable.notes.iter().enumerate() {
+        if note
+            .signs
+            .iter()
+            .any(|sign| sign.kind == SignKind::Alteration)
+        {
+            let text = format!(
+                "{PREFIX}alter:{}|{}|{}|{}",
+                field('i', &index.to_string()),
+                field('a', &note_index.to_string()),
+                field('l', &note.letter.to_string()),
+                field('g', &note.glyph)
+            );
+            out.attr(false);
+            write_direction(out, &text);
+        }
+    }
 }
 
 /// Lettre et glyphe d'une note : `<other-notation>` non imprimé.
@@ -142,11 +163,18 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
 /// Les signes rythmiques vont dans `<technical><other-technical>` ci-dessous ;
 /// les formes que MusicXML énumère vont dans `<notehead>` (XSD 4.0,
 /// `notehead-value`).
-pub(crate) fn write_note_notation(out: &mut Out, note: &GregorianNote) {
+pub(crate) fn write_note_notation(
+    out: &mut Out,
+    note: &GregorianNote,
+    syllable_index: usize,
+    note_index: usize,
+) {
     let text = format!(
-        "{PREFIX}note:{}|{}",
+        "{PREFIX}note:{}|{}|{}|{}",
         field('l', &note.letter.to_string()),
-        field('g', &note.glyph)
+        field('g', &note.glyph),
+        field('i', &syllable_index.to_string()),
+        field('a', &note_index.to_string())
     );
     out.xml
         .start_element("notations", &[("print-object", "no")]);

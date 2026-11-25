@@ -260,6 +260,28 @@ impl Accidental {
     }
 }
 
+/// Provenance d'une note projetée depuis un format à source textuelle.
+///
+/// Les deux décalages sont en **unités de code UTF-16 depuis le début du
+/// fichier entier** (indices de chaîne JavaScript) : `offset` désigne la
+/// première lettre de hauteur chantée, `end` la fin du jeton source. Les deux
+/// indices grégoriens pointent vers `Gregorian::syllables` puis
+/// `Syllable::notes`, ce qui permet à un pont MusicXML de retrouver la note
+/// L6 exacte même quand la projection a sauté une altération non chantée.
+/// Champ additif : `None` pour toutes les notes qui ne viennent pas d'un
+/// format source textuel (aucun changement pour MuseScore, MIDI, …).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoteSource {
+    /// Décalage UTF-16 de la lettre de hauteur chantée.
+    pub offset: usize,
+    /// Décalage UTF-16 juste après le jeton de la note (fin comprise).
+    pub end: usize,
+    /// Index de la syllabe dans `Gregorian::syllables`.
+    pub gregorian_syllable: usize,
+    /// Index de la note dans `Syllable::notes`.
+    pub gregorian_note: usize,
+}
+
 /// Note d'un accord.
 ///
 /// Correspond à `Note` dans `engraving/dom/note.h`.
@@ -314,6 +336,8 @@ pub struct Note {
     /// Doigtés attachés à la note (`<Fingering>`), exportés en
     /// `<technical><fingering>`.
     pub fingerings: Vec<Fingering>,
+    /// Provenance textuelle de la note, quand le format source en a une.
+    pub source: Option<NoteSource>,
 }
 
 impl Note {
@@ -337,6 +361,7 @@ impl Note {
             small: false,
             playback: NotePlayback::DEFAULT,
             fingerings: Vec::new(),
+            source: None,
         }
     }
 

@@ -147,10 +147,28 @@ directions (`docs/agents/plan-fiabilite.md`).
 | `<sp>`/`<alt>` rubrics, centring and translation markup | `:297-343,345-378` | `Syllable::rubric`, raw `text` |
 
 The L6 `Gregorian` payload owns this primary data. The L0/L1 view is a
-**derived projection** (`derived::build_projection`): one `Note` per pitch
-letter, quarter-note default duration and one nominal 4/4 measure per
-syllable. `derived_modern_view = true` and a `derived-modern-view` loss
-record make that choice explicit (`model-modularisation.md` §7.1).
+**derived projection** (`Gregorian::build_derived_score`, shared by the GABC
+and MusicXML readers): one `Note` per *sung* pitch letter, quarter-note
+default duration and one nominal measure per syllable. `derived_modern_view =
+true` and a `derived-modern-view` loss record make that choice explicit
+(`model-modularisation.md` §7.1).
+
+**Alterations (item 1).** `x`/`X` (flat), `#`/`##` (sharp), `y`/`Y` (natural)
+and their parenthesized forms are *not sung notes*: `Gabc.tex:512-515` calls
+them one-note neumes but explicitly says they are not notes; Gregorio's dump
+does emit a `GRE_NOTE` with a shape (`src/dump/dump.c:358-455`), but that glyph
+is engraving data. The modern projection therefore emits **no** `Note` and no
+`<notehead>x</notehead>` for them. It records the alteration per letter and
+applies `<alter>` / MIDI pitch to the following sung notes of that letter
+until **the end of the word, the next separation bar, or a cancelling
+natural**. Source check: `\gresetalterationeffect` (`Gabc.tex:512-540`,
+`Command_Index_User.tex:1490-1504`) defaults to `line` and documents `word`
+and `bar` as *not yet implemented*; Gregorio does not propagate alterations
+into performance at all (`src/struct.c:1290-1410` only uses them for custos
+pitch finding). The word/bar scope is thus our declared modern projection,
+matching the Cantus consumer and ordinary chant practice, not a claim about
+Gregorio's TeX output. The witness `A(gixi)ve(h_g.)` projects two sung notes
+(G3 then B♭3 under `c4`), and `gxf!gh` flattens the following `g` only.
 
 ## 8. Writer (`scoretk-gabc-export`)
 
@@ -197,7 +215,7 @@ by copying them; see §9 for the canonical results.
 
 | Pivot fact | GABC produced | Rule |
 | --- | --- | --- |
-| `Note::pitch` + `tpc` | position letter under a chosen clef | `Gabc.tex:408-443`, key `2*line-1` / `2*line-4` (`struct.c:1273-1288`); the tpc gives the diatonic letter, MIDI pitch its octave, a mismatch gives an alteration glyph (`x`, `#`, `X`, `##`) |
+| `Note::pitch` + `tpc` | position letter under a chosen clef | `Gabc.tex:408-443`, key `2*line-1` / `2*line-4` (`struct.c:1273-1288`); the tpc gives the diatonic letter, MIDI pitch its octave, a mismatch emits the alteration glyph (`x`, `#`, `y`) followed by the sung letter, because the reader treats the glyph itself as non-sung (`:512-540`) |
 | clef choice | `c3`, `c4`, `f3`, `f4`, `c2`, `c1`, `f2`, `f1` | first clef keeping all notes inside the staff's letter range (`a`–`i`/`k`/`m`/`n,p`, `:415-443`), tie-break in that order |
 | `ChordRest::lyrics` (verse 0) | syllable text | `Single`/`End` get a trailing word space, `Begin`/`Middle` do not (`:241-245,314-317`) |
 | `Measure::end_bar_line` | `,` normal, `;`/`::` double/final, `:?` dotted, `:` repeats | separation bars are not metric measures (`:801-845`) |

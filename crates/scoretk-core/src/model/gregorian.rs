@@ -33,7 +33,8 @@
 
 use super::{
     BarLineType, Chord, ChordRest, ChordRestKind, Clef, ClefType, Duration, Fraction, Layers,
-    Lyrics, LyricsSyllabic, Measure, Note, Part, Score, Segment, SegmentItem, SegmentType, Track,
+    Lyrics, LyricsSyllabic, Measure, Note, NoteSource, Part, Score, Segment, SegmentItem,
+    SegmentType, Track,
 };
 
 /// One header field, in source order (`Gabc.tex:67-154`).
@@ -273,6 +274,20 @@ impl Gregorian {
     ///
     /// Portage de `src/struct.c:1273-1288` (`initial_key`) et
     /// `src/struct.h:809-813` (hauteurs), modifié (réécrit en Rust) en 2026.
+    ///
+    /// **Altérations** (`Gabc.tex:481-489,512-540`). GregorioTeX traite
+    /// `x`/`X` (bémol), `#`/`##` (dièse) et `y`/`Y` (naturel) comme des
+    /// « neumes d'une note » : ce ne sont pas des notes chantées
+    /// (`:514-515`) et l'effet d'une altération est réglé par
+    /// `\gresetalterationeffect` (`Command_Index_User.tex:1490-1504`), dont
+    /// la valeur par défaut est `line` ; les options `word` et `bar` y sont
+    /// décrites comme *à venir*, jamais implémentées. Gregorio ne propage
+    /// donc aucune alteration au niveau MIDI. La projection moderne retenue ici
+    /// applique l'altération aux notes suivantes **de la même lettre**
+    /// jusqu'à la fin du mot, à la prochaine barre de séparation ou à un
+    /// naturel (`x`, `y`, `#` et leurs variantes douces/parenthesées), ce qui
+    /// est la convention chantée et l'attendu du consommateur Cantus ; elle
+    /// est documentée comme choix dérivé dans `docs/agents/gabc.md`.
     #[must_use]
     pub fn build_derived_score(&self) -> Score {
         let mut score = Score::new();
@@ -282,19 +297,44 @@ impl Gregorian {
         score.staves[staff.index()].lines = self.staff_lines;
         let track = Track::new(staff, 0);
 
+        // Une entrée par lettre de hauteur (`a`…`n`, `p` ; `o` est l'oriscus).
+        let mut alterations = [0i8; 16];
         let mut start = Fraction::ZERO;
         for (index, syllable) in self.syllables.iter().enumerate() {
-            let count = syllable.notes.len();
-            // Even a bar-only group occupies one quarter: a zero-length
-            // measure would put the next syllable at the same absolute tick.
-            let len = Fraction::new(count.max(1) as i64, 4);
+            let mut sung = 0usize;
+            // Une alteration est un glyphe et non une attaque : elle ne
+            // consomme aucun temps dans la mesure dérivée. Un groupe sans
+            // note chantée occupe malgré tout un quart, pour éviter une
+            // mesure de longueur nulle.
+            let sung_total = syllable
+                .notes
+                .iter()
+                .filter(|note| alteration_value(note).is_none())
+                .count();
+            let len = Fraction::new(sung_total.max(1) as i64, 4);
             let mut measure = Measure::new(index, start, Fraction::ONE).with_len(len);
             if let Some(bar) = syllable.bars.last() {
                 measure.end_bar_line = derived_bar_line(*bar);
             }
             for (note_index, note) in syllable.notes.iter().enumerate() {
+                if let Some(value) = alteration_value(note) {
+                    // L'alteration est un glyphe, pas une attaque MIDI.
+                    if let Some(slot) = letter_slot(note.letter) {
+                        alterations[slot] = value;
+                    }
+                    continue;
+                }
                 let step = derived_step(note.letter, clef);
-                let id = score.add_note(Note::new(derived_pitch(step), derived_tpc(step)));
+                let alter = letter_slot(note.letter).map_or(0, |slot| alterations[slot]);
+                let pitch = (i16::from(derived_pitch(step)) + i16::from(alter)).clamp(0, 127) as u8;
+                let tpc = (i16::from(derived_tpc(step)) + 7 * i16::from(alter)).clamp(0, 26) as i8;
+                let mut projected = Note::new(pitch, tpc);
+                projected.source = Some(NoteSource {
+                    gregorian_syllable: index,
+                    gregorian_note: note_index,
+                    ..NoteSource::default()
+                });
+                let id = score.add_note(projected);
                 let mut chord_rest = ChordRest::chord(Duration::quarter());
                 chord_rest.kind = ChordRestKind::Chord(Chord {
                     notes: vec![id],
@@ -302,8 +342,8 @@ impl Gregorian {
                 });
                 // Segment ticks are absolute in the pivot (`pass2.rs:495-518`),
                 // not relative to the measure.
-                let tick = start + Fraction::new(note_index as i64, 4);
-                if note_index == 0 {
+                let tick = start + Fraction::new(sung as i64, 4);
+                if sung == 0 {
                     let text = plain_lyric(&syllable.text);
                     if !text.is_empty() {
                         chord_rest
@@ -314,11 +354,18 @@ impl Gregorian {
                 let mut segment = Segment::new(SegmentType::ChordRest, tick, 1);
                 segment.set_element(track, SegmentItem::ChordRest(chord_rest));
                 measure.add_segment(segment);
+                sung += 1;
             }
             if index == 0 {
                 let mut segment = Segment::new(SegmentType::Clef, Fraction::ZERO, 1);
                 segment.set_element(track, SegmentItem::Clef(Clef::new(derived_clef_type(clef))));
                 measure.add_segment(segment);
+            }
+            // Portée de l'alteration : fin de mot ou barre de séparation
+            // (`Gabc.tex:801-845`, `:241-245`). Un naturel la cancelle déjà
+            // quand il est rencontré comme note alterée ci-dessus.
+            if syllable.space_after || !syllable.bars.is_empty() {
+                alterations = [0; 16];
             }
             start = measure.end_tick();
             score.add_measure(measure);
@@ -326,11 +373,39 @@ impl Gregorian {
 
         score.report.record(
             Layers::COMMON,
-            "derived-modern-view: one note per pitch letter, quarter duration, nominal 4/4",
+            "derived-modern-view: one note per pitch letter (alterations are signs), quarter duration, nominal 4/4",
             None,
             None,
         );
         score
+    }
+}
+
+/// Valeur diatonique d'un signe d'alteration GABC (`Gabc.tex:481-489`).
+///
+/// Les formes douces (`X`, `##`, `Y`) et parenthesées (`x?`, `#?`, `y?`)
+/// changent seulement l'impression dans GregorioTeX ; la hauteur projetée
+/// est la même que celle de la forme ordinaire.
+fn alteration_value(note: &GregorianNote) -> Option<i8> {
+    let sign = note
+        .signs
+        .iter()
+        .find(|sign| sign.kind == SignKind::Alteration)?;
+    match sign.raw.as_str() {
+        "x" | "x?" | "X" => Some(-1),
+        "y" | "y?" | "Y" => Some(0),
+        "#" | "#?" | "##" => Some(1),
+        _ => None,
+    }
+}
+
+/// Index d'une lettre de hauteur pour la table d'alterations (`o` exclu).
+fn letter_slot(letter: char) -> Option<usize> {
+    let low = letter.to_ascii_lowercase();
+    match low {
+        'a'..='n' => Some((low as u8 - b'a') as usize),
+        'p' => Some(15),
+        _ => None,
     }
 }
 
@@ -540,6 +615,86 @@ mod tests {
             Some((BarKind::DivisioMinor, 1))
         );
         assert_eq!(BarKind::parse_prefix("g"), None);
+    }
+
+    #[test]
+    fn an_alteration_is_a_sign_not_a_sung_note() {
+        // `Gabc.tex:481-489,512-540` : `gixi` = G, alteration flat on `i`,
+        // then the sung `i` (B-flat). Gregorio's dump has three glyph notes,
+        // but only two are sung; see `docs/agents/gabc.md`.
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![Syllable {
+                text: "A".to_owned(),
+                notes: vec![
+                    GregorianNote {
+                        letter: 'g',
+                        ..GregorianNote::default()
+                    },
+                    GregorianNote {
+                        letter: 'i',
+                        glyph: "x".to_owned(),
+                        signs: vec![NeumeSign::new(SignKind::Alteration, "x")],
+                    },
+                    GregorianNote {
+                        letter: 'i',
+                        ..GregorianNote::default()
+                    },
+                ],
+                space_after: true,
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        assert_eq!(score.notes.len(), 2);
+        assert_eq!(score.notes[0].pitch, 55);
+        assert_eq!(score.notes[1].pitch, 58);
+        assert_eq!(score.notes[1].tpc, super::super::tpc::B_FLAT);
+        assert_eq!(score.notes[1].source.unwrap().gregorian_note, 2);
+    }
+
+    #[test]
+    fn alteration_effect_ends_at_word_bar_or_natural() {
+        let note = |letter| GregorianNote {
+            letter,
+            ..GregorianNote::default()
+        };
+        let altered = |letter, raw: &'static str| GregorianNote {
+            letter,
+            glyph: raw.to_owned(),
+            signs: vec![NeumeSign::new(SignKind::Alteration, raw)],
+        };
+        let payload = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![
+                Syllable {
+                    notes: vec![altered('g', "x"), note('g'), note('g')],
+                    space_after: true,
+                    ..Syllable::default()
+                },
+                Syllable {
+                    notes: vec![note('g')],
+                    space_after: false,
+                    ..Syllable::default()
+                },
+                Syllable {
+                    notes: vec![altered('g', "#"), note('g')],
+                    bars: vec![BarKind::DivisioMaior],
+                    ..Syllable::default()
+                },
+                Syllable {
+                    notes: vec![note('g')],
+                    ..Syllable::default()
+                },
+            ],
+            ..Gregorian::default()
+        };
+        let score = payload.build_derived_score();
+        let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+        // g-flat, g-flat inside the word, then natural after the word,
+        // g-sharp after `#`, natural again after the bar.
+        assert_eq!(pitches, [54, 54, 55, 56, 55]);
     }
 
     #[test]

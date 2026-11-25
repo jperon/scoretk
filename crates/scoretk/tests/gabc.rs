@@ -133,6 +133,35 @@ fn gabc_to_midi_keeps_one_note_per_letter_and_the_syllables() {
     );
 }
 
+/// `Gabc.tex:481-489,512-540` : `x` est un glyphe d'alteration, pas une note
+/// chantée ; il apply un bémol à la note suivante de la même hauteur.
+#[test]
+fn an_alteration_is_not_a_note_and_changes_pitch_and_musicxml_alter() {
+    const ALTER: &str = "name:t;\n%%\n(c4) A(gixi)ve(h_g.) (::)\n";
+    let score = read(ALTER.as_bytes(), Format::Gabc).expect("GABC import");
+    let pitches: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    assert_eq!(
+        pitches,
+        [55, 58, 57, 55],
+        "the alteration glyph emits no note and flattens the following `i`"
+    );
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &Options::default()).expect("MusicXML export"),
+    )
+    .expect("UTF-8 MusicXML");
+    assert!(xml.contains("<alter>-1</alter>"), "{xml}");
+    assert!(
+        !xml.contains("<notehead>x</notehead>"),
+        "an alteration is not a cross notehead: {xml}"
+    );
+    // L'aller-retour L6 doit conserver le glyphe d'alteration lui-même.
+    let gabc = String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC"))
+        .expect("UTF-8 GABC");
+    assert!(gabc.contains("gixi"), "{gabc}");
+    let again = read(gabc.as_bytes(), Format::Gabc).expect("second import");
+    assert_eq!(again.notes.len(), score.notes.len());
+}
+
 /// A monophonic MuseScore example from the versioned corpus: one staff, four
 /// notes and one lyric syllable. It has no L6 payload, so it exercises the
 /// score → GABC projection rather than the payload serializer.

@@ -1896,19 +1896,10 @@ impl Context<'_> {
             }
 
             write_notehead(out, note, chord, duration);
-            // Le seul glyphe grégorien que l'énumération MusicXML nomme
-            // directement (`notehead-value = "x"`, XSD 4.0) est écrit comme
-            // tel ; les autres restent dans `<other-notation>` ci-dessous.
-            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
-                if gregorian
-                    .syllables
-                    .get(ids.measure_index)
-                    .and_then(|syllable| syllable.notes.get(ids.chord_rank))
-                    .is_some_and(|gregorian_note| gregorian_note.glyph == "x")
-                {
-                    out.xml.tag("notehead", "x");
-                }
-            }
+            // Une alteration grégorienne `x`/`y`/`#` n'est **pas** une note
+            // chantée (`Gabc.tex:481-489,512-540`) : la projection dérivée ne
+            // lui crée aucun `Note`, donc aucun `<notehead>x</notehead>` ne
+            // doit être émis ici. Son glyphe reste dans le champ privé L6.
 
             // `staff + note->chord()->staffMove()` : un accord croisé change
             // de portée sans changer de piste.
@@ -2003,13 +1994,23 @@ impl Context<'_> {
             notations.finish(&mut out.xml);
 
             if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
-                if let Some(gregorian_note) = gregorian
-                    .syllables
-                    .get(ids.measure_index)
-                    .and_then(|syllable| syllable.notes.get(ids.chord_rank))
-                {
-                    chant::write_note_notation(out, gregorian_note);
-                    chant::write_note_signs(out, gregorian_note);
+                // La projection saute les alterations non chantées : le rang
+                // source est porté par `Note::source`, pas par le rang
+                // `ChordRest` de la mesure (qui peut diverger).
+                if let Some(source) = note.source {
+                    if let Some(gregorian_note) = gregorian
+                        .syllables
+                        .get(source.gregorian_syllable)
+                        .and_then(|syllable| syllable.notes.get(source.gregorian_note))
+                    {
+                        chant::write_note_notation(
+                            out,
+                            gregorian_note,
+                            source.gregorian_syllable,
+                            source.gregorian_note,
+                        );
+                        chant::write_note_signs(out, gregorian_note);
+                    }
                 }
             }
 
