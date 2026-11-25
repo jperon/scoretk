@@ -140,6 +140,11 @@ pub struct MeasureData {
     /// numéro de mesure qui recule (hors mesure implicite) est donc interprété
     /// comme un saut de section.
     pub section_break: bool,
+    /// Vrai si un `<print new-system="yes">` ou `new-page="yes"` ouvre cette
+    /// mesure (`MusicXmlParserPass1::print` et `createMeasuresAndVboxes`,
+    /// `importmusicxmlpass1.cpp:2916-2929, 1205-1214`) : la rupture est portée
+    /// par la mesure précédente dans le modèle MuseScore.
+    pub line_break: bool,
 }
 
 /// Partie du document, telle que relevée en première passe.
@@ -329,10 +334,14 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
                 .and_then(|previous| state.numbers.get(previous).copied().flatten());
             matches!((current, previous), (Some(current), Some(previous)) if current <= previous)
         });
+        let line_break = states
+            .iter()
+            .any(|state| state.line_breaks.get(index).copied().unwrap_or(false));
         measures.push(MeasureData {
             len,
             time_sig_in_effect: time_sig,
             section_break,
+            line_break,
         });
     }
 
@@ -351,6 +360,8 @@ struct PartState {
     time_sigs: Vec<Option<TimeSigData>>,
     numbers: Vec<Option<usize>>,
     implicits: Vec<bool>,
+    /// `<print new-system>` / `<print new-page>` de chaque mesure.
+    line_breaks: Vec<bool>,
     voices: BTreeMap<i32, VoiceDesc>,
     divisions: u32,
     max_staff: usize,
@@ -532,6 +543,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
         time_sigs: Vec::new(),
         numbers: Vec::new(),
         implicits: Vec::new(),
+        line_breaks: Vec::new(),
         voices: BTreeMap::new(),
         divisions: 1,
         max_staff: 0,
@@ -548,6 +560,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
         detector.new_measure();
         let mut measure_time = Fraction::ZERO;
         let mut duration = Fraction::ZERO;
+        let mut line_break = false;
         let measure_start = length_start(&state.lengths);
 
         for child in &measure.children {
@@ -576,6 +589,15 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
                     }
                     measure_time += timing.dura;
                     duration = duration.max(measure_time);
+                }
+                "print" => {
+                    // `print` (`importmusicxmlpass1.cpp:2916-2929`) ne lit
+                    // que ces deux attributs et ignore le reste du bloc.
+                    if child.attribute("new-page") == Some("yes")
+                        || child.attribute("new-system") == Some("yes")
+                    {
+                        line_break = true;
+                    }
                 }
                 "forward" => {
                     measure_time += read_divisions_duration(child, state.divisions);
@@ -613,6 +635,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
         state
             .implicits
             .push(measure.attribute("implicit") == Some("yes"));
+        state.line_breaks.push(line_break);
 
         for voice in detector.overlapping_voices() {
             if let Some(desc) = state.voices.get_mut(&voice) {

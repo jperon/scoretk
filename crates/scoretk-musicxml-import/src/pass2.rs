@@ -144,6 +144,15 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
         start += data.len;
     }
 
+    // `addBreakToPreviousMeasureBase` (`importmusicxmlpass1.cpp:1205-1214`) :
+    // `<print new-system>` / `new-page` d'une mesure marque la fin du système
+    // précédent, comme un `<LayoutBreak>` `line`/`page` du `.mscx`.
+    for index in 1..score.measures.len() {
+        if analysis.measures[index].line_break {
+            score.measures[index - 1].line_break = true;
+        }
+    }
+
     let elements: BTreeMap<&str, &Element> = root
         .children_named("part")
         .filter_map(|part| part.attribute("id").map(|id| (id, part)))

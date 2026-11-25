@@ -3945,3 +3945,45 @@ fn nolet_au_milieu_d_une_ligature_garde_le_crochet() {
     );
     assert_eq!(xml.matches("<beam number=\"1\">").count(), 6);
 }
+
+/// `ExportMusicXml::print` (`exportmusicxml.cpp:7457-7490`) : une rupture
+/// explicite de la mesure précédente est écrite comme `<print new-system>`
+/// au début de la mesure suivante.
+#[test]
+fn saut_de_systeme_ecrit_un_print() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    for index in 0..2 {
+        let mut measure = ajouter_mesure(
+            index,
+            Fraction::new(index as i64, 1),
+            Fraction::ONE,
+            Fraction::ONE,
+        );
+        ajouter_accord(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::ZERO,
+            Duration::whole(),
+            &[(60, tpc::C)],
+        );
+        if index == 0 {
+            measure.line_break = true;
+        }
+        score.add_measure(measure);
+    }
+    let xml = export_musicxml(&score).expect("export");
+    assert!(
+        xml.contains("<print new-system=\"yes\"/>"),
+        "saut de système absent :\n{xml}"
+    );
+    let second = xml.find("<measure number=\"2\"").expect("mesure 2");
+    let first_note = xml[second..].find("<note").expect("note") + second;
+    let print = xml.find("<print new-system=\"yes\"/>").expect("print");
+    assert!(
+        print > second && print < first_note,
+        "print mal placé :\n{xml}"
+    );
+}

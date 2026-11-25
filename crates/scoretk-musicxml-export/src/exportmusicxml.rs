@@ -940,8 +940,15 @@ impl<'a> Context<'a> {
         out.xml.start_element("measure", &measure_attributes);
         out.in_attributes = false;
 
-        // TODO(parité): <print> (sauts de page/système, numéro de page) et
-        // attribut width : la mise en page n'est pas dans le modèle.
+        // `ExportMusicXml::print` (`exportmusicxml.cpp:7457-7490`) : une
+        // rupture explicite est annoncée au début de la mesure *suivante*.
+        // Les valeurs de `<system-layout>` viennent des boîtes calculées par
+        // la gravure (`systemlayout.cpp`), absentes du modèle pivot : seul
+        // l'attribut `new-system`, qui porte la rupture, est écrit ici (voir
+        // `docs/agents/musicxml-export.md`).
+        if measure_index > 0 && self.score.measures[measure_index - 1].line_break {
+            out.xml.tag_empty("print", &[("new-system", "yes")]);
+        }
 
         // La barre de gauche doit être le premier élément de la mesure.
         self.barline_left(out, measure, part_index);
