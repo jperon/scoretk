@@ -166,6 +166,26 @@ MusicXML and as note-off ticks in MIDI; the separation bars add breaths
 instead of metric time. The reverse projection writes the corresponding `.`
 and `_` signs so a standard-MusicXML round trip keeps the durations.
 
+**Quilisma (user decision, 2026-11-25).** Following gabctk's convention
+(`gabctk.py:35,45,1001,1051-1095`; the script is read as text, never imported
+outside the sandbox), `w` (`Gabc.tex:470`) is projected as an **ornament**:
+MusicXML `<ornaments><inverted-mordent/></ornaments>`, LilyPond `\prall`, ABC
+`!uppermordent!` (`P`). On re-import from MusicXML, an `inverted-mordent` on a
+note of an unmetered four-line chant is read back as a quilisma `w`. The notes
+*before* the quilisma **on the same syllable** are held back progressively:
+the immediately preceding one is doubled and the earlier ones get the
+decreasing factors `1 + 2^-k`, with named constants
+`QUILISMA_HOLD_IMMEDIATE` = 2, `QUILISMA_HOLD_SECOND` = 1.5,
+`QUILISMA_HOLD_THIRD` = 1.25, `QUILISMA_HOLD_FOURTH` = 1.125 in
+`scoretk-core/src/model/gregorian.rs` (the series continues, capped at 16).
+The walk stops at the beginning of the syllable and never enters the previous
+one. These holds are **performance durations** (`ChordRest::ticks`, used by the
+MIDI writer): the invented attack grid stays one quarter per letter, so a
+standard-MusicXML round trip does not shift every derived measure. Tests cover
+a syllable with three notes before the quilisma and one where the quilisma is
+the second note (`crates/scoretk-core/src/model/gregorian.rs`,
+`crates/scoretk/tests/gabc_quilisma.rs`).
+
 **Alterations (item 1).** `x`/`X` (flat), `#`/`##` (sharp), `y`/`Y` (natural)
 and their parenthesized forms are *not sung notes*: `Gabc.tex:512-515` calls
 them one-note neumes but explicitly says they are not notes; Gregorio's dump
@@ -262,11 +282,11 @@ in §6 and `crates/scoretk/tests/layer_coverage.rs`.
 | Nine Gregorio examples, GABC → model → GABC | `cargo test -p scoretk --test gabc_corpus` | **0/9 byte-identical** (expected); structured inventory 100 % self-consistency. Gregorio accepts 6/6 of the examples it accepts at all, **6/6 core-exact**, **0/6 dump-identical** in `mesure.jsonl` (3 examples are invalid for Gregorio itself) |
 | Layer coverage, direct GABC → model → GABC → model | `cargo test -p scoretk --test layer_coverage -- --nocapture` | essential **100 %**, full support **100 %** on 3 435 items (L1 342, L2 1 033, L3 308, L6 1 752) — this is the *structured-field* round trip, not evidence of a format conversion |
 | **Cross** GABC → MusicXML → GABC → model, nine examples | same test, `gabc_cross_round_trip_table` | **before: essential 83.00 %, full support 59.07 %** (L1 45.03 %, L2 95.74 %, L3 95.78 %, L6 33.73 %) → **after: essential 100 %, full support 100 %** (L1 342/342, L2 1 033/1 033, L3 308/308, L6 1 752/1 752, 0 extra), 9/9 outputs still differ from their source |
-| **Cross without private `gabc:` fields**, nine examples | `gabc_cross_round_trip_without_private_extensions_is_measured` | **before items 1–9: essential 83.00 %, full support 59.07 % → after: 95.97 %, 63.58 %** (L1 89.63 %, L2 95.96 %, L3 74.68 %, L6 39.50 %). Every element whose text starts with `gabc:` is deleted from the written MusicXML before re-reading it, as for the private ABC/LilyPond extensions of `model-modularisation.md` §11.8: only standard MusicXML is scored. This is the number a third-party consumer can reproduce; the 100 % row above still carries the private fields and is unchanged. |
+| **Cross without private `gabc:` fields**, nine examples | `gabc_cross_round_trip_without_private_extensions_is_measured` | **before items 1–9: essential 83.00 %, full support 59.07 % → after items 1–9: 95.97 %, 63.58 % → after quilisma/ABC bars and the standard-carrier gains of §9.1: 94.14 %, 69.21 %** (L1 100 %, L2 94.19 %, L3 74.68 %, L6 50.17 %). Every element whose text starts with `gabc:` is deleted from the written MusicXML before re-reading it, as for the private ABC/LilyPond extensions of `model-modularisation.md` §11.8: only standard MusicXML is scored. This is the number a third-party consumer can reproduce; the 100 % row above still carries the private fields and is unchanged. The remaining gap is structural: neume glyphs (`gregorian-note`), syllable markup (`gregorian-syllable`) and shape signs other than `.`/`_`/`w` have no standard MusicXML field, as checked by `out_of_reach_gabc_facts_have_no_xml_field`; 95 % is not reachable on that row without inventing a new private convention. |
 | Gregorio vs itself, full 202-file lot | `mesure.sh … --verifier-determinisme --jobs 2` | 197/197 deterministic (5 files rejected by Gregorio itself) |
 | **scoretk writer vs Gregorio dumps, full lot** | `mesure.sh … --writer <cli> --jobs 2` | **before: 193/194 = 99.48 %, 3 writer outputs rejected** → **after: writer core-exact 194/194 = 100 %**, **dump SHA identical 88/194** (was 0/194: dropping the extra newlines between syllables brought the output closer to Gregorio's dump), **0 writer output rejected**, 0 tool crashes; the same five *source* files are rejected by Gregorio itself and excluded from both sides |
 | Python source sanity reader (phase 0) | same run, `cmp_source` | 133/197 = 67.51 % (was 132/197; the canonical form now keeps Dominican-bar digits and ignores custos pitches) |
-| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 494 030 raw / 983 191 gzip after the original chant bridge → **2 536 772 / 998 347** after the modern projection: **+42 742 raw (+1.71 %), +15 156 gzip (+1.54 %)**; still under the ≈ 2.5 MB raw cap and within the +2 % budget |
+| Wasm package size | `nix build .#wasm`, `result/SIZE` | 2 494 030 raw / 983 191 gzip after the original chant bridge → 2 536 772 / 998 347 after items 1–9 (**+42 742 raw, +15 156 gzip**) → **2 558 465 / 1 006 608** after the quilisma projection, measured on the final tree of this branch (`result/SIZE`, `gzip -9`). The preceding commit (`92ed17f4`) had been reported at 2 557 358 / 1 007 151, so the increment is **+1 107 raw (+0.04 %), −543 gzip**; 679 raw bytes were reclaimed in the GABC code (allocation-free hold factors and clef choice) and the sub-2 % budget holds. The 2 536 772 figure in the earlier report was measured before later commits of the same branch. |
 
 The oracle was re-measured after items 1–9 (2026-11-25) with
 `/tmp/gabc-oracle-final`: `files=202 gregorio=197 deterministic=197/197
@@ -301,6 +321,7 @@ to carry (`Gabc.tex:801-845`).
 | Above-staff text `[alt:…]` | `<direction placement="above">/<direction-type>/<words>` with the plain text (no `gabc:` prefix); `gabc:syllable A=` keeps the L6 fact | XSD 4.0 `words`, `placement`; `Gabc.tex:1088-1091` |
 | Rhythmic and shape signs | `<notations>/<technical>/<other-technical>` (`gabc:sign`) | XSD 4.0 `other-technical`; `Gabc.tex:702-797` |
 | Separation bars and their exact token | `<barline>/<bar-style>` for the modern view (`,` → `tick`, `;` → `short`, `:` → `light-light`, `::` → `light-heavy`); a `<breath-mark/>` on the last sung note; `gabc:syllable` `b=` fields for the exact tokens `;1`…`;8`, `::`, `:?`, … | XSD 4.0 `barline`, `breath-mark`; `Gabc.tex:801-845` (minima = quarter bar, minor = half bar, maior = full bar, finalis), `src/dump/dump.c:805-821` |
+| Same bars in ABC | `,` → `!shortphrase![|]`, `;` → `!mediumphrase![|]` (`gabctk.py:932-933`, user decision 2026-11-25), `:` → `\|\|`, `::` → `\|]`; the reverse projection reads the MusicXML bar styles back as `BarKind::DivisioMinima`/`DivisioMinor` | gabctk `Barre.abc`, ABC 2.1 §4.2 phrase decorations; `crates/scoretk/tests/abc_barline_gabc.rs` |
 
 Field values are escaped as `\\`, `\|`, `\l` (`<`), `\g` (`>`), `\n`, `\r`:
 the shared XML reader loses `&gt;` in text, so the chant bridge uses its own
@@ -338,6 +359,13 @@ report (`mesure.jsonl`, never by the total):
   each neume, the cross row moved from 30.60 %/31.54 % to
   **83.00 %/59.07 %**. That intermediate L1 loss was a transport gap, not a
   by-design one: it disappeared once the L6 payload crossed MusicXML (below).
+- The standard-MusicXML-only row gained 5.63 points from three honest
+  carriers: the original C/F clef is read back from `<clef>` instead of being
+  re-guessed from the tessiture (`from_score::score_gabc_clef`), `;` comes back
+  as `BarKind::DivisioMinor` from the `short` bar style, and the quilisma's
+  `<inverted-mordent/>` is restored as `w`. The progressive holds deliberately
+  stay out of `<duration>` (they are performance ticks), so the derived attack
+  grid and the L1 row are unchanged.
 - The remaining cross gap was the *transport*, not the projection: MusicXML
   was writing only the derived modern view, so every neume letter, glyph,
   sign, bar token and markup string was rebuilt from pitches and lost its
