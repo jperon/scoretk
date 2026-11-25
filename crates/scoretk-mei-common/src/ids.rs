@@ -55,11 +55,23 @@ pub const MEASURE_REPEAT_TYPE: &str = "mscore-repeat-";
 /// `@type` prefix for markers on `<repeatMark>`.
 pub const MARKER_TYPE: &str = "mscore-marker-";
 
+/// `@label` prefix carrying a credit's page and frame height on `<rend>`.
+/// MEI 5.1 has no element for a MuseScore `VBox`: `@n` keeps the credit order,
+/// `@halign`/`@valign`/`@fontsize` are standard, and only the frame geometry
+/// needs this documented MuseScore extension.
+pub const CREDIT_FRAME_LABEL: &str = "mscore-frame-";
+
 /// `@type` for a tempo inferred from its text.
 pub const TEMPO_INFER_FROM_TEXT: &str = "mscore-infer-from-text";
 
 /// `@type` prefix for chord lines on `<artic>`.
 pub const CHORDLINE_TYPE: &str = "mscore-";
+
+/// `@type` prefix carrying the MuseScore instrument id on `<instrDef>`.
+/// The numeric MIDI fields use standard `midi.*` attributes; the id itself
+/// is a MuseScore extension (there is no open vocabulary for it in MEI 5.1:
+/// `@midi.instrname` is restricted to `data.MIDINAMES`).
+pub const INSTRUMENT_TYPE: &str = "mscore-instrument-";
 
 /// `@type` prefix for ornament intervals.
 pub const INTERVAL_ABOVE: &str = "mscore-above-";

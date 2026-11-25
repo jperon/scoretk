@@ -22,9 +22,11 @@
 
 //! Header et `scoreDef` de l'écrivain MEI.
 
-use scoretk_core::model::{CreditStyle, Score, SegmentItem, SegmentType, StaffId, Track};
+use scoretk_core::model::{CreditStyle, Part, Score, SegmentItem, SegmentType, StaffId, Track};
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
+
+use crate::MeiOptions;
 
 /// `MeiExporter::writeHeader` (`meiexporter.cpp:198`).
 pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str) {
@@ -66,7 +68,11 @@ pub(crate) fn write_header(xml: &mut XmlWriter, score: &Score, date: &str) {
 ///
 /// Only the first-frame texts are carried: MuseScore writes one `<pgHead>`
 /// from the first `VBox`, grouping the texts into nine alignment cells.
-pub(crate) fn write_pg_head(xml: &mut XmlWriter, score: &Score) {
+pub(crate) fn write_pg_head(xml: &mut XmlWriter, score: &Score, options: &MeiOptions) {
+    if options.full_support {
+        write_pg_head_ordered(xml, score);
+        return;
+    }
     let mut cells: [Vec<(&str, Option<String>, &str)>; 9] = Default::default();
     let style = &score.engraving.style;
     for credit in &score.engraving.credits {
@@ -132,8 +138,71 @@ pub(crate) fn write_pg_head(xml: &mut XmlWriter, score: &Score) {
     xml.end_element();
 }
 
+/// Variante additive de `writePgHead` : les texts sont écrits dans l'ordre
+/// du modèle (et non regroupés par cellule d'alignement), avec `@n` pour
+/// retrouver cet ordre et les attributs standard `@halign`/`@valign`/
+/// `@fontsize`. Le numéro de page et la hauteur du cadre n'ont pas de
+/// contrepartie MEI 5.1 : ils sont portés par `@label="mscore-frame-…"`.
+fn write_pg_head_ordered(xml: &mut XmlWriter, score: &Score) {
+    let style = &score.engraving.style;
+    if score.engraving.credits.is_empty() {
+        write_pg_head(xml, score, &MeiOptions::default());
+        return;
+    }
+    xml.start_element("pgHead", &[("func", "first")]);
+    for (index, credit) in score.engraving.credits.iter().enumerate() {
+        let (_, name, term) = convert::text_to_mei(&credit.style);
+        let size = credit
+            .font_size
+            .map(convert::points_to_mei)
+            .or_else(|| term.map(str::to_owned));
+        let label = format!(
+            "{}{}:{:.5}",
+            ids::CREDIT_FRAME_LABEL,
+            credit.page,
+            credit.vbox_height
+        );
+        let mut attrs = vec![
+            ("type".to_owned(), name.to_owned()),
+            ("n".to_owned(), (index + 1).to_string()),
+            (
+                "halign".to_owned(),
+                credit.justify.musicxml_name().to_owned(),
+            ),
+            (
+                "valign".to_owned(),
+                credit.valign.musicxml_name().to_owned(),
+            ),
+            ("label".to_owned(), label),
+        ];
+        if let Some(size) = size {
+            attrs.push(("fontsize".to_owned(), size));
+        }
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        xml.tag_with("rend", &refs, credit.text.plain());
+    }
+    // Les styles de texte peuvent être fixés sans texte correspondant dans
+    // la première frame : un `<rend>` vide est légal en MEI 5.1.
+    for (style_kind, size) in [
+        (CreditStyle::Title, style.title_font_size),
+        (CreditStyle::Composer, style.composer_font_size),
+        (CreditStyle::Lyricist, style.lyricist_font_size),
+    ] {
+        // Écrire la taille de style même quand un credit du même style
+        // existe : `@fontsize` d'un credit est une taille *explicite*, pas
+        // le défaut du style, et les deux informations sont distinctes.
+        let (_, name, _) = convert::text_to_mei(&style_kind);
+        let size = convert::points_to_mei(size);
+        xml.tag_empty("rend", &[("type", name), ("fontsize", &size)]);
+    }
+    xml.end_element();
+}
+
 /// `MeiExporter::writeScoreDef` (`meiexporter.cpp:324`).
-pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
+pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score, options: &MeiOptions) {
     // `att.pages` and `att.spacing`/`@vu.height` belong to `att.scoreDef.vis`
     // (MEI 5.1, MEI.visual.xml). MEI has one margin set, so its single values
     // describe both even and odd pages.
@@ -179,7 +248,7 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
     xml.start_element("scoreDef", &page_refs);
-    write_pg_head(xml, score);
+    write_pg_head(xml, score, options);
     xml.start_element("staffGrp", &[]);
     for (index, part) in score.parts.iter().enumerate() {
         if !part.long_name.is_empty() || !part.short_name.is_empty() {
@@ -188,11 +257,16 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
             if !part.short_name.is_empty() {
                 xml.tag("labelAbbr", &part.short_name);
             }
-            if let Some(program) = part.instrument.midi_program {
-                xml.tag_empty("instrDef", &[("midi.instrnum", &program.to_string())]);
+            let attributes = instr_def_attributes(part, options.full_support);
+            if !attributes.is_empty() {
+                let refs: Vec<(&str, &str)> = attributes
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+                    .collect();
+                xml.tag_empty("instrDef", &refs);
             }
         }
-        for staff_id in &part.staves {
+        for (staff_index, staff_id) in part.staves.iter().enumerate() {
             let staff = &score.staves[staff_id.index()];
             let (numerator, denominator, kind) = first_time_sig(score);
             let (count, unit, sym) = convert::meter_to_mei(&scoretk_core::model::TimeSig {
@@ -250,6 +324,19 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
                 .map(|(key, value)| (key.as_str(), value.as_str()))
                 .collect();
             xml.start_element("staffDef", &refs);
+            // Une partie sans libellé n'a pas de `<staffGrp>` portant un
+            // `<instrDef>` : écrire la définition dans son premier
+            // `<staffDef>` rend l'identité et les paramètres MIDI lisibles.
+            if options.full_support && staff_index == 0 {
+                let attributes = instr_def_attributes(part, true);
+                if !attributes.is_empty() {
+                    let refs: Vec<(&str, &str)> = attributes
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_str()))
+                        .collect();
+                    xml.tag_empty("instrDef", &refs);
+                }
+            }
             // MuseScore porte la clef initiale sur le segment de la première
             // mesure (`writeStaffDef`, meiexporter.cpp:684) ; le `default_clef`
             // de la portée reste souvent G. Prendre la clé réellement jouée.
@@ -298,6 +385,38 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score) {
     xml.end_element();
 }
 
+/// Attributs d'un `<instrDef>` (MEI 5.1 `att.midiInstrument`, `att.channelized`
+/// et `att.typed`). Les champs numériques sont standard ; l'identifiant
+/// d'instrument de MuseScore est porté par un `@type="mscore-instrument-*"`
+/// documenté, `@midi.instrname` étant limité à l'énumération fermée
+/// `data.MIDINAMES`. Ces attributs additionnels sont derrière
+/// `MeiOptions::full_support`.
+fn instr_def_attributes(part: &Part, full_support: bool) -> Vec<(String, String)> {
+    let mut attributes = Vec::new();
+    if let Some(program) = part.instrument.midi_program {
+        attributes.push(("midi.instrnum".to_owned(), program.to_string()));
+    }
+    if !full_support {
+        return attributes;
+    }
+    if let Some(channel) = part.instrument.midi_channel {
+        attributes.push(("midi.channel".to_owned(), channel.to_string()));
+    }
+    if let Some(volume) = part.instrument.volume {
+        attributes.push(("midi.volume".to_owned(), volume.to_string()));
+    }
+    if let Some(pan) = part.instrument.pan {
+        attributes.push(("midi.pan".to_owned(), pan.to_string()));
+    }
+    if !part.instrument.id.is_empty() {
+        attributes.push((
+            "type".to_owned(),
+            format!("{}{}", ids::INSTRUMENT_TYPE, part.instrument.id),
+        ));
+    }
+    attributes
+}
+
 /// First time signature of the score, used in `scoreDef`.
 fn first_time_sig(score: &Score) -> (i32, i32, scoretk_core::model::TimeSigType) {
     for measure in &score.measures {
@@ -336,7 +455,98 @@ pub(crate) fn mei_start(xml: &mut XmlWriter, date: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::writer::write;
     use scoretk_core::model::{Credit, CreditStyle, RichText};
+
+    /// `<instrDef>` porte l'identité et les paramètres MIDI d'une partie
+    /// (MEI 5.1 `att.midiInstrument`/`att.channelized`). MuseScore 4.7.4
+    /// n'écrit que `@midi.instrnum` et seulement pour une partie nommée.
+    #[test]
+    fn instr_def_carries_instrument_identity_when_enabled() {
+        use scoretk_core::model::{Fraction, Measure, Track};
+
+        let mut score = Score::new();
+        let mut part = Part::new("Voice", "Vox");
+        part.instrument.id = "voice.vocals".to_owned();
+        part.instrument.midi_program = Some(52);
+        part.instrument.midi_channel = Some(3);
+        part.instrument.volume = Some(101);
+        part.instrument.pan = Some(64);
+        let part_id = score.add_part(part);
+        let staff = score.add_staff(part_id);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = scoretk_core::model::Segment::new(
+            scoretk_core::model::SegmentType::ChordRest,
+            Fraction::ZERO,
+            1,
+        );
+        let chord = scoretk_core::model::ChordRest::chord(scoretk_core::model::Duration::quarter());
+        segment.set_element(
+            Track::new(staff, 0),
+            scoretk_core::model::SegmentItem::ChordRest(chord),
+        );
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let options = MeiOptions {
+            full_support: true,
+            ..Default::default()
+        };
+        let output = write(&score, &options).expect("MEI with instrument data");
+        assert!(output.contains("midi.instrnum=\"52\""));
+        assert!(output.contains("midi.channel=\"3\""));
+        assert!(output.contains("midi.volume=\"101\""));
+        assert!(output.contains("midi.pan=\"64\""));
+        assert!(output.contains("type=\"mscore-instrument-voice.vocals\""));
+        let back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        assert_eq!(back.parts[0].instrument.id, "voice.vocals");
+        assert_eq!(back.parts[0].instrument.midi_program, Some(52));
+        assert_eq!(back.parts[0].instrument.midi_channel, Some(3));
+        assert_eq!(back.parts[0].instrument.volume, Some(101));
+        assert_eq!(back.parts[0].instrument.pan, Some(64));
+    }
+
+    /// L'ordre des credits, leur page, leur taille et la hauteur du cadre
+    /// sont conservés par les porteurs additionnels (`@n`, `@halign`,
+    /// `@valign`, `@fontsize`, `@label`).
+    #[test]
+    fn ordered_credits_survive_an_extended_round_trip() {
+        let mut score = Score::new();
+        let mut title = Credit::new(RichText::new("Titre"), CreditStyle::Title);
+        title.font_size = Some(22.0);
+        title.vbox_height = 10.0;
+        score.engraving.credits.push(title);
+        let mut composer = Credit::new(RichText::new("Compositeur"), CreditStyle::Composer);
+        composer.vbox_height = 18.0977;
+        score.engraving.credits.push(composer);
+        let mut later = Credit::new(RichText::new("Titre page 2"), CreditStyle::Title);
+        later.page = 2;
+        later.justify = scoretk_core::model::CreditJustify::Left;
+        later.valign = scoretk_core::model::CreditValign::Top;
+        score.engraving.credits.push(later);
+
+        let output = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("extended MEI with credits");
+        assert!(output.contains("n=\"1\""));
+        let back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
+        assert_eq!(back.engraving.credits.len(), 3);
+        assert_eq!(back.engraving.credits[0].text.plain(), "Titre");
+        assert_eq!(back.engraving.credits[1].text.plain(), "Compositeur");
+        assert!((back.engraving.credits[1].vbox_height - 18.0977).abs() < 1e-4);
+        assert_eq!(back.engraving.credits[2].text.plain(), "Titre page 2");
+        assert_eq!(back.engraving.credits[2].page, 2);
+        assert_eq!(
+            back.engraving.credits[2].justify,
+            scoretk_core::model::CreditJustify::Left
+        );
+        assert_eq!(back.engraving.credits[0].font_size, Some(22.0));
+    }
 
     #[test]
     fn pg_head_groups_first_page_texts_into_cells() {
@@ -353,7 +563,7 @@ mod tests {
         later.page = 2;
         score.engraving.credits.push(later);
         let mut xml = XmlWriter::new();
-        write_pg_head(&mut xml, &score);
+        write_pg_head(&mut xml, &score, &MeiOptions::default());
         let output = xml.finish();
         assert!(output.contains("<pgHead func=\"first\">"));
         assert!(output.contains("halign=\"center\" valign=\"top\""));

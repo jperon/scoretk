@@ -165,6 +165,8 @@ const MAPPED_ATTRIBUTES: &[&str] = &[
     "midi.bpm",
     "midi.channel",
     "midi.instrnum",
+    "midi.pan",
+    "midi.volume",
     "mm",
     "n",
     "num",

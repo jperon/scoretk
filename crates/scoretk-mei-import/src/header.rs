@@ -229,7 +229,10 @@ impl<'a> Reader<'a> {
             return;
         };
         // MuseScore turns the first-page head into a title VBox; the pivot's
-        // closest equivalent is an ordered list of credits.
+        // closest equivalent is an ordered list of credits. `@n` is the
+        // additive carrier of the model order (MuseScore groups the texts by
+        // alignment cell, which reorders them).
+        let mut numbered: Vec<(usize, Credit)> = Vec::new();
         for rend in descendants_named(node, "rend") {
             let Some(style_name) = rend.attribute("type") else {
                 continue;
@@ -242,12 +245,14 @@ impl<'a> Reader<'a> {
                 .attribute("fontsize")
                 .and_then(convert::font_size_to_points)
             {
-                let style = &mut self.score.engraving.style;
-                match credit_style {
-                    CreditStyle::Title => style.title_font_size = size,
-                    CreditStyle::Composer => style.composer_font_size = size,
-                    CreditStyle::Lyricist => style.lyricist_font_size = size,
-                    _ => {}
+                if rend.attribute("n").is_none() {
+                    let style = &mut self.score.engraving.style;
+                    match credit_style {
+                        CreditStyle::Title => style.title_font_size = size,
+                        CreditStyle::Composer => style.composer_font_size = size,
+                        CreditStyle::Lyricist => style.lyricist_font_size = size,
+                        _ => {}
+                    }
                 }
             }
             let text = crate::lines_of(rend);
@@ -265,6 +270,38 @@ impl<'a> Reader<'a> {
                     credit.valign = valign;
                 }
             }
+            // La taille *explicite* d'un credit n'est portée que par la
+            // variante additive (`@n`) : dans le format 4.7.4, `@fontsize`
+            // donne la taille du style, pas celle du texte.
+            if rend.attribute("n").is_some() {
+                credit.font_size = rend
+                    .attribute("fontsize")
+                    .and_then(convert::font_size_to_points);
+            }
+            if let Some(frame) = rend
+                .attribute("label")
+                .and_then(|label| label.strip_prefix(scoretk_mei_common::ids::CREDIT_FRAME_LABEL))
+            {
+                let mut fields = frame.split(':');
+                if let Some(page) = fields.next().and_then(|value| value.parse::<u32>().ok()) {
+                    credit.page = page;
+                }
+                if let Some(height) = fields.next().and_then(|value| value.parse::<f64>().ok()) {
+                    credit.vbox_height = height;
+                }
+            }
+            match rend
+                .attribute("n")
+                .and_then(|value| value.parse::<usize>().ok())
+            {
+                Some(n) => numbered.push((n, credit)),
+                None => {
+                    self.score.add_credit(credit);
+                }
+            }
+        }
+        numbered.sort_by_key(|(n, _)| *n);
+        for (_, credit) in numbered {
             self.score.add_credit(credit);
         }
         if self.score.metadata.work_title.is_empty() {
@@ -339,16 +376,11 @@ impl<'a> Reader<'a> {
                 if let Some(id) = scoretk_core::model::recognize_musicxml_id(&long_name, None) {
                     part.instrument.id = id.to_owned();
                 }
-                if let Some(instr) = source {
-                    if let Some(program) = instr
-                        .attribute("midi.instrnum")
-                        .and_then(|value| value.parse::<u8>().ok())
-                    {
-                        part.instrument.midi_program = Some(program);
-                    }
-                }
                 let id = self.score.add_part(part);
                 let index = id.index();
+                if let Some(instr) = source {
+                    self.read_instr_def(instr, id);
+                }
                 part_for_staff.insert(n, index);
                 index
             };
@@ -436,23 +468,36 @@ impl<'a> Reader<'a> {
                 }
             }
         }
+        // MEI 5.1 `att.channelized/@midi.channel` et
+        // `att.midiInstrument/@midi.volume`/`@midi.pan`. Les attributs courts
+        // `@volume`/`@pan` sont ceux de MuseScore 4.7.4 et restent lus.
         if let Some(channel) = node
             .attribute("midi.channel")
+            .or_else(|| node.attribute("channel"))
             .and_then(|value| value.parse::<u8>().ok())
         {
             part.instrument.midi_channel = Some(channel);
         }
         if let Some(volume) = node
-            .attribute("volume")
+            .attribute("midi.volume")
+            .or_else(|| node.attribute("volume"))
             .and_then(|value| value.parse::<u8>().ok())
         {
             part.instrument.volume = Some(volume);
         }
         if let Some(pan) = node
-            .attribute("pan")
+            .attribute("midi.pan")
+            .or_else(|| node.attribute("pan"))
             .and_then(|value| value.parse::<u8>().ok())
         {
             part.instrument.pan = Some(pan);
+        }
+        if let Some(id) = node
+            .attribute("type")
+            .and_then(|value| value.strip_prefix(scoretk_mei_common::ids::INSTRUMENT_TYPE))
+            .filter(|id| !id.is_empty())
+        {
+            part.instrument.id = id.to_owned();
         }
     }
 

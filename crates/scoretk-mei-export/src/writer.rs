@@ -47,7 +47,7 @@ pub(crate) fn write(
     xml.start_element("body", &[]);
     xml.start_element("mdiv", &[]);
     xml.start_element("score", &[]);
-    header::write_score_def(&mut xml, score);
+    header::write_score_def(&mut xml, score, options);
     xml.start_element("section", &[("xml:id", "s1")]);
     let mut measure_n = 0;
     let mut signatures = measure_signatures(score.measures.first());
