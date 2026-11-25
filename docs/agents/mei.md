@@ -110,6 +110,12 @@ Largest remaining import gaps: `style` 380, `barline` 85, `note` 55,
   events reference notes by `xml:id`. They are not MuseScore's hash ids.
 - `@type="mscore-*"` values are MuseScore extensions, not standard MEI;
   they are read and written but reported as such when they cannot be mapped.
+- No model layer was added. The `GesturalTime` / `ExternalRef` / `MeiExpansion`
+  slots proposed in `model-modularisation.md` §7.2 were **not** introduced:
+  MuseScore 4.7.4 itself does not read `@dur.ges`, `@tstamp.ges`, `@copyof`,
+  `@facs`, `<timeline>` or `<expansion>`, so no measurement against the oracle
+  justified a non-additive model change. `inventory.rs` and `layers.rs` were
+  left untouched, which keeps the parallel GABC work easy to rebase.
 
 ## 5. Source upgrade
 
