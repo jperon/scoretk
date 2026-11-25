@@ -107,4 +107,34 @@ mod tests {
         assert_eq!(score.notes.len(), 1);
         assert_eq!(score.notes[0].pitch, 60);
     }
+
+    #[test]
+    fn reads_page_geometry_and_text_sizes_from_score_def() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef page.width="8.50000in" page.height="11.00000in"
+                      page.leftmar="0.39370in" page.rightmar="0.39370in"
+                      page.topmar="0.39370in" page.botmar="0.78740in"
+                      vu.height="1.76400mm" optimize="true">
+              <pgHead func="first">
+                <rend halign="center" valign="top">
+                  <rend type="title" fontsize="24pt">Title</rend>
+                </rend>
+              </pgHead>
+              <staffGrp><staffDef n="1" lines="5"/></staffGrp>
+            </scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="c" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with page geometry");
+        let style = &score.engraving.style;
+        assert!((style.page_width_in - 8.5).abs() < 1e-6);
+        assert!((style.page_height_in - 11.0).abs() < 1e-6);
+        assert!((style.page_even_left_margin_in - 0.3937).abs() < 1e-5);
+        assert!((style.page_odd_bottom_margin_in - 0.7874).abs() < 1e-5);
+        assert!((style.spatium_mm - 1.764).abs() < 1e-6);
+        assert!(style.hide_empty_staves);
+        assert_eq!(style.title_font_size, 24.0);
+    }
 }

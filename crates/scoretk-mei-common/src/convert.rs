@@ -201,6 +201,52 @@ pub fn stem_to_mei(direction: StemDirection) -> Option<&'static str> {
     }
 }
 
+/// MEI measurement in inches (`att.pages`, `data.MEASUREMENTUNSIGNED`).
+///
+/// The schema allows a unit suffix; a bare value is in virtual units, so a
+/// real-world value always carries one here.
+pub fn inches_to_mei(value: f64) -> String {
+    format!("{value:.5}in")
+}
+
+/// Millimetres as an MEI measurement (`@vu.height`).
+pub fn mm_to_mei(value: f64) -> String {
+    format!("{value:.5}mm")
+}
+
+/// Font size in printer's points (`data.FONTSIZENUMERIC`).
+pub fn points_to_mei(value: f64) -> String {
+    format!("{value:.2}pt")
+}
+
+/// Inverse of [`inches_to_mei`], also accepting the other schema units.
+pub fn measurement_to_inches(value: &str) -> Option<f64> {
+    let (number, unit) = value.split_at(value.find(|c: char| !c.is_ascii_digit() && c != '.')?);
+    let number = number.parse::<f64>().ok()?;
+    let factor = match unit {
+        "in" => 1.0,
+        "mm" => 1.0 / 25.4,
+        "cm" => 1.0 / 2.54,
+        "pt" => 1.0 / 72.0,
+        "pc" => 1.0 / 6.0,
+        _ => return None,
+    };
+    Some(number * factor)
+}
+
+/// Millimetres from an MEI measurement (`@vu.height`).
+pub fn measurement_to_mm(value: &str) -> Option<f64> {
+    measurement_to_inches(value).map(|inches| inches * 25.4)
+}
+
+/// Inverse of [`points_to_mei`].
+pub fn font_size_to_points(value: &str) -> Option<f64> {
+    if let Some(size) = value.strip_suffix("pt") {
+        return size.parse::<f64>().ok();
+    }
+    None
+}
+
 /// `Convert::textToMEI` (`meiconverter.cpp:3409`).
 ///
 /// Returns the cell index (top-left → bottom-right, row major), the `@type`
@@ -728,6 +774,17 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn measurements_and_font_sizes_use_mei_units() {
+        assert_eq!(inches_to_mei(0.3937), "0.39370in");
+        assert!((measurement_to_inches("0.39370in").unwrap() - 0.3937).abs() < 1e-9);
+        assert!((measurement_to_inches("10mm").unwrap() - 0.3937008).abs() < 1e-6);
+        assert!((measurement_to_mm("1.76400mm").unwrap() - 1.764).abs() < 1e-9);
+        assert_eq!(points_to_mei(24.0), "24.00pt");
+        assert_eq!(font_size_to_points("24pt"), Some(24.0));
+        assert_eq!(font_size_to_points("x-large"), None);
     }
 
     #[test]

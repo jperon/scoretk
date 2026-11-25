@@ -130,6 +130,7 @@ impl<'a> Reader<'a> {
             }
         }
         if is_initial {
+            self.read_style(node);
             self.read_pg_head(node.child("pgHead"));
             self.build_score_parts(node);
         }
@@ -141,6 +142,60 @@ impl<'a> Reader<'a> {
         self.signatures_pending = true;
     }
 
+    /// Page geometry from `att.pages` / `@vu.height` on `<scoreDef>`
+    /// (`MEI.visual.xml`, `att.scoreDef.vis`). MEI has a single margin set, so
+    /// it applies to both even and odd pages.
+    fn read_style(&mut self, node: &Element) {
+        let style = &mut self.score.engraving.style;
+        if let Some(value) = node
+            .attribute("page.width")
+            .and_then(convert::measurement_to_inches)
+        {
+            style.page_width_in = value;
+        }
+        if let Some(value) = node
+            .attribute("page.height")
+            .and_then(convert::measurement_to_inches)
+        {
+            style.page_height_in = value;
+        }
+        for (attribute, set_even, set_odd) in [
+            ("page.leftmar", 0, 1),
+            ("page.rightmar", 2, 3),
+            ("page.topmar", 4, 5),
+            ("page.botmar", 6, 7),
+        ] {
+            let Some(value) = node
+                .attribute(attribute)
+                .and_then(convert::measurement_to_inches)
+            else {
+                continue;
+            };
+            let margins = [
+                &mut style.page_even_left_margin_in,
+                &mut style.page_odd_left_margin_in,
+                &mut style.page_even_right_margin_in,
+                &mut style.page_odd_right_margin_in,
+                &mut style.page_even_top_margin_in,
+                &mut style.page_odd_top_margin_in,
+                &mut style.page_even_bottom_margin_in,
+                &mut style.page_odd_bottom_margin_in,
+            ];
+            *margins[set_even] = value;
+            *margins[set_odd] = value;
+        }
+        if let Some(value) = node
+            .attribute("vu.height")
+            .and_then(convert::measurement_to_mm)
+        {
+            style.spatium_mm = value;
+        }
+        // `att.optimization/@optimize` is on `att.scoreDef.vis` as well.
+        if let Some(value) = node.attribute("optimize") {
+            style.hide_empty_staves = matches!(value, "true" | "1");
+        }
+    }
+
     /// `MeiImporter::readPgHead` (`meiimporter.cpp:1102`): the first-page
     /// header becomes the title credits when the `meiHead` has no title.
     fn read_pg_head(&mut self, node: Option<&Element>) {
@@ -150,14 +205,30 @@ impl<'a> Reader<'a> {
         // MuseScore turns the first-page head into a title VBox; the pivot's
         // closest equivalent is an ordered list of credits.
         for rend in descendants_named(node, "rend") {
-            let Some(style) = rend.attribute("type") else {
+            let Some(style_name) = rend.attribute("type") else {
                 continue;
             };
+            let credit_style = CreditStyle::from_name(style_name);
+            // Numeric `@fontsize` in points is standard MEI
+            // (`data.FONTSIZENUMERIC`); relative terms carry no size the pivot
+            // can store. An empty `<rend>` still carries a text-style size.
+            if let Some(size) = rend
+                .attribute("fontsize")
+                .and_then(convert::font_size_to_points)
+            {
+                let style = &mut self.score.engraving.style;
+                match credit_style {
+                    CreditStyle::Title => style.title_font_size = size,
+                    CreditStyle::Composer => style.composer_font_size = size,
+                    CreditStyle::Lyricist => style.lyricist_font_size = size,
+                    _ => {}
+                }
+            }
             let text = crate::lines_of(rend);
             if text.is_empty() {
                 continue;
             }
-            let mut credit = Credit::new(RichText::new(text), CreditStyle::from_name(style));
+            let mut credit = Credit::new(RichText::new(text), credit_style);
             if let Some(align) = rend.attribute("halign") {
                 if let Some(justify) = scoretk_core::model::CreditJustify::from_name(align) {
                     credit.justify = justify;
