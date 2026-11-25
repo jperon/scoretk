@@ -258,16 +258,19 @@ pub fn essential(reference: &LayerInventory, candidate: &LayerInventory) -> Laye
     .total
 }
 
-fn float(value: f64) -> String {
-    format!("{value:.6}")
-}
-
 /// `StyleSettings` values survive a format round trip with MuseScore's
 /// six-significant-digit formatting (`format_style_number` in
 /// `scoretk-musicxml-export/src/layout.rs`). Comparing six *decimals* would
 /// report a false loss for 0.7874016 → 0.787402, so style values are
 /// normalised to five decimals.
 fn style_float(value: f64) -> String {
+    format!("{value:.5}")
+}
+
+/// MuseScore enregistre `<tempo>` avec cinq décimales (`TWrite` /
+/// `TempoText`) ; l'import MusicXML recalcule `400 / 60` en virgule flottante.
+/// Normaliser à la même précision évite un faux écart 6.666670 / 6.666667.
+fn tempo_float(value: f64) -> String {
     format!("{value:.5}")
 }
 
@@ -610,7 +613,7 @@ pub fn inventory(score: &Score) -> LayerInventory {
                         format!(
                             "{}:{:?}",
                             value.text.plain(),
-                            value.beats_per_second.map(float)
+                            value.beats_per_second.map(tempo_float)
                         ),
                     ),
                     Annotation::RehearsalMark(value) => result.push(
@@ -1203,6 +1206,13 @@ mod tests {
             .find(|item| item.kind == "style")
             .expect("a style item");
         assert_eq!(found.value, "page_odd_bottom_margin_in:0.78740");
+    }
+
+    #[test]
+    fn tempo_values_are_normalised_to_musescore_precision() {
+        assert_eq!(super::tempo_float(400.0 / 60.0), "6.66667");
+        assert_eq!(super::tempo_float(6.66667), "6.66667");
+        assert_eq!(super::tempo_float(1.533330), "1.53333");
     }
 
     #[test]
