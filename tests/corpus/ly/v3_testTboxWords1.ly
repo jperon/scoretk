@@ -11,6 +11,17 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Title on page 1"
+  scoretkCreditB = "Composer on page 1"
+  scoretkCreditC = "Lyricist on page 1"
+  scoretkCreditD = "Title in vbox on page 2"
+  scoretkCreditE = "Text on page 2"
+  scoretkCreditF = "Title in vbox on page 3"
+  scoretkCreditG = "Part name on page 3"
+  scoretkTboxA = "0|Above"
+  scoretkTboxB = "0|Below"
+  scoretkTboxC = "1|Above 2"
+  scoretkTboxD = "1|Below 2"
 }
 
 \paper {

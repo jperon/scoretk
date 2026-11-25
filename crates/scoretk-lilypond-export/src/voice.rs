@@ -112,6 +112,46 @@ pub(crate) fn render_body(
     let mut post_by_item: Vec<Vec<Event>> = vec![Vec::new(); items.len()];
     let has_voice = |candidate: usize| voice_has_content(score, staff, candidate);
 
+    // LilyPond ne distingue pas les trémolos à une note des trémolos à deux
+    // notes avec `:N`. Un markup privé porte le genre du modèle : il est
+    // compilable (contrairement à une propriété de contexte inconnue) et le
+    // lecteur le transforme en `TremoloKind` sans créer d'annotation.
+    for item in &items {
+        if let scoretk_core::model::ChordRestKind::Chord(chord) = &item.chord_rest.kind {
+            for note_id in &chord.notes {
+                let note = score.note(*note_id);
+                if let Some(exact) = scoretk_lilypond_common::noteheads::name(&note.head_group) {
+                    attach_post(
+                        &mut post_by_item,
+                        &items,
+                        Event::new(
+                            item.tick,
+                            before::TREM_KIND,
+                            format!("^{}", text::markup(&format!("scoretk-head-{exact}"))),
+                        ),
+                    );
+                }
+            }
+            if let Some(tremolo) = chord.tremolo {
+                let name = match tremolo.kind {
+                    scoretk_core::model::TremoloKind::Start => "start",
+                    scoretk_core::model::TremoloKind::Stop => "stop",
+                    scoretk_core::model::TremoloKind::Unmeasured => "unmeasured",
+                    scoretk_core::model::TremoloKind::Single => continue,
+                };
+                attach_post(
+                    &mut post_by_item,
+                    &items,
+                    Event::new(
+                        item.tick,
+                        before::TREM_KIND,
+                        format!("^{}", text::markup(&format!("scoretk-tremolo-{name}"))),
+                    ),
+                );
+            }
+        }
+    }
+
     // Changements de contexte portés par les segments de la portée : ils
     // n'appartiennent qu'à la voix 0 dans les fichiers MuseScore.
     for (measure_index, measure) in score.measures.iter().enumerate() {

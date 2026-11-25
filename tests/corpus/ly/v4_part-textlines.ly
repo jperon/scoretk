@@ -4,6 +4,7 @@
 #(set-global-staff-size 20.07501265)
 \header {
   title = "testlines"
+  scoretkCreditA = "testlines"
 }
 
 \paper {

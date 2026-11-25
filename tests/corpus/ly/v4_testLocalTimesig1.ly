@@ -6,6 +6,8 @@
   workTitle = "Untitled score"
   subtitle = "Subtitle"
   composer = "Composer / arranger"
+  scoretkCreditA = "Local Timesig 1"
+  scoretkCreditB = "MuseScore testfile"
 }
 
 \paper {

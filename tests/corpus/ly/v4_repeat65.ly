@@ -6,6 +6,9 @@
   title = "Repeat Test"
   workTitle = "Repeat Test"
   subtitle = "Jump at volta end with end repeat interpretation order"
+  scoretkCreditA = "repeat65"
+  scoretkCreditB = "Jump at volta end with end repeat interpretation order"
+  scoretkTboxA = "0|1,2,3,4   2,3,4   1,2   5"
 }
 
 \paper {

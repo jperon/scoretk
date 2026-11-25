@@ -39,6 +39,7 @@
 
 pub mod clefs;
 mod error;
+pub mod noteheads;
 pub mod pitch;
 
 pub use error::{Error, Result};

@@ -9,6 +9,8 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Recreation of beam"
+  scoretkCreditB = "Beam Test-Cross Measure"
 }
 
 \paper {

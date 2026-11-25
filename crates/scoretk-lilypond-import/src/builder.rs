@@ -38,7 +38,8 @@ use scoretk_core::model::{
     HairpinType, Instrument, LineStyle, Lyrics, LyricsSyllabic, Measure, Note, NoteId, Part,
     PartId, PedalInfo, Placement, RehearsalMark, Rest, RichText, Score, ScoreMetadata, Segment,
     SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff,
-    StaffBracket, StaffId, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId, VOICES,
+    StaffBracket, StaffId, TboxText, Tempo, Track, Transpose, Trill, TrillType, Tuplet, TupletId,
+    VOICES,
 };
 
 mod articulate;
@@ -865,6 +866,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     apply_accidentals(&mut score);
     place_spanners(&mut score, &staves);
     place_repeats(&mut score, &staves);
+    sync_end_bar_segments(&mut score);
     place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
     link_ties(&mut score, &staves);
     // Après `link_ties` : une note liée n'est pas une attaque et ne peut pas
@@ -1662,6 +1664,48 @@ fn write_metadata(score: &mut Score, document: &Document) {
     };
     score.metadata = metadata;
 
+    // Des champs `\header` privés portent les crédits et les textes de cadre
+    // du modèle quand ils ne se réduisent pas aux champs de titre.
+    let rank = |name: &str| {
+        name.chars()
+            .next()
+            .and_then(|letter| (letter as u8).checked_sub(b'A'))
+            .map(usize::from)
+    };
+    let private_credits: Vec<(usize, String)> = header
+        .entries
+        .iter()
+        .filter_map(|(name, value)| {
+            let index = rank(name.strip_prefix("scoretkCredit")?)?;
+            Some((index, value.trim().to_owned()))
+        })
+        .collect();
+    let private_tbox: Vec<(usize, usize, String)> = header
+        .entries
+        .iter()
+        .filter_map(|(name, value)| {
+            let index = rank(name.strip_prefix("scoretkTbox")?)?;
+            let (measure, text) = value.trim().split_once('|')?;
+            Some((index, measure.parse::<usize>().ok()?, text.to_owned()))
+        })
+        .collect();
+    if !private_credits.is_empty() || !private_tbox.is_empty() {
+        score.engraving.credits.clear();
+        let mut credits = private_credits;
+        credits.sort_by_key(|(index, _)| *index);
+        for (_, text) in credits {
+            score.add_credit(Credit::new(RichText::new(text), CreditStyle::Title));
+        }
+        let mut tbox_texts = private_tbox;
+        tbox_texts.sort_by_key(|(index, _, _)| *index);
+        for (_, measure, text) in tbox_texts {
+            if !text.is_empty() {
+                score.add_tbox_text(TboxText::new(RichText::new(text), measure));
+            }
+        }
+        return;
+    }
+
     // Les crédits reprennent les champs de titre : l'export les écrit dans
     // `<credit>`, comme MuseScore pour les cadres de titre.
     let credits = [
@@ -2019,6 +2063,29 @@ fn multi_rest_length(staves: &[StaffBuild], start: Fraction) -> Option<Fraction>
         }
     }
     length
+}
+
+/// Le modèle porte la barre de fin sur la mesure **et** sur son segment final,
+/// comme MuseScore. Les événements `\bar` ne mettent à jour que la mesure :
+/// synchroniser le segment évite de perdre `End`, `Double` et `Dashed` (ABC
+/// 2.1 §4.8 / Notation Reference §2.5.1) à l'aller-retour.
+fn sync_end_bar_segments(score: &mut Score) {
+    let staff_count = score.staves.len();
+    for measure in &mut score.measures {
+        let kind = measure.end_bar_line;
+        let end = measure.end_tick();
+        for segment in &mut measure.segments {
+            if segment.tick != end || !segment.kind.is_bar_line_type() {
+                continue;
+            }
+            for staff in 0..staff_count {
+                let track = Track::new(StaffId::from_index(staff), 0);
+                if segment.element(track).is_some() {
+                    segment.set_element(track, SegmentItem::BarLine(BarLine::new(kind)));
+                }
+            }
+        }
+    }
 }
 
 /// Crée les mesures de la trame.

@@ -6,6 +6,9 @@
   title = "Repeat Test"
   workTitle = "Repeat Test"
   subtitle = "Force Final Repeat should reset when crossing to next section."
+  scoretkCreditA = "repeat66"
+  scoretkCreditB = "Force Final Repeat should reset when crossing to next section."
+  scoretkTboxA = "0|1,2,3,4   2,3,4   1,2   5   |   1,2,3,4   2,3,4   2   5"
 }
 
 \paper {

@@ -6,6 +6,9 @@
   title = "Repeat Test"
   workTitle = "Repeat Test"
   subtitle = "Volta skipping entire score"
+  scoretkCreditA = "repeat68"
+  scoretkCreditB = "Volta skipping entire score"
+  scoretkTboxA = "0|no playback"
 }
 
 \paper {

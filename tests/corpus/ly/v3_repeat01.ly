@@ -8,6 +8,9 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "repeat1"
+  scoretkCreditB = "normal repeat barlines over 2 measures"
+  scoretkTboxA = "0|1,2,3   2,3,4,5,6"
 }
 
 \paper {

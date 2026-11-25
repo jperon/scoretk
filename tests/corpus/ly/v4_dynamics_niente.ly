@@ -6,6 +6,9 @@
   workTitle = "Naamloze partituur"
   subtitle = "Ondertitel"
   composer = "Componist / arrangeur"
+  scoretkCreditA = "Naamloze partituur"
+  scoretkCreditB = "Ondertitel"
+  scoretkCreditC = "Componist / arrangeur"
 }
 
 \paper {

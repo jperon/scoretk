@@ -218,33 +218,7 @@ pub(crate) fn clef_command(clef: &Clef) -> Option<String> {
 /// Reprend la table de `musicxml2ly` (`NotestyleEvent.notehead_styles_dict`) :
 /// `\tweak style #'cross`, `#'harmonic-mixed`, `#'do`…
 pub(crate) fn note_head_style(group: &NoteHeadGroup) -> Option<&'static str> {
-    match group {
-        NoteHeadGroup::Cross | NoteHeadGroup::HeavyCross | NoteHeadGroup::HeavyCrossHat => {
-            Some("cross")
-        }
-        NoteHeadGroup::Diamond | NoteHeadGroup::DiamondOld | NoteHeadGroup::LargeDiamond => {
-            Some("harmonic-mixed")
-        }
-        NoteHeadGroup::TriangleUp | NoteHeadGroup::TriangleDown | NoteHeadGroup::LargeArrow => {
-            Some("do")
-        }
-        NoteHeadGroup::Slash | NoteHeadGroup::Slashed1 | NoteHeadGroup::Slashed2 => Some("slash"),
-        NoteHeadGroup::Circled | NoteHeadGroup::CircledLarge | NoteHeadGroup::XCircle => {
-            Some("xcircle")
-        }
-        NoteHeadGroup::Do => Some("do"),
-        NoteHeadGroup::Re => Some("re"),
-        NoteHeadGroup::Mi => Some("mi"),
-        NoteHeadGroup::Fa => Some("fa"),
-        NoteHeadGroup::Sol => Some("sol"),
-        NoteHeadGroup::La => Some("la"),
-        NoteHeadGroup::Ti => Some("ti"),
-        NoteHeadGroup::Normal
-        | NoteHeadGroup::Plus
-        | NoteHeadGroup::WithX
-        | NoteHeadGroup::BrevisAlt
-        | NoteHeadGroup::Other(_) => None,
-    }
+    scoretk_lilypond_common::noteheads::style(group)
 }
 
 #[cfg(test)]

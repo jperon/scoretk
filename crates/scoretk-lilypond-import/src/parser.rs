@@ -84,6 +84,10 @@ pub(crate) struct Parser<'a> {
     /// Vélocité lue dans `\set Staff.midiMinimumVolume = #n` (§24.4.2),
     /// pour la nuance suivante.
     pending_dynamic_velocity: Option<u8>,
+    /// Genre de trémolo porté par `\set Staff.scoretkTremoloKind = #n`.
+    pending_tremolo_kind: Option<TremoloKind>,
+    /// Groupe de tête exact porté par le markup privé `scoretk-head-…`.
+    pending_exact_head: Option<NoteHeadGroup>,
     /// `\articulate` a été rencontré (`ly/articulate.ly`).
     playback_articulate: bool,
     /// `\unfoldRepeats` a été rencontré : le MIDI déplie les reprises.
@@ -370,6 +374,8 @@ pub(crate) fn parse(
         midi_transposition: None,
         staff_size: None,
         pending_dynamic_velocity: None,
+        pending_tremolo_kind: None,
+        pending_exact_head: None,
         playback_articulate: false,
         playback_unfold_repeats: false,
         pending_midi_instrument: None,
@@ -3682,24 +3688,9 @@ impl<'a> Parser<'a> {
                 // événement (tweak + note), pas un simple post-événement.
                 let mut tweaked = false;
                 while self.eat_command("tweak") {
+                    // `parse_tweak` consomme propriété et valeur (avec ou sans
+                    // `=`) : la musique suivante est la note à décorer.
                     self.parse_tweak();
-                    // `parse_tweak` ne consomme la valeur que dans les cas
-                    // qu'il connaît (`=`, `-2`) : sauter le datum restant,
-                    // sinon il devient un élément vide et la note tweakée
-                    // est lue comme musique principale.
-                    match self.peek() {
-                        Some(token)
-                            if token.is_scheme()
-                                || token.kind == Kind::Str
-                                || token.kind == Kind::Number =>
-                        {
-                            self.position += 1;
-                        }
-                        Some(token) if token.is_punct('-') || token.is_punct('+') => {
-                            self.skip_scheme_value();
-                        }
-                        _ => {}
-                    }
                     tweaked = true;
                 }
                 let event = if tweaked {
@@ -4237,10 +4228,13 @@ impl<'a> Parser<'a> {
             // musique au lieu d'avaler le reste du fichier jusqu'à une `}` ;
             // avec un bloc, on le saute comme le fait le lexer amont.
             "markup" | "markuplist" => {
-                if self.markup_argument_est_entre_accolades() {
-                    self.skip_braced();
-                } else {
-                    self.parse_markup_text();
+                let text = self.parse_markup_text();
+                if let Some(ident) = text
+                    .trim_matches('"')
+                    .strip_prefix("scoretk-head-")
+                    .and_then(scoretk_lilypond_common::noteheads::group_from_name)
+                {
+                    self.pending_exact_head = Some(ident);
                 }
                 Music::Empty
             }
@@ -4838,6 +4832,26 @@ impl<'a> Parser<'a> {
         }
         if path
             .iter()
+            .any(|part| part.eq_ignore_ascii_case("scoretktremolokind"))
+        {
+            let kind = self
+                .peek()
+                .filter(|token| token.is_scheme())
+                .and_then(|token| token.text.trim_start_matches('#').parse::<u8>().ok())
+                .and_then(|number| match number {
+                    1 => Some(TremoloKind::Start),
+                    2 => Some(TremoloKind::Stop),
+                    3 => Some(TremoloKind::Unmeasured),
+                    _ => None,
+                });
+            if let Some(kind) = kind {
+                self.position += 1;
+                self.pending_tremolo_kind = Some(kind);
+                return Music::Empty;
+            }
+        }
+        if path
+            .iter()
             .any(|part| part.eq_ignore_ascii_case("midimaximumvolume"))
             && self.peek().is_some_and(|token| token.is_scheme())
         {
@@ -5049,9 +5063,9 @@ impl<'a> Parser<'a> {
             self.position += 2;
             return;
         }
-        if !had_eq {
-            return;
-        }
+        // La syntaxe standard n'a pas de `=` : le `\tweak` n'étant plus un
+        // post-événement, le consommer ici laisse la note suivante intacte.
+        let _ = had_eq;
         if !token.is_scheme() {
             self.skip_scheme_value();
             return;
@@ -5371,7 +5385,10 @@ impl<'a> Parser<'a> {
                         *pitch = (i32::from(*pitch) + shift).clamp(0, 127) as u8;
                     }
                 }
-                let head = std::mem::take(&mut self.pending_head);
+                let head = self
+                    .pending_exact_head
+                    .take()
+                    .unwrap_or_else(|| std::mem::take(&mut self.pending_head));
                 let posts = self.parse_posts_until_note_end();
                 let notes: Vec<NoteSpec> = pitches
                     .into_iter()
@@ -5413,6 +5430,14 @@ impl<'a> Parser<'a> {
         }
 
         let Some(pitch) = self.parse_pitch_spec() else {
+            // Commentaire privé `% scoretk-head-…`, lu comme mot par le
+            // lexeur : il désigne le groupe exact de la note suivante.
+            if let Some(ident) = text.strip_prefix("scoretk-head-") {
+                self.pending_exact_head =
+                    scoretk_lilypond_common::noteheads::group_from_name(ident);
+                self.position += 1;
+                return Music::Empty;
+            }
             // Mot qui n'est pas une hauteur : variable ou symbole isolé.
             self.position += 1;
             if self.variables.contains_key(&text) {
@@ -5423,7 +5448,10 @@ impl<'a> Parser<'a> {
             return Music::Empty;
         };
 
-        let head = std::mem::take(&mut self.pending_head);
+        let head = self
+            .pending_exact_head
+            .take()
+            .unwrap_or_else(|| std::mem::take(&mut self.pending_head));
         let mut note_posts = self.parse_posts_until_note_end();
         let (duration, multiplier) = self.parse_optional_duration_spec();
         // `pitch_or_music` de `lily/parser.yy:3714-3742` accepte aussi les
@@ -5471,7 +5499,10 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 continue;
             };
-            let head = std::mem::take(&mut self.pending_head);
+            let head = self
+                .pending_exact_head
+                .take()
+                .unwrap_or_else(|| std::mem::take(&mut self.pending_head));
             let posts = self.parse_posts_until_note_end();
             notes.push(NoteSpec {
                 pitch,
@@ -5600,7 +5631,12 @@ impl<'a> Parser<'a> {
                     }
                     None => self.default_tremolo_type,
                 };
-                vec![PostEvent::Tremolo(TremoloKind::Single, value)]
+                vec![PostEvent::Tremolo(
+                    self.pending_tremolo_kind
+                        .take()
+                        .unwrap_or(TremoloKind::Single),
+                    value,
+                )]
             }
             Kind::Punct('^') | Kind::Punct('_') | Kind::Punct('-') => {
                 let placement = if token.is_punct('_') || token.is_punct('-') {
@@ -5721,10 +5757,15 @@ impl<'a> Parser<'a> {
                         _ => {}
                     }
                     if let Some(token) = value {
-                        if token.is_scheme() && path.iter().any(|part| part == "style") {
+                        if token.is_scheme()
+                            && (path.iter().any(|part| part == "style") || path.is_empty())
+                        {
                             let style = token.text.trim().trim_start_matches('\'').trim();
                             if let Some(group) = head_group_from_style(style) {
-                                self.pending_head = group;
+                                // Ce `\tweak` suit la note en cours : il la
+                                // modifie, pas la suivante (l'écrivain les
+                                // place après la note qu'ils décorent).
+                                return vec![PostEvent::TweakHead(group)];
                             }
                         }
                     }
@@ -5854,8 +5895,21 @@ impl<'a> Parser<'a> {
             Kind::Command if token.text == "markup" => {
                 self.position += 1;
                 let text = self.parse_markup_text();
+                let text = text.trim_matches('"').to_owned();
                 if text.is_empty() {
                     Vec::new()
+                } else if let Some(name) = text.strip_prefix("scoretk-head-") {
+                    match scoretk_lilypond_common::noteheads::group_from_name(name) {
+                        Some(group) => vec![PostEvent::HeadExact(group)],
+                        None => Vec::new(),
+                    }
+                } else if let Some(kind) = match text.strip_prefix("scoretk-tremolo-") {
+                    Some("start") => Some(TremoloKind::Start),
+                    Some("stop") => Some(TremoloKind::Stop),
+                    Some("unmeasured") => Some(TremoloKind::Unmeasured),
+                    _ => None,
+                } {
+                    vec![PostEvent::TremoloKindOverride(kind)]
                 } else {
                     vec![PostEvent::Text(text, placement)]
                 }
@@ -6221,6 +6275,10 @@ impl<'a> Parser<'a> {
     /// d'un seul tenant : le laisser en place le ferait lire comme une musique
     /// parasite (régressions `franck_ave_maria`, `duration-line-start-stop`,
     /// `satb-template-with-keyboard-reduction`).
+    #[expect(
+        dead_code,
+        reason = "ancien garde-fou : `parse_markup_text` gère désormais les accolades et les marqueurs privés"
+    )]
     fn markup_argument_est_entre_accolades(&self) -> bool {
         let mut index = self.position;
         while let Some(token) = self.tokens.get(index) {
@@ -8006,6 +8064,8 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "vshape"
                 // `\tweak` est aussi un post-événement (`lily/parser.yy`) :
                 // `b2 \tweak color #red ^1` modifie l'événement qui suit.
+                // `parse_post_event` le transforme en `TweakHead` pour notre
+                // écrivain, qui le place après la note décorée.
                 || token.text == "tweak"
                 // `glide = #(make-music 'FingerGlideEvent)`
                 // (`ly/declarations-init.ly:79`) : post-événement sans effet
@@ -8588,23 +8648,7 @@ fn post_event_for_command(name: &str, placement: Placement) -> Option<PostEvent>
 
 /// Groupe de tête correspondant à un style de `\tweak`.
 fn head_group_from_style(style: &str) -> Option<NoteHeadGroup> {
-    let group = match style {
-        "cross" => NoteHeadGroup::Cross,
-        "harmonic-mixed" | "harmonic" => NoteHeadGroup::Diamond,
-        "slash" => NoteHeadGroup::Slash,
-        "xcircle" => NoteHeadGroup::XCircle,
-        "do" => NoteHeadGroup::Do,
-        "re" => NoteHeadGroup::Re,
-        "mi" => NoteHeadGroup::Mi,
-        "fa" => NoteHeadGroup::Fa,
-        "sol" => NoteHeadGroup::Sol,
-        "la" => NoteHeadGroup::La,
-        "ti" => NoteHeadGroup::Ti,
-        "triangle" => NoteHeadGroup::TriangleUp,
-        "mensural" => NoteHeadGroup::Other("mensural".to_owned()),
-        _ => return None,
-    };
-    Some(group)
+    scoretk_lilypond_common::noteheads::group(style)
 }
 
 /// Numéro de couplet (à partir de zéro) d'une valeur de `stanza`.
@@ -8652,6 +8696,8 @@ mod tests {
             default_tremolo_type: 8,
             staff_size: None,
             pending_dynamic_velocity: None,
+            pending_tremolo_kind: None,
+            pending_exact_head: None,
             pending_invisible_rest: false,
             pending_invisible_ottava: false,
             partitions: Vec::new(),
@@ -8706,6 +8752,8 @@ mod tests {
                 default_tremolo_type: 8,
                 staff_size: None,
                 pending_dynamic_velocity: None,
+                pending_tremolo_kind: None,
+                pending_exact_head: None,
                 pending_invisible_rest: false,
                 pending_invisible_ottava: false,
                 partitions: Vec::new(),

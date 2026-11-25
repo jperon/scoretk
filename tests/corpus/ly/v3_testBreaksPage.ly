@@ -6,6 +6,8 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Vframe"
+  scoretkTboxA = "2|Tframe"
 }
 
 \paper {

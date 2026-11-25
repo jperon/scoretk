@@ -13,7 +13,7 @@ writer: `crates/scoretk-lilypond-export`.
 
 | Format property (spec section) | Model type / field (file:line) | Reader | Writer | Notes |
 | --- | --- | --- | --- | --- |
-| `\header { title, composer, poet, … }` (Learning: input files) | `ScoreMetadata` (`crates/scoretk-core/src/model/score.rs:50-87`), `Credit` (`.../model/text.rs:586-610`) | supported (`import/src/builder.rs:684-710`) | supported (`export/src/structure.rs:89`) | Writer emits `\header` plus credits as fallback. |
+| `\header { title, composer, poet, … }` (Learning: input files) | `ScoreMetadata` (`crates/scoretk-core/src/model/score.rs:50-87`), `Credit` (`.../model/text.rs:586-610`) | supported (`import/src/builder.rs:684-710`) | supported (`export/src/structure.rs:89`) | Writer emits `\header` plus credits as fallback. Private `scoretkCreditA…` and `scoretkTboxA…` fields carry individual credits and frame texts; the reader uses them instead of the title-derived credits when present. |
 | `\version`, `\language`, `\include` (Learning: input files) | — | partial (`import/src/include.rs:91`) | missing | Includes with a resolver are expanded; `\include` of Scheme or missing files warns. No version/include is emitted by the writer. |
 | Variables `name = { … }`, `\name` (Learning: how input files work) | no dedicated model field (music is flattened into `Segment`s) | supported (`import/src/parser.rs:56,363`) | supported (`export/src/writer.rs:139`) | Writer creates one variable per voice in `\fixed` mode; original variable names are not preserved. |
 | Notes and pitch names `c'`, `bf`, `cis` (Notation: pitches) | `Note::pitch`, `tpc`, `tpc_transposed` (`.../model/note.rs:263-270`) | supported (`import/src/events.rs:1169`) | supported (`export/src/pitch.rs:73`) | Written pitch uses `tpc_transposed`; reader works in the configured note-name language. |
@@ -27,7 +27,7 @@ writer: `crates/scoretk-lilypond-export`.
 | `\grace`, `\acciaccatura`, `\appoggiatura`, `\afterGrace` (Notation: grace notes) | `GraceType`, `GraceChord` (`.../model/chord.rs:87-104,264-270`) | supported (`import/src/events.rs:825`) | supported (`export/src/chord.rs:50`) | `\afterGrace` without a chord warns on input. |
 | Ties `~`, slurs `()` (Notation: ties/slurs) | `Note::tie_forward`/`tie_back` (`.../model/note.rs:271-276`), `SpannerType::Slur` (`.../model/spanner.rs:270`) | supported | supported (`export/src/spanners.rs:41`) | Overlapping slurs are numbered `\=N(`. |
 | Articulations, ornaments (`-.`, `->`, `\trill`, `\mordent`, `\fermata`) (Notation: expressive marks) | `Articulation` (`.../model/chord.rs:125-210`), `Ornament`, `Fermata` (`.../model/notation.rs:48-179`) | supported (`import/src/events.rs:1397,1405`) | partial (`export/src/chord.rs:299,345`) | `stress`, `unstress`, exact soft accents and ornament accidentals are approximated or dropped. |
-| Tremolo `:8` / `\repeat tremolo` (Notation: tremolo) | `Tremolo`, `TremoloKind` (`.../model/notation.rs:187-208`) | partial | partial (`export/src/chord.rs:50`) | Two-note tremolo is written as `:N` on both chords, not `\repeat tremolo`. |
+| Tremolo `:8` / `\repeat tremolo` (Notation: tremolo) | `Tremolo`, `TremoloKind` (`.../model/notation.rs:187-208`) | partial | partial (`export/src/chord.rs:50`) | Two-note tremolo is written as `:N` on both chords; the private `\set Staff.scoretkTremoloKind` property preserves `Start`/`Stop`/`Unmeasured`. |
 | `\arpeggio`, `\arpeggioArrowUp/Down` (Notation: arpeggios) | `Arpeggio`, `ArpeggioType` (`.../model/notation.rs:216-236`) | supported | supported (`export/src/chord.rs:50`) | |
 | Dynamics `\p`, `\mf`, `-\markup` (Notation: dynamics) | `Dynamic` (`.../model/annotation.rs:197-225`) | supported (`import/src/events.rs:1226`) | supported (`export/src/annotations.rs:46`) | Custom dynamics become markup; placement uses `^`/`_`. A numeric `velocity` round trips through `\set Staff.midiMinimumVolume`/`midiMaximumVolume` with the same fraction (Notation §24.4.2). |
 | `\tempo "Allegro" 4 = 120` (Notation: tempo) | `Tempo`, `TempoKind` (`.../model/annotation.rs:322-364`) | supported (`import/src/events.rs`) | partial (`export/src/annotations.rs:46`) | Writer always emits the quarter-note unit; a metronome-only label or invisible tempo loses information. |
@@ -51,7 +51,9 @@ Ranked by musical importance:
    spiccato, soft-accent variants and `<accidental-mark>` on ornaments have no
    exact LilyPond spelling in the current writer.
 3. **Note-head fill and shape tied to duration**: `NoteHeadType` is not forced
-   on output; only non-default `NoteHeadGroup` values are tweaked.
+   on output; all non-default `NoteHeadGroup` values are tweaked through the
+   shared `lilypond-common/src/noteheads.rs` table (standard names where they
+   exist, private `scoretk-…` names otherwise).
 4. **Per-element layout, `\paper`/`\layout`, text positions and computed system
    breaks**: `StyleSettings` and `Credit` hold only global page values.
 5. **Tempo unit and invisible tempo**: `Tempo` has `beats_per_second` but no

@@ -9,6 +9,9 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Sonata No. 14, &quot;Moonlight&quot;"
+  scoretkCreditB = "Ludwig van Beethoven"
+  scoretkCreditC = "Quasi una fantasia"
 }
 
 \paper {

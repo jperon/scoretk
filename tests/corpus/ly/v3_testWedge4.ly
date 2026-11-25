@@ -9,6 +9,9 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Wedge 4"
+  scoretkCreditB = "MuseScore testfile"
+  scoretkCreditC = "Leon Vinken"
 }
 
 \paper {

@@ -4,6 +4,7 @@
 \header {
   title = "Invisible elements test"
   workTitle = "Invisible elements test"
+  scoretkCreditA = "Invisible elements test"
 }
 
 \paper {

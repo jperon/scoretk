@@ -67,6 +67,14 @@ pub(crate) enum PostEvent {
     Articulation(ArticulationType),
     /// Ornement (`\trill`, `\mordent`…).
     Ornament(OrnamentType),
+    /// Style de tête posé par un `\tweak` après la note : le groupe de la
+    /// `NoteSpec` a déjà été lu avant les post-événements.
+    TweakHead(NoteHeadGroup),
+    /// Genre de trémolo porté par un `\markup` privé (Notation §4.2.2).
+    TremoloKindOverride(TremoloKind),
+    /// Identifiant exact d'un groupe de tête, quand le style LilyPond est
+    /// approché (plusieurs groupes MuseScore partagent le même style).
+    HeadExact(NoteHeadGroup),
     /// Nuance (`\p`, `\mf`) et vélocité transportée par
     /// `\set Staff.midiMinimumVolume`/`midiMaximumVolume` (Notation §24.4.2).
     Dynamic(String, Placement, Option<u8>),

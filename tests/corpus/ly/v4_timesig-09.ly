@@ -13,18 +13,28 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
   \break
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
   \break
-  g1*1/2:32 e'1*1/2:32 |
-  g1*1/2:32 e'1*1/2:32 \bar "|."
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
+  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } \bar "|."
 }
 
 \score {

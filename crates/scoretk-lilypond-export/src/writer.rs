@@ -180,6 +180,33 @@ impl<'a> Writer<'a> {
                 lines.push(format!("  {field} = \"{}\"", text::escape(value)));
             }
         }
+        // Les crédits du modèle peuvent différer des champs de titre (textes
+        // de cadre, auteurs multiples,…). Des champs `\header` privés les
+        // portent un par un, dans l'ordre, comme les `<credit>` MusicXML.
+        // Les identifiants LilyPond ne peuvent pas se terminer par un chiffre
+        // (le lexeur sépare alors mot et nombre) : l'ordre est codé A, B, C…
+        let rank = |index: usize| char::from(b'A' + u8::try_from(index).unwrap_or(25));
+        for (index, credit) in self.score.engraving.credits.iter().enumerate() {
+            let text = credit.text.plain().trim().replace(['\n', '\r'], " ");
+            if !text.is_empty() {
+                lines.push(format!(
+                    "  scoretkCredit{} = \"{}\"",
+                    rank(index),
+                    text::escape(&text)
+                ));
+            }
+        }
+        for (index, tbox) in self.score.engraving.tbox_texts.iter().enumerate() {
+            let text = tbox.text.plain().trim().replace(['\n', '\r'], " ");
+            if !text.is_empty() {
+                lines.push(format!(
+                    "  scoretkTbox{} = \"{}|{}\"",
+                    rank(index),
+                    tbox.measure,
+                    text::escape(&text)
+                ));
+            }
+        }
         if lines.is_empty() {
             return;
         }

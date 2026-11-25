@@ -1763,7 +1763,27 @@ impl<'a> Interpreter<'a> {
                 // La référence relative est celle de la première note de
                 // l'accord, pas de la dernière. Résoudre les hauteurs même
                 // pour un `\rest` avance cette référence, comme LilyPond.
-                let notes = self.chord_notes(notes);
+                // Un markup privé placé après l'accord précise le groupe exact
+                // d'une tête dont le style LilyPond est une approximation.
+                let head_override = chord.posts.iter().rev().find_map(|post| match post {
+                    PostEvent::HeadExact(group) | PostEvent::TweakHead(group) => {
+                        Some(group.clone())
+                    }
+                    _ => None,
+                });
+                let notes = if let Some(group) = head_override {
+                    notes
+                        .iter()
+                        .map(|note| {
+                            let mut note = note.clone();
+                            note.head_group = group.clone();
+                            note
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    notes.clone()
+                };
+                let notes = self.chord_notes(&notes);
                 if is_rest {
                     ChordContent::Rest {
                         visible: !chord.invisible,
@@ -2029,10 +2049,21 @@ impl<'a> Interpreter<'a> {
             PostEvent::TrillStart => self.event(EventKind::TrillStart),
             PostEvent::TrillStop => self.event(EventKind::TrillStop),
             PostEvent::Glissando => self.event(EventKind::Glissando),
+            PostEvent::TweakHead(_) | PostEvent::HeadExact(_) => {} // appliqué dans `note_head_group`
             PostEvent::Arpeggio(kind) => *arpeggio = Some(*kind),
+            PostEvent::TremoloKindOverride(kind) => {
+                *tremolo = Some(Tremolo {
+                    kind: *kind,
+                    count: 0,
+                });
+            }
             PostEvent::Tremolo(kind, value) => {
                 let count = tremolo_count(*value);
-                *tremolo = Some(Tremolo { kind: *kind, count });
+                let kind = tremolo
+                    .as_ref()
+                    .filter(|current| current.count == 0)
+                    .map_or(*kind, |current| current.kind);
+                *tremolo = Some(Tremolo { kind, count });
             }
             PostEvent::BendAfter(value) => {
                 *chord_line = Some(if *value < 0 {
@@ -2117,7 +2148,7 @@ impl<'a> Interpreter<'a> {
                 tpc_transposed: tpc,
                 tie: note.posts.iter().any(|post| matches!(post, PostEvent::Tie)),
                 cautionary: note.pitch.cautionary,
-                head_group: note.head_group.clone(),
+                head_group: note_head_group(note),
                 small: self.cue,
                 visible: !self.invisible_notes,
                 play: !self.silent_notes,
@@ -2171,7 +2202,7 @@ impl<'a> Interpreter<'a> {
             tpc_transposed: tpc,
             tie,
             cautionary: note.pitch.cautionary,
-            head_group: note.head_group.clone(),
+            head_group: note_head_group(note),
             small: self.cue,
             visible: !self.invisible_notes,
             play: !self.silent_notes,
@@ -2606,6 +2637,19 @@ fn dynamic_text(text: &str) -> String {
 }
 
 /// Vrai pour une nuance prédéfinie de la sortie MusicXML.
+fn note_head_group(note: &crate::ast::NoteSpec) -> NoteHeadGroup {
+    note.posts
+        .iter()
+        .rev()
+        .find_map(|post| match post {
+            crate::ast::PostEvent::HeadExact(group) | crate::ast::PostEvent::TweakHead(group) => {
+                Some(group.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| note.head_group.clone())
+}
+
 fn is_predefined_dynamic(text: &str) -> bool {
     matches!(
         text.trim(),

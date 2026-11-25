@@ -6,6 +6,8 @@
   title = "Title"
   workTitle = "Title"
   composer = "Composer"
+  scoretkCreditA = "Title"
+  scoretkCreditB = "Composer"
 }
 
 \paper {

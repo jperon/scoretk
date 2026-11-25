@@ -11,6 +11,9 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Harmony 6"
+  scoretkCreditB = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
+  scoretkCreditC = "Leon Vinken"
 }
 
 \paper {

@@ -20,8 +20,8 @@
 //! portées par des champs `\header` privés.
 
 use scoretk::model::{
-    Annotation, Dynamic, Fraction, Measure, Part, Score, Segment, SegmentAnnotation, SegmentType,
-    Track,
+    Annotation, Dynamic, Fraction, Measure, Note, NoteHeadGroup, Part, RichText, Score, Segment,
+    SegmentAnnotation, SegmentItem, SegmentType, TboxText, Track,
 };
 use scoretk::{read, write, Format, Options};
 
@@ -53,6 +53,65 @@ fn taille_de_portee_et_fonts_de_titre_vont_et_reviennent_par_ly() {
     assert_eq!(back.engraving.style.title_font_size, 24.0);
     assert_eq!(back.engraving.style.composer_font_size, 12.0);
     assert_eq!(back.engraving.style.lyricist_font_size, 12.0);
+}
+
+#[test]
+fn credits_et_textes_de_cadre_vont_et_reviennent_par_ly() {
+    let mut source = Score::new();
+    let part = source.add_part(Part::new("Piano", "Pno"));
+    source.add_staff(part);
+    source.add_measure(Measure::new(0, Fraction::ZERO, Fraction::ONE));
+    source.add_credit(scoretk::model::Credit::new(
+        RichText::new("Crédit de cadre"),
+        scoretk::model::CreditStyle::Title,
+    ));
+    source.add_tbox_text(TboxText::new(RichText::new("Encart"), 0));
+
+    let ly = write(&source, Format::Ly, &Options::default()).expect("écriture LilyPond");
+    let text = String::from_utf8(ly.clone()).expect("UTF-8");
+    assert!(
+        text.contains("scoretkCreditA = \"Crédit de cadre\""),
+        "{text}"
+    );
+    assert!(text.contains("scoretkTboxA = \"0|Encart\""), "{text}");
+    let back = read(&ly, Format::Ly).expect("lecture LilyPond");
+    assert_eq!(back.engraving.credits.len(), 1);
+    assert_eq!(back.engraving.credits[0].text.plain(), "Crédit de cadre");
+    assert_eq!(back.engraving.tbox_texts.len(), 1);
+    assert_eq!(back.engraving.tbox_texts[0].text.plain(), "Encart");
+}
+
+#[test]
+fn groupes_de_tetes_de_note_vont_et_reviennent_par_ly() {
+    let mut source = Score::new();
+    let part = source.add_part(Part::new("Piano", "Pno"));
+    let staff = source.add_staff(part);
+    for (index, group) in [NoteHeadGroup::Cross, NoteHeadGroup::HeavyCrossHat]
+        .into_iter()
+        .enumerate()
+    {
+        let mut note = Note::new(60 + index as u8, 14);
+        note.head_group = group;
+        let id = source.add_note(note);
+        let mut rest = scoretk::model::ChordRest::chord(scoretk::model::Duration::whole());
+        if let scoretk::model::ChordRestKind::Chord(chord) = &mut rest.kind {
+            chord.notes.push(id);
+        }
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(index as i64, 2), 1);
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(rest));
+        let mut measure = Measure::new(index, Fraction::new(index as i64, 2), Fraction::ONE);
+        measure.add_segment(segment);
+        source.add_measure(measure);
+    }
+
+    let ly = write(&source, Format::Ly, &Options::default()).expect("écriture LilyPond");
+    let back = read(&ly, Format::Ly).expect("lecture LilyPond");
+    let groups: Vec<NoteHeadGroup> = back
+        .notes
+        .iter()
+        .map(|note| note.head_group.clone())
+        .collect();
+    assert_eq!(groups, [NoteHeadGroup::Cross, NoteHeadGroup::HeavyCrossHat]);
 }
 
 #[test]

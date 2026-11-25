@@ -6,6 +6,9 @@
   workTitle = "Untitled score"
   subtitle = "Subtitle"
   composer = "Composer / arranger"
+  scoretkCreditA = "Untitled score"
+  scoretkCreditB = "Subtitle"
+  scoretkCreditC = "Composer / arranger"
 }
 
 \paper {

@@ -205,7 +205,9 @@ fn chord_token(
             head.push(' ');
         }
         if let Some(style) = pitch::note_head_style(&note.head_group) {
-            head.push_str(&format!("\\tweak style #'{style} "));
+            // Ancienne syntaxe `\tweak #'propriété #'valeur`, acceptée par
+            // LilyPond 2.26 et sans `=` (qui déclencherait un `\header`).
+            head.push_str(&format!("\\tweak #'style #'{style} "));
         }
         head.push_str(&pitch::pitch_name(note, transpose_chromatic));
         if cautionary(note) {

@@ -10,6 +10,11 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "Layout test"
+  scoretkCreditB = "Just an artificial score to test whether all elements are laid out"
+  scoretkCreditC = "Composer"
+  scoretkCreditD = "Lyricist"
+  scoretkCreditE = "The only part"
 }
 
 \paper {

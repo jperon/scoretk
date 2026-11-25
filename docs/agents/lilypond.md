@@ -451,15 +451,19 @@ not of reader regressions.
   text positions. `\layout { }` lets LilyPond decide.
 - **Chord symbols in `\markup`**, not `\chordmode`: the model's text
   is preserved, without a chord grid or realisation.
-- **Noteheads**: only non-standard groups go through
-  `\tweak style`; filling and shape tied to duration
-  (`NoteHeadType`) are not forced.
+- **Noteheads**: all non-standard groups go through `\tweak #'style #'…`
+  (the table lives in `scoretk-lilypond-common/src/noteheads.rs`). When
+  several MuseScore groups share one LilyPond style, a private
+  `^\markup { "scoretk-head-…" }` after the note carries the exact group and
+  the reader turns it back into `NoteHeadGroup`. Filling and shape tied to
+  duration (`NoteHeadType`) are not forced.
 - **Accidentals**: LilyPond alone decides which accidentals to display from the
   `tpc` and the key. Editorial accidentals are not distinguished from
   others; only courtesy accidentals (`user`, parentheses,
   brackets) receive `?`.
 - **Two-note tremolo**: written as a tremolo on each of the two
-  notes (`:N`), not as `\repeat tremolo`.
+  notes (`:N`), not as `\repeat tremolo`; a private markup carries the
+  `Start`/`Stop`/`Unmeasured` kind that `:N` cannot distinguish.
 - **Ornaments with accidental**: `<accidental-mark>`s are not rendered.
 - **Articulations without equivalent** (`stress`, `unstress`, exact `spiccato`,
   soft-accent variants): approximation or omission, documented in

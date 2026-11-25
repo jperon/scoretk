@@ -9,6 +9,9 @@
   scoretkTitleFontSize = "24.00000"
   scoretkComposerFontSize = "12.00000"
   scoretkLyricistFontSize = "12.00000"
+  scoretkCreditA = "repeat39"
+  scoretkCreditB = "Alternating Volta"
+  scoretkTboxA = "0|1-3   2, 4-5   2-3   2, 4-5   2, 6"
 }
 
 \paper {
