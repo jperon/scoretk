@@ -241,6 +241,59 @@ mod tests {
         );
     }
 
+    /// MEI 5.1 `att.keySig.log` ne porte que `@sig`/`@keysig` (nombre de
+    /// quintes). `Convert::keyFromMEI` (meiconverter.cpp:2066) construit une
+    /// `engraving::Key`, sans mode : le lecteur laisse `KeyMode::Unknown`.
+    #[test]
+    fn keysig_from_mei_has_no_mode() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" keysig="2s" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a key signature");
+        let key = score.measures[0]
+            .segments
+            .iter()
+            .find_map(|segment| {
+                segment.iter_elements().find_map(|(_, item)| match item {
+                    scoretk_core::model::SegmentItem::KeySig(key) => Some(key),
+                    _ => None,
+                })
+            })
+            .expect("key signature");
+        assert_eq!(key.concert_key.fifths(), 2);
+        assert_eq!(key.mode, scoretk_core::model::KeyMode::Unknown);
+    }
+
+    /// Un `<scoreDef keysig>` en cours de partition s'applique à toutes les
+    /// portées (MEI 5.1 `att.scoreDef.log`), pas seulement au `scoreDef` initial.
+    #[test]
+    fn reads_mid_score_keysig_change() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section>
+              <measure n="1"><staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff></measure>
+              <scoreDef keysig="2s"/>
+              <measure n="2"><staff n="1"><layer n="1"><note dur="4" pname="d" oct="4"/></layer></staff></measure>
+            </section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a mid-score key change");
+        let key = score.measures[1]
+            .segments
+            .iter()
+            .find_map(|segment| {
+                segment.iter_elements().find_map(|(_, item)| match item {
+                    scoretk_core::model::SegmentItem::KeySig(key) => Some(key),
+                    _ => None,
+                })
+            })
+            .expect("changed key signature");
+        assert_eq!(key.concert_key.fifths(), 2);
+        assert_eq!(key.mode, scoretk_core::model::KeyMode::Unknown);
+    }
+
     /// Les n-olets imbriqués sont écrits par MuseScore 4.7.4
     /// (`Convert::tupletToMEI`) : l'avance est divisée par le produit des
     /// ratios et l'événement appartient au n-olet le plus interne.

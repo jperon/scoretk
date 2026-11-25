@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Accidental, BarLineType, BeamMode, ChordRest, ChordRestKind, Clef, ClefType, Duration,
-    Fraction, Key, Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType, StaffId,
-    TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
+    Fraction, Key, KeyMode, Layers, Measure, Note, NoteId, Segment, SegmentItem, SegmentType,
+    StaffId, TimeSig, TimeSigType, Track, Transpose, Tuplet, TupletId, VOICES,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -283,7 +283,14 @@ impl<'a> Reader<'a> {
                         start,
                         SegmentType::KeySig,
                         staff_idx,
-                        SegmentItem::KeySig(scoretk_core::model::KeySig::new(key)),
+                        // `Convert::keyFromMEI` (meiconverter.cpp:2066) ne
+                        // construit qu'une `engraving::Key` (nombre de
+                        // quintes) : aucun mode n'est porté par @keysig, donc
+                        // le mode reste inconnu, comme dans le modèle .mscx.
+                        SegmentItem::KeySig(scoretk_core::model::KeySig {
+                            mode: KeyMode::Unknown,
+                            ..scoretk_core::model::KeySig::new(key)
+                        }),
                     );
                 }
                 Self::insert_segment(

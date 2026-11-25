@@ -127,6 +127,16 @@ impl<'a> Reader<'a> {
         if let Some(keysig) = node.attribute("keysig") {
             if let Some(key) = convert::key_from_mei(keysig) {
                 self.keysigs.insert(SCOREDEF_IDX, key);
+                // `readMeiHead`/`readScoreDef` posent l'armure initiale sur
+                // chaque `<staffDef>` ; un `<scoreDef keysig>` en cours de
+                // partition s'applique à toutes les portées (MEI 5.1
+                // `att.scoreDef.log/@keysig`) et doit remplacer ces entrées,
+                // sinon la nouvelle armure n'est jamais écrite dans une mesure.
+                if !is_initial {
+                    for staff in 0..self.score.staves.len() {
+                        self.keysigs.insert(staff, key);
+                    }
+                }
             }
         }
         if is_initial {
