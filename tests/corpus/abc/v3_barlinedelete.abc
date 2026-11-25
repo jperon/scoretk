@@ -6,6 +6,7 @@ M:4/4
 L:1/8
 Q:"Tempo text" 1/4=120
 K:C clef=treble
+%%MIDI program 1
 V:1 name="Piano" clef=treble
 c2e2g2e2 ||
 c2G2c2e2 |

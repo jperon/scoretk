@@ -4,6 +4,7 @@ T:
 M:4/4
 L:1/8
 K:C clef=treble
+%%MIDI program 74
 V:1 name="Flute" clef=treble
 c8 |
 c8 |

@@ -5,6 +5,8 @@ C:Composer / arranger
 M:9/8
 L:1/8
 K:C
+%%MIDI program 1
+%%MIDI program 1
 %%score 1 2
 V:1 name="Piano 1" clef=treble
 z9 |]

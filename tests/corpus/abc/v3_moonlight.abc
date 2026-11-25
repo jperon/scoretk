@@ -5,6 +5,7 @@ M:4/4
 L:1/8
 Q:"Adagio sostenuto" 1/4=54
 K:E
+%%MIDI program 1
 %%score {(1 2) (3 4)}
 V:1 name="Piano" clef=treble
 (3"^Si deve suonare tutto questo pezzo delicatissimamente e senza sordini"G,CE(3G,CE(3G,CE(3G,CE |

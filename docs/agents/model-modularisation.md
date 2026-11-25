@@ -878,11 +878,12 @@ Reading the table:
    (`crochet_implicite_pas_de_propriete`,
    `crochet_court_implicite_preserve_au_aller_retour`) cover both sides.
 4. **`barline` (L1, 85 items)** is an `EndBarLine` segment object that the
-   MusicXML reader did not restore (only `Measure::end_bar_line` was set).
-   Fixed by recreating the segment, including the implicit `Normal` barlines
-   MuseScore keeps (`src/barline.rs`, `src/pass2.rs`; test
-   `barre_de_fin_est_un_element_du_segment`). `key-sig` (37 in ABC) remains a
-   metric item lost by the ABC writer.
+   MusicXML and ABC readers did not restore (only the measure fields were
+   set). Fixed by recreating the segment, including the implicit `Normal`
+   barlines MuseScore keeps (`src/barline.rs`, `src/pass2.rs`,
+   `reader/build.rs`; tests `barre_de_fin_est_un_element_du_segment` and
+   `barre_implicite_en_fin_de_mesure`). `key-sig` (37 in ABC) remains a metric
+   item lost by the ABC writer (ABC has one global `K:` field, §3.1).
 5. **MIDI L3 (7.77 % round trip, 2.47 % import alone)** is dominated by
    credits and titles: SMF carries track names and text metas, but the
    mapping to `Score::metadata`/`Credit` is only partial.

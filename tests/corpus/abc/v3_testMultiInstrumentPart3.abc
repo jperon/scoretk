@@ -4,6 +4,7 @@ T:clarinet scales
 M:4/4
 L:1/8
 K:Eb clef=treble
+%%MIDI program 72
 V:1 name="A Clarinet" clef=treble transpose=-3
 "^A Clarinet"E2F2G2A2 |
 B2c2d2e2 |

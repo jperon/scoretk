@@ -5,6 +5,7 @@ C:Klaus Rettinghaus
 M:2/4
 L:1/8
 K:C clef=treble
+%%MIDI program 1
 V:1 name="Piano" clef=treble
 G2G2 |
 G2G2 |

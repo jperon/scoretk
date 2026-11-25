@@ -6,6 +6,7 @@ M:4/4
 L:1/8
 Q:" = 80" 1/4=80
 K:C clef=treble
+%%MIDI program 74
 V:1 name="Flute" clef=treble
 !>!b2.(^c'2!tenuto!b2){B/4}!fermata!b2 ||
 [M:3/4] [K:E clef=treble] [1 !arpeggio!!p!!<(![Bf]2!^!B2-B2 |

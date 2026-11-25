@@ -160,10 +160,13 @@ fn deux_morceaux() {
 
 #[test]
 fn directives_ignorees_avec_avertissement() {
-    let source = "X:1\nM:4/4\nL:1/8\n%%MIDI program 1\nK:C\nC D E F |]\n";
+    // `%%MIDI program` est désormais lu (§6.2) ; un contrôleur arbitraire
+    // reste ignoré avec un avertissement.
+    let source = "X:1\nM:4/4\nL:1/8\n%%MIDI program 1\n%%MIDI control 7 100\nK:C\nC D E F |]\n";
     let output =
         scoretk_abc_import::read_abc_with(source, &scoretk_abc_import::ReadOptions::default())
             .expect("lecture");
+    assert_eq!(output.score.parts[0].instrument.midi_program, Some(0));
     assert!(
         output
             .warnings

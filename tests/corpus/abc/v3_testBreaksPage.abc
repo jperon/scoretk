@@ -4,6 +4,7 @@ T:
 M:4/4
 L:1/8
 K:C clef=treble
+%%MIDI program 53
 V:1 name="Voice" clef=treble
 "^First system (no frames above)"z8 |
 "^After page break"z8 |

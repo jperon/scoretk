@@ -5,6 +5,7 @@ M:4/4
 L:1/8
 Q:"Allegro" 1/4=144
 K:E
+%%MIDI program 1
 %%score {1 2}
 V:1 name="Piano" clef=treble
 "^System Text"!<(!(C2D2E2F2 |

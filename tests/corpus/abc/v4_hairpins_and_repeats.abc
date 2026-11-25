@@ -5,6 +5,7 @@ C:Yannis A. Paul
 M:4/4
 L:1/8
 K:C clef=treble
+%%MIDI program 1
 V:1 name="Klavier" clef=treble
 !p!!<(!F2F2F2F2 |
 |: !f!!<)!!<(!F2F2F2!<)!F2 :|

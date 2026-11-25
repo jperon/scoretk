@@ -28,9 +28,10 @@
 //! [`Spanner`].
 
 use scoretk_core::model::{
-    Annotation, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure, Part,
-    Placement, RichText, Score, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
-    SpannerNotation, SpannerType, Staff, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
+    Annotation, BarLine, BarLineType, Clef, ClefType, Dynamic, Fraction, Harmony, KeySig, Measure,
+    Part, Placement, RichText, Score, Segment, SegmentItem, SegmentType, Slur, Spanner,
+    SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffId, TimeSig, Track, Transpose, Tuplet,
+    TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -46,6 +47,10 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
 
     let groups = groups(reader, &voices);
     let voice_tracks = create_parts(&mut score, &voices, &groups);
+    for part in &mut score.parts {
+        part.instrument.midi_program = reader.midi_program;
+        part.instrument.midi_channel = reader.midi_channel;
+    }
     let staff_count = score.staves.len().max(1);
 
     let measure_count = voices
@@ -192,6 +197,22 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
             }
         }
 
+        // Comme MuseScore, le modèle porte une barre de fin sur chaque mesure
+        // même quand sa valeur est `Normal` (aucun symbole ABC n'est écrit).
+        let end = measure.end_tick();
+        let staff_count_read = score.staves.len();
+        {
+            let segment = segment_at(&mut measure, SegmentType::EndBarLine, end, staff_count);
+            for index in 0..staff_count_read {
+                let track = Track::new(StaffId::from_index(index), 0);
+                if segment.element(track).is_none() {
+                    segment.set_element(
+                        track,
+                        SegmentItem::BarLine(BarLine::new(BarLineType::Normal)),
+                    );
+                }
+            }
+        }
         measure
             .segments
             .sort_by_key(|segment| (segment.tick, segment.kind));

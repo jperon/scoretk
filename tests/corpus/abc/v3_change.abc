@@ -4,6 +4,8 @@ T:Instrument Change
 M:4/4
 L:1/8
 K:C
+%%MIDI program 74
+%%MIDI program 69
 %%score 1 2
 V:1 name="Flute" clef=treble
 c4c4 |

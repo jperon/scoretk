@@ -6,6 +6,7 @@ M:4/4
 L:1/8
 Q:" = 88" 1/4=88
 K:C clef=treble
+%%MIDI program 1
 V:1 name="Piano" clef=treble
 z8 |
 z8 |]

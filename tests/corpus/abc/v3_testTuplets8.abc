@@ -5,6 +5,7 @@ C:Leon Vinken
 M:2/4
 L:1/8
 K:C clef=treble
+%%MIDI program 53
 V:1 name="Voice" clef=treble
 (3:2:3c2B2(5:4A/2G/2F/2E/2D/2 |
 (3:2:3c2(5:4B/2A/2G/2F/2E/2D2 |

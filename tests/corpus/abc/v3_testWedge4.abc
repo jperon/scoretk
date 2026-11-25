@@ -4,6 +4,7 @@ T:
 M:4/4
 L:1/8
 K:C
+%%MIDI program 53
 %%score (1 2)
 V:1 name="Voice" clef=treble
 z4!<(!G4 |

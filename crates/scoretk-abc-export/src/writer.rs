@@ -112,6 +112,18 @@ impl<'a> Writer<'a> {
         out.push_str(&key_line);
         out.push('\n');
 
+        // abc-standard 2.1 §6.2 / §11.2 : `%%MIDI program` est le numéro GM
+        // (1–128) et `%%MIDI channel` le canal (1–16), tandis que le modèle
+        // stocke des indices base zéro comme le wire MIDI.
+        for part in &self.score.parts {
+            if let Some(program) = part.instrument.midi_program {
+                out.push_str(&format!("%%MIDI program {}\n", program.saturating_add(1)));
+            }
+            if let Some(channel) = part.instrument.midi_channel {
+                out.push_str(&format!("%%MIDI channel {}\n", channel.saturating_add(1)));
+            }
+        }
+
         if voices.len() > 1 {
             if let Some(score_line) = self.score_line(&voices) {
                 out.push_str(&score_line);

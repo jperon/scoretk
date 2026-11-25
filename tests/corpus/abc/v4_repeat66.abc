@@ -5,6 +5,7 @@ M:4/4
 L:1/8
 Q:" = 400" 1/4=400
 K:C clef=treble
+%%MIDI program 1
 V:1 name="Piano" clef=treble
 C8 |
 |: D8 |

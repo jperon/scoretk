@@ -670,6 +670,10 @@ pub(crate) struct Reader {
     pub midi_transpose: i32,
     /// Transposition globale d'instrument seule (sans decalage de clef).
     pub instrument_transpose: i32,
+    /// Programme GM lu dans `%%MIDI program` (base zéro dans le modèle).
+    pub midi_program: Option<u8>,
+    /// Canal lu dans `%%MIDI channel` (base zéro dans le modèle).
+    pub midi_channel: Option<u8>,
     /// Tempo global `(battements par seconde, texte)`.
     pub tempo: Option<(f64, String)>,
     /// Premier champ Q: (en-tête), conservé même si un Q: en ligne suit.
@@ -718,6 +722,8 @@ impl Default for Reader {
             key: KeySig::new(Key::C),
             midi_transpose: 0,
             instrument_transpose: 0,
+            midi_program: None,
+            midi_channel: None,
             tempo: None,
             header_tempo: None,
             user_symbols: BTreeMap::new(),
@@ -899,6 +905,26 @@ impl Reader {
                         voice.transpose = transpose;
                         voice.instrument_transpose = transpose;
                     }
+                }
+            }
+            "midi" => {
+                // §6.2 : `%%MIDI program` (GM 1–128) et `%%MIDI channel`
+                // (1–16) sont les seules valeurs de playback que l'ABC porte
+                // sans extension ; le modèle stocke des indices base zéro.
+                let mut words = value.split_whitespace();
+                let key = words.next().unwrap_or_default().to_ascii_lowercase();
+                let amount = words.next().and_then(|value| value.parse::<u16>().ok());
+                match (key.as_str(), amount) {
+                    ("program", Some(program)) if (1..=128).contains(&program) => {
+                        self.midi_program = Some((program - 1) as u8);
+                    }
+                    ("channel", Some(channel)) if (1..=16).contains(&channel) => {
+                        self.midi_channel = Some((channel - 1) as u8);
+                    }
+                    _ => self.warnings.push(Warning::new(
+                        number,
+                        format!("directive « %%MIDI {value} » ignorée"),
+                    )),
                 }
             }
             other => self.warnings.push(Warning::new(

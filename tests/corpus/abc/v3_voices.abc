@@ -4,6 +4,10 @@ T:voices
 M:4/4
 L:1/8
 K:Ab
+%%MIDI program 1
+%%MIDI channel 3
+%%MIDI program 58
+%%MIDI channel 1
 %%score {(1 2 3) 4} (5 6)
 V:1 name="Piano" clef=treble
 !pp!z8 |
