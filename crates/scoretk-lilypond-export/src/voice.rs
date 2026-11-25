@@ -112,45 +112,11 @@ pub(crate) fn render_body(
     let mut post_by_item: Vec<Vec<Event>> = vec![Vec::new(); items.len()];
     let has_voice = |candidate: usize| voice_has_content(score, staff, candidate);
 
-    // LilyPond ne distingue pas les trémolos à une note des trémolos à deux
-    // notes avec `:N`. Un markup privé porte le genre du modèle : il est
-    // compilable (contrairement à une propriété de contexte inconnue) et le
-    // lecteur le transforme en `TremoloKind` sans créer d'annotation.
-    for item in &items {
-        if let scoretk_core::model::ChordRestKind::Chord(chord) = &item.chord_rest.kind {
-            for note_id in &chord.notes {
-                let note = score.note(*note_id);
-                if let Some(exact) = scoretk_lilypond_common::noteheads::name(&note.head_group) {
-                    attach_post(
-                        &mut post_by_item,
-                        &items,
-                        Event::new(
-                            item.tick,
-                            before::TREM_KIND,
-                            format!("^{}", text::markup(&format!("scoretk-head-{exact}"))),
-                        ),
-                    );
-                }
-            }
-            if let Some(tremolo) = chord.tremolo {
-                let name = match tremolo.kind {
-                    scoretk_core::model::TremoloKind::Start => "start",
-                    scoretk_core::model::TremoloKind::Stop => "stop",
-                    scoretk_core::model::TremoloKind::Unmeasured => "unmeasured",
-                    scoretk_core::model::TremoloKind::Single => continue,
-                };
-                attach_post(
-                    &mut post_by_item,
-                    &items,
-                    Event::new(
-                        item.tick,
-                        before::TREM_KIND,
-                        format!("^{}", text::markup(&format!("scoretk-tremolo-{name}"))),
-                    ),
-                );
-            }
-        }
-    }
+    // Les groupes de têtes sont portés par `\tweak style #'…` dans le jeton de
+    // l'accord (`chord.rs`) et les trémolos à deux notes par `\repeat tremolo`
+    // (ci-dessous) : ce sont des formes LilyPond standard, relisibles par
+    // n'importe quel outil. Les markups privés `scoretk-head-…` et
+    // `scoretk-tremolo-…` qui les doublaient ne sont plus écrits.
 
     // Changements de contexte portés par les segments de la portée : ils
     // n'appartiennent qu'à la voix 0 dans les fichiers MuseScore.
@@ -650,20 +616,60 @@ pub(crate) fn render_body(
             }
             open_tuplets(score, &chain, &mut tuplets, &mut emitter);
 
-            let transpose =
-                crate::pitch::written_transposition(transpose_at(score, staff, item.tick));
-            let mut line = chord::render(score, item.chord_rest, measure.len, transpose);
-            for event in &post_by_item[item_index] {
-                if !line.is_empty() {
-                    line.push(' ');
+            let render_item = |index: usize, suppress_tremolo: bool, body: Option<Fraction>| {
+                let entry = &items[index];
+                let mut token = if suppress_tremolo || body.is_some() {
+                    chord::render_inner(
+                        score,
+                        entry.chord_rest,
+                        measure.len,
+                        crate::pitch::written_transposition(transpose_at(score, staff, entry.tick)),
+                        suppress_tremolo,
+                        body,
+                    )
+                } else {
+                    chord::render(
+                        score,
+                        entry.chord_rest,
+                        measure.len,
+                        crate::pitch::written_transposition(transpose_at(score, staff, entry.tick)),
+                    )
+                };
+                for event in &post_by_item[index] {
+                    if !token.is_empty() {
+                        token.push(' ');
+                    }
+                    token.push_str(&event.text);
                 }
-                line.push_str(&event.text);
-            }
+                token
+            };
+            // Un trémolo à deux notes est une seule figure LilyPond
+            // (`\repeat tremolo n { a b }`, Notation Reference §2.5.3) : les
+            // deux accords du modèle en sont les deux voix du corps, pas deux
+            // trémolos indépendants avec `:N`.
+            let pair = two_note_tremolo_partner(&items, item_index);
+            let line = if let Some((partner, count)) = pair {
+                let repeats = tremolo_repeats(count);
+                let body = (item.end_tick - item.tick) / Fraction::from_integer(i64::from(repeats));
+                format!(
+                    "\\repeat tremolo {repeats} {{ {} {} }}",
+                    render_item(item_index, true, Some(body)),
+                    render_item(partner, true, Some(body))
+                )
+            } else {
+                render_item(item_index, false, None)
+            };
             emitter.token(&line);
 
-            cursor = item.end_tick.max(item.tick);
+            // Le second accord du corps du trémolo est consommé avec le
+            // premier : le curseur doit avancer jusqu'à sa fin, sinon un
+            // silence de remplissage apparaîtrait entre les deux.
+            cursor = pair
+                .map(|(partner, _)| items[partner].end_tick)
+                .unwrap_or(item.end_tick)
+                .max(item.tick);
             couvert_jusqu_a = cursor;
-            item_index += 1;
+            item_index += if pair.is_some() { 2 } else { 1 };
         }
 
         if multi_rest_done {
@@ -975,6 +981,42 @@ fn collect_items(score: &Score, staff: usize, voice: usize) -> Vec<Item<'_>> {
 
 /// Rattache un événement « après la note » à la dernière note au plus tard au
 /// tick de l'événement.
+/// Voisin immédiat d'un accord ouvrant un trémolo à deux notes.
+///
+/// MuseScore marque le premier accord `TremoloKind::Start` avec
+/// `tremolo_two_chord` et synthétise le `Stop` sur l'accord suivant ; LilyPond
+/// attend les deux dans le même `\repeat tremolo`.
+fn two_note_tremolo_partner(items: &[Item<'_>], index: usize) -> Option<(usize, u8)> {
+    use scoretk_core::model::{ChordRestKind, TremoloKind};
+    let current = match &items.get(index)?.chord_rest.kind {
+        // `tremolo_two_chord` est posé par MuseScore 4 sur le premier accord ;
+        // notre lecteur ne le reconstruit pas, mais `Start`/`Stop` suffisent.
+        ChordRestKind::Chord(chord) => chord.tremolo?,
+        _ => return None,
+    };
+    if current.kind != TremoloKind::Start {
+        return None;
+    }
+    let partner = items.get(index + 1)?;
+    if partner.measure != items[index].measure {
+        return None;
+    }
+    match &partner.chord_rest.kind {
+        ChordRestKind::Chord(chord)
+            if chord.tremolo.is_some_and(|t| t.kind == TremoloKind::Stop) =>
+        {
+            Some((index + 1, current.count))
+        }
+        _ => None,
+    }
+}
+
+/// Nombre de reprises LilyPond pour `count` barres MuseScore : `c32` (3) donne
+/// `\repeat tremolo 4`, dont le corps en croches doubles vaut une blanche.
+fn tremolo_repeats(count: u8) -> u8 {
+    1u8 << count.clamp(1, 4).saturating_sub(1)
+}
+
 fn attach_post(post_by_item: &mut [Vec<Event>], items: &[Item<'_>], event: Event) {
     if let Some(index) = post_target(items, event.tick) {
         post_by_item[index].push(event);

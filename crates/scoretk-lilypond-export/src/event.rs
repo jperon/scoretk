@@ -55,8 +55,6 @@ impl Event {
 pub(crate) mod before {
     /// `\section` (saut de section).
     pub(crate) const SECTION: u8 = 0;
-    /// `\set Staff.scoretkTremoloKind` (avant le `:N`).
-    pub(crate) const TREM_KIND: u8 = 1;
     /// `\transposition` (avant `\key` : c'est une propriété de contexte).
     pub(crate) const TRANSPOSE: u8 = 25;
     /// `\clef`.

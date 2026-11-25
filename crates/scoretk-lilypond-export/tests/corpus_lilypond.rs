@@ -119,6 +119,28 @@ fn conversions_egales_aux_instantanes() {
     }
 }
 
+/// Les têtes et les trémolos empruntent des formes LilyPond standard : aucun
+/// markup `scoretk-…` ne doit rester pour les porter (§52).
+#[test]
+fn tetes_et_tremolos_sans_markup_prive() {
+    for path in fichiers() {
+        let produit = convertir(&path);
+        assert!(
+            !produit.contains("scoretk-head-"),
+            "{path:?} : markup de tête privé"
+        );
+        assert!(
+            !produit.contains("scoretk-tremolo-"),
+            "{path:?} : markup de trémolo privé"
+        );
+    }
+    let tremolos = convertir(&corpus().join("v4/copypaste_parts.mscx"));
+    assert!(
+        tremolos.contains("\\repeat tremolo 4 { b16"),
+        "le trémolo à deux notes doit être une seule figure LilyPond"
+    );
+}
+
 #[test]
 fn sortie_structuree_et_en_mode_fixed() {
     for path in fichiers() {

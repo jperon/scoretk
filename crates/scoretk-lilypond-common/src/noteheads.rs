@@ -18,9 +18,18 @@
 //! Table des styles de tête de note partagée par les deux directions.
 //!
 //! Les noms standards viennent de la Notation Reference 2.26, annexe B.9
-//! (`cross`, `plus`, `xcircle`, `triangle`, `slash`, `harmonic`, `do`…). Les
-//! groupes de MuseScore sans équivalent exact reçoivent un nom privé
-//! `scoretk-…`, ignoré par LilyPond mais relisible par notre lecteur.
+//! (`cross`, `xcircle`, `triangle`, `slash`, `harmonic`, `do`…), confirmés par
+//! `scm/lily/output-lib.scm::select-head-glyph` et les glyphes réellement
+//! présents dans `emmentaler-13.otf`. Un style standard est écrit pour chaque
+//! groupe qui en a un ; le lecteur le relit directement, sans markup privé.
+//!
+//! Les groupes sans style standard (`Plus`, `WithX`, `TriangleDown`,
+//! `Slashed1`, `Slashed2`, `DiamondOld`, `Circled`, `CircledLarge`,
+//! `LargeArrow`, `BrevisAlt`, `LargeDiamond`, `HeavyCross`, `HeavyCrossHat`,
+//! `Other`) restent approchés visuellement par `cross`/`triangle`/… mais leur
+//! identité exacte n'a pas de carrier LilyPond : `has_standard_style` les
+//! distingue et `out_of_reach` documente les valeurs exclues de la déclaration
+//! au niveau de la valeur (et non du genre entier).
 
 use scoretk_core::model::NoteHeadGroup;
 
@@ -129,9 +138,12 @@ pub fn group_from_name(ident: &str) -> Option<NoteHeadGroup> {
 
 /// Groupe correspondant à un nom de style lu dans `\tweak style #'…`.
 pub fn group(style: &str) -> Option<NoteHeadGroup> {
+    // Le lexer livre `#'cross` (ou `'cross` dans l'ancienne syntaxe) comme un
+    // seul jeton Scheme : retirer les deux préfixes, sinon aucune tête n'était
+    // retrouvée et seul le markup privé permettait la relecture.
     let group = match style
         .trim()
-        .trim_start_matches('\'')
+        .trim_start_matches(['#', '\''])
         .to_ascii_lowercase()
         .as_str()
     {
@@ -151,6 +163,69 @@ pub fn group(style: &str) -> Option<NoteHeadGroup> {
         _ => return None,
     };
     Some(group)
+}
+
+/// Vrai si le style LilyPond du groupe est standard **et** univoque : il
+/// identifie le groupe à la relecture sans markup privé (Notation Reference
+/// §B.9, `select-head-glyph`). `Plus` se dessine en croix mais LilyPond n'a pas
+/// de glyphe `plus` ; `TriangleDown`, `Slashed1/2`, `DiamondOld`, `Circled`,
+/// `CircledLarge`, `LargeArrow`, `BrevisAlt`, `LargeDiamond`, `HeavyCross`,
+/// `HeavyCrossHat`, `WithX` et `Other` n'ont pas non plus de style dédié.
+pub fn has_standard_style(group: &NoteHeadGroup) -> bool {
+    matches!(
+        group,
+        NoteHeadGroup::Cross
+            | NoteHeadGroup::XCircle
+            | NoteHeadGroup::TriangleUp
+            | NoteHeadGroup::Slash
+            | NoteHeadGroup::Diamond
+            | NoteHeadGroup::Do
+            | NoteHeadGroup::Re
+            | NoteHeadGroup::Mi
+            | NoteHeadGroup::Fa
+            | NoteHeadGroup::Sol
+            | NoteHeadGroup::La
+            | NoteHeadGroup::Ti
+    )
+}
+
+/// Vrai si une valeur d'inventaire `Auto:<groupe>` désigne un groupe privé de
+/// style LilyPond univoque. Seules ces valeurs sortent de la déclaration
+/// `note-head` ; le genre entier y reste.
+pub fn out_of_reach(value: &str) -> bool {
+    if value.contains(":Other(") {
+        return true;
+    }
+    // `Debug` de `NoteHeadGroup` donne `CircledLarge` alors que `name()`
+    // écrit `circled-large` : comparer les identifiants normalisés.
+    let normalize = |text: &str| {
+        text.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    let Some(group) = value.split(':').nth(1) else {
+        return false;
+    };
+    let group = normalize(group);
+    [
+        "plus",
+        "withx",
+        "triangledown",
+        "slashed1",
+        "slashed2",
+        "diamondold",
+        "circled",
+        "circledlarge",
+        "largearrow",
+        "brevisalt",
+        "largediamond",
+        "heavycross",
+        "heavycrosshat",
+        "other",
+    ]
+    .iter()
+    .any(|candidate| normalize(candidate) == group)
 }
 
 #[cfg(test)]
@@ -193,6 +268,53 @@ mod tests {
             );
             let exact = name(&expected).expect("un identifiant exact");
             assert_eq!(group_from_name(exact), Some(expected));
+        }
+    }
+
+    #[test]
+    fn styles_scheme_avec_prefixe_sont_reconnus() {
+        assert_eq!(group("#'cross"), Some(NoteHeadGroup::Cross));
+        assert_eq!(group("#'xcircle"), Some(NoteHeadGroup::XCircle));
+        assert_eq!(group("#'harmonic-mixed"), Some(NoteHeadGroup::Diamond));
+        assert_eq!(group("#'do"), Some(NoteHeadGroup::Do));
+        assert_eq!(group("'triangle"), Some(NoteHeadGroup::TriangleUp));
+    }
+
+    #[test]
+    fn seuls_les_groupes_sans_style_standard_sont_hors_declaration() {
+        for value in [
+            "Auto:Cross",
+            "Auto:XCircle",
+            "Auto:TriangleUp",
+            "Auto:Slash",
+            "Auto:Diamond",
+            "Auto:Do",
+            "Auto:Re",
+            "Auto:Mi",
+            "Auto:Fa",
+            "Auto:Sol",
+            "Auto:La",
+            "Auto:Ti",
+        ] {
+            assert!(!out_of_reach(value), "{value} a un style standard");
+        }
+        for value in [
+            "Auto:Plus",
+            "Auto:WithX",
+            "Auto:TriangleDown",
+            "Auto:Slashed1",
+            "Auto:Slashed2",
+            "Auto:DiamondOld",
+            "Auto:Circled",
+            "Auto:CircledLarge",
+            "Auto:LargeArrow",
+            "Auto:BrevisAlt",
+            "Auto:LargeDiamond",
+            "Auto:HeavyCross",
+            "Auto:HeavyCrossHat",
+            "Auto:Other(foo)",
+        ] {
+            assert!(out_of_reach(value), "{value} n'a pas de style univoque");
         }
     }
 }

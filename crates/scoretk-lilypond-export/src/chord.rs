@@ -53,6 +53,26 @@ pub(crate) fn render(
     measure_len: Fraction,
     transpose_chromatic: i32,
 ) -> String {
+    render_inner(
+        score,
+        chord_rest,
+        measure_len,
+        transpose_chromatic,
+        false,
+        None,
+    )
+}
+
+/// Variante utilisée par le corps d'un `\repeat tremolo` : la figure du corps
+/// remplace la durée du modèle et le `:N` est porté par la répétition entière.
+pub(crate) fn render_inner(
+    score: &Score,
+    chord_rest: &ChordRest,
+    measure_len: Fraction,
+    transpose_chromatic: i32,
+    suppress_tremolo: bool,
+    duration_override: Option<Fraction>,
+) -> String {
     if let Some(rest) = chord_rest.rest_ref() {
         // Silence « gap » de `Measure::fillGap` : il ne s'exporte pas, il ne
         // sert qu'à faire avancer le curseur d'export. `s` le représente
@@ -120,7 +140,14 @@ pub(crate) fn render(
         ));
     }
 
-    let core = chord_token(score, chord, chord_rest, transpose_chromatic);
+    let core = chord_token(
+        score,
+        chord,
+        chord_rest,
+        transpose_chromatic,
+        suppress_tremolo,
+        duration_override,
+    );
     if after_graces.is_empty() {
         parts.push(core);
     } else {
@@ -190,6 +217,8 @@ fn chord_token(
     chord: &Chord,
     chord_rest: &ChordRest,
     transpose_chromatic: i32,
+    suppress_tremolo: bool,
+    duration_override: Option<Fraction>,
 ) -> String {
     // MuseScore joue les notes `<visible>0</visible>` (seule la tête de note
     // est masquée : `exportmusicxml.cpp::writeNotehead`). Les supprimer
@@ -228,18 +257,20 @@ fn chord_token(
 
     let notated = chord_rest.duration.ticks();
     let actual = chord_rest.ticks.unwrap_or(notated);
-    let duration = if chord_rest.tuplet.is_some() {
-        duration_token(chord_rest.duration)
-    } else {
-        with_multiplier(duration_token(chord_rest.duration), actual, notated)
+    let duration = match duration_override {
+        Some(body) => length_token(body),
+        None if chord_rest.tuplet.is_some() => duration_token(chord_rest.duration),
+        None => with_multiplier(duration_token(chord_rest.duration), actual, notated),
     };
     let mut token = format!("{head}{duration}");
 
     if notes.len() == 1 && notes[0].tie_forward.is_some() {
         token.push('~');
     }
-    if let Some(tremolo) = &chord.tremolo {
-        token.push_str(&tremolo_token(tremolo));
+    if !suppress_tremolo {
+        if let Some(tremolo) = &chord.tremolo {
+            token.push_str(&tremolo_token(tremolo));
+        }
     }
     token.push_str(&articulations(&chord.articulations));
     token.push_str(&ornaments(&chord.ornaments));

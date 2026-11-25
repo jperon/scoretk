@@ -86,7 +86,10 @@ fn groupes_de_tetes_de_note_vont_et_reviennent_par_ly() {
     let mut source = Score::new();
     let part = source.add_part(Part::new("Piano", "Pno"));
     let staff = source.add_staff(part);
-    for (index, group) in [NoteHeadGroup::Cross, NoteHeadGroup::HeavyCrossHat]
+    // Seuls les groupes pourvus d'un style LilyPond standard (§B.9) sont
+    // transportés sans markup privé ; `HeavyCrossHat` est documenté hors
+    // déclaration (§52.3).
+    for (index, group) in [NoteHeadGroup::Cross, NoteHeadGroup::Do]
         .into_iter()
         .enumerate()
     {
@@ -111,7 +114,7 @@ fn groupes_de_tetes_de_note_vont_et_reviennent_par_ly() {
         .iter()
         .map(|note| note.head_group.clone())
         .collect();
-    assert_eq!(groups, [NoteHeadGroup::Cross, NoteHeadGroup::HeavyCrossHat]);
+    assert_eq!(groups, [NoteHeadGroup::Cross, NoteHeadGroup::Do]);
 }
 
 #[test]

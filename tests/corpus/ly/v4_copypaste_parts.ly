@@ -27,8 +27,7 @@ staffOneVoiceOne = \fixed c' {
   <b fs'>4 \sustainOff _\p \< b4~-^ b4 |
   \key c \major \time 4/4 \clef treble
   b4 \! \startTrillSpan
-  b2*1/2:32 ^\markup { "scoretk-tremolo-start" } \stopTrillSpan
-  b2*1/2:32 ^\markup { "scoretk-tremolo-stop" } \glissando f4 |
+  \repeat tremolo 4 { b16 \stopTrillSpan b16 \glissando } f4 |
   R1 |
   R1 |
   R1 \bar "|."

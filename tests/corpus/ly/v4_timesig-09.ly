@@ -13,28 +13,18 @@
 
 staffOneVoiceOne = \fixed c' {
   \clef treble \time 4/4
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
   \break
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } |
   \break
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } |
-  g1*1/2:32 ^\markup { "scoretk-tremolo-start" }
-  e'1*1/2:32 ^\markup { "scoretk-tremolo-stop" } \bar "|."
+  \repeat tremolo 4 { g8 e'8 } |
+  \repeat tremolo 4 { g8 e'8 } \bar "|."
 }
 
 \score {

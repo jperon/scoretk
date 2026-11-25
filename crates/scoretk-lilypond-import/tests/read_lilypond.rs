@@ -27,7 +27,8 @@ use std::collections::HashMap;
 use scoretk_core::model::Fraction;
 use scoretk_core::model::{
     ArticulationType, BarLine, BarLineType, ChordRestKind, ClefType, DurationType, GraceType,
-    KeyMode, LyricsSyllabic, SegmentItem, SegmentType, StaffId, Track, Transpose,
+    KeyMode, LyricsSyllabic, NoteHeadGroup, SegmentItem, SegmentType, StaffId, Track, Transpose,
+    Tremolo, TremoloKind,
 };
 use scoretk_lilypond_import::{
     read_lilypond, read_lilypond_reporting, read_lilypond_with_includes,
@@ -5919,6 +5920,52 @@ fn repeat_tremolo_etire_les_durees() {
             Fraction::new(1, 4)
         ]
     );
+}
+
+/// Notation Reference §2.5.3 : les deux voix du corps portent les genres
+/// `Start` puis `Stop` du modèle, et `n = 2^(count-1)` encode `count` barres.
+#[test]
+fn repeat_tremolo_porte_les_genres_et_le_nombre_de_barres() {
+    let score = lire("\\repeat tremolo 4 { c16 d16 } e4");
+    let tremolos: Vec<Option<Tremolo>> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .map(|chord_rest| chord_rest.chord_ref().and_then(|chord| chord.tremolo))
+        .collect();
+    assert_eq!(
+        tremolos,
+        vec![
+            Some(Tremolo {
+                kind: TremoloKind::Start,
+                count: 3
+            }),
+            Some(Tremolo {
+                kind: TremoloKind::Stop,
+                count: 3
+            }),
+            None,
+        ]
+    );
+}
+
+/// Notation Reference §B.9 : `\tweak style #'…` est un style standard, relu
+/// directement par le lecteur (sans markup privé). Le lexeur livre la valeur
+/// Scheme avec son préfixe `#'`.
+#[test]
+fn tweak_style_est_relu_sans_markup_prive() {
+    let score = lire("\\tweak #'style #'do c'4 \\tweak #'style #'xcircle d'4");
+    let heads: Vec<NoteHeadGroup> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .filter_map(|segment| segment.chord_rest(Track::from_raw(0)))
+        .filter_map(|chord_rest| chord_rest.chord_ref())
+        .flat_map(|chord| chord.notes.iter())
+        .map(|id| score.note(*id).head_group.clone())
+        .collect();
+    assert_eq!(heads, vec![NoteHeadGroup::Do, NoteHeadGroup::XCircle]);
 }
 
 /// `ly/music-functions-init.ly:1274` : `\octaveCheck` est une fonction

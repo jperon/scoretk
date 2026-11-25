@@ -5063,9 +5063,28 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Propriété d'un `\tweak` : un seul symbole, même dans l'ancienne
+    /// syntaxe `#'style`. `skip_property_path` enchaînerait les deux symboles
+    /// Scheme consécutifs (`#'style #'cross`) et avalerait la valeur.
+    fn parse_tweak_property(&mut self) -> Vec<String> {
+        if let Some(token) = self.peek().cloned() {
+            if token.is_scheme() {
+                self.position += 1;
+                let symbol = token
+                    .text
+                    .trim()
+                    .trim_start_matches(['#', '\''])
+                    .trim()
+                    .to_owned();
+                return vec![symbol];
+            }
+        }
+        self.skip_property_path()
+    }
+
     /// `\tweak` : propriété, valeur, puis musique décorée.
     fn parse_tweak(&mut self) {
-        let path = self.skip_property_path();
+        let path = self.parse_tweak_property();
         // `\tweak` s'écrit `\tweak propriété valeur` (`lily/parser.yy`),
         // sans `=` ; certains fichiers gardent un `=` toléré.
         let had_eq = self.eat_punct('=');
@@ -5758,9 +5777,9 @@ impl<'a> Parser<'a> {
                     // puis laisser la boucle lire l'événement modifié (`^1`).
                     // Sans cela la valeur restait dans le flux et `^1` était
                     // lu comme une musique neuve qui répétait la note
-                    // (`finger-glide-spanner-id.ly`).
-                    self.position += 1;
-                    let path = self.skip_property_path();
+                    // (`finger-glide-spanner-id.ly`). Le `\tweak` lui-même a
+                    // déjà été consommé par la branche `Kind::Command` ci-dessus.
+                    let path = self.parse_tweak_property();
                     let _ = self.eat_punct('=');
                     let value = self.peek().cloned();
                     match &value {
@@ -5782,10 +5801,14 @@ impl<'a> Parser<'a> {
                         {
                             let style = token.text.trim().trim_start_matches('\'').trim();
                             if let Some(group) = head_group_from_style(style) {
-                                // Ce `\tweak` suit la note en cours : il la
-                                // modifie, pas la suivante (l'écrivain les
-                                // place après la note qu'ils décorent).
-                                return vec![PostEvent::TweakHead(group)];
+                                // `\tweak` est une *pré*-événement de
+                                // `lily/parser.yy` : même placé après une note,
+                                // il modifie la musique qui suit (`b2 \tweak
+                                // color #red ^1 c''4` modifie le doigté). Le
+                                // faire porter par la note courante empêchait
+                                // de relire les têtes écrites par scoretk,
+                                // qui place le style juste avant la hauteur.
+                                self.pending_head = group;
                             }
                         }
                     }

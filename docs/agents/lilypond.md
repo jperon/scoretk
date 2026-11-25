@@ -275,11 +275,11 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | `ArticulationType` | `-.` staccato, `-!` staccatissimo/spiccato, `->` accent, `-^` marcato, `--` tenuto, `-_` portato, `\espressivo`, `\fermata` and variants, `\breathe`, `\caesura`, `\upbow`, `\downbow`, `\flageolet`, `\open`, `\stopped`, `\snappizzicato` |
 | `OrnamentType` | `\trill`, `\turn`, `\reverseturn`, `\slashturn`, `\mordent`, `\prall`, `\prallprall`, `\haydnturn`, `\upmordent` |
 | `Arpeggio` | `\arpeggio`, `\arpeggioArrowUp`/`Down`, `\arpeggioBracket` |
-| `Tremolo` | `:8`, `:16`, `:32` (one bar = eighth note) |
+| `Tremolo` | single note `:8`, `:16`, `:32`; two-note `\repeat tremolo n { c16 e16 }` (`n = 2^(count-1)`, so MuseScore `c32` → `4`) |
 | `Fingering` | `-1` for a digit, `-\markup { "T" }` otherwise |
 | `ChordLine` | `\bendAfter`, the only standard command (fall, rise, plop and scoop are not distinguished by LilyPond) |
 | `StemDirection` | `\once \override Stem.direction = #UP`/`#DOWN` |
-| `NoteHeadGroup` | `\tweak style #'cross`, `#'harmonic-mixed`, `#'slash`, `#'xcircle`, `#'do`… |
+| `NoteHeadGroup` | `\tweak style #'cross`, `#'xcircle`, `#'triangle`, `#'slash`, `#'harmonic`, `#'do`…; groups without a LilyPond style are approximated and excluded per value (§52.3) |
 | `Chord.grace_slash` | carried by `\acciaccatura` |
 
 ### Annotations
@@ -451,19 +451,23 @@ not of reader regressions.
   text positions. `\layout { }` lets LilyPond decide.
 - **Chord symbols in `\markup`**, not `\chordmode`: the model's text
   is preserved, without a chord grid or realisation.
-- **Noteheads**: all non-standard groups go through `\tweak #'style #'…`
-  (the table lives in `scoretk-lilypond-common/src/noteheads.rs`). When
-  several MuseScore groups share one LilyPond style, a private
-  `^\markup { "scoretk-head-…" }` after the note carries the exact group and
-  the reader turns it back into `NoteHeadGroup`. Filling and shape tied to
-  duration (`NoteHeadType`) are not forced.
+- **Noteheads**: groups with a standard LilyPond style (Notation Reference
+  §B.9) are written `\tweak #'style #'…` and read back directly; no private
+  markup is emitted. Groups without an unambiguous style (`Plus`, `WithX`,
+  `TriangleDown`, `Slashed1/2`, `DiamondOld`, `Circled`, `CircledLarge`,
+  `LargeArrow`, `BrevisAlt`, `LargeDiamond`, `HeavyCross`, `HeavyCrossHat`,
+  `Other`) are approximated visually and excluded **per value** from the
+  `note-head` declaration (§52.3). Filling and shape tied to duration
+  (`NoteHeadType`) are not forced.
 - **Accidentals**: LilyPond alone decides which accidentals to display from the
   `tpc` and the key. Editorial accidentals are not distinguished from
   others; only courtesy accidentals (`user`, parentheses,
   brackets) receive `?`.
-- **Two-note tremolo**: written as a tremolo on each of the two
-  notes (`:N`), not as `\repeat tremolo`; a private markup carries the
-  `Start`/`Stop`/`Unmeasured` kind that `:N` cannot distinguish.
+- **Two-note tremolo**: written as one `\repeat tremolo n { a b }` figure
+  (Notation Reference §2.5.3); the reader restores `Start` on the first voice
+  and `Stop` on the second, with `count` from `n = 2^(count-1)`. Only
+  `Unmeasured` (buzz roll) has no LilyPond equivalent and is excluded per
+  value.
 - **Ornaments with accidental**: `<accidental-mark>`s are not rendered.
 - **Articulations without equivalent** (`stress`, `unstress`, exact `spiccato`,
   soft-accent variants): approximation or omission, documented in
@@ -9735,26 +9739,47 @@ per §52.3):
   Private-use glyphs in tempo text were also reverted: they produce a
   "no glyph" warning that the compile test forbids.
 
-### 52.3 Honest declaration for three kinds
+### 52.3 Honest declaration, now per value for heads and tremolos
 
 Following the SMF precedent (`model-modularisation.md` §11.9), the
-LilyPond declaration now uses `Capabilities::with_kinds` with the shared
-`LY_ITEM_KINDS` table. Three kinds are declared out of reach, with evidence
-and the test `interop_sans_extensions::lilypond_declaration_follows_notation_reference`:
+LilyPond declaration uses `Capabilities::with_kinds` with the shared
+`LY_ITEM_KINDS` table. A first pass had removed the **whole** `tremolo` and
+`note-head` kinds as "out of reach"; that was too broad. LilyPond does carry
+single-note tremolos (`:8`, `:16`, `:32`), two-note tremolos
+(`\repeat tremolo n`, §2.5.3) and a fixed set of note-head styles
+(`\tweak style #'cross`, `#'harmonic`, `#'do`…, appendix B.9). Both kinds are
+therefore back in the declaration, with no private carrier:
 
-- `tbox-position` – MuseScore frame (measure index, placement, font size).
-  LilyPond has no frame object; `\markup` attaches to notes/contexts, not to
-  numbered MuseScore frames (Notation Reference §6.1, §8.2).
-- `tremolo` – MuseScore's `Start`/`Stop`/`Unmeasured` kinds. LilyPond's tremolo
-  event is a single repeat count (§2.5.3).
-- `note-head` – the inventory value is the exact MuseScore `NoteHeadGroup`.
-  LilyPond offers a fixed set of note-head styles (appendix B.9); groups
-  without a style (`Plus`, `WithX`, `HeavyCross`…) have no carrier. Standard
-  styles that do exist are still written and read.
+- the writer emits `\repeat tremolo 4 { b16 e'16 }` for a MuseScore `c32`
+  two-note tremolo (`n = 2^(count-1)`, duration `n ×` the body, as in §2.5.3)
+  and `\tweak #'style #'…` for each head with a standard style;
+- the reader restores `Start`/`Stop` from the two voices of the tremolo body
+  and the exact group from the standard style. A lexer/property-path bug had
+  swallowed `#'style #'do`, so the style was never read before this pass:
+  `\tweak` is a pre-event even when written after a note, and its property is
+  a single Scheme symbol.
+
+Only **individual values** without a LilyPond equivalent are excluded, cited
+in `scoretk_lilypond_common::{noteheads::out_of_reach, tremolo_out_of_reach}`
+and pinned by
+`interop_sans_extensions::lilypond_declaration_follows_notation_reference`:
+
+- `tbox-position` (whole kind) – MuseScore frame (measure index, placement,
+  font size). LilyPond has no frame object; `\markup` attaches to
+  notes/contexts, not to numbered MuseScore frames (§6.1, §8.2).
+- note-head values `Plus`, `WithX`, `TriangleDown`, `Slashed1`, `Slashed2`,
+  `DiamondOld`, `Circled`, `CircledLarge`, `LargeArrow`, `BrevisAlt`,
+  `LargeDiamond`, `HeavyCross`, `HeavyCrossHat`, `Other` – no dedicated
+  glyph/style in appendix B.9 or `select-head-glyph` (LilyPond 2.26).
+  `Cross`, `XCircle`, `TriangleUp`, `Slash`, `Diamond` and `do`–`ti` are kept.
+- tremolo value `Unmeasured` – the buzz roll has neither a stroke count nor a
+  `\repeat tremolo` form in §2.5.3. `Single`, `Start` and `Stop` are kept.
 
 No key, tick, oracle or comparison rule was relaxed; the same strip is
-applied before and after, and the private carriers are still emitted and
-counted in the "with private" row.
+applied before and after, and identical exclusions are applied to both
+inventories. The snapshots for the four affected scores were regenerated
+because the written syntax changed (private markups replaced by standard
+tremolo/style forms).
 
 ### 52.4 Real-world non-regression
 

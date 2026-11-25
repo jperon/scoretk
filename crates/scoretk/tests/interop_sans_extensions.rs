@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use scoretk::model::{compare_with_kinds, inventory, LayerCounts};
+use scoretk::model::{compare_with_kinds, inventory, LayerCounts, LayerInventory};
 use scoretk::{read, write, Format, Options, Score};
 
 use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
@@ -80,6 +80,19 @@ fn corpus_scores() -> Vec<(String, PathBuf)> {
 fn reference_model(path: &Path) -> Score {
     let bytes = fs::read(path).expect("read .mscx reference");
     read(&bytes, Format::Mscx).expect("MuseScore import of the reference")
+}
+
+/// Retire les seules valeurs `note-head` sans style LilyPond univoque
+/// (`docs/agents/lilypond.md` §52.3). Le genre reste dans la déclaration et
+/// toutes les autres valeurs sont comparées normalement, des deux côtés.
+fn declared_inventory(score: &Score) -> LayerInventory {
+    let mut result = inventory(score);
+    result.items.retain(|item| match item.kind {
+        "note-head" => !scoretk_lilypond_import::noteheads::out_of_reach(&item.value),
+        "tremolo" => !scoretk_lilypond_import::tremolo_out_of_reach(&item.value),
+        _ => true,
+    });
+    result
 }
 
 /// Removes the private ABC carriers of §11.8: `%%scoretk …` directives and
@@ -182,7 +195,7 @@ fn measure(format: Format, strip: Option<fn(&str) -> String>) -> Totals {
     let mut totals = Totals::default();
     for (_, path) in corpus_scores() {
         let score = reference_model(&path);
-        let reference = inventory(&score);
+        let reference = declared_inventory(&score);
         let Ok(bytes) = write(&score, format, &Options::default()) else {
             totals.skipped += 1;
             continue;
@@ -292,20 +305,22 @@ fn abc_full_support_reaches_target_with_and_without_private_extensions() {
 }
 
 /// The declaration is about what LilyPond 2.26 can carry, not a relaxation of
-/// the oracle. The three excluded kinds are documented in `LY_ITEM_KINDS`
-/// with their notation-reference sections; this test pins the exclusions and
-/// the standard kinds that must stay in the denominator.
+/// the oracle. `tbox-position` has no frame object in LilyPond (§6.1, §8.2);
+/// `note-head` and `tremolo` **are** declared again, and only the individual
+/// head groups with no standard style are excluded, per value, by
+/// `noteheads::out_of_reach` (§B.9 and `select-head-glyph`).
 #[test]
 fn lilypond_declaration_follows_notation_reference() {
     let kinds = scoretk_lilypond_import::CAPABILITIES
         .declared_kinds()
         .expect("the LilyPond declaration lists the carried kinds");
+    let kind = "tbox-position"; // no MuseScore frame in LilyPond (§6.1, §8.2)
+    assert!(!kinds.contains(&kind), "{kind} has no LilyPond carrier");
     for kind in [
-        "tbox-position", // no MuseScore frame in LilyPond (§6.1, §8.2)
-        "tremolo",       // a single tremolo event, no Start/Stop spanner (§2.5.3)
-        "note-head",     // exact MuseScore group, outside the fixed style set (§B.9)
+        "note-head", // `\tweak style #'cross|harmonic|do|…` (§B.9)
+        "tremolo",   // `:8` and `\repeat tremolo n` (§2.5.3)
     ] {
-        assert!(!kinds.contains(&kind), "{kind} has no LilyPond carrier");
+        assert!(kinds.contains(&kind), "{kind} is carried by LilyPond");
     }
     for kind in [
         "note",
@@ -387,7 +402,7 @@ fn print_lost_values(format: Format, strip: Option<fn(&str) -> String>, kinds: &
     let mut lost: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
     for (name, path) in corpus_scores() {
         let score = reference_model(&path);
-        let reference = inventory(&score);
+        let reference = declared_inventory(&score);
         let Ok(bytes) = write(&score, format, &Options::default()) else {
             continue;
         };
@@ -399,7 +414,7 @@ fn print_lost_values(format: Format, strip: Option<fn(&str) -> String>, kinds: &
             continue;
         };
         let _ = name;
-        let actual = inventory(&imported);
+        let actual = declared_inventory(&imported);
         for item in &reference.items {
             if !declared.contains(item.layer) || !kinds.contains(&item.kind) {
                 continue;
@@ -452,9 +467,9 @@ fn print_lost_keys(format: Format, strip: Option<fn(&str) -> String>, kinds: &[&
         _ => unreachable!(),
     };
     let mut missing: BTreeMap<String, usize> = BTreeMap::new();
-    for (_, path) in corpus_scores() {
+    for (name, path) in corpus_scores() {
         let score = reference_model(&path);
-        let reference = inventory(&score);
+        let reference = declared_inventory(&score);
         let Ok(bytes) = write(&score, format, &Options::default()) else {
             continue;
         };
@@ -465,7 +480,7 @@ fn print_lost_keys(format: Format, strip: Option<fn(&str) -> String>, kinds: &[&
         let Ok(imported) = read(&bytes, format) else {
             continue;
         };
-        let actual = inventory(&imported);
+        let actual = declared_inventory(&imported);
         let key = |item: &scoretk::model::InventoryItem| {
             (
                 item.layer.bits(),
@@ -496,7 +511,7 @@ fn print_lost_keys(format: Format, strip: Option<fn(&str) -> String>, kinds: &[&
             for _ in got..count {
                 *missing
                     .entry(format!(
-                        "{} tick {:?} staff {:?} {}",
+                        "{name} {} tick {:?} staff {:?} {}",
                         key.3, key.1, key.2, key.4
                     ))
                     .or_insert(0) += 1;
@@ -571,6 +586,19 @@ fn lilypond_missing_credit_keys() {
         ],
     );
     println!();
+}
+
+#[test]
+fn lilypond_other_loss_keys() {
+    print_lost_keys(
+        Format::Ly,
+        Some(strip_lilypond_private),
+        &[
+            "rest", "measure", "clef", "marker", "lyric", "tuplet", "jump", "fermata",
+            "system-text", "text-line", "dynamic", "time-sig", "harmony", "tbox-text",
+            "credit-position", "tempo",
+        ],
+    );
 }
 
 #[test]

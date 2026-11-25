@@ -38,6 +38,7 @@ use scoretk_core::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
     ChordLineType, Duration, DurationType, Fraction, GraceType, HairpinType, Key, KeySig,
     NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
+    TremoloKind,
 };
 
 use crate::ast::{
@@ -479,6 +480,9 @@ pub(crate) struct Interpreter<'a> {
     sim_chord: bool,
     /// `\unfoldRepeats` : déplier les reprises volta.
     unfold_repeats: bool,
+    /// `\repeat tremolo n { a b }` en cours : nombre de barres MuseScore et
+    /// phase (0 = premier accord `Start`, 1 = second `Stop`).
+    repeat_tremolo: Option<(u8, u8)>,
     /// Pile des tags des expressions tag traversees.
     tag_stack: Vec<Vec<String>>,
     /// Pile des filtres keepWithTag/removeWithTag actifs.
@@ -543,6 +547,7 @@ impl<'a> Interpreter<'a> {
             // écrite *avant* la commande dans la même expression serait
             // dépliée aussi (`repeat-unfold-all.ly`).
             unfold_repeats: false,
+            repeat_tremolo: None,
             tag_stack: Vec::new(),
             filter_stack: Vec::new(),
             order: 0,
@@ -955,6 +960,7 @@ impl<'a> Interpreter<'a> {
             temporary,
             sim_chord,
             unfold_repeats: self.unfold_repeats,
+            repeat_tremolo: None,
             tag_stack: self.tag_stack.clone(),
             filter_stack: self.filter_stack.clone(),
             order: 0,
@@ -1487,6 +1493,9 @@ impl<'a> Interpreter<'a> {
             // variable définie avant le `\unfoldRepeats` mais rejouée dedans
             // est bien dépliée (`promenade-6.ly`).
             RepeatKind::Tremolo => {
+                // Le nombre de reprises LilyPond encode le nombre de barres
+                // MuseScore : `\repeat tremolo 4` = `c32` (3 barres).
+                let bars = (count.max(1).trailing_zeros() + 1).clamp(1, 4) as u8;
                 if self.unfold_repeats {
                     let reference = self.octave;
                     for _ in 0..count.max(1) {
@@ -1494,10 +1503,12 @@ impl<'a> Interpreter<'a> {
                         self.walk(body);
                     }
                 } else {
+                    let saved = self.repeat_tremolo.replace((bars, 0));
                     let mut etire = body.clone();
                     let factor = Fraction::from_integer(i64::from(count.max(1)));
                     crate::parser::scale_music(&mut etire, &factor);
                     self.walk(&etire);
+                    self.repeat_tremolo = saved;
                 }
             }
             RepeatKind::Volta => {
@@ -1766,9 +1777,7 @@ impl<'a> Interpreter<'a> {
                 // Un markup privé placé après l'accord précise le groupe exact
                 // d'une tête dont le style LilyPond est une approximation.
                 let head_override = chord.posts.iter().rev().find_map(|post| match post {
-                    PostEvent::HeadExact(group) | PostEvent::TweakHead(group) => {
-                        Some(group.clone())
-                    }
+                    PostEvent::HeadExact(group) => Some(group.clone()),
                     _ => None,
                 });
                 let notes = if let Some(group) = head_override {
@@ -1905,6 +1914,23 @@ impl<'a> Interpreter<'a> {
                         &mut fingerings,
                     );
                 }
+            }
+        }
+
+        // Les deux voix du corps d'un `\repeat tremolo` portent les genres
+        // `Start` puis `Stop` du modèle ; la figure LilyPond ne les distingue
+        // pas autrement que par leur place dans le corps.
+        if let Some((bars, phase)) = self.repeat_tremolo {
+            if phase < 2 {
+                tremolo = Some(Tremolo {
+                    kind: if phase == 0 {
+                        TremoloKind::Start
+                    } else {
+                        TremoloKind::Stop
+                    },
+                    count: bars,
+                });
+                self.repeat_tremolo = Some((bars, phase + 1));
             }
         }
 
@@ -2049,7 +2075,7 @@ impl<'a> Interpreter<'a> {
             PostEvent::TrillStart => self.event(EventKind::TrillStart),
             PostEvent::TrillStop => self.event(EventKind::TrillStop),
             PostEvent::Glissando => self.event(EventKind::Glissando),
-            PostEvent::TweakHead(_) | PostEvent::HeadExact(_) => {} // appliqué dans `note_head_group`
+            PostEvent::HeadExact(_) => {} // appliqué dans `note_head_group`
             PostEvent::Arpeggio(kind) => *arpeggio = Some(*kind),
             PostEvent::TremoloKindOverride(kind) => {
                 *tremolo = Some(Tremolo {
@@ -2350,6 +2376,7 @@ impl<'a> Interpreter<'a> {
             temporary: self.temporary,
             sim_chord: self.sim_chord,
             unfold_repeats: self.unfold_repeats,
+            repeat_tremolo: None,
             tag_stack: self.tag_stack.clone(),
             filter_stack: self.filter_stack.clone(),
             order: 0,
@@ -2642,9 +2669,7 @@ fn note_head_group(note: &crate::ast::NoteSpec) -> NoteHeadGroup {
         .iter()
         .rev()
         .find_map(|post| match post {
-            crate::ast::PostEvent::HeadExact(group) | crate::ast::PostEvent::TweakHead(group) => {
-                Some(group.clone())
-            }
+            crate::ast::PostEvent::HeadExact(group) => Some(group.clone()),
             _ => None,
         })
         .unwrap_or_else(|| note.head_group.clone())

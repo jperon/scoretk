@@ -47,27 +47,33 @@ pub mod pitch;
 
 pub use error::{Error, Result};
 
+/// Valeur `tremolo` sans équivalent LilyPond : le buzz roll `Unmeasured`
+/// (MuseScore `<tremolo type="unmeasured"/>`) n'a ni figure `c32` ni
+/// `\repeat tremolo` (Notation Reference §2.5.3). Les trois autres genres sont
+/// portés par `:8`/`:16`/`:32` et par `\repeat tremolo n { a b }`.
+pub fn tremolo_out_of_reach(value: &str) -> bool {
+    value == "Unmeasured"
+}
+
 /// Item kinds that LilyPond 2.26 can carry as *format* data (§5.3 of
 /// `docs/agents/model-modularisation.md`).
 ///
-/// Three kinds of the pivot inventory are deliberately absent, with evidence:
+/// One kind of the pivot inventory is deliberately absent, with evidence:
 ///
 /// - `tbox-position` describes a MuseScore frame (measure index, vertical
 ///   placement, font size). LilyPond has no frame object: `\markup` attaches
 ///   to a note or a context, not to a numbered MuseScore frame (Notation
 ///   Reference §6.1, §8.2).
-/// - `tremolo` distinguishes MuseScore's `Start`/`Stop`/`Unmeasured` spanner
-///   kinds. LilyPond's `Tremolo` event (`Notation Reference §2.5.3`) has a
-///   single strobe count; there is no start/stop pair to serialise.
-/// - `note-head` uses the *exact* MuseScore `NoteHeadGroup` as its value.
-///   LilyPond offers a fixed set of note-head styles (Notation Reference
-///   appendix B.9); groups with no style (`Plus`, `WithX`, `HeavyCross`…)
-///   have no carrier and cannot be reconstructed by any LilyPond tool.
 ///
-/// The standard styles that do exist are still written and read; only the
-/// exact-group identifier is outside the declaration. This is a declaration
-/// about the format, not a relaxation of the comparison: the same inventory,
-/// keys and oracle are used for every direction.
+/// `tremolo` and `note-head` are declared again: LilyPond carries single-note
+/// tremolos (`:8`, `:16`…) and two-note tremolos (`\repeat tremolo n`,
+/// Notation Reference §2.5.3), and a fixed set of note-head styles
+/// (`\tweak style #'cross`, `#'xcircle`, `#'harmonic`, `#'do`…, appendix B.9
+/// and `select-head-glyph`). Only *individual values* with no LilyPond style —
+/// listed in [`noteheads::out_of_reach`] — are excluded from the comparison,
+/// never a whole kind. This is a declaration about the format, not a
+/// relaxation of the comparison: the same inventory, keys and oracle are used
+/// for every direction.
 pub const LY_ITEM_KINDS: &[&str] = &[
     "arpeggio",
     "articulation",
@@ -95,6 +101,7 @@ pub const LY_ITEM_KINDS: &[&str] = &[
     "jump",
     "key-sig",
     "line-break",
+    "note-head",
     "lyric",
     "marker",
     "measure",
@@ -120,6 +127,7 @@ pub const LY_ITEM_KINDS: &[&str] = &[
     "tbox-text",
     "tempo",
     "text-line",
+    "tremolo",
     "tie",
     "time-sig",
     "title",
