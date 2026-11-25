@@ -70,17 +70,17 @@ Two comparisons are versioned:
 
 | Row | Essential | Full support (before → after) | Per-layer matched / reference (after) |
 | --- | ---: | ---: | --- |
-| Round trip (own writer) | **99.96 %** | 73.52 % → **95.03 %** | L1 1059/1085, L2 3243/3314, L3 206/296, L4 106/175, L5 973/1009 |
-| Import of MuseScore 4.7.4 `.ref.mei` | **98.57 %** | 81.90 % → **87.11 %** | L1 1051/1085, L2 3207/3314, L3 218/296, L4 108/175, L5 537/1009 |
+| Round trip (own writer) | **99.96 %** | 73.52 % → **95.14 %** | L1 1059/1085, L2 3243/3314, L3 206/296, L4 106/175, L5 973/1009 |
+| Import of MuseScore 4.7.4 `.ref.mei` | **98.57 %** | 81.90 % → **87.16 %** | L1 1051/1085, L2 3207/3314, L3 218/296, L4 108/175, L5 537/1009 |
 
 The "before" column is the measurement of commit `b6a13039`; the "after"
 column is the measurement after the campaigns of §7 below. The per-layer
 counts come from `layer_coverage_table`. The remaining gap of the import row
 is dominated by 380 `style` items **absent from MuseScore's own `.ref.mei`
 files** (see §7). A second import figure that excludes only the item kinds
-whose carrier MuseScore never writes is **95.60 %** (5 251 reference items);
+whose carrier MuseScore never writes is **95.66 %** (5 251 reference items);
 it is printed by `mei_import_figure_without_absent_carriers` and never
-replaces the 87.11 % main figure.
+replaces the 87.16 % main figure.
 
 ### Normalised export conformity
 
@@ -88,9 +88,9 @@ replaces the 87.11 % main figure.
 | --- | ---: | ---: |
 | scoretk MEI export vs MuseScore 4.7.4 `.ref.mei` | 3 877 / 4 016 | **96.54 %** |
 
-**The ≥ 95 % target is now met for the round trip (95.03 %), the musical core
+**The ≥ 95 % target is now met for the round trip (95.14 %), the musical core
 (essential), export conformity, and the reference-bound import figure
-(95.60 %).** The campaigns of §7 and §8 closed the barline, stem, `<pgHead>`,
+(95.66 %).** The campaigns of §7 and §8 closed the barline, stem, `<pgHead>`,
 style, signature, tremolo, articulation, ending, `<dynam>`/tempo, note id,
 multi-measure rest, nested tuplet, key signature, SMuFL note-head, slur-free
 note anchoring and articulation anchoring gaps. The main import row stays
@@ -385,7 +385,7 @@ metadata), `contentItem` 190. Largest ignored attributes: `@curvedir` on
 `@dur.ppq` 3 265, `@width` on `<measure>` 3 008, `tupletSpan/@num.visible`
 1 445, `syl/@wordpos` 1 436.
 
-The row is deliberately not compared with the 95.03 % of §3: that figure uses
+The row is deliberately not compared with the 95.14 % of §3: that figure uses
 MuseScore's own exporter as oracle, while this one starts from external MEI
 that uses many standard constructs MuseScore never writes.
 
@@ -527,7 +527,10 @@ that were previously ignored. Unit tests cover a tie and a slur with opposite
 
 After six measured fixes the round trip on the 130 external encodings is
 **99.43 %** (128 files at the first two steps, 130 after `anyStart`), against
-77.64 % at the baseline. The remaining per-kind losses are `articulation` 376,
+77.64 % at the baseline. On the MuseScore corpus the same fixes raised the
+round trip from 95.03 % to **95.14 %** and the import from 87.11 % to
+**87.16 %** (reference-bound 95.60 % → **95.66 %**): no figure regressed.
+The remaining per-kind losses are `articulation` 376,
 `note` 329, `slur` 269, `stem` 219, `rest` 114 and `tuplet-member` 114; they
 are spread across many small files and are not a single dominant cause as the
 first six were. The largest ignored *elements* are header prose (`p` 1 674,
