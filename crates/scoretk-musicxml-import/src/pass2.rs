@@ -814,7 +814,15 @@ fn read_note(
     }
 
     // N-olets : l'accord appartient au n-olet le plus interne.
-    let inner = start_tuplets(score, state, &notations, timing.time_mod, cr_tick, duration);
+    let inner = start_tuplets(
+        score,
+        state,
+        &notations,
+        timing.time_mod,
+        timing.tuplet_notes,
+        cr_tick,
+        duration,
+    );
     if let Some(id) = inner.or_else(|| state.tuplets.last().map(|open| open.id)) {
         if let Some(chord_rest) = score.measures[measure_index].segments[index]
             .element_mut(track)
@@ -1745,12 +1753,15 @@ fn start_tuplets(
     state: &mut VoiceState,
     notations: &[TupletNotation],
     time_mod: Option<Fraction>,
+    tuplet_notes: Option<(i64, i64)>,
     tick: Fraction,
     duration: Duration,
 ) -> Option<TupletId> {
+    // Un `<time-modification>` 4:4 se réduit à 1/1 mais reste un n-olet dont
+    // `normalNotes = 4` : la base se calcule sur 4 figures, pas sur une.
     let combined = time_mod
         .map(|modification| Fraction::new(modification.denominator(), modification.numerator()))
-        .filter(|ratio| *ratio != Fraction::ONE && *ratio != Fraction::new(1, 2));
+        .filter(|ratio| *ratio != Fraction::new(1, 2));
 
     for notation in notations {
         if !notation.start {
@@ -1764,8 +1775,14 @@ fn start_tuplets(
             Some(combined) => combined / outer,
             None => Fraction::ONE,
         };
-        let actual_notes = notation.actual.unwrap_or(ratio.numerator());
-        let normal_notes = notation.normal.unwrap_or(ratio.denominator());
+        let actual_notes = notation
+            .actual
+            .or_else(|| tuplet_notes.map(|(actual, _)| actual))
+            .unwrap_or(ratio.numerator());
+        let normal_notes = notation
+            .normal
+            .or_else(|| tuplet_notes.map(|(_, normal)| normal))
+            .unwrap_or(ratio.denominator());
         let base_len = notation.base_len.unwrap_or_else(|| duration.ticks());
         let mut tuplet = Tuplet::new(ratio, base_len, tick, Fraction::ZERO);
         tuplet.parent = state.tuplets.last().map(|open| open.id);

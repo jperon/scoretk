@@ -41,8 +41,13 @@ pub struct NoteTiming {
     pub calc: Option<Fraction>,
     /// Nombre de `<dot>`.
     pub dots: u8,
-    /// Ratio `normal / actual` du `<time-modification>`.
+    /// Ratio `normal / actual` du `<time-modification>` (fraction réduite).
     pub time_mod: Option<Fraction>,
+    /// Nombres bruts `(actual, normal)` du `<time-modification>` : une
+    /// fraction réduite perd `4:4` (1/1) et `6:4` (3/2), alors que
+    /// `MusicXmlTupletState::actualNotes/normalNotes` les conserve pour
+    /// calculer la base du n-olet (`musicxmltupletstate.cpp`).
+    pub tuplet_notes: Option<(i64, i64)>,
     /// `<normal-type>` du `<time-modification>`, si présent.
     pub normal_type: Option<Fraction>,
 }
@@ -94,6 +99,7 @@ pub fn read(note: &Element, divisions: u32) -> NoteTiming {
     let mut dots: u8 = 0;
     let mut spec = None;
     let mut time_mod = None;
+    let mut tuplet_notes = None;
     let mut normal_type = None;
 
     for child in &note.children {
@@ -111,6 +117,7 @@ pub fn read(note: &Element, divisions: u32) -> NoteTiming {
                 let normal = child.child_int("normal-notes").unwrap_or(0);
                 if actual > 0 && normal > 0 {
                     time_mod = Some(Fraction::new(normal, actual));
+                    tuplet_notes = Some((actual, normal));
                 } else {
                     time_mod = Some(Fraction::ONE);
                 }
@@ -164,6 +171,7 @@ pub fn read(note: &Element, divisions: u32) -> NoteTiming {
         calc,
         dots,
         time_mod,
+        tuplet_notes,
         normal_type,
     }
 }
@@ -206,5 +214,17 @@ mod tests {
         let timing = read(&root, 1);
         assert_eq!(timing.calc, Some(Fraction::new(1, 4)));
         assert_eq!(timing.time_mod, Some(Fraction::new(2, 3)));
+        assert_eq!(timing.tuplet_notes, Some((3, 2)));
+    }
+
+    #[test]
+    fn rapport_nolet_non_reduit() {
+        let root = parse(
+            br#"<note><duration>1</duration><type>quarter</type><time-modification><actual-notes>4</actual-notes><normal-notes>4</normal-notes></time-modification></note>"#,
+        )
+        .unwrap();
+        let timing = read(&root, 1);
+        assert_eq!(timing.time_mod, Some(Fraction::ONE));
+        assert_eq!(timing.tuplet_notes, Some((4, 4)));
     }
 }
