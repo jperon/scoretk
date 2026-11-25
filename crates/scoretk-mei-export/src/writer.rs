@@ -258,6 +258,52 @@ fn write_measure(
         xml.end_element();
     }
     write_control_events(xml, score, measure, index);
+    // `MeiExporter::writeMeasure`: jumps and markers are direct children of
+    // the measure (`writeRepeatMark`, meiexporter.cpp:2057/2112).
+    for mark in &measure.repeat_marks {
+        let (type_name, func, text) = match mark {
+            scoretk_core::model::RepeatMark::Marker(marker) => {
+                let func = if marker.kind.is_stop_marker()
+                    && marker.kind != scoretk_core::model::MarkerType::Fine
+                {
+                    "coda"
+                } else {
+                    match marker.kind {
+                        scoretk_core::model::MarkerType::Segno
+                        | scoretk_core::model::MarkerType::VarSegno => "segno",
+                        scoretk_core::model::MarkerType::Fine => "fine",
+                        _ => "coda",
+                    }
+                };
+                (
+                    format!(
+                        "{}{}",
+                        ids::MARKER_TYPE,
+                        convert::marker_type_to_mei(marker.kind)
+                    ),
+                    func,
+                    marker.text.clone(),
+                )
+            }
+            scoretk_core::model::RepeatMark::Jump(jump) => {
+                let func = if jump.kind.is_da_capo() {
+                    "daCapo"
+                } else {
+                    "dalSegno"
+                };
+                (
+                    format!("{}{}", ids::JUMP_TYPE, convert::jump_type_to_mei(jump.kind)),
+                    func,
+                    jump.text.clone(),
+                )
+            }
+        };
+        xml.tag_with(
+            "repeatMark",
+            &[("type", &type_name), ("func", func), ("tstamp", "0")],
+            &text,
+        );
+    }
     xml.end_element();
 }
 
@@ -291,6 +337,39 @@ fn write_layer(
     );
     let layer_n = (voice + 1).to_string();
     xml.start_element("layer", &[("xml:id", &layer_id), ("n", &layer_n)]);
+    // MEI `<meterSig>` carries a time signature that changes inside a measure,
+    // which a `<scoreDef>` at the measure boundary cannot express.
+    let den = convert::tstamp_denominator(measure);
+    for segment in &measure.segments {
+        if segment.tick == measure.start_tick {
+            continue;
+        }
+        if let Some(SegmentItem::TimeSig(time)) = segment.element(track) {
+            let (count, unit, sym) = convert::meter_to_mei(time);
+            let mut attrs = Vec::new();
+            if let Some(count) = count {
+                attrs.push(("count".to_owned(), count));
+            }
+            if let Some(unit) = unit {
+                attrs.push(("unit".to_owned(), unit.to_string()));
+            }
+            if let Some(sym) = sym {
+                attrs.push(("sym".to_owned(), sym.to_owned()));
+            }
+            attrs.push((
+                "tstamp".to_owned(),
+                format!(
+                    "{:.3}",
+                    convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
+                ),
+            ));
+            let refs: Vec<(&str, &str)> = attrs
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect();
+            xml.tag_empty("meterSig", &refs);
+        }
+    }
     let mut open_tuplet: Option<scoretk_core::model::TupletId> = None;
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {

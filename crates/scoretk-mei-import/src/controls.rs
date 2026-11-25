@@ -497,32 +497,63 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::readRepeatMark` (`meiimporter.cpp:3029`).
     fn add_repeat_mark(&mut self, node: &Element, measure: usize) {
         let func = node.attribute("func").unwrap_or_default();
-        let (tick, track) = self.anchor(node, measure);
-        let kind = match func {
-            "segno" => Some(MarkerType::Segno),
-            "coda" => Some(MarkerType::Coda),
-            "fine" => Some(MarkerType::Fine),
-            _ => None,
+        let typed = node.attribute("type").unwrap_or_default();
+        let marker_suffix =
+            convert::get_type_value_with_prefix(typed, scoretk_mei_common::ids::MARKER_TYPE);
+        let jump_suffix =
+            convert::get_type_value_with_prefix(typed, scoretk_mei_common::ids::JUMP_TYPE);
+        let text = crate::lines_of(node);
+        let kind = match marker_suffix {
+            Some(suffix) => Some(convert::marker_type_from_mei(suffix)),
+            None => match func {
+                "segno" => Some(MarkerType::Segno),
+                "coda" => Some(MarkerType::Coda),
+                "fine" => Some(MarkerType::Fine),
+                _ => None,
+            },
         };
         if let Some(kind) = kind {
+            let label = marker_suffix
+                .map(|_| convert::marker_type_to_mei(kind))
+                .unwrap_or(func)
+                .to_owned();
             let marker = Marker {
                 kind,
-                label: func.to_owned(),
-                text: func.to_owned(),
+                label: label.clone(),
+                text: label,
                 placement: Placement::Above,
-                track,
+                track: Track::from_raw(0),
                 visible: true,
             };
             self.score.measures[measure]
                 .repeat_marks
                 .push(scoretk_core::model::RepeatMark::Marker(marker));
         } else if func.contains("daCapo") || func.contains("dalSegno") {
-            let jump = scoretk_core::model::Jump::new(func, func, "", "", Placement::Above, track);
+            let jump_kind = jump_suffix.map(convert::jump_type_from_mei).unwrap_or(
+                if func.contains("daCapo") {
+                    scoretk_core::model::JumpType::Dc
+                } else {
+                    scoretk_core::model::JumpType::Ds
+                },
+            );
+            let jump_to = if jump_kind.is_da_capo() {
+                "start"
+            } else {
+                "segno"
+            };
+            let mut jump = scoretk_core::model::Jump::new(
+                text,
+                jump_to.to_owned(),
+                String::new(),
+                String::new(),
+                Placement::Above,
+                Track::from_raw(0),
+            );
+            jump.kind = jump_kind;
             self.score.measures[measure]
                 .repeat_marks
                 .push(scoretk_core::model::RepeatMark::Jump(jump));
         }
-        let _ = tick;
     }
 
     /// `MeiImporter::addSpannerEnds` (`meiimporter.cpp:3562`).

@@ -27,8 +27,8 @@
 
 use scoretk_core::model::{
     AccidentalType, ArticulationType, BarLineType, BeamMode, ClefType, CreditStyle, Duration,
-    DurationType, Fraction, Key, KeySig, Measure, NoteHeadGroup, StemDirection, TimeSig,
-    TimeSigType,
+    DurationType, Fraction, JumpType, Key, KeySig, MarkerType, Measure, NoteHeadGroup,
+    StemDirection, TimeSig, TimeSigType,
 };
 
 use crate::ids::MEASURE_REPEAT_TYPE;
@@ -333,6 +333,78 @@ pub fn artic_to_mei(kind: &ArticulationType) -> Option<&'static str> {
         ArticulationType::Stopped => Some("stop"),
         ArticulationType::SnapPizzicato => Some("snap"),
         _ => None,
+    }
+}
+
+/// Suffix of `Convert::markerToMEI`'s `@type` (`mscore-marker-*`).
+pub fn marker_type_to_mei(kind: MarkerType) -> &'static str {
+    match kind {
+        MarkerType::Segno => "segno",
+        MarkerType::VarSegno => "varsegno",
+        MarkerType::Coda => "codab",
+        MarkerType::VarCoda => "varcoda",
+        MarkerType::Codetta => "codetta",
+        MarkerType::Fine => "fine",
+        MarkerType::ToCoda => "to-coda",
+        MarkerType::ToCodaSym => "codasym",
+        MarkerType::DaCoda => "dacoda",
+        MarkerType::DaDoubleCoda => "dadblcoda",
+        MarkerType::User => "user",
+    }
+}
+
+/// Inverse of [`marker_type_to_mei`].
+pub fn marker_type_from_mei(value: &str) -> MarkerType {
+    match value {
+        "segno" => MarkerType::Segno,
+        "varsegno" => MarkerType::VarSegno,
+        "codab" => MarkerType::Coda,
+        "varcoda" => MarkerType::VarCoda,
+        "codetta" => MarkerType::Codetta,
+        "fine" => MarkerType::Fine,
+        "to-coda" => MarkerType::ToCoda,
+        "codasym" => MarkerType::ToCodaSym,
+        "dacoda" => MarkerType::DaCoda,
+        "dadblcoda" => MarkerType::DaDoubleCoda,
+        _ => MarkerType::User,
+    }
+}
+
+/// Suffix of `Convert::jumpToMEI`'s `@type` (`mscore-jump-*`).
+pub fn jump_type_to_mei(kind: JumpType) -> &'static str {
+    match kind {
+        JumpType::Dc => "dc",
+        JumpType::DcAlFine => "dc-al-fine",
+        JumpType::DcAlCoda => "dc-al-coda",
+        JumpType::DsAlCoda => "ds-al-coda",
+        JumpType::DsAlFine => "ds-al-fine",
+        JumpType::Ds => "ds",
+        JumpType::DcAlDoubleCoda => "dc-al-dblcoda",
+        JumpType::DsAlDoubleCoda => "ds-al-dblcoda",
+        JumpType::Dss => "dss",
+        JumpType::DssAlCoda => "dss-al-coda",
+        JumpType::DssAlDoubleCoda => "dss-al-dblcoda",
+        JumpType::DssAlFine => "dss-al-fine",
+        JumpType::User => "user",
+    }
+}
+
+/// Inverse of [`jump_type_to_mei`].
+pub fn jump_type_from_mei(value: &str) -> JumpType {
+    match value {
+        "dc" => JumpType::Dc,
+        "dc-al-fine" => JumpType::DcAlFine,
+        "dc-al-coda" => JumpType::DcAlCoda,
+        "ds-al-coda" => JumpType::DsAlCoda,
+        "ds-al-fine" => JumpType::DsAlFine,
+        "ds" => JumpType::Ds,
+        "dc-al-dblcoda" => JumpType::DcAlDoubleCoda,
+        "ds-al-dblcoda" => JumpType::DsAlDoubleCoda,
+        "dss" => JumpType::Dss,
+        "dss-al-coda" => JumpType::DssAlCoda,
+        "dss-al-dblcoda" => JumpType::DssAlDoubleCoda,
+        "dss-al-fine" => JumpType::DssAlFine,
+        _ => JumpType::User,
     }
 }
 
@@ -861,6 +933,19 @@ mod tests {
         assert_eq!(clef_from_mei(Some("F"), 4, None, None), ClefType::F);
         assert_eq!(barline_from_mei("rptstart"), BarLineType::StartRepeat);
         assert_eq!(barline_to_mei(BarLineType::Double), "dbl");
+    }
+
+    #[test]
+    fn repeat_marks_keep_musescore_types() {
+        use scoretk_core::model::{JumpType, MarkerType};
+        assert_eq!(
+            marker_type_from_mei(marker_type_to_mei(MarkerType::ToCoda)),
+            MarkerType::ToCoda
+        );
+        assert_eq!(
+            jump_type_from_mei(jump_type_to_mei(JumpType::DsAlCoda)),
+            JumpType::DsAlCoda
+        );
     }
 
     #[test]
