@@ -971,7 +971,7 @@ Round trip (`reference → write X → read X`):
 | abc | L0–L4 | 89.75 % | **95.24 %** | reached |
 | gabc (direct, own corpus) | L0+L1+L2+L3+L6 | — (absent from the previous table) | **100.00 %** | reached on its own corpus |
 | gabc → xml → gabc (cross) | L0+L1+L2+L3+L6 | — (absent from the previous table) | 59.07 % | not reached |
-| mei | L0–L5 | — (absent from the previous table) | **95.03 %** (was 92.35 %, originally 73.52 %) | reached |
+| mei | L0–L5 | — (absent from the previous table) | **95.03 %** (was 92.35 %, originally 73.52 %); §11.11: 95.58 % default / **99.06 %** with `mei_full_support` | reached at 95 %; 99.9 % not reached |
 
 Import alone (`reference file → reader`, same redefined inventory):
 
@@ -983,7 +983,7 @@ Import alone (`reference file → reader`, same redefined inventory):
 | abc | scoretk snapshot — self-consistency | 89.75 % | **95.24 %** |
 | gabc → model | Gregorio examples (own corpus, direct) | — (absent from the previous table) | **100.00 %** |
 | gabc → xml → gabc → model | Gregorio examples (own corpus, cross) | — (absent from the previous table) | 59.07 % |
-| mei | MuseScore 4.7.4 `*.ref.mei` | — (absent from the previous table) | 87.11 % (was 84.18 %, originally 81.90 %); 95.60 % excluding carriers MuseScore never writes |
+| mei | MuseScore 4.7.4 `*.ref.mei` | — (absent from the previous table) | 87.11 % (was 84.18 %, originally 81.90 %); §11.11: 87.53 % default, 96.08 % excluding carriers MuseScore never writes |
 
 The MEI and GABC rows were measured after the rebase on master with
 `cargo test -p scoretk --test layer_coverage -- --nocapture`: MEI uses the
@@ -1278,3 +1278,33 @@ extensions. The residual private carriers are kept only where the format
 has no equivalent (four ambiguous MuseScore instrument identifiers, a few
 multi-line frame texts and two-note tremolo on the ABC side; exact note-head
 groups and tremolo kinds on the LilyPond side).
+
+### 11.12 MEI: additive carriers and the 99.9 % target (2026-11-26)
+
+MEI 5.1 can carry all six declared layers L0–L5. The 4.7.4 exporter writes
+only part of them, so a new opt-in switch (`Options::mei_full_support`,
+default `false`, so the reference bytes are unchanged) enables standard MEI
+carriers the port previously omitted: `<dynam @val>` (Guidelines
+§"Dynamics"), `<instrDef @midi.*>`, `<rend @n/@fontsize>` for ordered credits,
+`<scoreDef><staffDef @trans.*>` for mid-score transposition, `<graceGrp>`
+with `@grace/@dur`, `<dir type="mscore-tbox-*|mscore-text-line">`,
+`<arpeg>`, `<ornam>`, `<breath>/<caesura>`, `<title type="work-number">` and
+`xml:id` anchors on notes *and* rests. Full tables and citations are in
+`docs/agents/mei.md` §10.
+
+| Row | Declared | Default | With `mei_full_support` | Target 99.9 % |
+| --- | --- | ---: | ---: | --- |
+| MEI corpus round trip (56 scores, 5 879 items) | L0–L5 | 95.58 % (was 95.14 %) | **99.06 %** (55 missing) | not reached |
+| MEI official samples round trip (130 files) | L0–L5 | 99.75 % (was 99.43 %) | **99.87 %** | not reached |
+| MEI import of `*.ref.mei` | L0–L5 | 87.53 % (was 87.16 %) | same (reference-bound); 96.08 % excluding the 628 items MuseScore never writes | — |
+
+**No layer or kind was removed from MEI's declaration.** The 55 residual
+corpus items are current port/model limitations, not MEI 5.1 impossibilities:
+the largest group (13 `clef`) is a duplicate clef at one tick, which the
+pivot's one-`Clef`-per-tick `Segment` multiset cannot hold although MEI can
+write both a `<staffDef>` clef and a layer clef. `multi-measure-rest` (6),
+`figured-bass` (4), `harmony` (4), `tbox-text` (4), `tie` (3) and the
+singletons are anchoring/serialisation gaps with existing MEI carriers.
+No GABC/MEI-specific `L7` or `ExternalRef`/`GesturalTime` layer was added:
+`inventory.rs`, `layers.rs` and the stable wasm contract are unchanged, so
+the parallel GABC work stays easy to rebase (§7.2, §10).

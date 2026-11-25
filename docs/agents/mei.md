@@ -538,3 +538,113 @@ first six were. The largest ignored *elements* are header prose (`p` 1 674,
 mapping those would require a model slot for editorial markup or a full
 span-based tuplet reader, neither of which MuseScore 4.7.4 has. No declaration
 was narrowed and no item was removed from the denominator at any step.
+
+## 10. Additive MEI 5.1 carriers (2026-11-26, branch `mei2`)
+
+### 10.1 Option and method
+
+The 4.7.4 exporter writes only a subset of what MEI 5.1 can carry. This
+campaign adds the missing carriers behind a single **opt-in** switch:
+`Options::mei_full_support` in the facade, `MeiOptions::full_support` in
+`scoretk-mei-export`. **Default is `false`**: the bytes written with
+`Options::default()` stay 4.7.4-faithful (`mei_conformity` is unchanged at
+3 913/4 016 = 97.44 %), and `mei_full_support_residual` /
+`mei_samples_full_support_residual` measure the same round trips with the
+switch on. Each step was one commit with unit tests, followed by
+`fmt --check`, `clippy -D warnings`, `test --workspace --no-fail-fast`,
+`e2e_corpus` 8/8 and the `scoretk` wasm build. No declaration was narrowed
+and no item was removed from a denominator.
+
+The switch only changes emitted bytes; the reader always accepts the new
+carriers, so importing a 4.7.4 reference is unaffected except for genuine
+reader fixes (below).
+
+### 10.2 Results
+
+| Measurement | Before (§9.10) | After, default 4.7.4 | After, `mei_full_support` |
+| --- | ---: | ---: | ---: |
+| MuseScore corpus round trip (56 scores, 5 879 items) | 95.14 % | **95.58 %** | **99.06 %** (55 missing) |
+| Official MEI 5.1 samples round trip (130 files) | 99.43 % | **99.75 %** | **99.87 %** |
+| Import of MuseScore `*.ref.mei` (main figure) | 87.16 % | **87.53 %** | unchanged (reference-bound) |
+| Import, carriers MuseScore never writes excluded | 95.66 % | **96.08 %** | unchanged |
+
+The 99.9 % target is reached **neither** row: the external samples are
+closest at 99.87 % with the option, the corpus at 99.06 %. Both import
+figures are kept: 87.53 % is the honest main figure against MuseScore's own
+references, 96.08 % the additive figure that excludes only the 628 reference
+items whose carrier is absent from those references (`style` 380,
+`dynamic-velocity` 43, `note-head` 41, `credit` 15, `credit-position` 18,
+`tbox-text` 15, `tbox-position` 15).
+
+### 10.3 Per-kind corpus residual, before → after (`mei_full_support`)
+
+| Kind | Before | After | Fix |
+| --- | ---: | ---: | --- |
+| `dynamic-velocity` | 43 | 0 | `<dynam @val>` (Guidelines §"Dynamics": `<dynam val="84">f</dynam>`; `att.dynam.ges` → `att.midiValue`), control events anchored on `xml:id`. |
+| `note` | 25 | 0 | `@trans.diat`/`@trans.semi` on a mid-score `<scoreDef>`; written pitch class derived from concert pitch − transposition. |
+| `slur` | 19 | 0 | `@startid`/`@endid` on note ids, including notes inside `<chord>` (registered in `id_events`). |
+| `credit` / `credit-position` | 15 / 18 | 2 / 0 | Ordered `<rend>` with `@n`, standard `@halign`/`@valign`/`@fontsize`, `@label="mscore-frame-…"` for page/frame height. |
+| `tbox-text` / `tbox-position` | 15 / 15 | 4 / 0 | `<dir type="mscore-tbox-…">` with `@label` carrying measure/placement/font size. |
+| `instrument` / `program` / `volume` / `channel` / `pan` | 15 / 5 / 3 / 2 / 1 | 0 | `<instrDef @midi.instrnum/@midi.channel/@midi.volume/@midi.pan>` and `@type="mscore-instrument-…"`. |
+| `grace` / `grace-note` | 8 / 8 | 0 / 4 | `<graceGrp @grace @dur type="mscore-grace-…">` with child note pitches. |
+| `text-line` | 7 | 0 | `<dir type="mscore-text-line">` with `@startid`/`@endid`. |
+| `hairpin` | 6 | 2 | Spanners anchored on the `xml:id` of rests as well as notes. |
+| `arpeggio` / `ornament` / `breath` | 5 / 4 / 2 | 0 | `<arpeg>`, `<ornam type="mscore-ornament-…">`, `<breath>/<caesura type="mscore-breath-…">`. |
+| `title` (`work_number`) | 3 | 0 | `<title type="work-number">`. |
+| `line-break` | 3 | 0 | Trailing `<sb>`/`<pb>` after the final measure. |
+| `clef` | 13 | 13 | see §10.5. |
+| `multi-measure-rest` | 6 | 6 | see §10.5. |
+| `figured-bass` / `harmony` | 4 / 4 | 4 / 4 | see §10.5. |
+
+The remaining 55 items are listed by `mei_full_support_loss_diagnostic`;
+the largest groups are `clef` 13, `multi-measure-rest` 6, `figured-bass` 4,
+`harmony` 4, `tbox-text` 4, `tie` 3 and 17 singleton kinds.
+
+### 10.4 Per-kind sample residual, before → after (`mei_full_support`)
+
+| Kind | Before (§9.7) | After, default | After, option |
+| --- | ---: | ---: | ---: |
+| `articulation` | 376 | 443 | 0 |
+| `note` | 329 | 18 | 18 |
+| `slur` | 269 | 6 | 4 |
+| `stem` | 219 | 0 | 0 |
+| `rest` | 114 | 0 | 0 |
+| `tuplet-member` | 114 | 96 | 96 |
+| `lyric` | 48 | 0 | 0 |
+| `time-sig` | 41 | 36 | 36 |
+| `dynamic` | 85 | 85 | 75 |
+| `staff-text` | 17 | 11 | 73 |
+
+The dominant cause of the 2026-11-25 residuals (`stem`, `rest`, `note`,
+`lyric`) was one structural error: several official encodings put the initial
+`<scoreDef>` **inside a `<section>`**. The port now treats the first
+`<scoreDef>` seen inside a section as initial when no staff has been built
+yet. `articulation` required two fixes: `att.articulation/@artic` on
+`<note>`/`<chord>` and an explicit `@startid` on `<artic>` (an emitted
+`<chord>` has no `xml:id`, so the reader otherwise anchored the annotation on
+the wrong staff). The `staff-text`, `dynamic`, `fermata` and
+`rehearsal-mark` losses on the extended row are current reader/anchor
+differences, not exclusions.
+
+### 10.5 What remains, and why nothing was excluded
+
+No kind was removed from the declaration: every residual kind in §10.3/§10.4
+is a **current implementation or model limitation**, not a claim that MEI
+5.1 lacks a carrier. In particular:
+
+- The 13 `clef` items are *duplicate* clef segments at the same tick and
+  staff (a MuseScore default clef and the actual clef). MEI can write both
+  (one in `<staffDef>`, one inside `<layer>`), but the pivot's `Segment`
+  multiset holds one `Clef` per tick/track, so the second fact cannot be
+  represented in the model today. This is a model gap, not a format gap.
+- `figured-bass`, `harmony`, `tbox-text`, `tie` and `multi-measure-rest`
+  residuals are anchoring/serialisation gaps in the current port; their
+  MEI 5.1 carriers (`<harm>`, `<dir>`, `<tie @startid/@endid>`,
+  `<multiRest>`) exist and are already read from other files.
+- The `@type="mscore-*"` values used above are documented MuseScore-style
+  extensions of standard elements, not a private binary payload: numeric
+  data uses standard attributes (`@val`, `@midi.*`, `@fontsize`, `@halign`,
+  `@valign`, `@dur`, `@n`).
+
+Only items MEI 5.1 genuinely cannot represent may ever be removed from the
+declaration (with an RNG/Guidelines citation); none were removed here.
