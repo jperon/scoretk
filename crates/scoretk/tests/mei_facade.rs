@@ -17,6 +17,10 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
+use std::fs;
+use std::path::Path;
+
+use scoretk::model::inventory;
 use scoretk::{read, write, Format, Options};
 
 const MEI: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -53,4 +57,32 @@ fn mei_round_trip_through_the_facade() {
     let again = read(text.as_bytes(), Format::Mei).expect("MEI re-import");
     assert_eq!(again.notes.len(), 2);
     assert_eq!(again.notes[0].pitch, score.notes[0].pitch);
+}
+
+/// MuseScore 4.7.4 n'exporte pas complètement les n-olets imbriqués
+/// (`writeTuplet`, meiexporter.cpp:1554-1560). L'écrivain scoretk utilise la
+/// structure imbriquée de MEI 5.1 pour que l'aller-retour conserve les notes
+/// et leur appartenance au n-olet le plus interne.
+#[test]
+fn mei_round_trip_keeps_nested_tuplets() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("v3")
+        .join("testTuplets8.mscx");
+    let reference = read(&fs::read(&path).expect("mscx"), Format::Mscx).expect("MuseScore import");
+    let written = write(&reference, Format::Mei, &Options::default()).expect("MEI export");
+    let text = String::from_utf8(written).expect("UTF-8 MEI");
+    let pairs = text.matches("<tuplet ").count();
+    assert!(pairs > 2, "nested tuplets must be written: {pairs}");
+    let again = read(text.as_bytes(), Format::Mei).expect("MEI import");
+    assert_eq!(again.tuplets.len(), reference.tuplets.len());
+    assert!(again.tuplets.iter().any(|tuplet| tuplet.parent.is_some()));
+    let before = inventory(&reference);
+    let after = inventory(&again);
+    for kind in ["note", "tuplet-member"] {
+        assert_eq!(before.count_kind(kind), after.count_kind(kind), "{kind}");
+    }
 }

@@ -276,23 +276,28 @@ impl<'a> Reader<'a> {
                         SegmentItem::Clef(Clef::new(clef)),
                     );
                 }
-                if let Some(key) = self.keysigs.get(&staff_idx).copied() {
-                    Self::insert_segment(
-                        &mut measure,
-                        staff_count,
-                        start,
-                        SegmentType::KeySig,
-                        staff_idx,
-                        // `Convert::keyFromMEI` (meiconverter.cpp:2066) ne
-                        // construit qu'une `engraving::Key` (nombre de
-                        // quintes) : aucun mode n'est porté par @keysig, donc
-                        // le mode reste inconnu, comme dans le modèle .mscx.
-                        SegmentItem::KeySig(scoretk_core::model::KeySig {
-                            mode: KeyMode::Unknown,
-                            ..scoretk_core::model::KeySig::new(key)
-                        }),
-                    );
-                }
+                // `Convert::keyFromMEI` (meiconverter.cpp:2066) ne construit
+                // qu'une `engraving::Key` (nombre de quintes) : aucun mode
+                // n'est porté par @keysig, donc le mode reste inconnu, comme
+                // dans le modèle .mscx. Do majeur est implicite quand ni
+                // `<staffDef>` ni `<scoreDef>` n'écrit @keysig.
+                let key = self
+                    .keysigs
+                    .get(&staff_idx)
+                    .or_else(|| self.keysigs.get(&SCOREDEF_IDX))
+                    .copied()
+                    .unwrap_or(Key::C);
+                Self::insert_segment(
+                    &mut measure,
+                    staff_count,
+                    start,
+                    SegmentType::KeySig,
+                    staff_idx,
+                    SegmentItem::KeySig(scoretk_core::model::KeySig {
+                        mode: KeyMode::Unknown,
+                        ..scoretk_core::model::KeySig::new(key)
+                    }),
+                );
                 Self::insert_segment(
                     &mut measure,
                     staff_count,

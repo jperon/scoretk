@@ -393,7 +393,7 @@ fn write_layer(
             xml.tag_empty("clef", &attrs);
         }
     }
-    let mut open_tuplet: Option<scoretk_core::model::TupletId> = None;
+    let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
         // MuseScore wraps consecutive beamed events in a `<beam>` container.
@@ -435,24 +435,42 @@ fn write_layer(
         if let Some(breaksec) = convert::breaksec_to_mei(cr.engraving.beam_mode) {
             attributes.push(("breaksec".to_owned(), breaksec.to_string()));
         }
-        if cr.tuplet != open_tuplet {
-            if let Some(id) = open_tuplet {
-                let _ = id;
-                xml.end_element();
+        // MuseScore 4.7.4 n'écrit qu'un n-olet (`writeTuplet`,
+        // meiexporter.cpp:1544-1561 : « nested tuplet export not fully
+        // supported »). MEI 5.1 autorise les `<tuplet>` imbriqués : écrire
+        // la chaîne complète permet au lecteur de retrouver le modèle.
+        let chain = tuplet_chain(score, cr.tuplet);
+        let common = open_tuplets
+            .iter()
+            .zip(&chain)
+            .take_while(|(left, right)| left == right)
+            .count();
+        for _ in common..open_tuplets.len() {
+            xml.end_element();
+        }
+        open_tuplets.truncate(common);
+        for id in &chain[common..] {
+            let tuplet = &score.tuplets[id.index()];
+            let place = match tuplet.placement {
+                Some(scoretk_core::model::Placement::Below) => "below",
+                _ => "above",
+            };
+            let mut attrs = vec![
+                ("num".to_owned(), tuplet.actual_notes.to_string()),
+                ("numbase".to_owned(), tuplet.normal_notes.to_string()),
+            ];
+            if tuplet.bracket {
+                attrs.push(("bracket.place".to_owned(), place.to_owned()));
+                attrs.push(("num.place".to_owned(), place.to_owned()));
+            } else if tuplet.bracket_explicit {
+                attrs.push(("bracket.visible".to_owned(), "false".to_owned()));
             }
-            open_tuplet = cr.tuplet;
-            if let Some(id) = cr.tuplet {
-                let tuplet = &score.tuplets[id.index()];
-                let attrs = [
-                    ("num".to_owned(), tuplet.actual_notes.to_string()),
-                    ("numbase".to_owned(), tuplet.normal_notes.to_string()),
-                ];
-                let refs: Vec<(&str, &str)> = attrs
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect();
-                xml.start_element("tuplet", &refs);
-            }
+            let refs: Vec<(&str, &str)> = attrs
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect();
+            xml.start_element("tuplet", &refs);
+            open_tuplets.push(*id);
         }
         let stamp = convert::tstamp_from_fraction(
             *tick - measure.start_tick,
@@ -529,13 +547,33 @@ fn write_layer(
         }
         let _ = position;
     }
-    if open_tuplet.is_some() {
+    for _ in &open_tuplets {
         xml.end_element();
     }
     if open_beam {
         xml.end_element();
     }
     xml.end_element();
+}
+
+/// Chaîne des n-olets englobants, du plus externe au plus interne
+/// (`Tuplet::parent` dans le modèle).
+fn tuplet_chain(
+    score: &Score,
+    id: Option<scoretk_core::model::TupletId>,
+) -> Vec<scoretk_core::model::TupletId> {
+    let Some(mut id) = id else {
+        return Vec::new();
+    };
+    let mut chain = vec![id];
+    while let Some(parent) = score.tuplets[id.index()].parent {
+        if chain.contains(&parent) {
+            break;
+        }
+        chain.insert(0, parent);
+        id = parent;
+    }
+    chain
 }
 
 /// `MeiExporter::writeArtics` (`meiexporter.cpp:1036`): articulations are
