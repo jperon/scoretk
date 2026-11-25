@@ -84,3 +84,36 @@ fn crochet_implicite_pas_de_propriete() {
     assert_eq!(partition.measures.len(), mesures);
     assert_eq!(partition.notes.len(), notes);
 }
+
+/// Un triolet de croches lu depuis un fichier 3.x porte une décision de
+/// crochet calculée par la règle 3.x (`Tuplet::calcHasBracket` : le n-olet est
+/// groupé par sa ligature). Réécrit en 4.70, le lecteur 4.x recalcule
+/// autrement ; sans propriété, 262 n-olets du corpus changeaient de crochet.
+/// `TWrite::write(const Tuplet*)` (`engraving/rw/write/twrite.cpp:3321-3345`,
+/// v4.7.4) écrit `Pid::BRACKET_TYPE` via `writeStyledProperties` : on ne
+/// l'explicite que pour les n-olets courts dont la décision serait perdue.
+#[test]
+fn crochet_court_implicite_preserve_au_aller_retour() {
+    let racine = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("corpus")
+        .join("v3");
+    let source = fs::read(racine.join("moonlight.mscx")).expect("corpus");
+    let partition = lire(&source);
+    let ecrit = scoretk_musescore_export::write_mscx(&partition).expect("écriture");
+    assert!(
+        ecrit.contains("<bracketType>2</bracketType>"),
+        "le crochet négatif décidé par la lecture 3.x doit être explicite"
+    );
+    let relu = lire(ecrit.as_bytes());
+    assert_eq!(partition.tuplets.len(), relu.tuplets.len());
+    for (avant, apres) in partition.tuplets.iter().zip(&relu.tuplets) {
+        assert_eq!(
+            avant.bracket, apres.bracket,
+            "crochet modifié au tick {}",
+            avant.tick
+        );
+    }
+}

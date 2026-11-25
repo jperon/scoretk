@@ -707,7 +707,9 @@ builds the instrument only; it changes no reader, no writer and no output byte.
   `beam`, `stem`, `note-head`, `line-break`, `tuplet-bracket`. L6:
   `midi-articulation`, `style-internal`. L0 has no separate item kind (it is
   the event spine used to reach the others), so it is neutral in the ratios;
-  L6 counts only for MuseScore, which declares it.
+  L6 counts only for MuseScore, which declares it. The `tuplet-bracket`
+  value is the rendered decision (`bracket`) only: `bracket_explicit` records
+  how the file encodes it, not a second engraving fact.
 - **Matching.** Two inventories are multisets of item keys. An item in the
   candidate matches a reference item only if **all five** components are
   equal; duplicates are counted, so two identical attacks are two items.
@@ -862,10 +864,17 @@ Reading the table:
    they are now `style-internal` (L6, MuseScore only) with a core test
    (`muse_score_only_style_defaults_are_extensions`). ABC and MIDI do not
    declare L5, so those rows are unaffected by the split.
-3. **`tuplet-bracket` (L5, 262 items)** is lost by the MuseScore round trip
-   itself: the reader records `bracket`/`bracket_explicit` but the writer
-   re-computes `bracket` from the beam groups. It is a writer fidelity bug,
-   not a format limitation.
+3. **`tuplet-bracket` (L5, 262 items)** was lost by the MuseScore round trip
+   itself: the 3.x reader records the bracket decided by the 3.x rule, the
+   writer emits a 4.70 file and the 4.x reader re-infers a different value.
+   Fixed in the writer: `TWrite::write(const Tuplet*)` calls
+   `writeStyledProperties` (`engraving/rw/write/twrite.cpp:3321-3345`, tag
+   v4.7.4) and `BRACKET_TYPE` is a styled property (`engraving/dom/tuplet.cpp:
+   48-60`); scoretk now writes `SHOW_NO_BRACKET` only for short beamed n-olets
+   whose decision would otherwise be lost. The inventory compares the rendered
+   decision `bracket`, not the `bracket_explicit` encoding flag. Two tests
+   (`crochet_implicite_pas_de_propriete`,
+   `crochet_court_implicite_preserve_au_aller_retour`) cover both sides.
 4. **`barline` (L1, 85 items)** and `key-sig` (37 in ABC) are metric items
    lost on import/export by the non-MuseScore formats.
 5. **MIDI L3 (7.77 % round trip, 2.47 % import alone)** is dominated by

@@ -644,13 +644,18 @@ pub fn inventory(score: &Score) -> LayerInventory {
             format!("{}:{}:{}", tuplet.ratio, tuplet.base_len, tuplet.len),
         );
         // The bracket is a MuseScore engraving decision (`calcHasBracket` in
-        // `engraving/dom/tuplet.cpp`), not part of the metric ratio.
+        // `engraving/dom/tuplet.cpp:206-231`), not part of the metric ratio.
+        // Only that rendered decision is comparable: `bracket_explicit` says
+        // how the file encodes it (`AUTO_BRACKET` vs an explicit
+        // `SHOW_BRACKET`/`SHOW_NO_BRACKET`), and the writer may have to make a
+        // decision explicit to keep it across a version change. Comparing the
+        // encoding would turn that fidelity fix into a false loss.
         result.push(
             Layers::ENGRAVING,
             Some(tuplet.tick),
             None,
             "tuplet-bracket",
-            format!("{}:{}", tuplet.bracket, tuplet.bracket_explicit),
+            tuplet.bracket.to_string(),
         );
     }
 

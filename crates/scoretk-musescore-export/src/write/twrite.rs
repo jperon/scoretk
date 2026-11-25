@@ -1255,13 +1255,29 @@ pub(crate) fn write_tuplet(xml: &mut XmlWriter, tuplet: &Tuplet) {
         TupletNumberType::Ratio => xml.tag("numberType", "1"),
         TupletNumberType::None => xml.tag("numberType", "2"),
     }
-    // `TWrite::write(const Tuplet*)` (`write/twrite.cpp:3500-3525`) n'écrit
-    // `Pid::BRACKET_TYPE` (`SHOW_BRACKET = 1`, `SHOW_NO_BRACKET = 2`,
-    // `types.h:1604-1607`) que si l'utilisateur l'a explicitée. Sans elle,
-    // `Tuplet::calcHasBracket()` (`:204-208`) recalcule le crochet à la
-    // lecture. Écrire une valeur implicite fige le calcul de MuseScore et
-    // casse l'aller-retour (mscz-18 : 12 `bracket="yes"` attendus, `no` obtenus).
-    if tuplet.bracket_explicit {
+    // `TWrite::write(const Tuplet*)` (`engraving/rw/write/twrite.cpp:3321-3345`,
+    // tag v4.7.4) appelle `writeStyledProperties(item, xml)` ; `BRACKET_TYPE`
+    // est une propriété de style (`engraving/dom/tuplet.cpp:48-60`) et
+    // `SHOW_BRACKET = 1`, `SHOW_NO_BRACKET = 2` (`dom/types.h:1604-1607`).
+    // MuseScore ne l'écrit que lorsqu'elle diffère de `AUTO_BRACKET` ; sinon
+    // `Tuplet::calcHasBracket()` (`dom/tuplet.cpp:206-231`) recalcule le
+    // crochet à la lecture. Le lecteur 4.7.4 de scoretk approxime ce calcul :
+    // sans parent, le crochet est positif ; imbriqué et de base ≤ une croche
+    // avec un ratio non trivial, il est négatif. Quand le modèle porte une
+    // décision contraire (typiquement un fichier 3.x lu avec la règle 3.x),
+    // laisser la propriété implicite perd cette décision à l'aller-retour :
+    // 262 n-olets du corpus. On explicite alors uniquement la valeur qui
+    // préserve la décision ; les cas où l'inférence 4.x concorde restent
+    // implicites et laissent MuseScore recalculer (mscz-18).
+    let short_base = tuplet.base_len < Fraction::new(1, 8)
+        || (tuplet.base_len == Fraction::new(1, 8) && tuplet.ratio != Fraction::ONE);
+    let inferred = tuplet.parent.is_none() || !short_base;
+    // Un n-olet long (base ≥ noire) n'est pas groupé par une ligature : on ne
+    // fige pas sa décision, sinon on empêcherait MuseScore de retrouver le
+    // crochet positif de `testTuplets8`. Seuls les n-olets courts, dont la
+    // base tient dans une croche avec un ratio non trivial, sont concernés.
+    let beamed_short = short_base && !tuplet.bracket && inferred;
+    if tuplet.bracket_explicit || (tuplet.bracket && !inferred) || beamed_short {
         xml.tag("bracket", if tuplet.bracket { "1" } else { "0" });
         xml.tag("bracketType", if tuplet.bracket { "1" } else { "2" });
     }
