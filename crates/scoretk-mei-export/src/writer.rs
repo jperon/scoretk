@@ -27,8 +27,8 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, BeamMode, ChordRest, ChordRestKind, Fraction, Score, SegmentItem, SpannerType,
-    Track, VOICES,
+    Annotation, BeamMode, ChordRest, ChordRestKind, Fraction, Key, Score, SegmentItem, SpannerType,
+    TimeSigType, Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -50,7 +50,11 @@ pub(crate) fn write(
     header::write_score_def(&mut xml, score);
     xml.start_element("section", &[("xml:id", "s1")]);
     let mut measure_n = 0;
+    let mut signatures = measure_signatures(score.measures.first());
     for (index, measure) in score.measures.iter().enumerate() {
+        let current = measure_signatures(Some(measure));
+        write_score_def_change(&mut xml, &signatures, &current);
+        signatures = current;
         write_ending_start(&mut xml, score, index);
         write_measure(&mut xml, score, measure, index, &mut measure_n, options);
         write_ending_end(&mut xml, score, index);
@@ -62,6 +66,73 @@ pub(crate) fn write(
     xml.end_element();
     xml.end_element();
     Ok(xml.finish())
+}
+
+/// `(meter, key)` in force at the beginning of a measure.
+type Signatures = (Option<(i32, i32, TimeSigType)>, Option<Key>);
+
+fn measure_signatures(measure: Option<&scoretk_core::model::Measure>) -> Signatures {
+    let Some(measure) = measure else {
+        return (None, None);
+    };
+    let mut time = None;
+    let mut key = None;
+    for segment in &measure.segments {
+        for (_, item) in segment.iter_elements() {
+            match item {
+                SegmentItem::TimeSig(sig) if time.is_none() => {
+                    time = Some((sig.numerator, sig.denominator, sig.kind));
+                }
+                SegmentItem::KeySig(sig) if key.is_none() => {
+                    key = Some(sig.concert_key);
+                }
+                _ => {}
+            }
+        }
+    }
+    (time, key)
+}
+
+/// `MeiExporter::writeScoreDefChange` (`meiexporter.cpp:520`).
+fn write_score_def_change(xml: &mut XmlWriter, previous: &Signatures, current: &Signatures) {
+    if current == previous || (current.0.is_none() && current.1.is_none()) {
+        return;
+    }
+    let mut attrs = Vec::new();
+    if let Some((numerator, denominator, kind)) = current.0 {
+        if previous.0 != current.0 {
+            let time = scoretk_core::model::TimeSig {
+                numerator,
+                denominator,
+                kind,
+                ..scoretk_core::model::TimeSig::new(1, 1)
+            };
+            let (count, unit, sym) = convert::meter_to_mei(&time);
+            if let Some(count) = count {
+                attrs.push(("meter.count".to_owned(), count));
+            }
+            if let Some(unit) = unit {
+                attrs.push(("meter.unit".to_owned(), unit.to_string()));
+            }
+            if let Some(sym) = sym {
+                attrs.push(("meter.sym".to_owned(), sym.to_owned()));
+            }
+        }
+    }
+    if let Some(key) = current.1 {
+        if previous.1 != current.1 {
+            attrs.push(("keysig".to_owned(), convert::key_to_mei(key)));
+        }
+    }
+    if attrs.is_empty() {
+        return;
+    }
+    let refs: Vec<(&str, &str)> = attrs
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    xml.start_element("scoreDef", &refs);
+    xml.end_element();
 }
 
 /// Measure containing `tick`, used to place `<ending>` around its measures.
@@ -566,6 +637,28 @@ mod tests {
         score.add_measure(Measure::new(2, Fraction::new(8, 4), Fraction::new(4, 4)));
         let output = write(&score, &MeiOptions::default()).expect("MEI with a system break");
         assert_eq!(output.matches("<sb type=\"mscore-manual\"").count(), 1);
+    }
+
+    #[test]
+    fn signature_changes_are_written_as_score_def_changes() {
+        use scoretk_core::model::TimeSig;
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let track = Track::new(staff, 0);
+        let mut first = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::TimeSig, Fraction::ZERO, 1);
+        segment.set_element(track, SegmentItem::TimeSig(TimeSig::new(4, 4)));
+        first.add_segment(segment);
+        score.add_measure(first);
+        let mut second = Measure::new(1, Fraction::new(4, 4), Fraction::new(3, 4));
+        let mut segment = Segment::new(SegmentType::TimeSig, Fraction::new(4, 4), 1);
+        segment.set_element(track, SegmentItem::TimeSig(TimeSig::new(3, 4)));
+        second.add_segment(segment);
+        score.add_measure(second);
+        let output = write(&score, &MeiOptions::default()).expect("MEI with a meter change");
+        assert_eq!(output.matches("<scoreDef").count(), 2);
+        assert!(output.contains("meter.count=\"3\""));
     }
 
     #[test]
