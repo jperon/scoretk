@@ -266,6 +266,61 @@ mod tests {
         assert_eq!(key.mode, scoretk_core::model::KeyMode::Unknown);
     }
 
+    /// Un `<artic>` enfant de `<note>` s'applique à cette note précise, pas
+    /// au dernier accord de la portée (MEI 5.1 `att.articulated`).
+    #[test]
+    fn articulation_child_attaches_to_its_own_note() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note xml:id="n1" dur="4" pname="c" oct="4"><artic artic="stacc"/></note>
+              <note xml:id="n2" dur="4" pname="d" oct="4"/>
+              <note xml:id="n3" dur="4" pname="e" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with an articulation");
+        let count = |segment: &&scoretk_core::model::Segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, item)| item.as_chord_rest())
+                .map(|cr| match &cr.kind {
+                    scoretk_core::model::ChordRestKind::Chord(chord) => chord.articulations.len(),
+                    _ => 0,
+                })
+                .sum::<usize>()
+        };
+        let articulations: Vec<_> = score.measures[0]
+            .segments
+            .iter()
+            .filter(|segment| segment.kind == scoretk_core::model::SegmentType::ChordRest)
+            .map(|segment| count(&segment))
+            .collect();
+        assert_eq!(articulations, vec![1, 0, 0]);
+    }
+
+    /// Le texte d'un `<repeatMark>` porte l'étiquette MuseScore ; `@type`
+    /// donne seulement le genre (`Convert::markerFromMEI`).
+    #[test]
+    fn repeat_mark_text_is_the_label() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1">
+              <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+              <repeatMark type="mscore-marker-to-coda" func="coda" tstamp="0">coda</repeatMark>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a repeat mark");
+        match &score.measures[0].repeat_marks[0] {
+            scoretk_core::model::RepeatMark::Marker(marker) => {
+                assert_eq!(marker.kind, scoretk_core::model::MarkerType::ToCoda);
+                assert_eq!(marker.label, "coda");
+            }
+            _ => panic!("expected a marker"),
+        }
+    }
+
     /// MEI 5.1 `att.noteHeads` : les têtes sans terme `data.HEADSHAPE` sont
     /// nommées par un glyphe SMuFL (`@glyph.auth="smufl"`).
     #[test]

@@ -282,7 +282,9 @@ fn write_measure(
                         convert::marker_type_to_mei(marker.kind)
                     ),
                     func,
-                    marker.text.clone(),
+                    // MEI 5.1 `<repeatMark>` : le texte porte l'étiquette
+                    // MuseScore (label), distinct du libellé affiché.
+                    marker.label.clone(),
                 )
             }
             scoretk_core::model::RepeatMark::Jump(jump) => {
@@ -294,7 +296,7 @@ fn write_measure(
                 (
                     format!("{}{}", ids::JUMP_TYPE, convert::jump_type_to_mei(jump.kind)),
                     func,
-                    jump.text.clone(),
+                    jump.jump_to.clone(),
                 )
             }
         };

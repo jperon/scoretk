@@ -71,7 +71,7 @@ impl<'a> Reader<'a> {
                 "pedal" => self.add_span(node, measure, SpannerType::Pedal),
                 "octave" => self.add_octave(node, measure),
                 "fermata" => self.add_fermata(node, measure),
-                "artic" => self.add_articulation(node, measure),
+                "artic" => self.add_articulation(node, parent, measure),
                 "arpeg" => self.add_arpeggio(node, measure),
                 "fing" => self.add_fingering(node, measure),
                 "harm" => self.add_harmony(node, measure),
@@ -388,7 +388,7 @@ impl<'a> Reader<'a> {
     }
 
     /// `MeiImporter::readArtic` (`meiimporter.cpp:1720`).
-    fn add_articulation(&mut self, node: &Element, measure: usize) {
+    fn add_articulation(&mut self, node: &Element, parent: &Element, measure: usize) {
         let name = node.attribute("artic").unwrap_or_default();
         let kind = match name {
             "stacc" => ArticulationType::Staccato,
@@ -407,8 +407,25 @@ impl<'a> Reader<'a> {
             "snap" => ArticulationType::SnapPizzicato,
             _ => ArticulationType::Other(name.to_owned()),
         };
-        let (_, track) = self.anchor(node, measure);
-        if let Some(cr) = self.last_chord_rest_mut(measure, track) {
+        // `<artic>` enfant d'un événement : MEI 5.1 `att.articulated`
+        // s'applique à cet événement, pas au dernier accord de la portée.
+        // L'`xml:id` du parent (ou `@startid`) donne l'ancrage exact.
+        let id = node
+            .attribute("startid")
+            .or_else(|| parent.attribute("id"))
+            .map(|id| id.trim_start_matches('#'));
+        let (tick, track) = id
+            .and_then(|id| self.id_events.get(id))
+            .map(|(_, track, tick)| (*tick, *track))
+            .unwrap_or_else(|| self.anchor(node, measure));
+        let position = self.score.measures[measure]
+            .segments
+            .iter()
+            .position(|segment| segment.tick == tick && segment.kind == SegmentType::ChordRest);
+        let cr = position.and_then(|position| {
+            self.score.measures[measure].segments[position].element_mut(track)
+        });
+        if let Some(SegmentItem::ChordRest(cr)) = cr {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.articulations.push(Articulation {
                     kind,
@@ -513,10 +530,16 @@ impl<'a> Reader<'a> {
             },
         };
         if let Some(kind) = kind {
-            let label = marker_suffix
-                .map(|_| convert::marker_type_to_mei(kind))
-                .unwrap_or(func)
-                .to_owned();
+            let label = if text.is_empty() {
+                marker_suffix
+                    .map(|_| convert::marker_type_to_mei(kind))
+                    .unwrap_or(func)
+                    .to_owned()
+            } else {
+                // Le texte de `<repeatMark>` est l'étiquette MuseScore
+                // (`Marker::label`) ; `@type` ne donne que le genre.
+                text.clone()
+            };
             let marker = Marker {
                 kind,
                 label: label.clone(),
@@ -536,11 +559,16 @@ impl<'a> Reader<'a> {
                     scoretk_core::model::JumpType::Ds
                 },
             );
-            let jump_to = if jump_kind.is_da_capo() {
-                "start"
+            let jump_to = if text.is_empty() {
+                if jump_kind.is_da_capo() {
+                    "start"
+                } else {
+                    "segno"
+                }
             } else {
-                "segno"
+                &text
             };
+            let jump_to = jump_to.to_owned();
             let mut jump = scoretk_core::model::Jump::new(
                 text,
                 jump_to.to_owned(),
