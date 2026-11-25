@@ -59,10 +59,10 @@ staffTwoVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Flute" shortInstrumentName = "Fl." } <<
+    \new Staff = "staffOne" \with { instrumentName = "Flute" shortInstrumentName = "Fl." midiInstrument = "flute" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
-    \new Staff = "staffTwo" \with { instrumentName = "B♭ Clarinet" shortInstrumentName = "B♭ Cl." } <<
+    \new Staff = "staffTwo" \with { instrumentName = "B♭ Clarinet" shortInstrumentName = "B♭ Cl." midiInstrument = "clarinet" } <<
       \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
     >>
   >>

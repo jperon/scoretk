@@ -80,7 +80,10 @@ pub(crate) fn render_inner(
         // sert qu'à faire avancer le curseur d'export. `s` le représente
         // exactement et la lecture n'en crée aucun élément.
         if rest.gap {
-            return format!("s{}", rest_duration(chord_rest));
+            // Un `<Rest>` de comblement est tout de même un `Rest` du modèle :
+            // l'écrire `r` le rend à la relecture. Les trous réels d'une voix,
+            // eux, restent écrits `s` par `fill_rest`.
+            return format!("r{}", rest_duration(chord_rest));
         }
         if chord_rest.is_full_measure_rest() {
             // Un silence de mesure entière s'écrit `R` suivi de la durée réelle
@@ -284,7 +287,7 @@ fn chord_token(
     if chord
         .arpeggio
         .as_ref()
-        .is_some_and(|arpeggio| arpeggio.visible && arpeggio.kind == ArpeggioType::Normal)
+        .is_some_and(|arpeggio| arpeggio.kind == ArpeggioType::Normal)
     {
         // `\arpeggio` est un post-événement : les variantes fléchées sont
         // écrites en préfixe par `arpeggio_prefix`, l'arpeège normal se place

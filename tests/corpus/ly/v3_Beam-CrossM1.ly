@@ -50,11 +50,12 @@ staffOneVoiceOne = \fixed c' {
   \break
   R1 |
   R1 \bar "|."
+  \break
 }
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Voice" } <<
+    \new Staff = "staffOne" \with { instrumentName = "Voice" midiInstrument = "choir aahs" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
   >>

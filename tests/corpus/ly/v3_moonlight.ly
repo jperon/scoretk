@@ -1486,10 +1486,10 @@ staffOneVoiceTwo = \fixed c' {
   \once \stemUp cs'2 \=17( \once \stemUp bs4 \once \stemUp cs'4 \=17) |
   \once \stemUp ds'2. \once \stemUp ds'4 |
   \once \stemUp e'2 \=18( \once \stemUp ds'4 \once \stemUp cs'4 \=18) |
-  s4 \once \stemUp gs4 \=21( \once \stemUp a4 \once \stemUp fs4 \=21) |
-  s4 \once \stemUp gs,4 \=24( \once \stemUp a,4 \once \stemUp fs,4 \=24) |
-  s4 \once \stemUp cs'4 \once \stemUp e'4 \once \stemUp cs'4 |
-  s4 \once \stemUp cs4 \once \stemUp e4 \once \stemUp cs4 |
+  r4 \once \stemUp gs4 \=21( \once \stemUp a4 \once \stemUp fs4 \=21) |
+  r4 \once \stemUp gs,4 \=24( \once \stemUp a,4 \once \stemUp fs,4 \=24) |
+  r4 \once \stemUp cs'4 \once \stemUp e'4 \once \stemUp cs'4 |
+  r4 \once \stemUp cs4 \once \stemUp e4 \once \stemUp cs4 |
   s1 |
   s1 |
   s1 |
@@ -1498,9 +1498,9 @@ staffOneVoiceTwo = \fixed c' {
   \once \override Rest.transparent = ##t r2. cs,4 |
   bs,,2 ds,4 \=36( cs,4 \=36) |
   bs,,2 d,4 \=37( cs,4 \=37) |
-  bs,,2 s2 |
+  bs,,2 r2 |
   s1 |
-  s2 s4 \once \stemUp gs8. gs16 |
+  r2 r4 \once \stemUp gs8. gs16 |
   \once \stemUp gs2. \once \stemUp gs8. gs16 |
   \once \stemUp gs2 \=38( \once \stemUp a2 |
   \once \stemUp gs2 \once \stemUp fs4 \once \stemUp b4 \=38) |
@@ -1518,7 +1518,7 @@ staffOneVoiceTwo = \fixed c' {
   \once \stemUp a4 \once \stemUp a4 \once \stemUp gs4 \once \stemUp gs4 |
   \once \stemUp fs2 \=47( \once \stemUp gs4 \once \stemUp a4 \=47) |
   \once \stemUp gs2 \once \stemUp gs2 |
-  \once \stemUp cs4 s4 s2 |
+  \once \stemUp cs4 r4 r2 |
   s1 |
   s1 |
   \once \override Rest.transparent = ##t r2. \once \stemUp bs,4 |
@@ -1637,7 +1637,7 @@ staffTwoVoiceTwo = \fixed c' {
   e,8 \=57( gs,8 cs8 \=57)
   }
   \revert TupletNumber.stencil
-  s4 s2 |
+  r4 r2 |
   s1 |
   s1 |
   s1 |
@@ -1717,7 +1717,7 @@ staffTwoVoiceTwo = \fixed c' {
 
 \score {
   <<
-    \new PianoStaff \with { instrumentName = "Piano" } <<
+    \new PianoStaff \with { instrumentName = "Piano" midiInstrument = "acoustic grand" } <<
       \new Staff = "staffOne" <<
         { \staffOneVoiceOne }
         \\

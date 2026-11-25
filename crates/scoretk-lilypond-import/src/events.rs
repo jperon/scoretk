@@ -36,9 +36,9 @@
 
 use scoretk_core::model::{
     Arpeggio, ArpeggioType, Articulation, ArticulationType, BarLineType, Breath, BreathType,
-    ChordLineType, Duration, DurationType, Fraction, GraceType, HairpinType, Key, KeySig, MarkerType,
-    NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement, StemDirection, Tremolo,
-    TremoloKind,
+    ChordLineType, Duration, DurationType, FermataType, Fraction, GraceType, HairpinType, Key,
+    KeySig, MarkerType, NoteHeadGroup, Ornament, OrnamentType, OttavaType, Placement,
+    StemDirection, Tremolo, TremoloKind,
 };
 
 use crate::ast::{
@@ -2813,10 +2813,26 @@ pub(crate) fn ottava_type(shift: i8) -> Option<OttavaType> {
     }
 }
 
-/// Construit les objets d'articulation d'un accord.
+/// Les fermates sont des annotations de segment dans le modèle, pas des
+/// articulations d'accord, même si LilyPond les écrit comme des post-événements.
+pub(crate) fn fermata_objects(kinds: &[ArticulationType]) -> Vec<FermataType> {
+    kinds
+        .iter()
+        .filter_map(|kind| match kind {
+            ArticulationType::Fermata => Some(FermataType::Normal),
+            ArticulationType::FermataShort => Some(FermataType::Short),
+            ArticulationType::FermataLong => Some(FermataType::Long),
+            ArticulationType::FermataVeryShort => Some(FermataType::VeryShort),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Construit les objets d'articulation d'un accord (sans les fermates).
 pub(crate) fn articulation_objects(kinds: &[ArticulationType]) -> Vec<Articulation> {
     kinds
         .iter()
+        .filter(|kind| fermata_objects(std::slice::from_ref(kind)).is_empty())
         .map(|kind| Articulation::new(kind.clone()))
         .collect()
 }

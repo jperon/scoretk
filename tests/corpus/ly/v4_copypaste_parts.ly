@@ -35,7 +35,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Flute" shortInstrumentName = "Fl." } <<
+    \new Staff = "staffOne" \with { instrumentName = "Flute" shortInstrumentName = "Fl." midiInstrument = "flute" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
   >>

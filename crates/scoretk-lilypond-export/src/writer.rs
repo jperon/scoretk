@@ -112,7 +112,9 @@ impl<'a> Writer<'a> {
             ("subtitle", metadata.subtitle.clone()),
             ("movementTitle", metadata.movement_title.clone()),
             ("movementNumber", metadata.movement_number.clone()),
-            ("workNumber", metadata.work_number.clone()),
+            // `opus` est le champ standard de numéro d'œuvre (§21.1.2) :
+            // l'écrire ici le rend relisible sans champ privé `workNumber`.
+            ("opus", metadata.work_number.clone()),
             ("composer", metadata.composer.clone()),
             // `\header poet` est le champ du parolier (`titling-init.ly:87`).
             // Le modèle distingue `lyricist` et `poet` depuis MuseScore 4 ;
@@ -490,6 +492,25 @@ fn instrument_clause(part: &scoretk_core::model::Part) -> String {
             "shortInstrumentName = \"{}\"",
             text::escape(short_name.trim())
         ));
+    }
+    // `midiInstrument` est la propriété standard qui fixe le programme GM
+    // (`scm/midi.scm`, `lily/staff-performer.cc`) : le lecteur retrouve ainsi
+    // le numéro de programme sans balise privée (Notation §24.4.2).
+    if let Some(program) = part.instrument.midi_program {
+        if let Some(name) = scoretk_lilypond_common::midi_instruments::name_for_program(program) {
+            clauses.push(format!("midiInstrument = \"{name}\""));
+        }
+    }
+    // §24.8 : ces deux propriétés sont des fractions de la plage MIDI. Le
+    // lecteur les ramène aux contrôleurs 7 (volume) et 10 (pan).
+    if let Some(volume) = part.instrument.volume {
+        clauses.push(format!(
+            "midiExpression = #{:.6}",
+            f64::from(volume) / 127.0
+        ));
+    }
+    if let Some(pan) = part.instrument.pan {
+        clauses.push(format!("midiPanPosition = #{:.6}", f64::from(pan) / 127.0));
     }
     clauses.join(" ")
 }

@@ -1333,11 +1333,15 @@ impl<'a> Parser<'a> {
                 let mut instrument_name = None;
                 let mut short_instrument_name = None;
                 let mut midi_instrument = None;
+                let mut midi_expression = None;
+                let mut midi_pan = None;
                 if self.eat_command("with") {
                     for (property, value) in self.parse_with_block() {
                         match property.as_str() {
                             "instrumentName" => instrument_name = Some(value),
                             "shortInstrumentName" => short_instrument_name = Some(value),
+                            "midiExpression" => midi_expression = scheme_unit(&value),
+                            "midiPanPosition" => midi_pan = scheme_unit(&value),
                             // `Staff_performer::new_instrument_string`
                             // (`lily/staff-performer.cc:244`) : cette
                             // propriété fixe le programme MIDI, pas le nom.
@@ -1360,7 +1364,7 @@ impl<'a> Parser<'a> {
                 // ticks et libère leur piste quand elles finissent. Les
                 // n-ups de plus de quatre voix simultanées sont répartis sur
                 // des portées sœurs par le constructeur.
-                let staves = self.staff_blocks_from_content(
+                let mut staves = self.staff_blocks_from_content(
                     content,
                     context_name,
                     existing,
@@ -1371,6 +1375,10 @@ impl<'a> Parser<'a> {
                     false,
                     false,
                 );
+                for staff in &mut staves {
+                    staff.midi_expression = midi_expression;
+                    staff.midi_pan = midi_pan;
+                }
                 return Music::New(Box::new(GroupBlock {
                     kind: GroupKind::Staff,
                     existing,
@@ -1539,6 +1547,8 @@ impl<'a> Parser<'a> {
         let mut instrument_name = None;
         let mut short_instrument_name = None;
         let mut midi_instrument = None;
+        let mut midi_expression = None;
+        let mut midi_pan = None;
         let mut verse = None;
         let mut midi_silent = false;
         let mut merge_unisons = false;
@@ -1582,6 +1592,8 @@ impl<'a> Parser<'a> {
                     "instrumentName" => instrument_name = Some(value),
                     "shortInstrumentName" => short_instrument_name = Some(value),
                     "midiInstrument" => midi_instrument = Some(value),
+                    "midiExpression" => midi_expression = scheme_unit(&value),
+                    "midiPanPosition" => midi_pan = scheme_unit(&value),
                     "stanza" => verse = stanza_verse(&value),
                     "midiMergeUnisons" => {
                         merge_unisons = matches!(value.trim(), "#t" | "##t" | "t" | "true")
@@ -1662,6 +1674,8 @@ impl<'a> Parser<'a> {
         staff.instrument_name = instrument_name.clone();
         staff.short_instrument_name = short_instrument_name.clone();
         staff.midi_instrument = midi_instrument.clone();
+        staff.midi_expression = midi_expression;
+        staff.midi_pan = midi_pan;
 
         // `\makeClusters` (`scm/music-functions.scm::note-to-cluster`)
         // remplace les notes par des `ClusterNoteEvent` que le performer MIDI
@@ -1773,7 +1787,7 @@ impl<'a> Parser<'a> {
                 // fusionner ses unissons avec la mélodie à l'oracle
                 // (`LullabyBrahms-C` : 17 accords confondus avec la voix).
                 // Les `\new Voice` restent des voix de cette portée.
-                let staves = self.staff_blocks_from_content(
+                let mut staves = self.staff_blocks_from_content(
                     content,
                     staff.name.clone(),
                     existing,
@@ -1784,6 +1798,10 @@ impl<'a> Parser<'a> {
                     merge_unisons,
                     kind == GroupKind::Other,
                 );
+                for built in &mut staves {
+                    built.midi_expression = staff.midi_expression;
+                    built.midi_pan = staff.midi_pan;
+                }
                 Some(GroupBlock {
                     kind,
                     existing,
@@ -8731,6 +8749,18 @@ fn head_group_from_style(style: &str) -> Option<NoteHeadGroup> {
 /// `\set stanza = "2."` et `\with { stanza = "2." }` donnent le même numéro ;
 /// un libellé non numérique (`"R."` pour un refrain) laisse le numéro par
 /// défaut, qui sera attribué par ordre d'apparition.
+/// Propriété MIDI exprimée comme une fraction de la plage 0..=1
+/// (`midiExpression`, `midiPanPosition`, §24.8).
+fn scheme_unit(value: &str) -> Option<f64> {
+    value
+        .trim()
+        .trim_start_matches(['#', '\''])
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(|fraction| fraction.clamp(0.0, 1.0))
+}
+
 fn stanza_verse(value: &str) -> Option<usize> {
     value
         .trim()

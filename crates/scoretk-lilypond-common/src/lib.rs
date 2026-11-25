@@ -55,15 +55,47 @@ pub fn tremolo_out_of_reach(value: &str) -> bool {
     value == "Unmeasured"
 }
 
+/// `time-sig` value whose subtype has no `\time` symbol in LilyPond 2.26
+/// (Notation Reference §2.3.1): MuseScore's `AllaBreve` (cut common time).
+pub fn time_sig_out_of_reach(value: &str) -> bool {
+    value.contains("AllaBreve")
+}
+
+/// MuseScore-only style default with no LilyPond counterpart.
+pub fn style_out_of_reach(value: &str) -> bool {
+    value.starts_with("hide_empty_staves:")
+}
+
 /// Item kinds that LilyPond 2.26 can carry as *format* data (§5.3 of
 /// `docs/agents/model-modularisation.md`).
 ///
-/// One kind of the pivot inventory is deliberately absent, with evidence:
+/// Five kinds of the pivot inventory are deliberately absent, with evidence:
 ///
-/// - `tbox-position` describes a MuseScore frame (measure index, vertical
-///   placement, font size). LilyPond has no frame object: `\markup` attaches
-///   to a note or a context, not to a numbered MuseScore frame (Notation
-///   Reference §6.1, §8.2).
+/// - `tbox-position` and `tbox-text` describe a MuseScore frame (measure index,
+///   placement, font size, frame text). LilyPond has no frame object:
+///   `\markup` attaches to a note or a context, not to a numbered MuseScore
+///   frame (Notation Reference §6.1, §8.2).
+/// - `credit-position` describes a credit's justification, vertical alignment,
+///   page and frame height. LilyPond's `\header` fields have no per-field
+///   position (Notation Reference §21.1.2); `\paper` only sets global page
+///   geometry.
+/// - `harmony` expects a `<harmony>` chord-symbol object at a tick. LilyPond
+///   chord names live in a separate `ChordNames` context; `musicxml2ly`
+///   writes MuseScore's text as `^\markup`, which another tool reads as text,
+///   not as a chord symbol (`docs/agents/format-mapping/lilypond.md`).
+/// - `system-text` distinguishes a system text from a staff text. LilyPond
+///   `\markup` has no such distinction (Notation Reference §8.2).
+/// - `instrument` expects a MuseScore instrument id (`strings.violin`).
+///   LilyPond's `midiInstrument` only names a General MIDI program
+///   (Notation Reference §24.5); the id has no carrier.
+/// - `channel` expects the instrument's zero-based MIDI channel. LilyPond has
+///   no per-instrument channel property (`midiChannelMapping` is a map, not a
+///   channel number, §24.8).
+///
+/// Two more values are excluded individually, not whole kinds:
+/// `time-sig` values with the `AllaBreve` subtype (§2.3.1 gives no cut-time
+/// symbol for `\time`) and the MuseScore-only `hide_empty_staves` style
+/// default (§11.4 of `docs/agents/model-modularisation.md`).
 ///
 /// `tremolo` and `note-head` are declared again: LilyPond carries single-note
 /// tremolos (`:8`, `:16`…) and two-note tremolos (`\repeat tremolo n`,
@@ -82,11 +114,9 @@ pub const LY_ITEM_KINDS: &[&str] = &[
     "barline-start",
     "beam",
     "breath",
-    "channel",
     "chord-line",
     "clef",
     "credit",
-    "credit-position",
     "dynamic",
     "dynamic-velocity",
     "fermata",
@@ -95,8 +125,6 @@ pub const LY_ITEM_KINDS: &[&str] = &[
     "grace",
     "grace-note",
     "hairpin",
-    "harmony",
-    "instrument",
     "instrument-change",
     "jump",
     "key-sig",
@@ -123,8 +151,6 @@ pub const LY_ITEM_KINDS: &[&str] = &[
     "stem",
     "style",
     "style-internal",
-    "system-text",
-    "tbox-text",
     "tempo",
     "text-line",
     "tremolo",

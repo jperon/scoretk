@@ -77,7 +77,9 @@ mod warnings;
 
 pub use warnings::Warning;
 
-pub use scoretk_lilypond_common::{noteheads, tremolo_out_of_reach, Error, Result};
+pub use scoretk_lilypond_common::{
+    noteheads, style_out_of_reach, time_sig_out_of_reach, tremolo_out_of_reach, Error, Result,
+};
 
 use scoretk_core::model::Score;
 

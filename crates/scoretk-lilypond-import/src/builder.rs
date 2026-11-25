@@ -34,12 +34,12 @@ use scoretk_core::duration_list::to_duration_list;
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, ArticulationType, BarLine, BarLineType, Chord,
     ChordEngraving, ChordRest, ChordRestEngraving, ChordRestKind, Clef, Credit, CreditStyle,
-    Duration, Dynamic, Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin,
+    Duration, Dynamic, Fermata, Fingering, Fraction, Glissando, GlissandoType, GraceChord, Hairpin,
     HairpinType, Instrument, Jump, LineStyle, Lyrics, LyricsSyllabic, Marker, Measure, Note,
     NoteId, Part, PartId, PedalInfo, Placement, RehearsalMark, RepeatMark, Rest, RichText, Score,
-    ScoreMetadata, Segment, SegmentItem, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Staff, StaffBracket, StaffId, TboxText, Tempo, Track, Transpose, Trill, TrillType,
-    Tuplet, TupletId, VOICES,
+    ScoreMetadata, Segment, SegmentAnnotation, SegmentItem, SegmentType, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, Staff, StaffBracket, StaffId, TboxText, Tempo, Track, Transpose,
+    Trill, TrillType, Tuplet, TupletId, VOICES,
 };
 use scoretk_lilypond_common::midi_instruments;
 
@@ -660,6 +660,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
         let mut part = Part::new(long_name.clone(), short_name.clone());
         part.name = long_name.clone();
         part.instrument = instrument_for(&long_name, &short_name, midi_instrument.as_deref());
+        apply_midi_levels(&mut part.instrument, first.midi_expression, first.midi_pan);
         let part_id = score.add_part(part);
 
         let first_staff_index = staves.len();
@@ -693,6 +694,11 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 let mut part = Part::new(nom.clone(), court.clone());
                 part.name = nom;
                 part.instrument = instrument_for(&part.name, &court, midi_staff.as_deref());
+                apply_midi_levels(
+                    &mut part.instrument,
+                    staff_block.midi_expression,
+                    staff_block.midi_pan,
+                );
                 part.instrument.transpose = Some(interval);
                 score.add_part(part)
             } else {
@@ -1599,6 +1605,18 @@ fn decaler_notes(notes: &mut Vec<crate::events::NoteEvent>, chromatic: i32) {
             _ => false,
         }
     });
+}
+
+/// `midiExpression` et `midiPanPosition` sont des fractions de la plage MIDI
+/// (Notation Reference §24.8) : le modèle stocke les contrôleurs 7 et 10.
+fn apply_midi_levels(instrument: &mut Instrument, expression: Option<f64>, pan: Option<f64>) {
+    let to_controller = |fraction: f64| (fraction * 127.0).round().clamp(0.0, 127.0) as u8;
+    if let Some(expression) = expression {
+        instrument.volume = Some(to_controller(expression));
+    }
+    if let Some(pan) = pan {
+        instrument.pan = Some(to_controller(pan));
+    }
 }
 
 fn instrument_for(long_name: &str, short_name: &str, midi_instrument: Option<&str>) -> Instrument {
@@ -2522,6 +2540,12 @@ fn place_chord(
                     };
                     if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
                         segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                        for kind in crate::events::fermata_objects(&event.articulations) {
+                            segment.annotations.push(SegmentAnnotation::new(
+                                voice_track,
+                                Annotation::Fermata(Fermata::new(kind)),
+                            ));
+                        }
                     }
                     position += figure.ticks();
                 }
@@ -2652,6 +2676,12 @@ fn place_chord(
                     }
                     if let Some(segment) = score.measures[index].segments.get_mut(segment_index) {
                         segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+                        for kind in crate::events::fermata_objects(&event.articulations) {
+                            segment.annotations.push(SegmentAnnotation::new(
+                                voice_track,
+                                Annotation::Fermata(Fermata::new(kind)),
+                            ));
+                        }
                     }
                     cursor += len;
                 }
@@ -2789,6 +2819,12 @@ fn place_chord(
         .get_mut(segment_index)
     {
         segment.set_element(voice_track, SegmentItem::ChordRest(chord_rest));
+        for kind in crate::events::fermata_objects(&event.articulations) {
+            segment.annotations.push(SegmentAnnotation::new(
+                voice_track,
+                Annotation::Fermata(Fermata::new(kind)),
+            ));
+        }
     }
     if let Some(breath) = event.breath {
         place_breath(score, slots, voice_track, tick, breath);

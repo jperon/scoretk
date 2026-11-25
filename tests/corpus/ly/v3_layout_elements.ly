@@ -49,9 +49,10 @@ staffOneVoiceOne = \fixed c' {
   R1 |
   \break
   \key f \major \time 12/8
-  \mark \markup { "A" } <c, e, g,>4\arpeggio-1-3-5 c,4 \glissando g,4 r4 r2 |
-  \mark \markup { "B" } <c, e, g,>4\arpeggio-1-3-5 ^\markup { "A" }
-  c,4 \glissando g,4 r4 r2 \bar "|."
+  \mark \markup { "A" } <c, e, g,>4\arpeggio-1-3-5 ^\markup { "B" }
+  c,4 \glissando g,4 r4 r2 |
+  \mark \markup { "A" } <c, e, g,>4\arpeggio-1-3-5 c,4 \glissando g,4 r4 r2
+  \bar "|."
 }
 
 staffTwoVoiceOne = \fixed c' {
@@ -70,7 +71,7 @@ staffTwoVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new PianoStaff \with { instrumentName = "Piano" } <<
+    \new PianoStaff \with { instrumentName = "Piano" midiInstrument = "acoustic grand" } <<
       \new Staff = "staffOne" <<
         \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
       >>

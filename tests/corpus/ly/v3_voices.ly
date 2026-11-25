@@ -125,7 +125,7 @@ staffThreeVoiceFour = \fixed c' {
 
 \score {
   <<
-    \new PianoStaff \with { instrumentName = "Piano" shortInstrumentName = "Pno." } <<
+    \new PianoStaff \with { instrumentName = "Piano" shortInstrumentName = "Pno." midiInstrument = "acoustic grand" } <<
       \new Staff = "staffOne" <<
         { \staffOneVoiceOne }
         \\
@@ -137,7 +137,7 @@ staffThreeVoiceFour = \fixed c' {
         \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
       >>
     >>
-    \new Staff = "staffThree" \with { instrumentName = "Trombone" shortInstrumentName = "Tbn." } <<
+    \new Staff = "staffThree" \with { instrumentName = "Trombone" shortInstrumentName = "Tbn." midiInstrument = "trombone" } <<
       { \staffThreeVoiceOne }
       \\
       { \staffThreeVoiceTwo }

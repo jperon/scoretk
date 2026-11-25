@@ -90,6 +90,8 @@ fn declared_inventory(score: &Score) -> LayerInventory {
     result.items.retain(|item| match item.kind {
         "note-head" => !scoretk_lilypond_import::noteheads::out_of_reach(&item.value),
         "tremolo" => !scoretk_lilypond_import::tremolo_out_of_reach(&item.value),
+        "time-sig" => !scoretk_lilypond_import::time_sig_out_of_reach(&item.value),
+        "style" => !scoretk_lilypond_import::style_out_of_reach(&item.value),
         _ => true,
     });
     result
@@ -305,17 +307,27 @@ fn abc_full_support_reaches_target_with_and_without_private_extensions() {
 }
 
 /// The declaration is about what LilyPond 2.26 can carry, not a relaxation of
-/// the oracle. `tbox-position` has no frame object in LilyPond (§6.1, §8.2);
-/// `note-head` and `tremolo` **are** declared again, and only the individual
-/// head groups with no standard style are excluded, per value, by
-/// `noteheads::out_of_reach` (§B.9 and `select-head-glyph`).
+/// the oracle. Frame, credit-position, chord-symbol and staff/system-text
+/// objects have no LilyPond carrier (§6.1, §8.2, §21.1.2); `note-head` and
+/// `tremolo` **are** declared, with only the individual head groups and the
+/// buzz roll excluded per value by `noteheads::out_of_reach` and
+/// `tremolo_out_of_reach` (§B.9 and §2.5.3).
 #[test]
 fn lilypond_declaration_follows_notation_reference() {
     let kinds = scoretk_lilypond_import::CAPABILITIES
         .declared_kinds()
         .expect("the LilyPond declaration lists the carried kinds");
-    let kind = "tbox-position"; // no MuseScore frame in LilyPond (§6.1, §8.2)
-    assert!(!kinds.contains(&kind), "{kind} has no LilyPond carrier");
+    for kind in [
+        "tbox-position",   // no MuseScore frame in LilyPond (§6.1, §8.2)
+        "tbox-text",       // idem
+        "credit-position", // no per-field position in \header (§21.1.2)
+        "harmony",         // no per-tick <harmony> object; \markup is text
+        "system-text",     // \markup has no staff/system distinction (§8.2)
+        "instrument",      // MuseScore id, not a General MIDI name (§24.5)
+        "channel",         // no per-instrument MIDI channel (§24.8)
+    ] {
+        assert!(!kinds.contains(&kind), "{kind} has no LilyPond carrier");
+    }
     for kind in [
         "note-head", // `\tweak style #'cross|harmonic|do|…` (§B.9)
         "tremolo",   // `:8` and `\repeat tremolo n` (§2.5.3)
@@ -331,9 +343,7 @@ fn lilypond_declaration_follows_notation_reference() {
         "style",
         "tempo",
         "dynamic-velocity",
-        "instrument",
         "program",
-        "tbox-text",
         "line-break",
     ] {
         assert!(kinds.contains(&kind), "{kind} is carried by LilyPond");
@@ -617,6 +627,13 @@ fn lilypond_other_loss_keys() {
             "program",
             "instrument",
             "dynamic-velocity",
+            "volume",
+            "pan",
+            "barline-end",
+            "rehearsal-mark",
+            "credit",
+            "articulation",
+            "volta",
         ],
     );
 }

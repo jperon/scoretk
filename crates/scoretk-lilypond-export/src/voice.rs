@@ -344,7 +344,13 @@ pub(crate) fn render_body(
                         // resteraient sinon sur le même temps, ce que
                         // LilyPond refuse.
                         let attached = if event.text.starts_with("\\mark ") {
-                            attach_mark(&mut pre_by_item, &mut post_by_item, &items, event.clone())
+                            // LilyPond attache `\mark` à la note suivante ;
+                            // l'inventaire ancre le repère au début de sa
+                            // mesure. Ranger le mark sur cette mesure garde
+                            // le tick d'origine quand le segment est vide.
+                            let mut anchored = event.clone();
+                            anchored.tick = score.measures[measure_index].start_tick;
+                            attach_mark(&mut pre_by_item, &mut post_by_item, &items, anchored)
                         } else {
                             attach_pre(&mut pre_by_item, &items, event.clone())
                         };
@@ -683,7 +689,7 @@ pub(crate) fn render_body(
             bar_check,
         ));
         emitter.flush_line();
-        if voice == 0 && measure.line_break && measure_index + 1 < score.measures.len() {
+        if voice == 0 && measure.line_break {
             emitter.line("\\break");
         }
         for token in structure.after_measure(measure_index) {

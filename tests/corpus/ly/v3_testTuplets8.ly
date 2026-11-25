@@ -6,7 +6,7 @@
   title = \markup { \bold \fontsize #24.00000 "Tuplets 8" }
   workTitle = "Tuplets 8"
   subtitle = "MuseScore testfile"
-  workNumber = "MuseScore testfile"
+  opus = "MuseScore testfile"
   composer = \markup { \fontsize #12.00000 "Leon Vinken" }
   poet = \markup { \fontsize #12.00000 "" }
   scoretkTitleFontSize = "24.00000"
@@ -57,7 +57,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Voice" shortInstrumentName = "Vo." } <<
+    \new Staff = "staffOne" \with { instrumentName = "Voice" shortInstrumentName = "Vo." midiInstrument = "choir aahs" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
   >>

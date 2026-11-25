@@ -33,6 +33,7 @@ staffOneVoiceOne = \fixed c' {
   \break
   e'1 |
   f'1 \bar "|."
+  \break
 }
 
 staffTwoVoiceOne = \fixed c' {
@@ -48,6 +49,7 @@ staffTwoVoiceOne = \fixed c' {
   \break
   c'1 |
   c'1 \bar "|."
+  \break
 }
 
 staffThreeVoiceOne = \fixed c' {
@@ -63,17 +65,18 @@ staffThreeVoiceOne = \fixed c' {
   \break
   R1 |
   R1 \bar "|."
+  \break
 }
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Flute 1" shortInstrumentName = "Fl. 1" } <<
+    \new Staff = "staffOne" \with { instrumentName = "Flute 1" shortInstrumentName = "Fl. 1" midiInstrument = "flute" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
     >>
-    \new Staff = "staffTwo" \with { instrumentName = "Flute 2" shortInstrumentName = "Fl. 2" } <<
+    \new Staff = "staffTwo" \with { instrumentName = "Flute 2" shortInstrumentName = "Fl. 2" midiInstrument = "flute" } <<
       \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
     >>
-    \new Staff = "staffThree" \with { instrumentName = "Flute 3" shortInstrumentName = "Fl. 3" } <<
+    \new Staff = "staffThree" \with { instrumentName = "Flute 3" shortInstrumentName = "Fl. 3" midiInstrument = "flute" } <<
       \new Voice = "staffThreeVoiceOne" { \staffThreeVoiceOne }
     >>
   >>

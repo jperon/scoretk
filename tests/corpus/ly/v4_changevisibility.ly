@@ -29,7 +29,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Piano" shortInstrumentName = "Pno." } <<
+    \new Staff = "staffOne" \with { instrumentName = "Piano" shortInstrumentName = "Pno." midiInstrument = "acoustic grand" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
       \new Lyrics \lyricsto "staffOneVoiceOne" {
         \skip 1 lyric \skip 1 \skip 1 \skip 1 \skip 1

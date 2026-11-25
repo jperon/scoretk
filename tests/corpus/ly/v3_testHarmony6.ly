@@ -6,7 +6,7 @@
   title = \markup { \bold \fontsize #24.00000 "Harmony 6" }
   workTitle = "Harmony 6"
   subtitle = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
-  workNumber = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
+  opus = "MuseScore testfile Chords using normal, Roman and Nashville notation containing recognized text, unrecognized plaintext and unrecognized text requiring HTML escape"
   composer = \markup { \fontsize #12.00000 "Leon Vinken" }
   poet = \markup { \fontsize #12.00000 "" }
   scoretkTitleFontSize = "24.00000"
@@ -46,7 +46,7 @@ staffOneVoiceOne = \fixed c' {
 
 \score {
   <<
-    \new Staff = "staffOne" \with { instrumentName = "Voice" shortInstrumentName = "Vo." } <<
+    \new Staff = "staffOne" \with { instrumentName = "Voice" shortInstrumentName = "Vo." midiInstrument = "choir aahs" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
       \new Lyrics \lyricsto "staffOneVoiceOne" {
         Normal Roman Nashville Normal Roman Nashville

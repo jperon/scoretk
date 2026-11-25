@@ -621,6 +621,10 @@ pub(crate) struct StaffBlock {
     /// `Staff` lue par `Staff_performer` (`lily/staff-performer.cc:244`) :
     /// elle fixe le programme MIDI de la partie, pas son nom gravé.
     pub midi_instrument: Option<String>,
+    /// `midiExpression` : volume du canal (0..=1).
+    pub midi_expression: Option<f64>,
+    /// `midiPanPosition` : panoramique du canal (0..=1).
+    pub midi_pan: Option<f64>,
     /// Vrai si la portée est gravée mais absente du MIDI
     /// (`\with { \remove "Staff_performer" }`).
     pub muted: bool,
@@ -663,6 +667,8 @@ impl StaffBlock {
             instrument_name: None,
             short_instrument_name: None,
             midi_instrument: None,
+            midi_expression: None,
+            midi_pan: None,
             muted: false,
             merge_unisons: false,
             visible: true,
