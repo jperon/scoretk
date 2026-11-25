@@ -64,10 +64,16 @@ Two comparisons are versioned:
 
 ### Layer coverage (declared L0–L5, 5 879 reference items)
 
-| Row | Essential | Full support | Per-layer matched / reference |
+| Row | Essential | Full support (before → after) | Per-layer matched / reference (after) |
 | --- | ---: | ---: | --- |
-| Round trip (own writer) | **95.89 %** | 73.52 % | L1 852/1085, L2 2958/3314, L3 129/296, L4 106/175, L5 277/1009 |
-| Import of MuseScore 4.7.4 `.ref.mei` | **96.76 %** | 81.90 % | L1 881/1085, L2 3098/3314, L3 207/296, L4 108/175, L5 521/1009 |
+| Round trip (own writer) | **98.88 %** | 73.52 % → **92.35 %** | L1 1007/1085, L2 3181/3314, L3 206/296, L4 106/175, L5 929/1009 |
+| Import of MuseScore 4.7.4 `.ref.mei` | **96.76 %** | 81.90 % → **84.18 %** | L1 983/1085, L2 3127/3314, L3 210/296, L4 108/175, L5 521/1009 |
+
+The "before" column is the measurement of commit `b6a13039`; the "after"
+column is the measurement after the campaigns of §7 below. The per-layer
+counts come from `layer_coverage_table`. The remaining gap of the import row
+is dominated by 380 `style` items **absent from MuseScore's own `.ref.mei`
+files** (see §7), not by an unported converter.
 
 ### Normalised export conformity
 
@@ -76,22 +82,21 @@ Two comparisons are versioned:
 | scoretk MEI export vs MuseScore 4.7.4 `.ref.mei` | 3 877 / 4 016 | **96.54 %** |
 
 **The ≥ 95 % target is met for the musical core (essential) and for export
-conformity, but not for "full support" as this instrument defines it.**
-The full-support denominator includes layout items that MEI Basic cannot
-carry: `style` (380 items: MuseScore page margins, spatium, font sizes),
-`credit-position` (67), `barline` segment objects (85, distinct from
-`@left`/`@right` barline renditions), and the generated `xml:id`/header blob.
-These are exactly the items that MuseScore's own MEI re-import also drops:
-using MuseScore's MEI→mscx output as the oracle on the 49 files it can
-re-import gives 82.86 % full support, so the remaining gap is a format
-boundary, not an unported converter. Round-trip L2 is additionally limited
-by slurs/hairpins whose ends sit in another measure (the writer currently
-anchors them with `@tstamp`), and L3 by title-frame texts (MuseScore writes
-`<pgHead>` only when a frame exists).
+conformity, but not for "full support" as this instrument defines it.** The
+gap campaign of §7 closed the barline, stem, `<pgHead>`, style, signature,
+tremolo, articulation, ending, `<dynam>`/tempo and note-id anchoring gaps;
+the round trip rose from 73.52 % to 92.35 %. The remaining import-row gap is
+overwhelmingly a *reference* boundary: MuseScore's own `.ref.mei` files carry
+none of the standard MEI page-layout/typography carriers (380 `style` items),
+so an honest importer cannot recover them. `mei_musescore_references_carry_no_style`
+in `layer_coverage.rs` pins that fact.
 
-Largest remaining import gaps: `style` 380, `barline` 85, `note` 55,
-`dynamic-velocity` 43 (MEI `dynam` has no velocity), `note-head` 41,
-`tuplet-member` 39, `key-sig` mode 37, `articulation` 29.
+Largest remaining round-trip gaps: `dynamic-velocity` 43, `key-sig` mode 37,
+`lyric` 30, `note` 26, `tuplet-member` 26, `note-head` 22, `slur` 19,
+`credit-position` 18, `credit` 15, `tbox` 30. Largest remaining import gaps:
+`style` 380, `note` 55, `dynamic-velocity` 43, `note-head` 41,
+`tuplet-member` 39, `key-sig` mode 37. The out-of-reach items are justified
+in §7.3 with the MEI 5.1 attribute definitions.
 
 ## 4. Known port decisions
 
@@ -139,4 +144,81 @@ Largest remaining import gaps: `style` 380, `barline` 85, `note` 55,
 **2 379 470** to **2 453 424** bytes, i.e. **+73 954 bytes (+3.11 %)**.
 The stable contract (`convert`, `detect`, `formats`, `version`,
 `convertWithTimeline`) is unchanged; `formats()` now reports `mei` as the
-eighth format.
+eighth format. The later gap campaign changes code only inside the MEI
+crates; `nix build .#wasm` was not re-run for the final size measurement.
+
+## 7. Gap campaign (2026-11-25)
+
+### 7.1 Method
+
+One step per commit, each with unit tests and the full validation suite
+(`fmt --check`, `clippy -D warnings`, `test --workspace`, `e2e_corpus` 8/8,
+`cargo build -p scoretk --target wasm32-unknown-unknown`). The per-kind loss
+table is produced by `layer_coverage::mei_full_loss_table` with `--nocapture`.
+No declaration was narrowed and no private attribute was used as a carrier.
+
+### 7.2 What was closed
+
+| Kind (before → after, round trip) | Fix |
+| --- | --- |
+| `barline` 85 → 1 | `barlines.rs` recreates MuseScore's implicit `EndBarLine` segment from `Measure::end_bar_line` / `@right`. |
+| `stem` 163 → 6 | `@stem.dir` written from `Chord::stem_direction` (`Convert::stemToMEI`, `meiexporter.cpp:2297`). Six residual losses are tuplet ticks rounded by `@tstamp`. |
+| `credit` 67 → 15, `credit-position` 67 → 18 | `writePgHead` (`meiexporter.cpp:386`) writes the nine alignment cells; only the first frame is representable. |
+| `style` 380 → 0 | `att.pages` (`page.width`, `page.height`, `page.leftmar`, `page.rightmar`, `page.topmar`, `page.botmar`), `@vu.height`, `@optimize` on `<scoreDef>` and numeric `@fontsize` on `<rend>` (§7.3). |
+| `note` 70 → 26, `measure` 25 → 0, `rest` 19 → 0 | `@dur.ges` carries `actualTicks()`; mid-score `<scoreDef>` changes and signatures at the measure's absolute tick. |
+| `line-break` 51 → 4 | `<sb>` written before the measure that follows the break, as `writeScore` does. |
+| `slur` 65 → 19, `hairpin` 52 → 6 | Control events anchored by `@startid`/`@endid` on note `xml:id`s, like MuseScore. |
+| `trill` 1 → 1, `tremolo` 24 → 0 | `<bTrem>`/`<fTrem>` containers written; the reader tracks `Start`/`Stop` across the two chords. |
+| `articulation` 29 → 8 | `<artic>` children of `<note>`/`<chord>` with `Convert::articToMEI` names. |
+| `volta` 17 → 1 | `<ending n/type/label>` around the measures of a volta. |
+| `tempo` 20 → 1 | `@midi.bpm` divided by 60 (`Convert::tempoFromMEI`, `meiconverter.cpp:3343`) and SMuFL `<rend>` read before the plain text. |
+| `key-sig` 37 (tick part) | `<scoreDef>` written before a measure when the key/time signature changes; signature segments inserted at the measure's absolute tick. |
+| `marker` 11 → 4, `jump` 8 → 2 | `<repeatMark>` with `@type="mscore-marker-*"`/`"mscore-jump-*"` read and written. |
+| `time-sig` 15 → 1, `clef` 14 → 13 | `<meterSig>`/`<clef>` with `@tstamp` inside a layer for mid-measure changes. |
+| `fermata` 8 → 4 | `<fermata>` written from segment annotations. |
+
+Import row: 81.90 % → 84.18 %. The gains come from the same reader fixes
+(barlines, articulations, tremolos, endings, signatures, tempo, repeat marks);
+`style` cannot improve because the references omit the carriers.
+
+### 7.3 Items declared out of reach, with MEI 5.1 citations
+
+These are not declaration changes: the kinds stay in L1–L5, and the
+percentage is reported with them in the denominator.
+
+- **`dynamic-velocity` (43 per row).** The MEI 5.1 attribute classes contain
+  no velocity attribute: `att.dynamic` in `MEI.shared.xml` only carries the
+  dynamic's type/placement; `<dynam>` has no `@vel`. `Convert::dynamToMEI`
+  (`meiconverter.cpp:1367`) writes `@label` + text only. Nothing standard can
+  carry MuseScore's numeric velocity.
+- **`key-sig` mode (37 per row).** `att.keySig.log` defines only `@sig`
+  (`MEI.shared.xml`); the schema has no `ident="mode"` attribute at all. The
+  `KeyMode::Unknown` of the reference cannot be expressed, while `@keysig`
+  faithfully carries the fifths count.
+- **`credit`/`credit-position` (15/18 per row).** `<pgHead func="first">` is
+  the *first-page* header (`meiexporter.cpp:386-459`); MuseScore writes no
+  equivalent for later frames, and the multi-set comparison includes the
+  credit index. Empty `<rend>` elements carry the text-style sizes but not
+  the later pages' credit order.
+- **`tbox-text`/`tbox-position` (15/15 per row).** MEI 5.1 has `<pgHead>` for
+  a page header and `<dir>` for a staff-anchored direction, but no
+  measure-anchored text-frame element corresponding to MuseScore `TBox`;
+  `writeScoreDef` only converts the first `VBox`. Writing a `<dir>` would
+  invent a carrier MuseScore 4.7.4 never emits.
+- **`note-head` (22 round trip / 41 import).** `@head.shape` uses the closed
+  `data.HEADSHAPE` enumeration (`MEI.xml`: `quarter`, `half`, `whole`,
+  `backslash`, `circle`, `+`, `diamond`, `isotriangle`, `oval`, `piewedge`,
+  `rectangle`, `rtriangle`, `semicircle`, `slash`, `square`, `x`). The
+  remaining groups (solfège `do`…`ti`, heavy crosses, etc.) have no term and
+  are not encoded as private NMTOKENs. MuseScore 4.7.4 writes no
+  `@head.shape` at all, hence the import-row figure.
+- **`style` (380 on the import row only).** MEI 5.1 *can* express page
+  geometry (`att.pages`, `@vu.height`, numeric `@fontsize`), and scoretk
+  reads and writes all of them (round trip 380 → 0). The MuseScore 4.7.4
+  `.ref.mei` files contain none of these attributes, so the information is
+  absent from the oracle, not from the reader. Verified by
+  `mei_musescore_references_carry_no_style`.
+
+No scoretk-private carrier was used: the `@type="mscore-*"` values are
+MuseScore's own documented extensions and are read/written as such, not
+counted here as interoperability gains.

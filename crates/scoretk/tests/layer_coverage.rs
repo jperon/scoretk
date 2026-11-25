@@ -808,3 +808,37 @@ fn mei_import_alone_reads_musescore_474_references() {
     }
     assert_eq!(checked, 56);
 }
+
+/// The import row's 380 `style` losses are a property of the MuseScore 4.7.4
+/// *references*: they carry none of the standard MEI layout carriers that
+/// scoretk writes (`att.pages`, `@vu.height`, numeric `@fontsize`). This test
+/// pins that fact so the gap cannot be mistaken for an unported reader.
+#[test]
+fn mei_musescore_references_carry_no_style() {
+    for (name, _) in corpus_scores() {
+        let (path, _) = reference_file(&name, ReferenceKind::Mei)
+            .expect("a MuseScore MEI reference for every corpus score");
+        let text = String::from_utf8(fs::read(&path).expect("read MEI reference"))
+            .expect("UTF-8 reference");
+        for carrier in [
+            "page.width",
+            "page.height",
+            "page.leftmar",
+            "page.rightmar",
+            "page.topmar",
+            "page.botmar",
+            "vu.height",
+        ] {
+            assert!(
+                !text.contains(carrier),
+                "{} carries {carrier}, which would make the style gap a reader bug",
+                path.display()
+            );
+        }
+        assert!(
+            !text.contains("fontsize=\"24pt\"") && !text.contains("fontsize=\"12pt\""),
+            "{} carries a numeric font size",
+            path.display()
+        );
+    }
+}
