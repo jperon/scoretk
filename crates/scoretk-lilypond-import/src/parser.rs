@@ -409,7 +409,7 @@ pub(crate) fn parse(
         playback_unfold_repeats: false,
         pending_midi_instrument: None,
         music_functions: BTreeMap::new(),
-            tweak_functions: BTreeSet::new(),
+        tweak_functions: BTreeSet::new(),
         instrument_definitions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
@@ -2778,9 +2778,9 @@ impl<'a> Parser<'a> {
         // `\shape`/`\vshape` suivis de `\etc` définissent une fonction
         // partielle : l'argument est fourni à l'appel, sous forme de
         // post-événement (`ly/music-functions-init.ly:2191-2230`).
-        let partial_tweak = self.peek().is_some_and(|token| {
-            token.is_command("shape") || token.is_command("vshape")
-        });
+        let partial_tweak = self
+            .peek()
+            .is_some_and(|token| token.is_command("shape") || token.is_command("vshape"));
         let music = self.parse_music();
         if partial_tweak {
             self.tweak_functions.insert(name.clone());
@@ -6264,9 +6264,12 @@ impl<'a> Parser<'a> {
             // La lire comme de la musique faisait disparaître la liaison.
             if token.kind == Kind::Command
                 && (self.tweak_functions.contains(&token.text)
-                    || self.music_functions.get(&token.text).is_some_and(|function| {
-                        function.body.is_none() && function.returns.is_some()
-                    }))
+                    || self
+                        .music_functions
+                        .get(&token.text)
+                        .is_some_and(|function| {
+                            function.body.is_none() && function.returns.is_some()
+                        }))
             {
                 self.position += 1;
                 return self.parse_single_post_event();
@@ -9293,7 +9296,7 @@ mod tests {
                 playback_articulate: false,
                 playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),
-            tweak_functions: BTreeSet::new(),
+                tweak_functions: BTreeSet::new(),
                 instrument_definitions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,
