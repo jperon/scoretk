@@ -649,6 +649,21 @@ fn add_gap_rest(
     };
     let tick = measure.start_tick + position;
     let staff_id = score.core.staves[staff].id;
+    // `fillGap` ne doit jamais écraser un accord déjà présent. Cela arrive
+    // quand une durée d'exécution plus longue que la figure (épisème
+    // grégorien, noire jouée ×1,5) fait croire à un chevauchement : la
+    // recherche s'arrête, puis le « gap » calculé retombe sur les notes
+    // suivantes et les remplace. Mesuré par `gabc_cross_formats.rs`.
+    let occupied = measure.segments.iter().any(|segment| {
+        segment.kind == SegmentType::ChordRest
+            && segment.tick == tick
+            && segment
+                .chord_rest(crate::model::Track::new(staff_id, voice))
+                .is_some_and(|existing| existing.chord_ref().is_some())
+    });
+    if occupied {
+        return;
+    }
     if !measure
         .segments
         .iter()

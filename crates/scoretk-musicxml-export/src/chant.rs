@@ -311,7 +311,13 @@ pub(crate) fn write_note_signs(
         // (`Gabc.tex:801-845`), pas une fin de mesure métrique. Le MIDI
         // correspondant porte la pause dans `SegmentItem::Breath`.
         out.xml.start_element("notations", &[]);
+        // XSD 4.0 `group:articulation` : `breath-mark` est un enfant de
+        // `<articulations>`, pas de `<notations>` directement. Sans cette
+        // enveloppe, un lecteur conforme (et notre propre lecteur) ignore
+        // la respiration.
+        out.xml.start_element("articulations", &[]);
         out.xml.tag_empty("breath-mark", &[]);
+        out.xml.end_element();
         out.xml.end_element();
     }
 }

@@ -223,11 +223,17 @@ fn chant_inventory(score: &Score, view: View) -> Inventory {
                         push(&mut inventory, "clef", tick, format!("{:?}", clef.concert));
                     }
                     SegmentItem::Breath(breath) => {
-                        // Une respiration est un signe de barre : MusicXML
-                        // l'ancre à la dernière note chantée (XSD `note`),
-                        // MuseScore à un segment dédié. Seul le signe et son
-                        // genre sont donc comparables, pas son ancrage.
-                        push(&mut inventory, "breath", None, format!("{:?}", breath.kind));
+                        // Seule la virgule est un signe de respiration
+                        // (`BarKind::has_breath`, `Gabc.tex:812-820`). Les
+                        // césures des autres barres sont des pauses d'exécution
+                        // de la projection (timeline MIDI), pas un fait
+                        // grégorien : elles ne font pas partie des dix faits.
+                        // MusicXML ancre la virgule à la dernière note
+                        // chantée (XSD `note`), MuseScore à un segment dédié :
+                        // seul le signe est comparable, pas son ancrage.
+                        if breath.kind == scoretk::model::BreathType::Comma {
+                            push(&mut inventory, "breath", None, "comma".to_owned());
+                        }
                     }
                     SegmentItem::ChordRest(chord_rest) => {
                         let performed = played(chord_rest);
