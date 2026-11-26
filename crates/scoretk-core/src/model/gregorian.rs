@@ -261,7 +261,45 @@ pub struct GregorianNote {
     /// 908-931,1093-1118`). They are not sung and never become signs, but
     /// their exact spelling and position are source facts, so the GABC
     /// writer emits them after this note rather than dropping them.
-    pub attributes: Vec<String>,
+    pub attributes: Vec<NoteAttribute>,
+}
+
+/// A bracketed attribute at its exact position within a note's glyph.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteAttribute {
+    /// Number of glyph characters preceding the attribute.
+    pub after: usize,
+    /// Exact source token, brackets included.
+    pub text: String,
+}
+
+/// Family of a non-note token inside a parenthesised GABC group.
+///
+/// These tokens are part of the L6 payload because their spelling and
+/// position are source facts (`Gabc.tex:684-700,801-906,847-870`), but they
+/// are not sung notes: the derived modern view keeps using `Syllable::bars`
+/// and the ordinary note events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupTokenKind {
+    /// Separation bar, `,` `;` `:` `::` and their variants (`:801-845`).
+    Bar,
+    /// Clef token inside a group (`:847-870`, `struct.c:1273-1288`).
+    Clef,
+    /// Custos or line break `z` / `Z` with its optional modifier (`:872-906`).
+    Custos,
+    /// Spacing / fusion / shape-hint token (`:627-700`).
+    Spacing,
+}
+
+/// One non-note token of a parenthesised group, at its exact position.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupToken {
+    /// Number of square notes already emitted in this group when it occurs.
+    pub notes_before: usize,
+    /// Atomic GABC spelling of the token.
+    pub text: String,
+    /// Family, for reporting and for the derived projection.
+    pub kind: GroupTokenKind,
 }
 
 /// One manuscript snippet after a NABC cut `|`, with the number of square
@@ -321,6 +359,11 @@ pub struct Syllable {
     /// manuscript snippets (`GregorioNabcRef.tex:178-199`). Empty by default:
     /// a chant without NABC has no second voice.
     pub nabc: Vec<NabcSnippet>,
+    /// Non-note tokens of this group in source order (bars with their exact
+    /// spelling, clef changes, custos, spacing and shape hints). Empty for a
+    /// payload assembled from another format, where the writer falls back
+    /// to `bars` / `signs` / `clef`.
+    pub group_tokens: Vec<GroupToken>,
     /// Bracketed attributes occurring before the first pitch of the group
     /// (`Gabc.tex:689-700,908-931,1093-1118`). Empty for ordinary chants:
     /// the corpus only has fusion sequences there, whose primitives are
@@ -341,6 +384,11 @@ pub struct Syllable {
     /// MusicXML), in which case the writer falls back to `space_after`;
     /// `Some("")` means the source had no separator at all.
     pub separator_after: Option<String>,
+    /// Exact whitespace between this syllable's text and its opening `(`
+    /// (`Gabc.tex:60-61`). Kept separately so `text` stays the trimmed
+    /// lyric used by every other direction, while the GABC writer can
+    /// reproduce `</eu> (::)` byte for byte.
+    pub text_spacing: Option<String>,
 }
 
 /// L6 payload of a GABC score.
@@ -1467,9 +1515,11 @@ mod tests {
             signs: Vec::new(),
             bars: vec![BarKind::DivisioFinalis],
             nabc: Vec::new(),
+            group_tokens: Vec::new(),
             leading_attributes: Vec::new(),
             space_after: true,
             separator_after: None,
+            text_spacing: None,
         });
         assert_eq!(gregorian.headers[0].value, "Veni Sancte Spiritus");
         assert_eq!(gregorian.syllables[0].notes[0].letter, 'g');

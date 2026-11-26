@@ -26,7 +26,10 @@
 //! (`Gabc.tex:60-61,241-245`) and escaped parentheses (`$:`, `:247-250`) do
 //! not open a note group.
 
-use scoretk_core::model::{BarKind, Gregorian, GregorianNote, NabcSnippet, Score, Syllable};
+use scoretk_core::model::{
+    BarKind, Gregorian, GregorianNote, GroupToken, GroupTokenKind, NabcSnippet, NoteAttribute,
+    Score, Syllable,
+};
 use scoretk_gabc_common::syntax::{self, is_pitch};
 
 use crate::Error;
@@ -79,7 +82,7 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
         None => crate::nabc::detect_nabc_lines(body),
     };
     let (syllables, clefs, opening_separator, notation_prefix) =
-        parse_notation(body, base, nabc_lines);
+        parse_notation(body, base, nabc_lines, !headers.is_empty());
     Ok(Gregorian {
         headers,
         staff_lines,
@@ -122,6 +125,7 @@ fn parse_notation(
     body: &str,
     base: usize,
     nabc_lines: usize,
+    has_header: bool,
 ) -> (
     Vec<Syllable>,
     Vec<String>,
@@ -150,6 +154,7 @@ fn parse_notation(
     // (`Gabc.tex:63-64`), so comment text must not set `space_after`.
     let mut separator_space = false;
     let mut notation_prefix: Option<String> = None;
+    let mut pending_text_spacing: Option<String> = None;
     let mut code = String::new();
     let mut code_start = 0usize;
     let mut in_notes = false;
@@ -160,6 +165,10 @@ fn parse_notation(
     let mut index = 0;
     while index < chars.len() {
         let char = chars[index];
+        // A file with a header has no syllable before its first group: any
+        // text there (a nested GregoBase header, a `%%` line) is layout.
+        let prefix_mode =
+            has_header && syllables.is_empty() && !opening_clef_seen && text.is_empty();
         if in_notes {
             if char == ')' {
                 let (mut syllable, group_clefs, above_text) =
@@ -170,6 +179,7 @@ fn parse_notation(
                 // the writer (`Gabc.tex:847-870`, `struct.c:1273-1288`).
                 syllable.clef = group_clefs.into_iter().next();
                 syllable.text = take_text(&mut text);
+                syllable.text_spacing = pending_text_spacing.take();
                 syllable.rubric = rubric(&syllable.text);
                 syllable.above_text = above_text;
                 let has_content = !syllable.notes.is_empty()
@@ -179,18 +189,28 @@ fn parse_notation(
                 // A leading group holding only the initial clef is recorded
                 // in `Gregorian::clefs` and emitted before the first
                 // syllable; a later clef-only group needs its own syllable.
-                let initial_clef_group =
-                    !has_content && syllable.clef.is_some() && syllables.is_empty();
+                let initial_clef_group = !has_content
+                    && syllable.clef.is_some()
+                    && syllables.is_empty()
+                    && !opening_clef_seen;
                 if has_content || (syllable.clef.is_some() && seen_content) {
                     syllables.push(syllable);
+                } else {
+                    // An empty group (`()`, `( )`, a second initial clef, a
+                    // slash-only snippet) is layout, not a sung event. Its
+                    // exact parentheses are kept in the inter-group layout
+                    // field so the writer can reproduce it, while the
+                    // derived view stays untouched.
+                    if !initial_clef_group {
+                        separator.push('(');
+                        separator.push_str(&code);
+                        separator.push(')');
+                    } else {
+                        opening_clef_seen = true;
+                    }
                 }
                 if has_content {
                     seen_content = true;
-                } else if initial_clef_group {
-                    // The initial clef-only group is emitted before the first
-                    // syllable by the writer; its following separator must be
-                    // kept for raw bodies (`docs/agents/gabc.md` §15).
-                    opening_clef_seen = true;
                 }
                 code.clear();
                 in_notes = false;
@@ -198,11 +218,19 @@ fn parse_notation(
                 code.push(char);
             }
         } else if escaped {
-            text.push(char);
+            if prefix_mode {
+                separator.push(char);
+            } else {
+                text.push(char);
+            }
             escaped = false;
         } else if char == '$' {
             // `$` escapes the next character (`Gabc.tex:247-250`).
-            text.push(char);
+            if prefix_mode {
+                separator.push(char);
+            } else {
+                text.push(char);
+            }
             escaped = true;
         } else if char == '(' {
             // The text accumulated before `(` is this group's syllable. The
@@ -214,17 +242,45 @@ fn parse_notation(
             // derived view and the five other destinations are unchanged.
             // Only the exact spelling is newly stored in `separator_after`.
             let space_after = separator_space || text.chars().any(char::is_whitespace);
-            let pending = take_text(&mut text);
-            let raw_separator = std::mem::take(&mut separator);
+            let buffered = std::mem::take(&mut text);
+            // Whitespace on either side of the syllable text is inter-group
+            // layout, not part of the syllable (`Gabc.tex:60-61`). Markup
+            // such as `</eu> (::)` ends in a space, so `trim_start` alone
+            // would lose it.
+            // Leading whitespace belongs to the previous group (word break);
+            // trailing whitespace is the exact gap before this group's `(`.
+            // It is a local layout field, not part of the lyric text.
+            let trimmed = buffered.trim();
+            let lead = &buffered[..buffered.len() - buffered.trim_start().len()];
+            pending_text_spacing = if trimmed.is_empty() {
+                None
+            } else {
+                Some(buffered[buffered.trim_end().len()..].to_owned())
+            };
+            let raw_separator = {
+                let mut raw = std::mem::take(&mut separator);
+                raw.push_str(lead);
+                raw
+            };
+            let pending = trimmed.to_owned();
             if let Some(previous) = syllables.last_mut() {
                 previous.space_after = space_after;
-                previous.separator_after = Some(raw_separator);
-            } else if opening_clef_seen && opening_separator.is_none() {
-                opening_separator = Some(raw_separator);
-            } else if notation_prefix.is_none() {
+                // Several empty groups may occur before the next syllable:
+                // their parentheses are layout tokens in the same field.
+                previous
+                    .separator_after
+                    .get_or_insert_with(String::new)
+                    .push_str(&raw_separator);
+            } else if opening_clef_seen {
+                opening_separator
+                    .get_or_insert_with(String::new)
+                    .push_str(&raw_separator);
+            } else {
                 // Everything before the first group, including a nested
                 // header block or a `%` comment, is source layout.
-                notation_prefix = Some(raw_separator);
+                notation_prefix
+                    .get_or_insert_with(String::new)
+                    .push_str(&raw_separator);
             }
             separator_space = false;
             code.clear();
@@ -239,11 +295,19 @@ fn parse_notation(
             let rest: String = chars[index..].iter().collect();
             if let Some(end) = rest.find("</v>") {
                 let end = index + end + 4;
-                text.push_str(&chars[index..end].iter().collect::<String>());
+                if prefix_mode {
+                    separator.extend(&chars[index..end]);
+                } else {
+                    text.push_str(&chars[index..end].iter().collect::<String>());
+                }
                 index = end;
                 continue;
             }
-            text.push(char);
+            if prefix_mode {
+                separator.push(char);
+            } else {
+                text.push(char);
+            }
         } else if char == '%' {
             // A comment runs to end of line and suppresses the end-of-line
             // space (`Gabc.tex:63-64`). Its exact characters are layout, so
@@ -264,6 +328,27 @@ fn parse_notation(
             separator.push(char);
             separator_space = true;
         } else {
+            if prefix_mode {
+                // A second, GregoBase-style header block may follow the
+                // first `%%` (`name: …;` lines): it is notation layout for
+                // scoretk, not syllable text (the Gabc.tex header grammar
+                // `:67-74` and the `%%` rule `:51,58`).
+                let end = chars[index..]
+                    .iter()
+                    .position(|c| matches!(c, '\n' | '('))
+                    .map_or(chars.len(), |offset| index + offset);
+                let line: String = chars[index..end].iter().collect();
+                if line.split_once(':').is_some_and(|(name, _)| {
+                    !name.is_empty()
+                        && name
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                }) {
+                    separator.extend(&chars[index..end]);
+                    index = end;
+                    continue;
+                }
+            }
             text.push(char);
         }
         index += 1;
@@ -272,7 +357,9 @@ fn parse_notation(
     // raw GregoBase body ends with a newline that a byte-exact writer must
     // reproduce (`Gabc.tex:60-61,241-245`).
     if let Some(last) = syllables.last_mut() {
-        last.separator_after = Some(std::mem::take(&mut separator));
+        last.separator_after
+            .get_or_insert_with(String::new)
+            .push_str(&separator);
     }
     (syllables, clefs, opening_separator, notation_prefix)
 }
@@ -380,24 +467,52 @@ fn parse_group(
     let square_len = chars.len();
     let mut note_starts: Vec<usize> = Vec::new();
     let mut note_ends: Vec<usize> = Vec::new();
+    let mut group_tokens: Vec<GroupToken> = Vec::new();
+    // Whitespace following a non-note token belongs to that token's layout:
+    // notes keep their own glyph spacing (`Gabc.tex:60-61`).
+    let trailing_ws = |index: &mut usize| {
+        while *index < square_len && chars[*index].is_whitespace() {
+            *index += 1;
+        }
+    };
     let mut index = 0;
     while index < square_len {
+        let start = index;
+        if index == 0 && chars[index].is_whitespace() {
+            while index < chars.len() && chars[index].is_whitespace() {
+                index += 1;
+            }
+            group_tokens.push(GroupToken {
+                notes_before: 0,
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Spacing,
+            });
+            continue;
+        }
         let rest: String = chars[index..].iter().collect();
         if let Some((bar, used)) = BarKind::parse_prefix(&rest) {
             syllable.bars.push(bar);
             index += used;
             // Bars may carry a vertical episema or a brace (`Gabc.tex:823-830`).
             if matches!(chars.get(index), Some('\'' | '_')) {
-                let raw = chars[index].to_string();
-                syllable
-                    .signs
-                    .push(syntax::parse_signs(&raw).into_iter().next().unwrap());
                 index += 1;
             }
+            trailing_ws(&mut index);
+            group_tokens.push(GroupToken {
+                notes_before: note_starts.len(),
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Bar,
+            });
             continue;
         }
         if let Some(used) = syntax::clef_token_len(&rest) {
             index += used;
+            trailing_ws(&mut index);
+            group_tokens.push(GroupToken {
+                notes_before: note_starts.len(),
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Clef,
+            });
             continue;
         }
         let char = chars[index];
@@ -406,12 +521,26 @@ fn parse_group(
             if matches!(chars.get(index), Some('+' | '-' | '0')) {
                 index += 1;
             }
+            trailing_ws(&mut index);
+            group_tokens.push(GroupToken {
+                notes_before: note_starts.len(),
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Custos,
+            });
             continue;
         }
         if matches!(char, '|' | '!' | '@' | '-' | '[' | ']') {
             // NABC cuts (grammar:870-907), zero-width spaces (`:684-686`),
             // fusion (`:627-634`) and shape hints (`:689-700`).
             index += 1;
+            if char != '|' {
+                trailing_ws(&mut index);
+                group_tokens.push(GroupToken {
+                    notes_before: note_starts.len(),
+                    text: char.to_string(),
+                    kind: GroupTokenKind::Spacing,
+                });
+            }
             continue;
         }
         if char == '/' {
@@ -424,12 +553,24 @@ fn parse_group(
                 }
                 index += 1;
             }
+            trailing_ws(&mut index);
+            group_tokens.push(GroupToken {
+                notes_before: note_starts.len(),
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Spacing,
+            });
             continue;
         }
         if is_pitch(char) && matches!(chars.get(index + 1), Some('+')) {
             // `[a-np]+` is a manual custos, not a note
             // (`Gabc.tex:872-884`; `gabc-notes-determination.l:1158-1162`).
             index += 2;
+            trailing_ws(&mut index);
+            group_tokens.push(GroupToken {
+                notes_before: note_starts.len(),
+                text: chars[start..index].iter().collect(),
+                kind: GroupTokenKind::Custos,
+            });
             continue;
         }
         if is_pitch(char) {
@@ -465,6 +606,7 @@ fn parse_group(
         }
         index += 1;
     }
+    syllable.group_tokens = group_tokens;
     // Each bracketed attribute lives on the note whose token it follows,
     // not on the group: that is the level where Gregorio attaches it and
     // the level from which the GABC writer re-emits it in place.
@@ -474,7 +616,10 @@ fn parse_group(
             .zip(&note_ends)
             .position(|(start, end)| position >= *start && position <= *end);
         match owner {
-            Some(index) => syllable.notes[index].attributes.push(token),
+            Some(index) => syllable.notes[index].attributes.push(NoteAttribute {
+                after: position.saturating_sub(note_starts[index] + 1),
+                text: token,
+            }),
             None => syllable.leading_attributes.push(token),
         }
     }
@@ -532,11 +677,13 @@ fn strip_attributes(code: &str) -> (String, Vec<usize>, Vec<(usize, String)>) {
                 end += 1;
             }
             if fusion {
-                // Keep the primitives, drop the delimiters: `parse_group`
-                // already treats the preceding `@` as a fusion marker.
-                for (offset, char) in chars[index + 1..end.saturating_sub(1)].iter().enumerate() {
+                // `@[ehg]` fuses three *sung* pitches (`Gabc.tex:603-666`):
+                // keep the primitives **and** their delimiters, since both
+                // are source tokens. `parse_group` emits `@`, `[` and `]` as
+                // spacing tokens around the notes.
+                for (offset, char) in chars[index..end].iter().enumerate() {
                     result.push(*char);
-                    mapping.push(index + 1 + offset);
+                    mapping.push(index + offset);
                 }
             } else {
                 brackets.push((result.chars().count(), chars[index..end].iter().collect()));

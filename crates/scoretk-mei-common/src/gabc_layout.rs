@@ -25,7 +25,7 @@
 //! relus par le lecteur. Le format interne est ASCII hexadécimal, donc
 //! insensible à l'échappement XML.
 
-use scoretk_core::model::{Gregorian, GregorianHeaderItem, Syllable};
+use scoretk_core::model::{Gregorian, GregorianHeaderItem, GroupToken, GroupTokenKind, Syllable};
 
 /// Préfixe de la valeur `@label` portant le layout du document GABC.
 pub const HEADER_LABEL: &str = "gabc:layout:";
@@ -143,11 +143,12 @@ pub fn read_header_label(label: Option<&str>, gregorian: &mut Gregorian) {
 /// Préfixe du `@label` portant les attributs `[…]` d'une syllabe.
 pub const SYLLABLE_LABEL: &str = "gabc:attrs:";
 
-/// Sérialise les attributs de groupe et de chaque note (`Gabc.tex:689-700,
-/// 908-931,1093-1118`) dans un `@label` de `<syllable>`.
+/// Sérialise les attributs `[…]` et les jetons non chantés du groupe dans un
+/// `@label` de `<syllable>` (`Gabc.tex:627-700,801-906`).
 #[must_use]
 pub fn attributes_label(syllable: &Syllable) -> Option<String> {
     if syllable.leading_attributes.is_empty()
+        && syllable.group_tokens.is_empty()
         && syllable.notes.iter().all(|note| note.attributes.is_empty())
     {
         return None;
@@ -164,12 +165,34 @@ pub fn attributes_label(syllable: &Syllable) -> Option<String> {
         } else {
             inner.push('A');
             for attribute in &note.attributes {
-                inner.push_str(&hex(attribute));
+                inner.push_str(&hex(&attribute.text));
+                inner.push('@');
+                inner.push_str(&attribute.after.to_string());
                 inner.push(';');
             }
             inner.push('|');
         }
     }
+    inner.push('T');
+    for token in &syllable.group_tokens {
+        let kind = match token.kind {
+            GroupTokenKind::Bar => 'B',
+            GroupTokenKind::Clef => 'C',
+            GroupTokenKind::Custos => 'U',
+            GroupTokenKind::Spacing => 'S',
+        };
+        inner.push(kind);
+        inner.push_str(&hex(&token.text));
+        inner.push(':');
+        inner.push_str(&token.notes_before.to_string());
+        inner.push(',');
+    }
+    inner.push('|');
+    inner.push('X');
+    if let Some(spacing) = &syllable.text_spacing {
+        inner.push_str(&hex(spacing));
+    }
+    inner.push('|');
     Some(format!("{SYLLABLE_LABEL}{}", hex(&inner)))
 }
 
@@ -192,9 +215,40 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
     for note in &mut syllable.notes {
         if let Some(part) = parts.next() {
             if let Some(tokens) = part.strip_prefix('A') {
-                note.attributes = tokens.split(';').filter_map(|token| unhex(token)).collect();
+                note.attributes = tokens
+                    .split(';')
+                    .filter_map(|token| {
+                        let (text, after) = token.split_once('@')?;
+                        Some(scoretk_core::model::NoteAttribute {
+                            text: unhex(text)?,
+                            after: after.parse().ok()?,
+                        })
+                    })
+                    .collect();
             }
         }
+    }
+    let tokens = parts.next().and_then(|part| part.strip_prefix('T')).unwrap_or("");
+    syllable.group_tokens = tokens
+        .split(',')
+        .filter_map(|entry| {
+            let (head, count) = entry.split_once(':')?;
+            let text = unhex(&head[1..])?;
+            let kind = match head.as_bytes().first()? {
+                b'B' => GroupTokenKind::Bar,
+                b'C' => GroupTokenKind::Clef,
+                b'U' => GroupTokenKind::Custos,
+                _ => GroupTokenKind::Spacing,
+            };
+            Some(GroupToken {
+                notes_before: count.parse().ok()?,
+                text,
+                kind,
+            })
+        })
+        .collect();
+    if let Some(spacing) = parts.next().and_then(|part| part.strip_prefix('X')) {
+        syllable.text_spacing = unhex(spacing);
     }
 }
 
@@ -240,7 +294,16 @@ mod tests {
             notes: vec![
                 scoretk_core::model::GregorianNote {
                     letter: 'g',
-                    attributes: vec!["[cs:t]".to_owned(), "[oh:h]".to_owned()],
+                    attributes: vec![
+                        scoretk_core::model::NoteAttribute {
+                            after: 0,
+                            text: "[cs:t]".to_owned(),
+                        },
+                        scoretk_core::model::NoteAttribute {
+                            after: 2,
+                            text: "[oh:h]".to_owned(),
+                        },
+                    ],
                     ..Default::default()
                 },
                 scoretk_core::model::GregorianNote {

@@ -34,7 +34,7 @@ mod from_score;
 use std::borrow::Cow;
 
 use scoretk_core::model::{
-    Capabilities, Extension, Gregorian, GregorianHeaderItem, Layers, Score,
+    Capabilities, Extension, Gregorian, GregorianHeaderItem, GroupTokenKind, Layers, Score,
 };
 use scoretk_gabc_common::Result;
 
@@ -152,10 +152,30 @@ fn emit(gregorian: &Gregorian) -> String {
 
     for syllable in &gregorian.syllables {
         out.push_str(&syllable.text);
-        out.push('(');
-        if let Some(clef) = &syllable.clef {
-            out.push_str(clef);
+        if let Some(spacing) = &syllable.text_spacing {
+            out.push_str(spacing);
         }
+        out.push('(');
+        // A source group keeps its non-note tokens in source order: a clef
+        // inside a bar group belongs after the bar, not before it. Payloads
+        // built without a source body still use the per-syllable clef slot.
+        let tokens = &syllable.group_tokens;
+        let has_clef_token = tokens
+            .iter()
+            .any(|token| token.kind == GroupTokenKind::Clef);
+        if !has_clef_token {
+            if let Some(clef) = &syllable.clef {
+                out.push_str(clef);
+            }
+        }
+        let mut token_cursor = 0usize;
+        let mut emit_tokens = |out: &mut String, at: usize| {
+            while token_cursor < tokens.len() && tokens[token_cursor].notes_before <= at {
+                out.push_str(&tokens[token_cursor].text);
+                token_cursor += 1;
+            }
+        };
+        emit_tokens(&mut out, 0);
         for attribute in &syllable.leading_attributes {
             out.push_str(attribute);
         }
@@ -167,7 +187,7 @@ fn emit(gregorian: &Gregorian) -> String {
             let already_in_place = syllable.notes.iter().any(|note| {
                 note.attributes
                     .iter()
-                    .any(|attribute| attribute == &format!("[alt:{above}]"))
+                    .any(|attribute| attribute.text == format!("[alt:{above}]"))
             });
             if !already_in_place {
                 out.push_str("[alt:");
@@ -201,11 +221,16 @@ fn emit(gregorian: &Gregorian) -> String {
             while note_index < snippet.notes_before.min(syllable.notes.len()) {
                 write_note(&mut out, &syllable.notes[note_index]);
                 note_index += 1;
+                emit_tokens(&mut out, note_index);
             }
             // Separation bars and group signs must stay in square state:
             // emitting them after the last `|` would make them part of the
             // manuscript snippet when the GABC is read back.
-            if snippet_position + 1 == syllable.nabc.len() && note_index == syllable.notes.len() {
+            emit_tokens(&mut out, note_index);
+            if snippet_position + 1 == syllable.nabc.len()
+                && note_index == syllable.notes.len()
+                && tokens.is_empty()
+            {
                 write_bars(&mut out, syllable);
             }
             out.push('|');
@@ -221,8 +246,10 @@ fn emit(gregorian: &Gregorian) -> String {
         while note_index < syllable.notes.len() {
             write_note(&mut out, &syllable.notes[note_index]);
             note_index += 1;
+            emit_tokens(&mut out, note_index);
         }
-        if !after_snippet {
+        emit_tokens(&mut out, note_index);
+        if tokens.is_empty() && !after_snippet {
             write_bars(&mut out, syllable);
         }
         out.push(')');
@@ -282,9 +309,8 @@ fn write_bars(out: &mut String, syllable: &scoretk_core::model::Syllable) {
 /// Sérialise une lettre chantée et son glyphe atomique (`gabc.md` §8).
 fn write_note(out: &mut String, note: &scoretk_core::model::GregorianNote) {
     out.push(note.letter);
-    if !note.glyph.is_empty() {
-        out.push_str(&note.glyph);
-    } else {
+    let glyph: Vec<char> = note.glyph.chars().collect();
+    if glyph.is_empty() {
         // Signs stored beside the note (e.g. on a score assembled from
         // another format) use their atomic GABC spelling.
         for sign in &note.signs {
@@ -292,9 +318,20 @@ fn write_note(out: &mut String, note: &scoretk_core::model::GregorianNote) {
         }
     }
     // Layout/tuning/TeX attributes are atomic GABC tokens attached to this
-    // glyph (`Gabc.tex:689-700,908-931,1093-1118`), emitted in source order.
-    for attribute in &note.attributes {
-        out.push_str(attribute);
+    // glyph (`Gabc.tex:689-700,908-931,1093-1118`). `after` is their exact
+    // position among the glyph characters, so `b[ull:}]//` does not become
+    // `b//[ull:}]`.
+    let mut attributes: Vec<_> = note.attributes.iter().collect();
+    attributes.sort_by_key(|attribute| attribute.after);
+    let mut cursor = 0;
+    for position in 0..=glyph.len() {
+        while cursor < attributes.len() && attributes[cursor].after == position {
+            out.push_str(&attributes[cursor].text);
+            cursor += 1;
+        }
+        if let Some(char) = glyph.get(position) {
+            out.push(*char);
+        }
     }
 }
 
