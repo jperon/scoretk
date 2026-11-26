@@ -60,12 +60,22 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
         .clamp(2, 5);
     // `nabc-lines` (`:129-130`) gives the number of manuscript snippets that
     // may follow a square snippet; the `|` cut cycles the state modulo
-    // `nabc_lines + 1` (`gabc-score-determination.y:870-907`).
-    let nabc_lines = headers
-        .iter()
-        .find(|header| header.name == "nabc-lines")
-        .and_then(|header| header.value.bytes().find(|byte| byte.is_ascii_digit()))
-        .map_or(0, |digit| (digit - b'0') as usize);
+    // `nabc_lines + 1` (`gabc-score-determination.y:870-907`). Without the
+    // header, a raw GregoBase export still carries the cuts: GregoBase itself
+    // prepends `nabc-lines: 1;` before rendering
+    // (`specs/gabc/gregobase/chant_img.php:48`) and Gregorio documents the
+    // pattern in `doc/GregorioNabcRef.tex:153-170`. Gregorio rejects `|` when
+    // the count is 0 (`gabc-score-determination.y:870-907`, VERBOSITY_FATAL),
+    // so infer the smallest safe value from the notation. An explicit header
+    // always wins, including `nabc-lines: 0;`.
+    let nabc_lines = match headers.iter().find(|header| header.name == "nabc-lines") {
+        Some(header) => header
+            .value
+            .bytes()
+            .find(|byte| byte.is_ascii_digit())
+            .map_or(0, |digit| (digit - b'0') as usize),
+        None => crate::nabc::detect_nabc_lines(body),
+    };
     let (syllables, clefs) = parse_notation(body, base, nabc_lines);
     Ok(Gregorian {
         headers,

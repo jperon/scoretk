@@ -28,6 +28,7 @@
 //! (`docs/agents/model-modularisation.md` §7.1).
 
 mod derived;
+mod nabc;
 mod read;
 
 use scoretk_core::model::{Capabilities, Layers, Score};
