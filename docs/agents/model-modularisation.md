@@ -1246,6 +1246,39 @@ two legal but different gates). Neither is a missing SMF feature.
 All options remain opt-in: the 21/21 MIDI reference exports, the 21/21 round
 trip, the 4/21 import corpus and `e2e_corpus` 8/8 are unchanged.
 
+#### Update 2026-11-26 — MIDI full support in `layer_coverage`
+
+The 98.91 % note-capacity figure above was measured in `midi_smf_capacity.rs`,
+not printed as a `layer_coverage` line. Both tests now share one independent
+SMF oracle (`crates/scoretk/tests/support/midi_smf.rs`), and
+`midi_full_support_capacity_line` prints the same comparison with the
+`compare_with_kinds` machinery used by every other direction. One option,
+`midi_full_support`, groups the standard SMF carriers on both sides: `FF 03`
+sequence name, `FF 02` copyright, `FF 01` plain staff text, RP-026
+`{#FIELD=value}`, `FF 06` marker, `FF 07` cue point for system text, and exact
+source ticks on import. The test asserts that no private `@ST:`/`@SY:`/`@TK:`
+prefix is present in the headline bytes; the private `smf_text` mode remains a
+separately labelled secondary line.
+
+| `layer_coverage` row | Oracle | Declared | Full support |
+| --- | --- | --- | ---: |
+| `(a) default (4.7.4)` | written SMF | L0–L4, 15 kinds | 41.34 % |
+| `(b) HEADLINE midi_full_support` | written SMF, standard carriers only | L0–L4, 15 kinds | **98.23 %** (target 95 % reached) |
+| `(c) SECONDARY smf_text` (private) | written SMF | L0–L4, 15 kinds | 98.23 % |
+| main table, default round trip | written *score* inventory | L0–L4, 15 kinds | 78.62 % (unchanged diagnostic) |
+
+Every declared kind stays in the denominator. The residual 50 items of the
+headline are, by kind: `note` 46 (overlapping same-pitch attacks with two legal
+pairings, the writer's harmony channel absent from the pivot, and the Note Off
+`end-1` ambiguity — `[MIDI §Channel Voice; Table II]`, `[SMF §Events and time]`,
+`importmidi_chord.cpp:176-240, 391-465`), `key-sig` 2 and `tempo` 1 (standard
+`FF 59` / `FF 51` carriers, lost at ticks where the importer creates no
+segment), `channel` 1 (status nibble carried by SMF, but no per-note channel
+field in the pivot). None is a carrier the SMF lacks; each is printed by the
+test and cited in `docs/agents/midi.md` §"Full support in `layer_coverage`".
+Default export bytes, the 21/21 reference parity, the parity tests and
+`e2e_corpus` 8/8 are unchanged.
+
 ### 11.10 MuseScore and MusicXML: measured coverage without an exclusion table (2026-11-25)
 
 `xml_full_loss_table` / `xml_loss_diagnostic` in

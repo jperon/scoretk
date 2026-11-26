@@ -34,6 +34,12 @@ let midi: Vec<u8> = write_midi(&score)?;
   "flat" file, without unfolding repeats (`RepeatList::flatten`).
   The option is exposed by the facade (`Options::midi.expand_repeats`) and by
   the CLI (`--no-expand-repeats`).
+- `MidiOptions::full_support` (writer) and `ImportOptions::full_support`
+  (reader), both `false` by default: the standard SMF carriers described in
+  "Full support in `layer_coverage`" below. Exposed as
+  `Options::midi_full_support`, CLI `--midi-full-support` and wasm
+  `midiFullSupport`. It replaces no existing option: `smf_text` stays the
+  private, secondary mode and `smf_exact_ticks` stays independently available.
 - `write_midi_with_timemap(&Score)` and
   `write_midi_with_timemap_and(&Score, MidiOptions)` additionally return the
   time map of the same rendering: `(Vec<u8>, Timemap)`. The MIDI bytes are
@@ -318,6 +324,59 @@ last meta tick) are kept, which closes those losses without changing the
 default path. The remaining key-sig (2 values) and tempo (1 value) gaps are
 key/tempo changes at ticks where the importer has no segment; they are printed
 by the test and not hidden in the denominator.
+
+## Full support in `layer_coverage` (2026-11-26)
+
+`midi_full_support` is the single opt-in switch that groups the **standard**
+SMF carriers of [SMF §Meta-Events] and [RP-026], on both sides:
+
+- writer `MidiOptions::full_support` (facade `Options::midi_full_support`,
+  CLI `--midi-full-support`, wasm `midiFullSupport`): `FF 03` sequence name of
+  track 0 for `work_title`, `FF 02` copyright, `FF 01` plain staff text and
+  RP-026 `{#FIELD=value}` song-information tags, `FF 06` rehearsal marks and
+  `FF 07` cue points for system texts;
+- reader `ImportOptions::full_support`: exact source ticks (the same path as
+  `smf_exact_ticks`), `FF 01` text, `FF 06`/`FF 07` annotations and RP-026 tags.
+  No `@ST:`/`@SY:`/`@TK:` payload is ever written: the test asserts their
+  absence from the bytes before measuring the headline.
+
+`midi_smf_capacity.rs` and `layer_coverage.rs` now share the same independent
+SMF oracle (`tests/support/midi_smf.rs`): `midly` reads the bytes written by
+scoretk, attacks are keyed by pitch, onset, played duration, velocity and
+channel, and meta values are compared value by value. Both views are projected
+into one `LayerInventory` and compared with `compare_with_kinds` over the same
+15 declared kinds (§"SMF item declaration and the measurement rule"). Notes
+use `duration - 1` on both sides to normalise the Note Off `end-1` convention;
+this is the format's inclusive/exclusive ambiguity, not a relaxed key.
+`layer_coverage.rs` prints three clearly labelled rows on the same 56 scores:
+
+| Row | Oracle | Declared | Full support |
+| --- | --- | --- | ---: |
+| `(a) default (4.7.4)` (reference line) | written SMF | L0–L4, 15 kinds | 41.34 % |
+| `(b) HEADLINE midi_full_support` | written SMF, standard carriers only | L0–L4, 15 kinds | **98.23 %** |
+| `(c) SECONDARY smf_text` (private `@…` mode) | written SMF | L0–L4, 15 kinds | 98.23 % |
+
+The 78.62 % line of the main `layer_coverage_table` is unchanged: it still
+compares the re-read model with the *written score* inventory, and remains the
+diagnostic of MuseScore's quantising importer. The headline instead compares
+the re-read model with what the file carries (§11.9 of
+`model-modularisation.md`). Default MIDI bytes remain byte-identical to the
+21 `*.ref.mid` references; the option is additive and off by default.
+
+**Residual losses of the headline (all 15 kinds stay in the denominator).**
+The per-kind loss table is printed by `midi_full_support_capacity_line`:
+
+| Kind | Missing / reference | Carrier and cause |
+| --- | ---: | --- |
+| `note` | 46 / 2 284 | Note On/Off, note number and velocity are carried by `[MIDI §Channel Voice; Table II]`. The 46 are not absent objects: two Note On at one tick for the same (channel, pitch) followed by a velocity-0 On (`v3/moonlight`, 20 notes) have two legal pairings (`fixupMIDI`, `importmidi_chord.cpp:176-240, 391-465`); the writer's harmony channel cannot be restored from a part-level channel (`v3/voices`, 5 notes); the rest are exact-tick `end-1` differences at Note Off, which `[SMF §Events and time]` does not disambiguate. |
+| `key-sig` | 2 / 66 | `FF 59 02 sf mi` is a standard carrier (`[SMF §Meta-Events]`): the two values are key changes at ticks where the importer creates no segment (§"SMF fidelity" above). A port anchoring limit, not a format limit; kept in the denominator. |
+| `tempo` | 1 / 61 | `FF 51 03 tttttt` is a standard carrier; 1.533 beats/s is lost to the microseconds-per-quarter rounding and the same segment anchoring (`[SMF §Meta-Events]`). |
+| `channel` | 1 / 68 | The channel status nibble is carried by `[MIDI §Channel Voice]`, but the pivot model has no per-note channel field: the harmony channel of `v3/voices` is read back as the part's main channel. |
+
+No item kind was removed to raise the figure, and no private text is counted:
+the private prefixes are confined to the secondary `smf_text` mode and to its
+interoperability row in `midi_smf_capacity.rs` (staff/system text 0 %, title
+50 % once stripped).
 
 ## Additive options and private extensions
 
