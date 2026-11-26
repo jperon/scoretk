@@ -2274,6 +2274,25 @@ fn fonction_musicale_a_parametre_musical() {
 }
 
 #[test]
+fn citation_vers_un_addquote_posterieur() {
+    // `ly/music-functions-init.ly:56-60,545-574` : a quote is an identifier
+    // resolved when played. A `\quoteDuring` that precedes its `\addQuote`
+    // must still insert the quoted notes (quote-cyclic.ly defines two voices
+    // referring to each other).
+    let music = "\\new Staff { \\fixed c' { e'4 \\quoteDuring \"later\" { r2 } f'4 } }";
+    let after = read_lilypond(&format!(
+        "\\version \"2.24.0\"\n\\score {{ {music} }}\n\\addQuote \"later\" {{ c'4 d'4 }}\n"
+    ))
+    .expect("lecture");
+    let before = read_lilypond(&format!(
+        "\\version \"2.24.0\"\n\\addQuote \"later\" {{ c'4 d'4 }}\n\\score {{ {music} }}\n"
+    ))
+    .expect("lecture");
+    assert_eq!(hauteurs(&after), hauteurs(&before));
+    assert!(!hauteurs(&after).is_empty());
+}
+
+#[test]
 fn argument_musical_optionnel_ne_consomme_pas_la_suite() {
     // `lily/parser.yy` (`function_arglist_optional`): `(ly:music? *unspecified*)`
     // is absent when the next token is not music. Consuming the style symbol

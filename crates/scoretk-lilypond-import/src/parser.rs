@@ -28,7 +28,7 @@
 //! ignoré avec un avertissement : la lecture ne doit jamais échouer sur une
 //! décoration, seulement sur une source illisible.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use scoretk_core::model::{
     ArpeggioType, ArticulationType, Duration, DurationType, Fraction, GraceType, KeyMode,
@@ -143,6 +143,8 @@ pub(crate) struct Parser<'a> {
     /// Musiques déclarées par `\addQuote`, consultées par `\cueDuring`
     /// (`ly/music-functions-init.ly:56-60,545-574`).
     quotes: BTreeMap<String, Music>,
+    /// Quotes currently being resolved, to stop mutual `\addQuote` cycles.
+    resolving_quotes: BTreeSet<String>,
     /// Identifiants Scheme liés à un entier (`num = #3`).
     numbers: BTreeMap<String, i64>,
 }
@@ -407,6 +409,7 @@ pub(crate) fn parse(
         duration_identifiers: BTreeMap::new(),
         numbers: BTreeMap::new(),
         quotes: BTreeMap::new(),
+        resolving_quotes: BTreeSet::new(),
     };
     parser.document()
 }
@@ -3060,6 +3063,83 @@ impl<'a> Parser<'a> {
         matches!(token.kind, Kind::Word | Kind::Str | Kind::Scheme)
     }
 
+    /// Reads a `\addQuote` definition whose name was used before its
+    /// declaration (or whose declaration follows the current position).
+    ///
+    /// `ly/music-functions-init.ly:56-60` stores quoted music as an
+    /// identifier; `Quote_iterator` looks it up when the quote is played, not
+    /// when it is written. The token range of the definition is re-parsed with
+    /// the current parser state, then cached like an ordinary quote. Mutual
+    /// references are cut by `resolving_quotes`.
+    fn resolve_quote(&mut self, name: &str) {
+        if name.is_empty() || self.resolving_quotes.contains(name) {
+            return;
+        }
+        let Some((start, end)) = self.quote_range(name) else {
+            return;
+        };
+        let tokens = self.tokens[start..end].to_vec();
+        let saved_tokens = std::mem::replace(&mut self.tokens, tokens);
+        let saved_position = self.position;
+        let saved_duration = self.default_duration;
+        let saved_multiplier = self.default_multiplier;
+        let saved_language = self.language;
+        self.position = 0;
+        self.resolving_quotes.insert(name.to_owned());
+        let music = self.parse_music();
+        self.resolving_quotes.remove(name);
+        self.tokens = saved_tokens;
+        self.position = saved_position;
+        self.default_duration = saved_duration;
+        self.default_multiplier = saved_multiplier;
+        self.language = saved_language;
+        self.quotes.insert(name.to_owned(), music);
+    }
+
+    /// Token range of the music in `\addQuote <name> <music>`.
+    fn quote_range(&self, name: &str) -> Option<(usize, usize)> {
+        for index in 0..self.tokens.len().saturating_sub(1) {
+            let named = matches!(
+                self.tokens.get(index + 1).map(|token| &token.kind),
+                Some(Kind::Str | Kind::Word)
+            ) && self.tokens[index + 1].text == name;
+            if !self.tokens[index].is_command("addQuote") || !named {
+                continue;
+            }
+            let start = index + 2;
+            let mut depth = 0i32;
+            let mut end = start;
+            while end < self.tokens.len() {
+                let token = &self.tokens[end];
+                let boundary = end > start
+                    && depth == 0
+                    && (token.is_punct('<')
+                        || (token.kind == Kind::Command
+                            && matches!(
+                                token.text.as_str(),
+                                "addQuote"
+                                    | "score"
+                                    | "book"
+                                    | "bookpart"
+                                    | "language"
+                                    | "header"
+                                    | "paper"
+                            )));
+                if boundary {
+                    break;
+                }
+                if token.is_punct('{') || token.is_punct('<') || token.is_punct('[') {
+                    depth += 1;
+                } else if token.is_punct('}') || token.is_punct('>') || token.is_punct(']') {
+                    depth -= 1;
+                }
+                end += 1;
+            }
+            return Some((start, end));
+        }
+        None
+    }
+
     /// Consomme la hauteur secondaire d'un `\pitchedTrill`.
     ///
     /// C'est un `ly:music?` d'un seul événement : une hauteur, ses marques
@@ -4568,6 +4648,13 @@ impl<'a> Parser<'a> {
                 }
                 let principal = self.parse_music();
                 let duree = music_duration(&principal, self.default_duration);
+                // A quote may refer to a `\addQuote` declared later in the
+                // file (`input/regression/quote-cyclic.ly`). LilyPond keeps
+                // quoted music as an identifier, resolved when the quote is
+                // used; read the definition on demand instead of dropping it.
+                if !self.quotes.contains_key(&nom) {
+                    self.resolve_quote(&nom);
+                }
                 self.quotes
                     .get(&nom)
                     .map(|quote| {
@@ -8962,6 +9049,7 @@ mod tests {
             duration_identifiers: BTreeMap::new(),
             numbers: BTreeMap::new(),
             quotes: BTreeMap::new(),
+            resolving_quotes: BTreeSet::new(),
         };
         parser.parse_music()
     }
@@ -9020,6 +9108,7 @@ mod tests {
                 duration_identifiers: BTreeMap::new(),
                 numbers: BTreeMap::new(),
                 quotes: BTreeMap::new(),
+                resolving_quotes: BTreeSet::new(),
             };
             let progresse = parser.guard_progress(0);
             let bloque = parser.guard_progress(1);
