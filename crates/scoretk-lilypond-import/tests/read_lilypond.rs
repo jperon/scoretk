@@ -8151,6 +8151,54 @@ fn quote_during_joue_la_citation() {
         .all(|n| n.small));
 }
 
+/// `lily/quote-iterator.cc:161-211` : une citation est une branche musicale
+/// au temps absolu courant. Dans `<< \quoteDuring … s4 >>`, la classer parmi
+/// les commandes de contexte la faisait avancer le curseur avant la branche
+/// `s4` : la citation suivante commençait une noire trop tard.
+#[test]
+fn citation_dans_un_simultane_ne_decale_pas_la_suivante() {
+    let src = "\\version \"2.24.0\"\n\
+         \\addQuote q { \\fixed c' { c'8 c'8 c'8 c'8 c'8 c'8 c'8 c'8 } }\n\
+         \\new Staff \\fixed c' { g4 \
+         << \\quoteDuring \"q\" { \\skip 4 } s4 >> \
+         << \\quoteDuring \"q\" { \\skip 4 } s4 >> }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let mut attaques: Vec<(i64, u8)> = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .flat_map(|segment| {
+            segment
+                .iter_elements()
+                .filter_map(|(_, element)| match element {
+                    SegmentItem::ChordRest(chord_rest) => Some(
+                        chord_rest
+                            .chord_ref()
+                            .into_iter()
+                            .flat_map(|chord| chord.notes.iter().copied())
+                            .filter(|id| score.note(*id).tie_back.is_none())
+                            .map(|id| (segment.tick.ticks(480), score.note(id).pitch))
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    attaques.sort_unstable();
+    assert_eq!(
+        attaques,
+        vec![
+            (0, 67),
+            (120, 72),
+            (180, 72),
+            (240, 72),
+            (300, 72),
+        ]
+    );
+}
+
 /// `lily/quote-iterator.cc:229-271` : la citation transpose ses événements
 /// de `pitch_interval (instrumentTransposition cible, transposition source)`.
 /// Ici `d` écrit (62) avec une source en si bémol (−2) sonne 60, que la

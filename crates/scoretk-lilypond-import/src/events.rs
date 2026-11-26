@@ -2663,6 +2663,13 @@ fn context_is_context_only(context: &Context) -> bool {
             body, alternatives, ..
         } => is_context_only(body) && alternatives.iter().all(is_context_only),
         Context::Alternative(items) => items.iter().all(is_context_only),
+        // Une citation joue des notes : dans `<< \quoteDuring … s4 >>`, la
+        // traiter comme une commande de contexte la faisait avancer le
+        // curseur *avant* la branche musicale, qui démarrait alors au mauvais
+        // temps (`quote-transposition.ly` : la seconde citation était décalée
+        // d'une noire). `lily/quote-iterator.cc:161-211` la place au temps
+        // absolu courant, comme une branche musicale ordinaire.
+        Context::Cue { .. } => false,
         Context::PartCombine { .. } => false,
         _ => true,
     }
