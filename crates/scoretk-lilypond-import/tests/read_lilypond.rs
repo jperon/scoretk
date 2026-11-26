@@ -10465,3 +10465,36 @@ fn sustain_avant_une_liaison_garde_la_liaison() {
         \\score { \\new Staff { \\sustainOn \\fixed c' { c'4 d'4 } } }\n";
     assert_eq!(hauteurs(&read_lilypond(seul).expect("lecture")), vec![72, 74]);
 }
+
+/// Un `\midi` qui retire `Staff_performer` de `Staff` et l'ajoute à `Voice`
+/// donne une piste par voix (`lily/staff-performer.cc:138-182`,
+/// `get_audio_staff`) : les voix d'une même portée gravée ne doivent pas
+/// fusionner leurs unissons (`bwv869b.ly`).
+#[test]
+fn midi_une_piste_par_voix_sans_fusion_d_unissons() {
+    let source = r#"\version "2.26.0"
+\language "english"
+\score {
+  \new PianoStaff <<
+    \new Staff = "RH" { << { c'2 c'4 r4 } { c'2 ~ } >> }
+    \new Staff = "LH" { << { d'2 } { e'2 } >> }
+  >>
+  \midi {
+    \context { \Staff \remove "Staff_performer" }
+    \context { \Voice \consists "Staff_performer" }
+  }
+}"#;
+    let score = read_lilypond(source).expect("lecture");
+    // Deux portées gravées vides restent, plus une par voix jouée.
+    assert_eq!(score.staves.len(), 6);
+    let mut attaques = hauteurs_attaques(&score);
+    attaques.sort_unstable();
+    assert_eq!(attaques, vec![60, 60, 60, 62, 64]);
+    // Un `\midi` qui met `Staff_performer` sur `PianoStaff` (et non sur
+    // `Voice`) ne doit pas déclencher la règle (`chopin_prelude_op45.ly`).
+    let piano = source.replace(
+        "\\context { \\Voice \\consists \"Staff_performer\" }",
+        "\\context { \\PianoStaff \\consists \"Staff_performer\" }",
+    );
+    assert_eq!(read_lilypond(&piano).expect("lecture").staves.len(), 2);
+}

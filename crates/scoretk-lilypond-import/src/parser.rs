@@ -79,6 +79,9 @@ pub(crate) struct Parser<'a> {
     partitions: Vec<Partition>,
     /// `\transposition` trouvé dans le bloc `\midi` de la partition courante.
     midi_transposition: Option<PitchSpec>,
+    /// Le bloc `\midi` déplace `Staff_performer` de `Staff` vers `Voice` :
+    /// chaque voix a alors sa propre piste (`bwv869b.ly`).
+    midi_voices_as_staves: bool,
     /// `#(set-global-staff-size n)` (Notation Reference §27.2).
     staff_size: Option<f64>,
     /// Argument du dernier `\fontsize #n` lu dans un markup de `\header`.
@@ -398,6 +401,7 @@ pub(crate) fn parse(
         pending_invisible_ottava: false,
         partitions: Vec::new(),
         midi_transposition: None,
+        midi_voices_as_staves: false,
         staff_size: None,
         last_markup_fontsize: None,
         current_header_field: None,
@@ -968,6 +972,7 @@ impl<'a> Parser<'a> {
         let mut has_layout = false;
         let mut has_midi = false;
         self.midi_transposition = None;
+        self.midi_voices_as_staves = false;
         // `\unfoldRepeats` est propre au score courant
         // (`scm/music-functions.scm`) : un second `\score` qui déplie ses
         // reprises ne doit pas déplier celles du premier, dont l'oracle
@@ -1009,6 +1014,13 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        if self.midi_voices_as_staves {
+            for group in &mut score.groups {
+                for staff in &mut group.staves {
+                    staff.midi_voices_as_staves = true;
+                }
+            }
+        }
         (
             score,
             has_layout,
@@ -1041,6 +1053,7 @@ impl<'a> Parser<'a> {
             self.skip_braced();
             if midi {
                 self.midi_transposition = self.find_midi_transposition(start);
+                self.midi_voices_as_staves |= self.staff_performer_dans_voice(start);
             }
             if layout && self.timing_translator_deplacé(start) {
                 self.staff_local_timing = true;
@@ -7186,6 +7199,50 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Vrai si le bloc `\midi` déjà parcouru retire `Staff_performer` de
+    /// `Staff` et l'ajoute à `Voice` (`lily/staff-performer.cc:138-182`,
+    /// `get_audio_staff`) : chaque voix sonne alors sur une piste distincte.
+    fn staff_performer_dans_voice(&self, start: usize) -> bool {
+        let Some(tokens) = self.tokens.get(start..self.position) else {
+            return false;
+        };
+        let mut retire = false;
+        let mut ajoute = false;
+        let mut dans_staff = false;
+        let mut dans_voice = false;
+        for (index, token) in tokens.iter().enumerate() {
+            if token.is_command("context") {
+                // `\context { \Voice … }` et `\context Voice …` sont les
+                // deux formes du bloc (`lily/parser.yy`) : chercher le nom
+                // dans les premiers jetons qui suivent, `{` compris.
+                let cible = tokens
+                    .iter()
+                    .skip(index + 1)
+                    .take(4)
+                    .any(|token| token.text.eq_ignore_ascii_case("Staff"));
+                let voice = tokens
+                    .iter()
+                    .skip(index + 1)
+                    .take(4)
+                    .any(|token| token.text.eq_ignore_ascii_case("Voice"));
+                dans_staff = cible;
+                dans_voice = voice;
+            }
+            let suivant = |name: &str| {
+                tokens
+                    .get(index + 1)
+                    .is_some_and(|t| t.kind == Kind::Str && t.text == name)
+            };
+            if token.is_command("remove") && suivant("Staff_performer") && dans_staff {
+                retire = true;
+            }
+            if token.is_command("consists") && suivant("Staff_performer") && dans_voice {
+                ajoute = true;
+            }
+        }
+        retire && ajoute
+    }
+
     /// Cherche `\transposition <hauteur>` dans le bloc `\midi` déjà parcouru.
     ///
     /// Le bloc ne contient que des réglages de performer : les parcourir comme
@@ -9395,6 +9452,7 @@ mod tests {
             pending_invisible_ottava: false,
             partitions: Vec::new(),
             midi_transposition: None,
+            midi_voices_as_staves: false,
             playback_articulate: false,
             playback_unfold_repeats: false,
             pending_midi_instrument: None,
@@ -9458,6 +9516,7 @@ mod tests {
                 pending_invisible_ottava: false,
                 partitions: Vec::new(),
                 midi_transposition: None,
+                midi_voices_as_staves: false,
                 playback_articulate: false,
                 playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),

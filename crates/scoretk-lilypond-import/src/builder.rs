@@ -903,7 +903,13 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
     place_repeats(&mut score, &staves);
     sync_end_bar_segments(&mut score);
     place_lyrics(&mut score, &staves, document.melisma_busy_disabled);
-    link_ties(&mut score, &staves);
+    let midi_voices_as_staves = document.score.as_ref().is_some_and(|score_ast| {
+        score_ast
+            .groups
+            .iter()
+            .any(|group| group.staves.iter().any(|staff| staff.midi_voices_as_staves))
+    });
+    link_ties(&mut score, &staves, midi_voices_as_staves);
     // Après `link_ties` : une note liée n'est pas une attaque et ne peut pas
     // masquer la note déplacée (`lily/tie-performer.cc`).
     fusionne_unissons_entre_portees(&mut score, &staves);
@@ -1302,6 +1308,21 @@ fn build_voices(
                 spawned: Vec::new(),
             },
         });
+    }
+
+    // Un `\midi` qui déplace `Staff_performer` vers `Voice` donne à chaque
+    // voix son propre `Audio_staff` (`bwv869b.ly`) : ses unissons ne doivent
+    // donc pas être fusionnés avec ceux des voix sœurs de la portée.
+    if staff_block.midi_voices_as_staves
+        && kept
+            .iter()
+            .filter(|pending| has_chord_events(&pending.interpreted))
+            .count()
+            > 1
+    {
+        for pending in &mut kept {
+            pending.separate_staff = true;
+        }
     }
 
     // Un `\new Staff` imbriqué n'est pas une voix de la portée : le séparer
@@ -3804,7 +3825,7 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
 type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool, u32, bool);
 
 /// Relie les notes de prolongation.
-fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
+fn link_ties(score: &mut Score, staves: &[StaffBuild], midi_voices_as_staves: bool) {
     // Sous `\articulate`, `ac:getactions` (`ly/articulate.ly` l. 503-560)
     // retire les événements d'articulation de l'accord et *compresse les
     // durées* selon le dernier facteur vu (1/2 pour `\staccato`, 3/4 pour
@@ -3829,6 +3850,10 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     // Notes datées de toute la partition et têtes de `\repeatTie` : la
     // prolongation peut traverser une alternative et donc changer de voix.
     let mut toutes_notes: Vec<(Fraction, NoteId, u8, bool)> = Vec::new();
+    // Même index, mais avec l'identifiant du contexte `Voice` : une liaison
+    // peut être fermée par une voix placée sur une autre portée du modèle
+    // quand le `\midi` donne une piste par voix (`bwv869b.ly`).
+    let mut toutes_notes_ctx: Vec<(Fraction, NoteId, u8, u32)> = Vec::new();
     let mut repeat_ties: Vec<(Fraction, NoteId)> = Vec::new();
     let mut rest_ties: Vec<(Fraction, Fraction)> = Vec::new();
     for staff in staves {
@@ -3938,6 +3963,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                         note.repeat_tie,
                     ));
                     toutes_notes.push((event.tick, id, note.pitch, note.tie));
+                    toutes_notes_ctx.push((event.tick, id, note.pitch, chord.voice_context));
                     if note.repeat_tie {
                         repeat_ties.push((event.tick, id));
                     }
@@ -4043,6 +4069,61 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                             .then_some(other)
                     },
                 );
+                if let Some(cible) = cible {
+                    score.note_mut(id).tie_forward = Some(cible);
+                    score.note_mut(cible).tie_back = Some(id);
+                    deja_lies.insert(id);
+                    deja_lies.insert(cible);
+                }
+            }
+        }
+
+        // Une liaison peut aussi être ouverte dans une voix et fermée par
+        // une **autre** voix du même contexte `Voice` : le lecteur répartit
+        // ces voix en pistes sœurs pour la gravure, alors que LilyPond garde
+        // un seul `Tie_performer` (`lily/tie-performer.cc:41-48`). La file de
+        // liaisons étant tenue par voix (`link_ties` ci-dessus), la tête
+        // droite tombait sinon dans une voix déjà traitée et la note était
+        // réattaquée (`bwv869b.ly`, mesure 23). On exige le même identifiant
+        // de contexte pour ne pas traverser un `<< … \\ >>`, qui ouvre un
+        // performer distinct (`bach-prelude17.ly`, `bwv855a.ly`).
+        for (voice_index, sequence) in sequences.iter().enumerate() {
+            for &(_, end, _, id, tie, sim_chord, context, _) in sequence {
+                if !tie || sim_chord || deja_lies.contains(&id) {
+                    continue;
+                }
+                let pitch = score.note(id).pitch;
+                // La recherche globale (au-delà de la portée courante) ne
+                // s'applique qu'au cas où le `\midi` a distribué les voix en
+                // autant de portées : sinon un pas de temps d'une autre
+                // portée doit pouvoir rompre la liaison
+                // (`staccato_relache_la_liaison_…`).
+                let cible = if midi_voices_as_staves {
+                    toutes_notes_ctx.iter().find_map(
+                        |&(tick, other, other_pitch, other_context)| {
+                            (tick == end
+                                && other != id
+                                && other_context == context
+                                && other_pitch == pitch
+                                && !deja_lies.contains(&other)
+                                && score.note(other).tie_back.is_none())
+                            .then_some(other)
+                        },
+                    )
+                } else {
+                    sequences.iter().enumerate().find_map(|(index, seq)| {
+                        if index == voice_index {
+                            return None;
+                        }
+                        seq.iter().find_map(|&(tick, _, _, other, _, _, other_context, _)| {
+                            (tick == end
+                                && other_context == context
+                                && !deja_lies.contains(&other)
+                                && score.note(other).pitch == pitch)
+                                .then_some(other)
+                        })
+                    })
+                };
                 if let Some(cible) = cible {
                     score.note_mut(id).tie_forward = Some(cible);
                     score.note_mut(cible).tie_back = Some(id);

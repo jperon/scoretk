@@ -665,6 +665,11 @@ pub(crate) struct StaffBlock {
     /// `create_contexts` crée le contexte à la position de l'itérateur). Il
     /// partage donc le début calculé pour son élément.
     pub sequence_continue: bool,
+    /// `\midi { \context { \Staff \remove "Staff_performer" }
+    /// \context { \Voice \consists "Staff_performer" } }` : chaque `Voice`
+    /// reçoit son propre `Audio_staff`, donc sa piste MIDI
+    /// (`lily/staff-performer.cc:138-182`, `get_audio_staff`).
+    pub midi_voices_as_staves: bool,
     /// Voix de la portée.
     pub voices: Vec<VoiceBlock>,
     /// Paroles attachées à une voix de la portée.
@@ -687,6 +692,7 @@ impl StaffBlock {
             visible: true,
             sequence_start: false,
             sequence_continue: false,
+            midi_voices_as_staves: false,
             voices: Vec::new(),
             lyrics: Vec::new(),
         }
