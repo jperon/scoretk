@@ -10280,3 +10280,122 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 57. Reading campaign, fourth phase (2026-11-26)
+
+### 57.1 Protocol
+
+Same frozen manifests, exclusions, exactness rule and refreshed reference tree
+`ly95lect-refs-54` as §56; `--refs-only --python-ly '' --music21 ''`, one lot at
+a time, `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`,
+one cargo command at a time and a worktree-local `CARGO_TARGET_DIR`. No
+reference was regenerated, no denominator changed, no comparison relaxed and
+no file excluded. Third-party `.ly` sources were only compiled through the
+`bwrap --unshare-all --die-with-parent` sandbox when a construction needed to
+be checked against LilyPond 2.26; downloaded data was analysed with
+`python3 -I` only.
+
+### 57.2 Results
+
+| Lot | Rows | Exact after §56 | Exact after §57 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1631 (94.6 %) | **1635 (94.8 %)** | 98.70 | 96.59 | 1 + 66 |
+| `mut` | 1316 | 1250 (95.0 %) | **1251 (95.1 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1293 (94.7 %) | **1294 (94.8 %)** | 99.54 | 97.63 | 83 |
+
+The strict 95 % threshold is reached on `mut` only (1251/1316 = 95.1 %). `ra`
+needs three more files (1638) and `rw` three more (1297); 98 % remains open.
+The 66 deleted `ra` sources still cap that lot at 96.2 % with a perfect reader.
+
+### 57.3 `\repeatTie` closes only a really pending tie (`fb84aac0`)
+
+`repeatTie = #(make-music 'RepeatTieEvent)` is a post-event declared in
+`ly/declarations-init.ly:104`. `lily/tie-performer.cc:75-82,145-178` moves the
+notes heard at a tie event into `heads_to_tie_`; a `\repeatTie` without an
+opening tie therefore re-articulates the note (`repeat-tie.ly`, `vshape.ly`),
+whereas an opening tie across a volta alternative can be closed from another
+Voice (`entertainer.ly`, `lily/tie-performer.cc:81-140`). The reader now parses
+the command as a post-event and closes only a head whose `~` was left without
+a target, across voices and staves.
+
+Measured on all three lots: `ra` 1631 → 1631, `mut` 1250 → **1251**,
+`rw` 1293 → **1294**; the only gains are `entertainer.ly` on `mut` and `rw`,
+with no loss and no other file changing status.
+
+### 57.4 Old-source grace timing: an oracle artefact, no code change
+
+This was the first cause of §56.4 and it was **ruled out, not fixed**. The
+LilyPond sources say that a grace is placed in the *grace part* of a moment
+(`lily/grace-iterator.cc:24-27,50-58`), converted to real time by
+`moment_to_real = main + 9/40 × grace_part` (`lily/audio-item.cc:118-123`),
+and shortens the preceding non-grace note (`lily/note-performer.cc:99-114`);
+`ly/grace-init.ly:20-55` and `ly/music-functions-init.ly:728-730` wrap the
+grace music without giving it logical time. The oracle implements exactly
+that rendering: `scripts/oracle/lilypond/ly_notes.py` pairs reference graces
+at `main − 0.9 × written duration` (`decalage_graces_reference`,
+`apparier_graces`) and accepts `n2_grace` as an alternative to the Q16 grid
+only when the note counts match.
+
+The remaining differences are therefore not a reader timing rule:
+
+* `spacing-grace.ly` has `n2_grace = 100 %` with all 13 graces paired, but 19
+  candidate notes for 18 reference notes: the gap is one extra written note,
+  not an attack offset. `beam-position.ly` is the same pattern (10/9 notes).
+* `bwv641.ly` has 16 candidate graces for 14 reference graces, `gnomus.ly` 26
+  for 4 and `ballade-4.ly` `n2_grace = 62.71 %` although all 22 graces pair:
+  the residual error is a note-count or note-placement difference.
+* A MusicXML `<grace/>` has no logical duration, so writing the real-time
+  offset `9/40 × grace_part` into the reader's model would move notes that
+  are already exact under the grace-aware rule and would regress other lots.
+  No such change was attempted.
+
+### 57.5 Quotation transposition and `\quoteDuring` in `<< … >>`
+
+`lily/quote-iterator.cc:229-271` transposes each quoted event by
+`pitch_interval (instrumentTransposition of the target, quoted-transposition
+of the source)`. The new `quote.rs` module reads the source `\transposition`
+and adds `source − target` to the quoted written pitches; a `\transpose`
+wrapping the *target* must not affect quoted events, as `quote-transposition.ly`
+states explicitly. Measured: `ra` N1 98.67 → 98.70 % with
+`quote-transposition.ly` going from 16.67 % to 100 % of pitches matched,
+`mut`/`rw` unchanged (`111741e0`).
+
+`lily/quote-iterator.cc:161-211` plays a quote at the absolute current time.
+`Context::Cue` was classified as a context-only command, so in
+`<< \quoteDuring … s4 >>` it advanced the interpreter cursor before the `s4`
+branch and the next quote started one quarter late. Making it a musical branch
+gives `ra` 1631 → **1632** (`quote-transposition.ly` becomes exact), with
+`mut`/`rw` unchanged and no loss (`5745780f`).
+
+### 57.6 A bare duration after a post-event repeats the note
+
+`lily/parser.yy:3126-3141` defines `note_chord_element` as
+`chord_body optional_notemode_duration post_events`: the duration precedes
+the post-events. After `f]~`, the following `8` is therefore a *new* bare
+duration that repeats the note, not the duration of the note already read.
+The old reader consumed it as the note's own duration and lost one event and
+one attack. Measured: `ra` 1632 → **1635** (`part-combine-global.ly`,
+`tablature-full-notation.ly`, `tablature-tie-behaviour.ly`), `mut` 1251 and
+`rw` 1294 unchanged, no loss (`46affc52`).
+
+### 57.7 Remaining causes
+
+`ra` still needs three exact files and `rw` three. The closest remaining
+causes are the per-Voice tie/unison cases (`BWV533`, `bwv910`, `two-jews`,
+`ToccataFugue`, `BWV-830-4/6`, `BWV857_Praeludium12`), the cyclic quotations
+(`quote-cyclic.ly`, `quote-during-subvoice.ly`), the volta tie of
+`volta-spec-tie.ly` (verified with LilyPond 2.26 in the bwrap sandbox:
+`\context Voice \fixed c' \repeat volta 2 << { a2. 4 } \volta 2 { s2.~ s4 } >>`
+plays one A of four quarters, while `\new Staff` plays two attacks), and the
+ossia/tuplet timing of `alignment-order.ly` and
+`polymetric-time-ossia-staff.ly`. None of these was changed without a measured
+gain.
+
+### 57.8 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
