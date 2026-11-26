@@ -157,9 +157,17 @@ fn emit(gregorian: &Gregorian) -> String {
         }
         out.push('(');
         // A source group keeps its non-note tokens in source order: a clef
-        // inside a bar group belongs after the bar, not before it. Payloads
-        // built without a source body still use the per-syllable clef slot.
-        let tokens = &syllable.group_tokens;
+        // inside a bar group belongs after the bar, not before it. They are
+        // only a *spelling* of `bars`/`clef`/`signs`: when another direction
+        // edited those fields, the tokens are stale and the writer must fall
+        // back to the structured fields (`source_tokens_are_consistent`).
+        let use_tokens = source_tokens_are_consistent(syllable);
+        let empty_tokens: &[scoretk_core::model::GroupToken] = &[];
+        let tokens = if use_tokens {
+            syllable.group_tokens.as_slice()
+        } else {
+            empty_tokens
+        };
         let has_clef_token = tokens
             .iter()
             .any(|token| token.kind == GroupTokenKind::Clef);
@@ -229,7 +237,7 @@ fn emit(gregorian: &Gregorian) -> String {
             emit_tokens(&mut out, note_index);
             if snippet_position + 1 == syllable.nabc.len()
                 && note_index == syllable.notes.len()
-                && tokens.is_empty()
+                && !use_tokens
             {
                 write_bars(&mut out, syllable);
             }
@@ -249,7 +257,7 @@ fn emit(gregorian: &Gregorian) -> String {
             emit_tokens(&mut out, note_index);
         }
         emit_tokens(&mut out, note_index);
-        if tokens.is_empty() && !after_snippet {
+        if !use_tokens && !after_snippet {
             write_bars(&mut out, syllable);
         }
         out.push(')');
@@ -264,6 +272,61 @@ fn emit(gregorian: &Gregorian) -> String {
         }
     }
     out
+}
+
+/// Whether the source tokens still describe the *current* group.
+///
+/// `group_tokens` are the exact spelling of a parsed group, but they duplicate
+/// `Syllable::bars`, `Syllable::clef` and the group `Syllable::signs`. A payload
+/// that travelled through another direction (e.g. MEI → GABC with edited
+/// bars) can carry both an edited structured field and the old token: emitting
+/// the token would silently undo the edit. Tokens are used only when every
+/// duplicated field still agrees with them; otherwise the writer falls back
+/// to the structured fields, as it did before the tokens existed.
+fn source_tokens_are_consistent(syllable: &scoretk_core::model::Syllable) -> bool {
+    let tokens = &syllable.group_tokens;
+    if tokens.is_empty() {
+        return false;
+    }
+    let mut bars = syllable.bars.iter();
+    for token in tokens
+        .iter()
+        .filter(|token| token.kind == GroupTokenKind::Bar)
+    {
+        let Some((bar, _)) = scoretk_core::model::BarKind::parse_prefix(token.text.trim_start())
+        else {
+            return false;
+        };
+        if bars.next() != Some(&bar) {
+            return false;
+        }
+    }
+    if bars.next().is_some() {
+        return false;
+    }
+    // The first clef token may be a simultaneous pair (`c1@c4`) of which the
+    // syllable keeps only the first token: compare the source prefix.
+    let mut clefs = tokens
+        .iter()
+        .filter(|token| token.kind == GroupTokenKind::Clef);
+    match &syllable.clef {
+        None => {
+            if clefs.next().is_some() {
+                return false;
+            }
+        }
+        Some(clef) => match clefs.next() {
+            Some(token) if token.text.trim_start().starts_with(clef) => {}
+            _ => return false,
+        },
+    }
+    // A group sign added by another direction has no token; ignore all tokens
+    // rather than dropping the sign.
+    syllable.signs.iter().all(|sign| {
+        tokens
+            .iter()
+            .any(|token| token.kind == GroupTokenKind::Bar && token.text.contains(&sign.raw))
+    })
 }
 
 /// Serialises one header field. `double` keeps a `;;` terminator even when
@@ -521,6 +584,49 @@ mod tests {
             emit(&gregorian),
             "name: ;\nnabc-lines: 1;\n%%\n\n(c4) nos,(hh|cl|h|ds-|/g)\n"
         );
+    }
+
+    #[test]
+    fn stale_group_tokens_never_override_edited_bars_or_clef() {
+        // MEI → GABC can change `bars`/`clef` on a syllable that still carries
+        // the exact source tokens: the writer must follow the edited fields.
+        let mut gregorian = Gregorian {
+            headers: vec![header("name", "Edited")],
+            ..Gregorian::default()
+        };
+        gregorian.syllables.push(scoretk_core::model::Syllable {
+            text: "Al".to_owned(),
+            bars: vec![BarKind::DivisioMinor],
+            clef: Some("f4".to_owned()),
+            notes: vec![GregorianNote {
+                letter: 'f',
+                ..GregorianNote::default()
+            }],
+            group_tokens: vec![
+                scoretk_core::model::GroupToken {
+                    notes_before: 1,
+                    text: ",".to_owned(),
+                    kind: GroupTokenKind::Bar,
+                },
+                scoretk_core::model::GroupToken {
+                    notes_before: 0,
+                    text: "c3".to_owned(),
+                    kind: GroupTokenKind::Clef,
+                },
+            ],
+            ..scoretk_core::model::Syllable::default()
+        });
+        assert_eq!(emit(&gregorian), "name: Edited;\n%%\n\nAl(f4f;)");
+
+        // The same tokens are used when they still agree with the fields,
+        // keeping spellings such as a bar's vertical episema (`;'`).
+        gregorian.syllables[0].bars = vec![BarKind::DivisioMinor];
+        gregorian.syllables[0].clef = Some("c3".to_owned());
+        gregorian.syllables[0].group_tokens[0].text = ";'".to_owned();
+        gregorian.syllables[0].group_tokens[1].notes_before = 1;
+        // Source order inside the group is kept: the bar (with its episema)
+        // precedes the clef change, even though both follow the note.
+        assert_eq!(emit(&gregorian), "name: Edited;\n%%\n\nAl(f;'c3)");
     }
 
     #[test]

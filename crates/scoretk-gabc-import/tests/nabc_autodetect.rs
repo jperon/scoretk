@@ -44,9 +44,17 @@ fn payload(text: &str) -> Gregorian {
 }
 
 /// Source offsets address different files (a headed file has a longer
-/// prefix); headers are absent in the raw body. Compare the musical payload.
+/// prefix); headers are absent in the raw body. Compare everything except the
+/// source-*layout* fields: where the explicit header ends, how its lines are
+/// spelled, and the exact gap it leaves before the first group are not part of
+/// the NABC reading. All musical fields (pitches, glyphs, bars, cuts, snippet
+/// texts, spacings between syllables) remain compared.
 fn comparable(mut gregorian: Gregorian) -> Gregorian {
     gregorian.headers.clear();
+    gregorian.header_items.clear();
+    gregorian.header_double_semicolons.clear();
+    gregorian.notation_prefix = None;
+    gregorian.opening_separator = None;
     for syllable in &mut gregorian.syllables {
         for note in &mut syllable.notes {
             note.source_offset = None;

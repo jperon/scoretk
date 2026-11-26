@@ -155,6 +155,7 @@ fn parse_notation(
     let mut in_notes = false;
     let mut escaped = false;
     let mut seen_content = false;
+    let mut seen_group = false;
     let mut opening_clef_seen = false;
     let mut opening_separator: Option<String> = None;
     let mut index = 0;
@@ -162,8 +163,11 @@ fn parse_notation(
         let char = chars[index];
         // A file with a header has no syllable before its first group: any
         // text there (a nested GregoBase header, a `%%` line) is layout.
-        let prefix_mode =
-            has_header && syllables.is_empty() && !opening_clef_seen && text.is_empty();
+        // Once a group has been read, text belongs to a syllable even when
+        // that first group was layout rather than a recognised clef (`(v3)`
+        // in the verbatim-TeX corpus): a `<v>(</v>` there is lyric text, not
+        // a second group opener.
+        let prefix_mode = has_header && !seen_group && text.is_empty();
         if in_notes {
             if char == ')' {
                 let (mut syllable, group_clefs, above_text) =
@@ -281,6 +285,7 @@ fn parse_notation(
             code.clear();
             code_start = index + 1;
             in_notes = true;
+            seen_group = true;
             text = pending;
         } else if char == '<' && chars[index..].iter().collect::<String>().starts_with("<v>") {
             // Verbatim TeX `<v>…</v>` is typography, not a note group: a
