@@ -1171,6 +1171,7 @@ impl<'a> Parser<'a> {
     ///
     /// `combine` reconstruit la musique des éléments restants : simultanée
     /// pour `<< … >>`, séquentielle pour `{ … }`.
+    #[allow(clippy::too_many_arguments)] // structure, enveloppes, base et portée de branche
     fn context_groups(
         &mut self,
         items: Vec<Music>,
