@@ -257,6 +257,78 @@ pub fn split_sections(text: &str) -> Option<(String, String)> {
     None
 }
 
+/// Recognises a headerless GABC body: the notation half of a file with no
+/// `%%` line, as exported raw by GregoBase and rendered by exsurge.
+///
+/// After leading whitespace and `%` comment lines, the text must begin either
+/// with a clef-only group (`(c4)`, `(f3)`, `(cb3)`, `(c1@c4)`, …) or with a
+/// syllable immediately followed by a parenthesised note group
+/// (`Ky(f)ri(g)e`). A header line (`name:`, `mode:`, …) does not match, so a
+/// malformed file that has a header but no separator stays an error.
+///
+/// Gregorio itself **rejects** such a file: `%%+(\n|\r)+` alone switches its
+/// lexer from `INITIAL` to the `score` state
+/// (`gabc-score-determination.l:225-228`) and the grammar requires
+/// `END_OF_DEFINITIONS` before any syllable (`gabc-score-determination.y:737-749`).
+/// This is a deliberate scoretk tolerance, recorded in `docs/agents/gabc.md` §15.
+pub fn looks_like_gabc_body(text: &str) -> bool {
+    let mut rest = text.trim_start();
+    while let Some(next) = strip_body_comment(rest) {
+        rest = next;
+    }
+    if let Some(after_clef) = rest.strip_prefix('(') {
+        return after_clef
+            .find(')')
+            .is_some_and(|end| is_clef_group(&after_clef[..end]));
+    }
+    let Some(open) = rest.find('(') else {
+        return false;
+    };
+    let syllable = &rest[..open];
+    if !syllable.chars().any(char::is_alphabetic)
+        || syllable
+            .chars()
+            .any(|c| matches!(c, '\n' | '\r' | ')' | '<' | '{' | '\\' | '%'))
+    {
+        return false;
+    }
+    let code = &rest[open + 1..];
+    let Some(end) = code.find(')') else {
+        return false;
+    };
+    let code = code[..end].trim();
+    is_clef_group(code) || code.chars().next().is_some_and(is_group_start)
+}
+
+/// Skips one whole-line `%` comment at the start of a body. A `%%` line is a
+/// section separator, never a comment (`Gabc.tex:51,58`).
+fn strip_body_comment(text: &str) -> Option<&str> {
+    if text.starts_with('%') && !text.starts_with("%%") {
+        let end = text.find('\n')?;
+        Some(text[end + 1..].trim_start())
+    } else {
+        None
+    }
+}
+
+/// True for a clef token or a pair of simultaneous clefs (`Gabc.tex:847-870`).
+fn is_clef_group(code: &str) -> bool {
+    let code = code.trim();
+    !code.is_empty()
+        && code.split('@').all(|part| {
+            let bytes = part.as_bytes();
+            matches!(bytes.first(), Some(b'c' | b'f'))
+                && bytes.last().is_some_and(|byte| byte.is_ascii_digit())
+                && (bytes.len() == 2 || (bytes.len() == 3 && bytes[1] == b'b'))
+        })
+}
+
+/// First character of a note group: a pitch letter (`is_pitch`), a custos
+/// (`Gabc.tex:872-906`) or a separation bar (`:801-845`).
+fn is_group_start(c: char) -> bool {
+    is_pitch(c) || matches!(c, ',' | ';' | ':' | '`' | '^' | 'z' | 'Z')
+}
+
 /// Parses the header lines (`Gabc.tex:67-74`).
 ///
 /// A name is ASCII letters/digits with dashes; a value ends at `;` or `;;`,
@@ -356,6 +428,30 @@ mod tests {
         assert_eq!(signs[1].kind, SignKind::Ictus);
         assert_eq!(signs[2].kind, SignKind::HorizontalEpisema);
         assert_eq!(signs[5].kind, SignKind::Accent);
+    }
+
+    #[test]
+    fn headerless_bodies_are_recognised_without_matching_other_texts() {
+        for body in [
+            "(c4) Ky(f)ri(g)e(h) e(g)lé(f)i(e)son.(f) (::)\n",
+            "(f3) VE(g.)ni(h') (,)\n",
+            "(cb3) A(g) (::)\n",
+            "(c1@c4) A(g) (::)\n",
+            "\n  % a raw export\n  Ky(f)ri(g)e(h) (::)\n",
+        ] {
+            assert!(looks_like_gabc_body(body), "{body:?}");
+            assert!(split_sections(body).is_none(), "{body:?}");
+        }
+        for other in [
+            "name: Veni;\n(c3) Ve(g)\n",
+            "%abc-2.1\nX:1\nT:Test\nK:C\n",
+            "\\version \"2.24.0\"\n{ c'4 }\n",
+            "<?xml version=\"1.0\"?><score-partwise/>\n",
+            "(hello) world\n",
+            "{ c'4 }\n",
+        ] {
+            assert!(!looks_like_gabc_body(other), "{other:?}");
+        }
     }
 
     #[test]

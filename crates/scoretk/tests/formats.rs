@@ -111,6 +111,34 @@ fn contenu_midi_lilypond_abc() {
 }
 
 #[test]
+fn corps_gabc_sans_en_tete_sans_detourner_les_autres_formats() {
+    let body = b"(c4) Ky(f)ri(g)e(h) e(g)l\xc3\xa9(f)i(e)son.(f) (::)\n";
+    assert_eq!(Format::detect(body), Some(Format::Gabc));
+    assert_eq!(Format::detect(b"Ky(f)ri(g)e(h) (::)\n"), Some(Format::Gabc));
+    assert_eq!(
+        Format::detect(b"\n % a raw export\n (c4) Ky(f)ri(g)e(h) (::)\n"),
+        Some(Format::Gabc)
+    );
+
+    // ABC et LilyPond gardent leur signature, même avec un groupe entre
+    // parenthèses : ils sont reconnus avant le corps GABC.
+    assert_eq!(
+        Format::detect(b"X:1\nT:Test\nK:C\nKy(f)ri(g)e(h)\n"),
+        Some(Format::Abc)
+    );
+    assert_eq!(
+        Format::detect(b"%abc-2.1\nX:1\n(c4) Ky(f)ri(g)e(h)\n"),
+        Some(Format::Abc)
+    );
+    assert_eq!(
+        Format::detect(b"\\version \"2.24.0\"\n{ c'( d) }\n"),
+        Some(Format::Ly)
+    );
+    // Un en-tête sans `%%` reste une erreur, pas un corps.
+    assert_eq!(Format::detect(b"name: Veni;\n(c3) Ve(g)\n"), None);
+}
+
+#[test]
 fn contenu_inconnu() {
     assert_eq!(Format::detect(b""), None);
     assert_eq!(Format::detect(b"\x89PNG\r\n\x1a\n"), None);

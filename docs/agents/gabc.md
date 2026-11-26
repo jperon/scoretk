@@ -659,3 +659,58 @@ listed the kinds SMF declares, not the ones it lacks.
   `Tick`/`Short` bar and breath, including on `[|]`;
 - MIDI: comparison without a written tick (SMF has none) and the additive
   `smf_text` row.
+
+## 15. Headerless bodies (raw GregoBase exports)
+
+Raw exports from GregoBase are the notation half of a `.gabc` file: a clef
+group followed by syllables and note groups, with **no header and no `%%`
+line**, e.g.
+
+```gabc
+(c4) Ky(f)ri(g)e(h) e(g)lé(f)i(e)son.(f) (::)
+```
+
+exsurge renders those bodies directly. Gregorio itself does **not** accept
+them. Its lexer only leaves the `INITIAL` state and enters `score` on
+`<INITIAL>%%+(\n|\r)+`, which returns `END_OF_DEFINITIONS`
+(`src/gabc/gabc-score-determination.l:225-228`); the grammar requires that
+token between the definitions and the syllables (`score: all_definitions
+syllables`, `all_definitions: definitions END_OF_DEFINITIONS`,
+`gabc-score-determination.y:737-749`). The two-section file structure is also
+stated in `Gabc.tex:51,58` and [format-ref/gabc.md](format-ref/gabc.md) §1.
+Running the local oracle binary (commit `b63f074`, built by
+`scripts/oracle/gabc/build_gregorio.sh`) on such a body gives:
+
+```
+error:unrecognized character: "(" in definition part
+error:unrecognized character: ")" in definition part
+error:unrecognized character: " " in definition part
+error:syntax error
+```
+
+and exit status 1; prefixing the same body with `name: Test;` and `%%` makes
+it parse and dump successfully.
+
+**scoretk tolerance.** `read_gabc` accepts a body with no `%%` when, after
+leading whitespace and whole-line `%` comments, the text starts with a clef
+group (`(c4)`, `(f3)`, `(cb3)`, `(c1@c4)`, …) or with a syllable immediately
+followed by a parenthesised note group (`Ky(f)ri(g)e(h)`). The check is the
+shared `looks_like_gabc_body` helper in `scoretk-gabc-common::syntax`: both
+the reader and facade `detect` call it, so recognition cannot diverge. The
+body is parsed with an empty header: four staff lines (the default,
+`Gabc.tex:128,434`), no metadata and note source offsets counted from the
+first character of the body (no synthetic `%%` is prepended).
+
+This is a **tolerance beyond Gregorio**, chosen for raw GregoBase data; it
+does not change the GABC grammar, the oracle or any file that contains a `%%`
+line, which takes the original path unchanged. No existing test, snapshot or
+measurement in §9 or §14 moves. The writer always emits a header and the `%%`
+marker, so writing a body-only score back to GABC **adds `%%`**: the tolerance
+is on reading only. Other formats keep their stronger signatures and are
+tested before the body rule in `Format::detect` (`\version` → LilyPond,
+`%abc`/`X:` → ABC, XML namespaces → MusicXML/MEI); a header without `%%` is
+still neither detected nor readable.
+
+Tests: `crates/scoretk-gabc-import/tests/body.rs`,
+`crates/scoretk/tests/gabc_body.rs`, and the negative cases in
+`crates/scoretk/tests/formats.rs`.

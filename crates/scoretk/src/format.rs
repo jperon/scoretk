@@ -206,11 +206,14 @@ impl Format {
     /// 6. `\version` : LilyPond ;
     /// 7. `%abc` ou un en-tête `X:` : ABC ;
     /// 8. un en-tête `name:` suivi d'une ligne `%%` : GABC
-    ///    (`Gabc.tex:51,58,79-82`).
+    ///    (`Gabc.tex:51,58,79-82`), ou un corps sans en-tête commençant par un
+    ///    groupe de clé ou une syllabe suivie d'un groupe de notes (export
+    ///    brut GregoBase, tolérance décrite dans `docs/agents/gabc.md` §15).
     ///
     /// Les tests sont mutuellement exclusifs : un document MEI porte
     /// l'espace de noms MEI (jamais de GABC `%%`), et un `.gabc` ne contient
-    /// ni balise XML ni en-tête ABC.
+    /// ni balise XML ni en-tête ABC. Les snippets ABC et LilyPond sont
+    /// reconnus aux étapes 6 et 7, avant le corps GABC.
     ///
     /// Renvoie `None` si rien ne correspond : la façade préfère une erreur à
     /// une supposition fausse.
@@ -253,6 +256,13 @@ impl Format {
 /// Une ligne `name:` et une ligne `%%` suffisent à reconnaître un `.gabc`
 /// (`Gabc.tex:51,58,79-82`). Les commentaires et les espaces précédant le
 /// nom sont autorisés, comme dans les exemples de Gregorio.
+///
+/// Un corps sans `%%` est aussi reconnu quand il commence par un groupe de
+/// clé ou une syllabe suivie d'un groupe de notes : la même règle que celle
+/// du lecteur (`scoretk-gabc-common::syntax::looks_like_gabc_body`), partagée
+/// pour éviter que la détection et la lecture divergent. Les autres formats
+/// ont des signatures plus fortes et sont testés avant celle-ci dans
+/// [`Format::detect`].
 fn is_gabc(text: &[u8]) -> bool {
     let source = String::from_utf8_lossy(text);
     let mut has_name = false;
@@ -269,7 +279,14 @@ fn is_gabc(text: &[u8]) -> bool {
             return true;
         }
     }
-    false
+    #[cfg(feature = "gabc-import")]
+    {
+        scoretk_gabc_common::syntax::looks_like_gabc_body(&source)
+    }
+    #[cfg(not(feature = "gabc-import"))]
+    {
+        false
+    }
 }
 
 impl fmt::Display for Format {

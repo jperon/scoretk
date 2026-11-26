@@ -55,10 +55,25 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
 /// The two sections are separated by a `%%` line (`Gabc.tex:51,58`). The exact
 /// source of both sections is kept in the L6 payload so the writer can emit
 /// them back verbatim; the structured fields are the comparable items.
+///
+/// A file with no `%%` line is accepted as a **headerless body** when its text
+/// starts with a clef group or a syllable followed by a note group (raw
+/// GregoBase exports, rendered by exsurge). Gregorio itself rejects that
+/// input; the tolerance is scoretk's and is documented in
+/// `docs/agents/gabc.md` §15. Files with a `%%` line are read exactly as
+/// before.
 pub fn read_gabc(text: &str) -> Result<Score> {
-    let (header_source, notation) = scoretk_gabc_common::syntax::split_sections(text)
-        .ok_or_else(|| Error::Syntax("missing %% section separator (Gabc.tex:51,58)".to_owned()))?;
-    let mut gregorian = read::parse_payload(&header_source, &notation)?;
+    let mut gregorian = if let Some((header_source, notation)) =
+        scoretk_gabc_common::syntax::split_sections(text)
+    {
+        read::parse_payload(&header_source, &notation)?
+    } else if scoretk_gabc_common::syntax::looks_like_gabc_body(text) {
+        read::parse_body(text)?
+    } else {
+        return Err(Error::Syntax(
+            "missing %% section separator (Gabc.tex:51,58)".to_owned(),
+        ));
+    };
     let mut score = Score::new();
     read::apply_metadata(&mut score, &gregorian);
     derived::build_projection(&mut score, &gregorian);

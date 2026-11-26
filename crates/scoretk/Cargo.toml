@@ -45,7 +45,7 @@ abc-import = ["dep:scoretk-abc-import"]
 abc-export = ["dep:scoretk-abc-export"]
 mei-import = ["dep:scoretk-mei-import"]
 mei-export = ["dep:scoretk-mei-export"]
-gabc-import = ["dep:scoretk-gabc-import"]
+gabc-import = ["dep:scoretk-gabc-import", "dep:scoretk-gabc-common"]
 gabc-export = ["dep:scoretk-gabc-export"]
 
 [dependencies]
@@ -63,6 +63,7 @@ scoretk-abc-export = { path = "../scoretk-abc-export", optional = true }
 scoretk-mei-import = { path = "../scoretk-mei-import", optional = true }
 scoretk-mei-export = { path = "../scoretk-mei-export", optional = true }
 scoretk-gabc-import = { path = "../scoretk-gabc-import", optional = true }
+scoretk-gabc-common = { path = "../scoretk-gabc-common", optional = true }
 scoretk-gabc-export = { path = "../scoretk-gabc-export", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }

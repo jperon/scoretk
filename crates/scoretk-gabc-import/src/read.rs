@@ -33,6 +33,24 @@ use crate::Error;
 
 /// Parses the two sections into the L6 payload.
 pub(super) fn parse_payload(header_source: &str, notation: &str) -> Result<Gregorian, Error> {
+    // Position source des notes : unités UTF-16 depuis le début du fichier
+    // entier (indices de chaîne JavaScript). Le `%%` et sa fin de ligne
+    // appartiennent à l'en-tête pour ce compte, comme le veut le consommateur.
+    let marker_line = notation.find('\n').map_or(notation.len(), |end| end + 1);
+    let base =
+        header_source.encode_utf16().count() + notation[..marker_line].encode_utf16().count();
+    parse_parts(header_source, &notation[marker_line..], base)
+}
+
+/// Parses a headerless body (raw GregoBase export) into the L6 payload.
+///
+/// The whole text is notation, so note offsets start at zero. The empty
+/// header yields the default four-line staff (`Gabc.tex:128,434`).
+pub(super) fn parse_body(body: &str) -> Result<Gregorian, Error> {
+    parse_parts("", body, 0)
+}
+
+fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian, Error> {
     let headers = syntax::parse_headers(header_source);
     let staff_lines = headers
         .iter()
@@ -40,13 +58,6 @@ pub(super) fn parse_payload(header_source: &str, notation: &str) -> Result<Grego
         .and_then(|header| header.value.bytes().find(|byte| byte.is_ascii_digit()))
         .map_or(4, |digit| digit - b'0')
         .clamp(2, 5);
-    // Position source des notes : unités UTF-16 depuis le début du fichier
-    // entier (indices de chaîne JavaScript). Le `%%` et sa fin de ligne
-    // appartiennent à l'en-tête pour ce compte, comme le veut le consommateur.
-    let marker_line = notation.find('\n').map_or(notation.len(), |end| end + 1);
-    let base =
-        header_source.encode_utf16().count() + notation[..marker_line].encode_utf16().count();
-    let body = &notation[marker_line..];
     let (syllables, clefs) = parse_notation(body, base);
     Ok(Gregorian {
         headers,
