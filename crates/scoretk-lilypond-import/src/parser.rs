@@ -1274,7 +1274,9 @@ impl<'a> Parser<'a> {
                 if ossia[position] || ossia_abs[position] {
                     let decalage = decalages[position];
                     for group in &mut ouverts {
-                        if ossia_abs[position] {
+                        if ossia_abs[position] || in_branch {
+                            // Le début est propre à la branche : il ne suit
+                            // pas la fin des portées voisines.
                             group.absolute_start = Some(item_base);
                         } else {
                             // Le silence porte l'écoulement dans la voix :
@@ -2123,8 +2125,12 @@ impl<'a> Parser<'a> {
         // `\new StaffGroup << \mus \new Dynamics { … } \mus >>` joue deux
         // portées de notes (deux pistes MIDI) plus la portée Dynamics.
         let mut premier = true;
+        let mut skip_precedent: Option<Fraction> = None;
         for item in items {
             let avant = staves.len();
+            let duree_skip = music_duration_with_contexts(&item, self.default_duration);
+            let ouvre_apres_skip = has_context(&item) && skip_precedent.is_some();
+            let est_skip = est_un_skip(&item);
             if has_context(&item) {
                 self.collect_staves_in(item, wrappers, staves, lyrics, merge_voice);
             } else {
@@ -2143,6 +2149,25 @@ impl<'a> Parser<'a> {
                 for staff in &mut staves[avant + 1..] {
                     staff.sequence_continue = true;
                 }
+            }
+            // `{ \skip 1 << \lyrics … \new Staff { \tuplet … } >> }` :
+            // la portée ouverte après le silence naît à l'écoulement de ce
+            // silence, pas à la fin des portées précédentes du groupe
+            // (`alignment-order.ly`, vérifié sur le MIDI de LilyPond 2.26).
+            if ouvre_apres_skip {
+                let decalage = skip_precedent.take().unwrap_or_default();
+                for staff in &mut staves[avant..] {
+                    for voice in &mut staff.voices {
+                        voice.music = Music::Seq(vec![
+                            skip_music(decalage),
+                            std::mem::replace(&mut voice.music, Music::Empty),
+                        ]);
+                    }
+                    staff.sequence_start = false;
+                    staff.sequence_continue = false;
+                }
+            } else {
+                skip_precedent = est_skip.then_some(duree_skip);
             }
             premier = false;
         }

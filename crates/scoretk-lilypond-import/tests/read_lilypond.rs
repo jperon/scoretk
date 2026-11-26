@@ -9764,6 +9764,41 @@ fn portee_ossia_apres_skip_dans_une_branche_simultanee() {
 }
 
 #[test]
+fn portee_apres_skip_dans_un_groupe_de_portees() {
+    // `\new StaffGroup << \new Staff { c2 c s1 } { \skip 1 << … \new
+    // Staff { \tuplet … } >> } >>` : la portée ouverte après le silence
+    // joue au temps 4 (quatre temps), et non après la fin de la première
+    // portée du groupe (`alignment-order.ly`, MIDI de LilyPond 2.26).
+    let source = "\\version \"2.26.0\"\n\\score { \\relative << \
+        \\new Staff { c'2 c s1 } \
+        \\new StaffGroup << \
+          \\new Staff { c2 c s1 } \
+          { \\skip 1 << { s1 } \\new Staff { \\tuplet 6/4 { c4 d e d e f } } >> } \
+        >> \
+        >> }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut attaques = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for voice in 0..(4 * score.staves.len() as u32) {
+                let track = Track::from_raw(voice);
+                if let Some(chord_rest) = segment.chord_rest(track) {
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        if !chord.notes.is_empty() {
+                            attaques.push((track.staff().index(), segment.tick));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    attaques.sort();
+    assert!(attaques
+        .iter()
+        .any(|(staff, tick)| *staff != 0 && *tick == Fraction::ONE));
+}
+
+#[test]
 fn voices_prolonge_la_voix_nommee() {
     // `voices-command.ly` : `\voices 1,"sop" << e''2 \\ { a'2~ } >>` dans
     // `\new Voice = "sop"` — la branche affectée à « sop » prolonge la voix
