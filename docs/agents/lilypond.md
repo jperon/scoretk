@@ -10399,3 +10399,98 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 58. Reading campaign, fifth phase (2026-11-26)
+
+### 58.1 Protocol
+
+The frozen manifests, exclusions, exactness rule and refreshed reference tree
+`ly95lect-refs-54` of §57 are unchanged; `--refs-only --python-ly '' --music21
+''` was used for every lot, one lot at a time, with a worktree-local
+`CARGO_TARGET_DIR`, one cargo command at a time and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`. Each
+candidate binary was frozen to a stable path before measuring. No reference
+was regenerated, no denominator changed, no comparison was relaxed and no file
+was excluded. Third-party sources were compiled only inside the
+`bwrap --unshare-all --die-with-parent` sandbox of `references.py`, and their
+text was analysed with `python3 -I` only.
+
+### 58.2 Results
+
+| Lot | Rows | Exact after §57 | Exact after §58 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1635 (94.8 %) | **1638 (95.0 %)** | 98.70 | 96.62 | 1 + 66 |
+| `mut` | 1316 | 1251 (95.1 %) | **1251 (95.1 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1294 (94.8 %) | **1295 (94.9 %)** | 99.54 | 97.63 | 83 |
+
+The strict 95 % threshold is now reached on `ra` (1638/1724) and kept on
+`mut` (1251/1316). `rw` remains three exact files short (1297 needed); the 98 %
+target is open on all three lots, and the 66 deleted `ra` sources still cap
+that lot at 96.2 % with a perfect reader.
+
+### 58.3 OSSIA staves after `\skip`
+
+`lily/context-specced-music-iterator.cc:38-99` creates a context when its
+iterator reaches it: a `\new Staff` following `\skip 2.` in a branch of
+`<< … >>` starts at the elapsed time of *that branch*, not after the longest
+sibling branch. `GroupBlock` now carries an `absolute_start`, threaded through
+`score_groups_in`/`context_groups` with the branch base; the builder uses it
+instead of the global `element_start`. The same rule was applied inside a
+`\new StaffGroup << … >>`, where `collect_staves_in` does not go through
+`score_groups_in`; the silence is prepended to the opened voices there.
+Measured: `ra` 1636 → **1637** (`polymetric-time-ossia-staff.ly`) then
+1637 → **1638** (`alignment-order.ly`), no loss; `mut` and `rw` unchanged.
+Reduced tests `portee_ossia_apres_skip_dans_une_branche_simultanee` and
+`portee_apres_skip_dans_un_groupe_de_portees` (`2e965716`, `d1fce9d9`).
+
+An intermediate variant that applied the absolute start to *all* ossia blocks
+lost five `ra` files (`collisions`, `context-die-staff`, `midi-unisons`,
+`note-head-style`, `rest-collision`) because the builder's `element_start`
+must still be updated before a `sequence_start` group is built. That ordering
+was restored and the narrow branch-only rule kept.
+
+### 58.4 A tie on a volta rest prolongs the body note
+
+`volta-spec-tie.ly` declares `music = \context Voice \fixed c' \repeat volta 2
+<< { a2. 4 } \volta 2 { s2.~ s4 } >>`. LilyPond 2.26 (checked in the bwrap
+sandbox) plays **one** A of four quarters: `lily/tie-performer.cc` receives the
+tie events of the unplayed alternative at the body's instant and merges the
+two body attacks. The reader ignored the `~` carried by `s2.`. A `RestTie`
+meta event is now recorded when walking a `\volta` block, dated at the
+enclosing repeat's body start; `link_ties` closes it on the note of equal
+pitch at the other end. Measured: `ra` 1637 → **1638**, no loss; `mut`/`rw`
+unchanged (`ddf7b09d`). Reduced test
+`tilde_sur_un_silence_de_volta_relie_les_notes_du_corps`.
+
+Recording rest ties for *every* rest was tried and rejected: it lost five
+exact files (`chord-names-spanbar`, `les_roses_d_ispahan`, `Danse`) without a
+single gain. The rule is therefore limited to volta alternatives.
+
+### 58.5 Scheme arity-0 music function
+
+`late-evaluation-of-variables.ly` builds `music = #(late #{ … #})`, where
+`late` is a `define-macro` producing an arity-0 music function. The reader
+discarded the datum and produced an empty score. When a Scheme datum in music
+position starts with `(late` and contains an embedded music body, that body
+is now re-read; late binding of variables is already handled by the reader.
+Measured: `rw` 1294 → **1295**, no loss; `ra`/`mut` unchanged (`1126253e`).
+Reduced test `fonction_scheme_arity_0_relit_sa_musique_embarquee`.
+
+### 58.6 Remaining causes, by frequency
+
+| Cause | Examples | Status after §58 |
+| --- | --- | --- |
+| Per-Voice unisons and ties | `BWV533`, `bwv910`, `two-jews`, `ToccataFugue`, `BWV-830-4/6`, `BWV857_Praeludium12`, `schumann-op68-26-sans-titre`, `rach-prelude23-05` | N1 and N2 are 100 % but the note count is too high: LilyPond merges attacks that the XML writes in sibling voices or at adjacent ticks. Tick-level merging heuristics were rejected in §44–§46. |
+| Cyclic quotations and cue transposition | `quote-cyclic`, `quote-during-subvoice`, `adding-orchestral-cues-to-a-vocal-score` | Forward quote resolution and source-minus-target `\transposition` are in place; `\cueDuring` inside a Scheme music function still reads the replacement music instead of the quoted source. |
+| Old-source timing (`\autochange`, hub scores) | `50title-hub`, `51title-hub`, `20title-hub`, `21title-hub`, `mozart-hrn-3`, `bridge` | All pitches match but attacks are shifted by a constant one to three quarters; no version-dependent fix was measured. |
+| Grace real-time count and placement | `bwv641`, `spacing-grace`, `beam-position`, `ballade-4` | Ruled out as a timing rule in §57.4; the residual difference is a note count or an old-source grace pairing. |
+| Scheme-driven generators | `fuzzy-scale/example`, `music-map` remnants, `late-evaluation` (fixed) | Need a Scheme evaluator; a single arity-0 macro was handled above. |
+
+### 58.7 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
