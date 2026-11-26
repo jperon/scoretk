@@ -53,35 +53,37 @@
 /// always wins, even `nabc-lines: 0;` (which Gregorio would reject on a cut,
 /// but which scoretk keeps as the author's declaration).
 pub(super) fn detect_nabc_lines(body: &str) -> usize {
-    let chars: Vec<char> = body.chars().collect();
+    // All the tokens tested below (`(`, `)`, `|`, `%`, `$`, newlines and the
+    // `<v>`/`</v>` delimiters) are ASCII. Scanning bytes is therefore UTF-8
+    // safe: a non-ASCII byte can neither be a token nor start a token. Each
+    // position does at most a bounded prefix comparison, so the whole body is
+    // visited once, without copying its remainder.
+    let bytes = body.as_bytes();
     let mut index = 0;
     let mut in_notes = false;
     let mut in_comment = false;
     let mut in_verbatim = false;
     let mut current = 0;
     let mut maximum = 0;
-    while index < chars.len() {
-        let char = chars[index];
+    while index < bytes.len() {
+        let byte = bytes[index];
         if in_comment {
-            if matches!(char, '\n' | '\r') {
+            if matches!(byte, b'\n' | b'\r') {
                 in_comment = false;
             }
             index += 1;
             continue;
         }
         // `\$.` is one lexer token in both the `score` and `notes` states:
-        // `$|` and `$(` are literal characters, not a cut or a group.
-        if char == '$' {
+        // `$|` and `$(` are literal characters, not a cut or a group. A
+        // multi-byte escaped character leaves only inert continuation bytes
+        // if only its first byte is skipped.
+        if byte == b'$' {
             index += 2;
             continue;
         }
         if in_verbatim {
-            if char == '<'
-                && chars[index..]
-                    .iter()
-                    .collect::<String>()
-                    .starts_with("</v>")
-            {
+            if byte == b'<' && bytes[index..].starts_with(b"</v>") {
                 in_verbatim = false;
                 index += 4;
             } else {
@@ -89,24 +91,23 @@ pub(super) fn detect_nabc_lines(body: &str) -> usize {
             }
             continue;
         }
-        let rest: String = chars[index..].iter().collect();
-        if !in_notes && rest.starts_with("<v>") {
+        if !in_notes && bytes[index..].starts_with(b"<v>") {
             in_verbatim = true;
             index += 3;
             continue;
         }
-        if !in_notes && char == '%' {
+        if !in_notes && byte == b'%' {
             in_comment = true;
             index += 1;
             continue;
         }
-        if char == '(' {
+        if byte == b'(' {
             in_notes = true;
             current = 0;
-        } else if in_notes && char == ')' {
+        } else if in_notes && byte == b')' {
             maximum = maximum.max(current);
             in_notes = false;
-        } else if in_notes && char == '|' {
+        } else if in_notes && byte == b'|' {
             current += 1;
         }
         index += 1;
@@ -137,5 +138,27 @@ mod tests {
     fn a_cut_inside_a_group_after_a_comment_line_still_counts() {
         let source = "% | not a cut\n(e) % | still not a cut\n(f|ta)\n";
         assert_eq!(detect_nabc_lines(source), 1);
+    }
+
+    #[test]
+    fn multibyte_text_and_escapes_keep_the_byte_scan_aligned() {
+        let source = "岩(e|f) (g|h|i) é<v>x|y</v> $(j|k) $|(l|m)";
+        assert_eq!(detect_nabc_lines(source), 2);
+    }
+
+    #[test]
+    fn a_large_body_is_scanned_in_one_linear_pass() {
+        // 25 000 groups of 8 bytes ≈ 200 KB. Rebuilding a `String` from the
+        // remainder at every character made this take minutes on a real
+        // GregoBase body, including in the wasm build used by Cantus.
+        let body = "(ef|ta) ".repeat(25_000);
+        let start = std::time::Instant::now();
+        assert_eq!(detect_nabc_lines(&body), 1);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "one pass over {} bytes took {elapsed:?}",
+            body.len()
+        );
     }
 }
