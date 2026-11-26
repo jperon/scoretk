@@ -843,7 +843,11 @@ copies in `$SCORETK_SPECS_DIR/mei/` (default
 `/home/jacques/programmes/musique/specs`): `mei-basic-5.1.rng` for the default
 mode, which declares `meiversion="5.1+basic"`, and `mei-all-5.1.rng` for
 `mei_full_support`, which declares `meiversion="5.1"`. Neither schema is
-vendored. The wrapper exits non-zero only when the headline mode fails.
+vendored; the basic customization is fetched from
+`https://music-encoding.org/schema/5.1/mei-basic.rng` into
+`$SCORETK_SPECS_DIR/mei/mei-basic-5.1.rng` (ECL-2.0), exactly as the all schema
+is fetched in §9. The wrapper exits non-zero only when the headline mode
+fails.
 
 | Mode | Result |
 | --- | ---: |
