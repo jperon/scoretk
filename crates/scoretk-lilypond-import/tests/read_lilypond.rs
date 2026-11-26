@@ -48,6 +48,21 @@ fn lire(music: &str) -> scoretk_core::model::Score {
 }
 
 #[test]
+fn fonction_scheme_arity_0_relit_sa_musique_embarquee() {
+    // `#(late #{ … #})` définit une fonction musicale arité 0 dont le corps
+    // est de la musique LilyPond (`late-evaluation-of-variables.ly`). Les
+    // trois notes sont jouées par le MIDI de référence.
+    let source = "\\version \"2.16.2\"\n\
+        #(define-macro (late embedded-lilypond) `(define-music-function (parser location) () ,embedded-lilypond))\n\
+        music = #(late #{ \\fixed c' { c4 d e } #})\n\
+        \\score { \\new Staff \\music }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut hauteurs: Vec<u8> = score.notes.iter().map(|note| note.pitch).collect();
+    hauteurs.sort();
+    assert_eq!(hauteurs, vec![60, 62, 64]);
+}
+
+#[test]
 fn paper_porte_la_geometrie_de_page() {
     let source = "\\version \"2.24.0\"\n\
         \\paper { paper-width = 210\\mm paper-height = 297\\mm left-margin = 15\\mm }\n\

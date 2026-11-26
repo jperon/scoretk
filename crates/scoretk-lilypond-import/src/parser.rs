@@ -2737,6 +2737,16 @@ impl<'a> Parser<'a> {
                     music
                 } else if let Some(music) = self.variables.get(&datum).cloned() {
                     music
+                } else if datum.trim_start().starts_with("(late")
+                    && crate::lexer::embedded_music_body(&datum).is_some()
+                {
+                    // `#(late #{ … #})` : une macro Scheme arité 0 qui
+                    // enveloppe de la musique LilyPond (`late-evaluation-of-
+                    // variables.ly`). La relire suffit : la liaison tardive
+                    // des variables est déjà faite par le lecteur.
+                    crate::lexer::embedded_music_body(&datum)
+                        .map(|corps| self.parse_embedded_music(&corps))
+                        .unwrap_or(Music::Empty)
                 } else if datum.contains("music-map") {
                     // `music-map` transforme des événements (nuances,
                     // articulations) mais garde hauteurs et attaques
