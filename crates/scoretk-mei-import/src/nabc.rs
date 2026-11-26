@@ -27,7 +27,7 @@
 //! un `<annot>`/un `Loss` et ne sont pas inventés.
 
 use scoretk_core::model::{Gregorian, NabcSnippet};
-use scoretk_mei_common::nabc;
+use scoretk_mei_common::{nabc, neumes};
 use scoretk_xml_common::Element;
 
 /// Porteur exact du snippet NABC dans la portée manuscrite.
@@ -89,13 +89,17 @@ pub(super) fn read_into(root: &Element, gregorian: &mut Gregorian) {
                 continue;
             }
             if child.attribute("type") == Some(CARRIER) {
+                // `@label` (`att.labelled`) porte le slash qui ouvre le
+                // segment carré après la contre-coupure : sans lui, un MEI
+                // tiers garde le comportement historique (aucun texte).
                 snippets.push(NabcSnippet {
                     notes_before: child
                         .attribute("n")
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(0),
                     text: child.text.clone(),
-                    ..NabcSnippet::default()
+                    resume: neumes::layout_from_label(child.attribute("label"), "resume")
+                        .unwrap_or_default(),
                 });
             }
         }
@@ -193,6 +197,19 @@ mod tests {
         read_into(&root, &mut gregorian);
         assert_eq!(gregorian.syllables[0].nabc.len(), 1);
         assert_eq!(gregorian.syllables[0].nabc[0].text, "talsi8");
+    }
+
+    #[test]
+    fn the_cut_resumption_is_read_from_the_standard_label() {
+        let mei = MEI.replace(
+            "<signifLet type=\"gabc-nabc\" n=\"0\">",
+            "<signifLet type=\"gabc-nabc\" n=\"0\" label=\"layout:resume:U002F\">",
+        );
+        let root = parse(mei.as_bytes()).expect("MEI");
+        let mut gregorian = Gregorian::default();
+        gregorian.syllables.push(Default::default());
+        read_into(&root, &mut gregorian);
+        assert_eq!(gregorian.syllables[0].nabc[0].resume, "/");
     }
 
     #[test]

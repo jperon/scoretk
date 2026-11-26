@@ -47,6 +47,9 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         return Err(Error::Unsupported("couche neumatique absente".to_owned()));
     };
     initial_clefs(root, layer, &mut gregorian);
+    // `@label` est le porteur MEI standard de l'espacement exact du source ;
+    // sans lui (encodage tiers) le payload reste sans séparateur connu.
+    gregorian.opening_separator = neumes::layout_from_label(layer.attribute("label"), "open");
     let mut current_clef = gregorian
         .clefs
         .first()
@@ -55,7 +58,8 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
 
     for syllable_node in layer.children.iter().filter(|node| node.name == "syllable") {
         let mut syllable = Syllable::default();
-        if let Some(syl) = syllable_node.child("syl") {
+        let syl = syllable_node.child("syl");
+        if let Some(syl) = syl {
             // Le texte exact est conservé (espaces de bord compris) :
             // `text_trimmed()` supprimerait les espaces de mot de GABC.
             syllable.text = neumes::syl_text(syl);
@@ -90,6 +94,22 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
                 _ => {}
             }
         }
+        // Le porteur exact est `@label` (`att.labelled`, attribut standard).
+        // Sans lui — MEI tiers ou ancien fichier — le séparateur est déduit
+        // du marqueur de fin de mot, comme l'écrivain GABC historique le
+        // réémettait : un espace après les syllabes `wordpos="t"`, rien
+        // sinon. Le champ reste présent pour que l'écrivain GABC n'invente
+        // pas un saut de ligne là où le MEI n'en porte pas.
+        syllable.separator_after =
+            neumes::layout_from_label(syl.and_then(|node| node.attribute("label")), "sep").or_else(
+                || {
+                    Some(if syllable.space_after {
+                        " ".to_owned()
+                    } else {
+                        String::new()
+                    })
+                },
+            );
 
         // Une clé sur la syllabe est un changement en cours de chant
         // (`Gabc.tex:847-870`) ; elle entre dans la liste source des clés.
@@ -563,5 +583,35 @@ mod tests {
         assert_eq!(syllable.bars, vec![BarKind::DivisioMinima]);
         assert!(gregorian.derived_modern_view);
         assert_eq!(score.notes.len(), 1, "the derived modern view is rebuilt");
+    }
+
+    #[test]
+    fn body_layout_labels_are_restored_and_have_a_standard_fallback() {
+        let labelled = MEI
+            .replace("<layer n=\"1\">", "<layer n=\"1\" label=\"layout:open:L\">")
+            .replace(
+                "<syl wordpos=\"t\" con=\"s\">",
+                "<syl wordpos=\"t\" con=\"s\" label=\"layout:sep:LL\">",
+            );
+        let root = scoretk_xml_common::parse(labelled.as_bytes()).expect("parse labelled MEI");
+        let score = read(&root).expect("read neumes");
+        let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
+            panic!("L6 payload");
+        };
+        assert_eq!(gregorian.opening_separator.as_deref(), Some("\n"));
+        assert_eq!(
+            gregorian.syllables[0].separator_after.as_deref(),
+            Some("\n\n")
+        );
+
+        // Sans `@label` (MEI tiers), on retombe sur l'espacement historique :
+        // un espace après une syllabe `wordpos="t"`, rien pour `wordpos="m"`.
+        let root = scoretk_xml_common::parse(MEI.as_bytes()).expect("parse MEI neumes");
+        let score = read(&root).expect("read neumes");
+        let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
+            panic!("L6 payload");
+        };
+        assert_eq!(gregorian.opening_separator, None);
+        assert_eq!(gregorian.syllables[0].separator_after.as_deref(), Some(" "));
     }
 }

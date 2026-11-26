@@ -135,18 +135,23 @@ pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
                 write_descriptor(xml, &descriptor);
             }
             // Le texte NABC atomique est le porteur exact du round trip ;
-            // `@n` garde l'ordre des snippets dans la syllabe.
-            xml.tag_with(
-                "signifLet",
-                &[
-                    ("type", "gabc-nabc"),
-                    // `@n` porte le nombre de notes carrées avant la coupure :
-                    // c'est la donnée nécessaire pour reconstruire
-                    // l'interleavage GABC exact à la lecture.
-                    ("n", &snippet.notes_before.to_string()),
-                ],
-                &snippet.text,
-            );
+            // `@n` garde l'ordre des snippets dans la syllabe. Le slash qui
+            // ouvre le segment carré après la contre-coupure est un espacement
+            // source : `@label` (attribut MEI standard) le transporte sans
+            // annotation privée.
+            let notes_before = snippet.notes_before.to_string();
+            let mut attributes = vec![
+                ("type", "gabc-nabc"),
+                // `@n` porte le nombre de notes carrées avant la coupure :
+                // c'est la donnée nécessaire pour reconstruire
+                // l'interleavage GABC exact à la lecture.
+                ("n", notes_before.as_str()),
+            ];
+            let resume = neumes::layout_label("resume", &snippet.resume);
+            if !snippet.resume.is_empty() {
+                attributes.push(("label", resume.as_str()));
+            }
+            xml.tag_with("signifLet", &attributes, &snippet.text);
         }
         xml.end_element();
     }
@@ -228,4 +233,41 @@ fn write_descriptor(xml: &mut XmlWriter, descriptor: &nabc::Descriptor) {
     }
     xml.end_element();
     let _ = ids::MEI_NAMESPACE;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scoretk_core::model::{Gregorian, NabcSnippet, Syllable};
+    use scoretk_xml_common::XmlWriter;
+
+    fn chant_with_resume(resume: &str) -> Gregorian {
+        Gregorian {
+            syllables: vec![Syllable {
+                nabc: vec![NabcSnippet {
+                    notes_before: 1,
+                    text: "ds-".to_owned(),
+                    resume: resume.to_owned(),
+                }],
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        }
+    }
+
+    #[test]
+    fn the_cut_resumption_uses_a_standard_label_not_a_private_annotation() {
+        let mut xml = XmlWriter::new();
+        write_staff(&mut xml, &chant_with_resume("/"));
+        let output = xml.finish();
+        assert!(
+            output.contains("type=\"gabc-nabc\" n=\"1\" label=\"layout:resume:U002F\">ds-</signifLet>")
+        );
+        assert!(!output.contains("<annot"));
+
+        let mut xml = XmlWriter::new();
+        write_staff(&mut xml, &chant_with_resume(""));
+        let output = xml.finish();
+        assert!(!output.contains("layout:resume"));
+    }
 }

@@ -87,7 +87,18 @@ pub(super) fn write(
     }
     xml.start_element("section", &[("xml:id", "s1")]);
     xml.start_element("staff", &[("n", "1")]);
-    xml.start_element("layer", &[("n", "1")]);
+    // L'espacement exact entre le groupe de clé initial et la première
+    // syllabe n'a pas d'élément MEI dédié : il est porté par `@label`, attribut
+    // standard (`att.labelled`) et non par une annotation privée.
+    let mut layer_attributes = vec![("n".to_owned(), "1".to_owned())];
+    if let Some(separator) = &gregorian.opening_separator {
+        layer_attributes.push(("label".to_owned(), neumes::layout_label("open", separator)));
+    }
+    let layer_refs: Vec<(&str, &str)> = layer_attributes
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    xml.start_element("layer", &layer_refs);
 
     if options.gabc_tokens {
         for (index, token) in gregorian.clefs.iter().take(initial).enumerate() {
@@ -294,7 +305,16 @@ fn write_syllable(
     linked: bool,
 ) {
     let elision = syllable.text.contains('~');
-    let syl_attributes = [
+    // Le séparateur exact entre ce groupe et le suivant (`Gabc.tex:60-61`)
+    // n'a pas de champ MEI ; `@label` est un attribut standard et garde son
+    // spelling sans ajouter d'annotation `gabc-*` au document. Il est porté
+    // par `<syl>` et non par `<syllable>` pour laisser intacte la structure
+    // neumatique attendue par les lecteurs du module NEUMES.
+    let separator_label = syllable
+        .separator_after
+        .as_ref()
+        .map(|separator| neumes::layout_label("sep", separator));
+    let mut syl_attributes = vec![
         ("wordpos", if syllable.space_after { "t" } else { "m" }),
         (
             "con",
@@ -307,12 +327,15 @@ fn write_syllable(
             },
         ),
     ];
-    let links = if linked {
+    if let Some(label) = &separator_label {
+        syl_attributes.push(("label", label.as_str()));
+    }
+    let attributes = if linked {
         nabc::link(syllable_index, 1)
     } else {
         Vec::new()
     };
-    let link_refs: Vec<(&str, &str)> = links
+    let link_refs: Vec<(&str, &str)> = attributes
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
@@ -638,5 +661,20 @@ mod tests {
         assert!(!output.contains("gabc-"), "the standard carriers suffice");
         assert!(output.contains("<syl wordpos=\"t\" con=\"s\">"));
         assert!(output.contains("<quilisma/>"));
+    }
+
+    #[test]
+    fn exact_body_layout_is_carried_by_standard_labels() {
+        let mut gregorian = chant();
+        gregorian.opening_separator = Some(" ".to_owned());
+        gregorian.syllables[0].separator_after = Some("\n\n".to_owned());
+        let output = write(&gregorian, &MeiOptions::default()).expect("MEI neumes");
+        assert!(output.contains("<layer n=\"1\" label=\"layout:open:S\">"));
+        assert!(output.contains("<syl wordpos=\"t\" con=\"s\" label=\"layout:sep:LL\">"));
+        assert!(!output.contains("gabc-"), "no private annotation is added");
+        assert!(
+            output.contains("<syllable>"),
+            "the neume skeleton is unchanged"
+        );
     }
 }

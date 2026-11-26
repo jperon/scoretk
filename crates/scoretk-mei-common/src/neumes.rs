@@ -1025,6 +1025,70 @@ pub fn sign_kind_from_name(name: &str) -> SignKind {
     }
 }
 
+/// Préfixe d'un `@label` MEI 5.1 portant une mise en page exacte du source.
+///
+/// `@label` (`att.labelled`, `data.string`) est un attribut MEI standard :
+/// contrairement à `<annot type="gabc-*">`, il n'ajoute aucune annotation
+/// privée au document. Les trois usages sont `open` (texte entre le groupe de
+/// clé initial et la première syllabe), `sep` (texte entre deux groupes) et
+/// `resume` (texte après le contre-coupure NABC). Le suffixe code chaque
+/// caractère de l'espacement (`S` espace, `L` saut de ligne, `T` tabulation,
+/// `R` retour chariot, `UXXXX` pour le reste) ; `E` code la chaîne vide, ce
+/// qui distingue `Some("")` de `None` (absence de porteur).
+pub const LAYOUT_LABEL_PREFIX: &str = "layout";
+
+/// Écrit `layout:<kind>:<encodage>` pour une chaîne d'espacement source.
+pub fn layout_label(kind: &str, separator: &str) -> String {
+    let mut out = format!("{LAYOUT_LABEL_PREFIX}:{kind}:");
+    if separator.is_empty() {
+        out.push('E');
+        return out;
+    }
+    for character in separator.chars() {
+        match character {
+            ' ' => out.push('S'),
+            '\n' => out.push('L'),
+            '\t' => out.push('T'),
+            '\r' => out.push('R'),
+            other => {
+                out.push('U');
+                out.push_str(&format!("{:04X}", other as u32));
+            }
+        }
+    }
+    out
+}
+
+/// Relit un `@label` écrit par `layout_label`; `None` si l'attribut est
+/// absent ou d'un autre genre (encodage tiers, ancien fichier).
+pub fn layout_from_label(label: Option<&str>, kind: &str) -> Option<String> {
+    let prefix = format!("{LAYOUT_LABEL_PREFIX}:{kind}:");
+    let encoded = label?.strip_prefix(&prefix)?;
+    if encoded == "E" {
+        return Some(String::new());
+    }
+    let chars: Vec<char> = encoded.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        match chars[index] {
+            'S' => out.push(' '),
+            'L' => out.push('\n'),
+            'T' => out.push('\t'),
+            'R' => out.push('\r'),
+            'U' if index + 4 < chars.len() => {
+                let hex: String = chars[index + 1..index + 5].iter().collect();
+                let code = u32::from_str_radix(&hex, 16).ok()?;
+                out.push(char::from_u32(code)?);
+                index += 4;
+            }
+            _ => return None,
+        }
+        index += 1;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1118,5 +1182,19 @@ mod tests {
         }
         assert_eq!(form_bar("finalis"), BarKind::DivisioFinalis);
         assert_eq!(form_bar("minima"), BarKind::DivisioMinima);
+    }
+
+    #[test]
+    fn layout_labels_carry_exact_whitespace_in_a_standard_attribute() {
+        for separator in ["", " ", "\n", "\n\n", " \n", "\t"] {
+            let label = layout_label("sep", separator);
+            assert!(label.starts_with("layout:sep:"));
+            assert_eq!(
+                layout_from_label(Some(&label), "sep").as_deref(),
+                Some(separator)
+            );
+            assert_eq!(layout_from_label(Some(&label), "open"), None);
+        }
+        assert_eq!(layout_from_label(None, "sep"), None);
     }
 }
