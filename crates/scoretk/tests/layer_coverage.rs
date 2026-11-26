@@ -17,10 +17,12 @@
 
 //! Layer coverage of the ten directions, measured on the MuseScore corpus.
 //!
-//! Run with `--nocapture`. This test **never fails on a percentage**: it
-//! prints a measurement table and only panics on a broken corpus/setup
-//! (unreadable reference score). A direction that cannot write or read a file
-//! is counted as `skipped` and printed, not asserted on.
+//! Run with `--nocapture`. This test never fails on a percentage **except the
+//! MIDI full-support headline** (`midi_full_support_capacity_line`), which is
+//! the target of the 2026-11-26 campaign: 95 % of what the SMF carries. It
+//! otherwise prints a measurement table and only panics on a broken
+//! corpus/setup (unreadable reference score). A direction that cannot write or
+//! read a file is counted as `skipped` and printed, not asserted on.
 //!
 //! Definitions (the same as in `docs/agents/model-modularisation.md` §11):
 //!
@@ -45,7 +47,12 @@ use scoretk::model::{
     compare, compare_with_kinds, essential, inventory, Capabilities, Coverage, LayerCounts, Layers,
     LAYERS,
 };
-use scoretk::{read, write, Format, MidiImportOptions, Options, Score};
+use scoretk::{read, read_midi_with, write, Format, MidiImportOptions, Options, Score};
+
+mod support;
+use support::midi_smf::{
+    model_kind_values, model_notes, smf_inventory, smf_kind_values, smf_notes,
+};
 
 use scoretk_abc_export::CAPABILITIES as ABC_EXPORT;
 use scoretk_abc_import::CAPABILITIES as ABC_IMPORT;
@@ -1208,6 +1215,134 @@ fn midi_exact_ticks_full_support() {
         print_details(declared, &totals);
     }
     println!();
+}
+
+/// MIDI full support measured against what the SMF **actually contains**.
+///
+/// The default and option rows of `midi_exact_ticks_full_support` compare the
+/// re-read model with the *written score inventory*: ticks of a performance
+/// (repeats unfolded, gates, merged ties) cannot match written ticks, so
+/// those rows diagnose 4.7.4 behaviour, not format capacity
+/// (`docs/agents/model-modularisation.md` §11.9). Here the reference is the
+/// bytes written by scoretk, parsed independently with `midly`, as in
+/// `midi_smf_capacity.rs`: attacks are keyed by pitch, onset, played duration,
+/// velocity and channel, and meta values are compared one by one. Both views
+/// are projected into the same `LayerInventory`, so the declared SMF kinds
+/// and the whole-corpus denominator are unchanged.
+///
+/// - `(a) default`: MuseScore 4.7.4 bytes, kept as the reference line;
+/// - `(b) HEADLINE midi_full_support`: standard SMF carriers only — `FF 03`,
+///   `FF 02`, `FF 01`, `FF 06`, `FF 07` and RP-026 tags. No `@ST:`/`@SY:`/
+///   `@TK:` payload is allowed in this row (asserted below);
+/// - `(c) SECONDARY smf_text`: the private `@…` mode, measured on its own.
+#[test]
+fn midi_full_support_capacity_line() {
+    let midi = &DIRECTIONS[4];
+    assert_eq!(midi.name, "midi");
+    let declared = midi.import.declared().union(midi.export.declared());
+    let kinds = midi
+        .import
+        .declared_kinds()
+        .or(midi.export.declared_kinds());
+    let scores = corpus_scores();
+
+    let default_write = Options::default();
+    let full_write = Options {
+        midi_full_support: true,
+        ..Options::default()
+    };
+    let private_write = Options {
+        midi: scoretk::MidiOptions {
+            smf_text: true,
+            ..Default::default()
+        },
+        ..Options::default()
+    };
+    let full_read = MidiImportOptions {
+        full_support: true,
+        ..Default::default()
+    };
+    let private_read = MidiImportOptions {
+        smf_text: true,
+        smf_exact_ticks: true,
+        ..Default::default()
+    };
+
+    let cases: Vec<(&str, &Options, Option<&MidiImportOptions>)> = vec![
+        ("(a) default (4.7.4)", &default_write, None),
+        (
+            "(b) HEADLINE midi_full_support",
+            &full_write,
+            Some(&full_read),
+        ),
+        (
+            "(c) SECONDARY smf_text private",
+            &private_write,
+            Some(&private_read),
+        ),
+    ];
+
+    println!(
+        "\n=== MIDI full support: SMF bytes as oracle ({} scores, {} declared kinds) ===",
+        scores.len(),
+        kinds.expect("declared SMF kinds").len()
+    );
+    let mut headline = None;
+    for (label, write_options, read_options) in cases {
+        let mut totals = Totals::default();
+        for (_, path) in &scores {
+            let score = reference_model(path);
+            let Ok(bytes) = write(&score, midi.format, write_options) else {
+                totals.skipped += 1;
+                continue;
+            };
+            if label.starts_with("(b)") {
+                // Private prefixes are not part of the standard-carrier
+                // headline: the writer must not encode them at all.
+                for prefix in [b"@ST:".as_slice(), b"@SY:", b"@TK:"] {
+                    assert!(
+                        !bytes.windows(prefix.len()).any(|w| w == prefix),
+                        "midi_full_support wrote a private prefix: {}",
+                        String::from_utf8_lossy(prefix)
+                    );
+                }
+            }
+            // The oracle always reads the file as written. The private
+            // secondary row keeps its `@…` payloads: its interoperability
+            // figure without them is measured in `midi_smf_capacity.rs`.
+            let imported = match read_options {
+                Some(options) => read_midi_with(&bytes, options),
+                None => read(&bytes, midi.format),
+            };
+            let Ok(imported) = imported else {
+                totals.skipped += 1;
+                continue;
+            };
+            let reference = smf_inventory(&smf_notes(&bytes), &smf_kind_values(&bytes));
+            let candidate = smf_inventory(&model_notes(&imported), &model_kind_values(&imported));
+            let coverage = compare_with_kinds(&reference, &candidate, declared, kinds);
+            totals.add(&coverage, essential(&reference, &candidate));
+        }
+        println!(
+            "{label:<34} {:<12} {:>9.2}% {:>12.2}% {:>6} {:>7} {:>8}",
+            layers_label(declared),
+            totals.essential.percent(),
+            totals.total.percent(),
+            totals.files,
+            totals.skipped,
+            totals.total.reference,
+        );
+        print_details(declared, &totals);
+        if label.starts_with("(b)") {
+            headline = Some(totals.total.percent());
+        }
+    }
+    println!();
+    let headline = headline.expect("the headline row was measured");
+    assert!(
+        headline >= 95.0,
+        "MIDI full support is the campaign target: {headline:.2} % < 95 %"
+    );
 }
 
 #[test]
