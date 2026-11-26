@@ -77,12 +77,13 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
             .map_or(0, |digit| (digit - b'0') as usize),
         None => crate::nabc::detect_nabc_lines(body),
     };
-    let (syllables, clefs) = parse_notation(body, base, nabc_lines);
+    let (syllables, clefs, opening_separator) = parse_notation(body, base, nabc_lines);
     Ok(Gregorian {
         headers,
         staff_lines,
         clefs,
         syllables,
+        opening_separator,
         derived_modern_view: false,
     })
 }
@@ -109,10 +110,14 @@ pub(super) fn apply_metadata(score: &mut Score, gregorian: &Gregorian) {
 
 /// Walks the notation section, alternating syllable text and note groups.
 ///
-/// Returns the syllables and the clefs in source order. A group containing
-/// only a clef is not a syllable, but the clef is still primary data
-/// (`Gabc.tex:847-870`).
-fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>, Vec<String>) {
+/// Returns the syllables, the clefs in source order and the exact text after
+/// an opening clef-only group. A group containing only a clef is not a
+/// syllable, but the clef is still primary data (`Gabc.tex:847-870`).
+fn parse_notation(
+    body: &str,
+    base: usize,
+    nabc_lines: usize,
+) -> (Vec<Syllable>, Vec<String>, Option<String>) {
     let chars: Vec<char> = body.chars().collect();
     // `offsets[i]` est la position UTF-16 du caractère `chars[i]` dans le
     // fichier entier ; le dernier élément est la fin du corps.
@@ -131,6 +136,8 @@ fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>,
     let mut in_notes = false;
     let mut escaped = false;
     let mut seen_content = false;
+    let mut opening_clef_seen = false;
+    let mut opening_separator: Option<String> = None;
     let mut index = 0;
     while index < chars.len() {
         let char = chars[index];
@@ -153,11 +160,18 @@ fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>,
                 // A leading group holding only the initial clef is recorded
                 // in `Gregorian::clefs` and emitted before the first
                 // syllable; a later clef-only group needs its own syllable.
+                let initial_clef_group =
+                    !has_content && syllable.clef.is_some() && syllables.is_empty();
                 if has_content || (syllable.clef.is_some() && seen_content) {
                     syllables.push(syllable);
                 }
                 if has_content {
                     seen_content = true;
+                } else if initial_clef_group {
+                    // The initial clef-only group is emitted before the first
+                    // syllable by the writer; its following separator must be
+                    // kept for raw bodies (`docs/agents/gabc.md` §15).
+                    opening_clef_seen = true;
                 }
                 code.clear();
                 in_notes = false;
@@ -176,8 +190,12 @@ fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>,
             // space before it ends the previous word, even when the syllable
             // itself is trimmed (`Gabc.tex:60-61,241-245`).
             let raw = std::mem::take(&mut text);
+            let separator = leading_whitespace(&raw);
             if let Some(previous) = syllables.last_mut() {
                 previous.space_after = text_has_space(&raw);
+                previous.separator_after = Some(separator.to_owned());
+            } else if opening_clef_seen && opening_separator.is_none() {
+                opening_separator = Some(separator.to_owned());
             }
             let pending = raw.trim().to_owned();
             code.clear();
@@ -212,11 +230,22 @@ fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>,
         }
         index += 1;
     }
-    (syllables, clefs)
+    // The text after the last `)` is still part of the notation's layout: a
+    // raw GregoBase body ends with a newline that a byte-exact writer must
+    // reproduce (`Gabc.tex:60-61,241-245`).
+    if let Some(last) = syllables.last_mut() {
+        last.separator_after = Some(leading_whitespace(&text).to_owned());
+    }
+    (syllables, clefs, opening_separator)
 }
 
 fn take_text(text: &mut String) -> String {
     std::mem::take(text).trim().to_owned()
+}
+
+/// Exact whitespace prefix of `text` (`Gabc.tex:60-61,241-245`).
+fn leading_whitespace(text: &str) -> &str {
+    &text[..text.len() - text.trim_start().len()]
 }
 
 fn text_has_space(text: &str) -> bool {
@@ -263,28 +292,60 @@ fn parse_group(
     // snippets after a later cut are still sung notes and are parsed too.
     let mut chars = Vec::new();
     let mut source = Vec::new();
-    let mut snippet = String::new();
+    // Split the group into square (`false`) and manuscript (`true`) segments
+    // before parsing notes. Keeping the segments separate is what allows a
+    // slash opening a square segment after a cut to stay on that side of the
+    // cut instead of being swallowed by the previous note's glyph
+    // (`docs/agents/gabc.md` §17).
+    let mut segments: Vec<(bool, Vec<(char, usize)>)> = vec![(false, Vec::new())];
     let mut state = 0usize;
-    // (index in the square character stream at the cut, exact snippet text)
-    let mut cuts: Vec<(usize, String)> = Vec::new();
     for (char, &raw_position) in code.chars().zip(mapping.iter()) {
         if char == '|' {
-            if state != 0 {
-                cuts.push((chars.len(), std::mem::take(&mut snippet)));
-            }
-            snippet.clear();
             state = (state + 1) % (nabc_lines.max(1) + 1);
-            continue;
-        }
-        if state == 0 {
-            chars.push(char);
-            source.push(offsets[raw_position]);
+            segments.push((state != 0, Vec::new()));
         } else {
-            snippet.push(char);
+            segments
+                .last_mut()
+                .expect("a notation segment")
+                .1
+                .push((char, raw_position));
         }
     }
-    if state != 0 && !snippet.is_empty() {
-        cuts.push((chars.len(), snippet));
+    // A slash at the start of a square segment is the spacing glyph that
+    // opens it; detach it from that segment and attach it to the manuscript
+    // snippet it follows, so the writer places it after the cut-back.
+    let mut resumes = vec![String::new(); segments.len()];
+    let mut detached = vec![0usize; segments.len()];
+    for index in 0..segments.len().saturating_sub(1) {
+        if !segments[index].0 || segments[index + 1].0 {
+            continue;
+        }
+        let mut resume = String::new();
+        for (char, _) in &segments[index + 1].1 {
+            if *char == '/' || (!resume.is_empty() && matches!(char, '0' | '!')) {
+                resume.push(*char);
+            } else {
+                break;
+            }
+        }
+        detached[index + 1] = resume.chars().count();
+        resumes[index] = resume;
+    }
+    // (index in the square character stream at the cut, exact snippet text,
+    // characters opening the square snippet after the cut-back).
+    let mut cuts: Vec<(usize, String, String)> = Vec::new();
+    for (index, (is_nabc, content)) in segments.into_iter().enumerate() {
+        if is_nabc {
+            let text: String = content.iter().map(|(char, _)| *char).collect();
+            if !text.is_empty() {
+                cuts.push((chars.len(), text, resumes[index].clone()));
+            }
+        } else {
+            for (char, position) in content.into_iter().skip(detached[index]) {
+                chars.push(char);
+                source.push(offsets[position]);
+            }
+        }
     }
     let clefs = syntax::parse_clefs(&chars.iter().collect::<String>());
     let square_len = chars.len();
@@ -374,9 +435,10 @@ fn parse_group(
     }
     syllable.nabc = cuts
         .into_iter()
-        .map(|(cut, text)| NabcSnippet {
+        .map(|(cut, text, resume)| NabcSnippet {
             notes_before: note_starts.iter().filter(|&&start| start < cut).count(),
             text,
+            resume,
         })
         .collect();
     (syllable, clefs, above_text)
@@ -583,6 +645,27 @@ mod tests {
             .collect();
         assert_eq!(projected, [18, 19, 20, 24, 27]);
         assert_eq!(source.encode_utf16().nth(27), Some('i' as u16));
+    }
+
+    #[test]
+    fn body_layout_and_nabc_cut_slash_are_kept_in_the_payload() {
+        // GregoBase 18205: the slash opens the square snippet after the `ds-`
+        // manuscript snippet, and the raw body separates the clef and the
+        // words with spaces (`docs/agents/gabc.md` §15/§17).
+        const BODY: &str =
+            "(c4) nos,(hg|cl|h|st|jj|ds-hi|jvHG|ci|hh|ds-|/giHG|pesu2|hf/fe|cl!pi) (:)\n";
+        let payload = parse_body(BODY).expect("headerless body");
+        assert_eq!(payload.opening_separator.as_deref(), Some(" "));
+        assert_eq!(payload.syllables[0].separator_after.as_deref(), Some(" "));
+        assert_eq!(payload.syllables[1].separator_after.as_deref(), Some("\n"));
+        let snippets = &payload.syllables[0].nabc;
+        assert_eq!(snippets.len(), 7);
+        assert_eq!(snippets[4].text, "ds-");
+        assert_eq!(snippets[4].resume, "/");
+        assert_eq!(snippets.iter().filter(|snippet| !snippet.resume.is_empty()).count(), 1);
+        // The second `h` of `hh` must not swallow the slash: its glyph is
+        // empty and the slash is emitted with the cut-back on write.
+        assert_eq!(payload.syllables[0].notes[9].glyph, "");
     }
 
     #[test]
