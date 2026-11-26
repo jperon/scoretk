@@ -55,7 +55,8 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
 /// a neume glyph (the spelling of one neume, `GregorianNote::glyph`) and a
 /// clef token (`c3`, `cb3`, `c1@c4`). Each is justified in
 /// `docs/agents/gabc.md` §8; everything else — headers, separators, bars,
-/// word spaces, the `%%` marker — is generated here.
+/// word spaces, the `%%` marker — is generated here. A payload with no header
+/// keeps its raw-body shape (no `name: ;`, no `%%`), as documented in §15/§17.
 pub fn write_gabc(score: &Score) -> Result<String> {
     let gregorian: Cow<'_, Gregorian> = match &score.extensions.format {
         Some(Extension::Gregorian(gregorian)) => Cow::Borrowed(gregorian),
@@ -74,35 +75,41 @@ pub fn write_gabc(score: &Score) -> Result<String> {
 /// entirely from parsed fields can be tested without any source text.
 fn emit(gregorian: &Gregorian) -> String {
     let mut out = String::with_capacity(256);
-    if !gregorian.headers.iter().any(|header| header.name == "name") {
-        // `name:` is mandatory (`Gabc.tex:79-82`); a payload assembled by
-        // another direction may not have one.
-        out.push_str("name: ;\n");
-    }
-    for header in &gregorian.headers {
-        out.push_str(&header.name);
-        out.push_str(": ");
-        let mut lines = header.value.split('\n');
-        let first = lines.next().unwrap_or("");
-        out.push_str(first);
-        let rest: Vec<&str> = lines.collect();
-        if rest.is_empty() {
-            out.push_str(";\n");
-        } else {
-            // Multi-line values omit the first `;` and end in `;;`
-            // (`Gabc.tex:69-74`).
-            out.push('\n');
-            for (index, line) in rest.iter().enumerate() {
-                out.push_str(line);
-                out.push_str(if index + 1 == rest.len() {
-                    ";;\n"
-                } else {
-                    "\n"
-                });
+    if gregorian.headers.is_empty() {
+        // A raw GregoBase body has no header and no `%%` marker. Keep that
+        // shape on write instead of inventing `name: ;` and a separator the
+        // source never had (read tolerance and docs/agents/gabc.md §15, §17).
+    } else {
+        if !gregorian.headers.iter().any(|header| header.name == "name") {
+            // `name:` is mandatory (`Gabc.tex:79-82`); a payload assembled by
+            // another direction may not have one.
+            out.push_str("name: ;\n");
+        }
+        for header in &gregorian.headers {
+            out.push_str(&header.name);
+            out.push_str(": ");
+            let mut lines = header.value.split('\n');
+            let first = lines.next().unwrap_or("");
+            out.push_str(first);
+            let rest: Vec<&str> = lines.collect();
+            if rest.is_empty() {
+                out.push_str(";\n");
+            } else {
+                // Multi-line values omit the first `;` and end in `;;`
+                // (`Gabc.tex:69-74`).
+                out.push('\n');
+                for (index, line) in rest.iter().enumerate() {
+                    out.push_str(line);
+                    out.push_str(if index + 1 == rest.len() {
+                        ";;\n"
+                    } else {
+                        "\n"
+                    });
+                }
             }
         }
+        out.push_str("%%\n\n");
     }
-    out.push_str("%%\n\n");
 
     // A leading group holding only the initial clef is not a syllable
     // (§7 of the reader); it is emitted here from the source-order list.
@@ -300,6 +307,25 @@ mod tests {
             "name: Veni;\nlanguage: latin;\nbook: Graduale\nRomanum;;\n\
              %%\n\n(c3)\nVE(g.h') ni(g::)"
         );
+    }
+
+    #[test]
+    fn a_headerless_body_is_written_without_inventing_a_header() {
+        let gregorian = Gregorian {
+            headers: Vec::new(),
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![scoretk_core::model::Syllable {
+                text: " Ky".to_owned(),
+                notes: vec![GregorianNote {
+                    letter: 'f',
+                    ..GregorianNote::default()
+                }],
+                space_after: true,
+                ..scoretk_core::model::Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        assert_eq!(emit(&gregorian), "(c4)\n Ky(f) ");
     }
 
     #[test]

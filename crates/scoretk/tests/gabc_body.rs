@@ -37,13 +37,15 @@ fn a_body_only_gabc_is_detected_and_converted_to_musicxml() {
     assert!(xml.contains("<bar-style>light-heavy</bar-style>"), "{xml}");
     assert!(xml.contains("<lyric"), "{xml}");
 
-    // The structured writer always emits a header and the `%%` marker: a
-    // headerless input is a reading tolerance, not a second GABC dialect
-    // (`docs/agents/gabc.md` §15).
+    // A raw body has no header to restore: the writer must not invent
+    // `name: ;` or a `%%` marker (`docs/agents/gabc.md` §15, §17). Other
+    // whitespace is still normalised by the structured writer (§8).
     let written =
         String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC export"))
             .expect("UTF-8 GABC");
-    assert!(written.contains("%%\n"), "{written}");
+    assert!(!written.contains("%%"), "{written}");
+    assert!(!written.contains("name:"), "{written}");
+    assert!(written.starts_with("(c4)"), "{written}");
     assert_eq!(
         read(written.as_bytes(), Format::Gabc)
             .expect("second import")
