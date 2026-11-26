@@ -105,6 +105,10 @@ pub(crate) struct Parser<'a> {
     pending_midi_instrument: Option<String>,
     /// Fonctions musicales définies en Scheme (`define-music-function`…).
     music_functions: BTreeMap<String, MusicFunction>,
+    /// Fonctions partielles `\shape #'(…) \etc` assignées à un nom : leur
+    /// argument est un post-événement (`-\tieShapeA _~`, `lily/parser.yy`
+    /// `script_dir music_function_call`, l. 3337).
+    tweak_functions: BTreeSet<String>,
     /// Définitions `\addInstrumentDefinition` : nom → transposition
     /// d'instrument (`ly/music-functions-init.ly:46-54`).
     instrument_definitions: BTreeMap<String, PitchSpec>,
@@ -405,6 +409,7 @@ pub(crate) fn parse(
         playback_unfold_repeats: false,
         pending_midi_instrument: None,
         music_functions: BTreeMap::new(),
+            tweak_functions: BTreeSet::new(),
         instrument_definitions: BTreeMap::new(),
         expansion_depth: 0,
         melisma_busy_disabled: false,
@@ -2770,7 +2775,16 @@ impl<'a> Parser<'a> {
                 return;
             }
         }
+        // `\shape`/`\vshape` suivis de `\etc` définissent une fonction
+        // partielle : l'argument est fourni à l'appel, sous forme de
+        // post-événement (`ly/music-functions-init.ly:2191-2230`).
+        let partial_tweak = self.peek().is_some_and(|token| {
+            token.is_command("shape") || token.is_command("vshape")
+        });
         let music = self.parse_music();
+        if partial_tweak {
+            self.tweak_functions.insert(name.clone());
+        }
         self.music_functions.remove(&name);
         self.variables.insert(name, music);
     }
@@ -5915,6 +5929,31 @@ impl<'a> Parser<'a> {
         posts
     }
 
+    /// Lit exactement un post-événement, en traversant les directions qui ne
+    /// portent pas d'événement propre (`_~` : le `_` ne produit rien, la
+    /// liaison `~` qui suit est le post-événement).
+    ///
+    /// `lily/parser.yy` (`script_dir music_function_call`, l. 3337) applique
+    /// une fonction musicale partielle à l'événement qui la suit. Le corps de
+    /// `\shape #'(…) \etc` est une telle fonction : son argument est le
+    /// post-événement, pas de la musique. Sans cette lecture, l'appel
+    /// `-\tieShapeA _~` consommait la liaison et la note suivante était
+    /// réattaquée au lieu d'être tenue (`Chop-28-22.ly`).
+    fn parse_single_post_event(&mut self) -> Vec<PostEvent> {
+        let mut guard = 0;
+        loop {
+            let before = self.position;
+            let posts = self.parse_post_event();
+            // Ne pas appeler `guard_progress` ici : en l'absence de
+            // post-événement elle consommerait la note suivante, changeant la
+            // référence `\relative` (`promenade-2.ly`).
+            if !posts.is_empty() || self.position == before || guard >= 8 {
+                return posts;
+            }
+            guard += 1;
+        }
+    }
+
     /// Un post-événement, s'il commence ici.
     fn parse_post_event(&mut self) -> Vec<PostEvent> {
         let Some(token) = self.peek().cloned() else {
@@ -6209,6 +6248,19 @@ impl<'a> Parser<'a> {
                     return Vec::new();
                 }
                 return vec![PostEvent::Fingering(text)];
+            }
+            // `-\tieShapeA _~` : `tieShapeA` est une fonction partielle
+            // (`\shape #'(…) \etc`) dont l'argument est le post-événement
+            // suivant (`lily/parser.yy`, `script_dir music_function_call`).
+            // La lire comme de la musique faisait disparaître la liaison.
+            if token.kind == Kind::Command
+                && (self.tweak_functions.contains(&token.text)
+                    || self.music_functions.get(&token.text).is_some_and(|function| {
+                        function.body.is_none() && function.returns.is_some()
+                    }))
+            {
+                self.position += 1;
+                return self.parse_single_post_event();
             }
             return Vec::new();
         }
@@ -9170,6 +9222,7 @@ mod tests {
             playback_unfold_repeats: false,
             pending_midi_instrument: None,
             music_functions: BTreeMap::new(),
+            tweak_functions: BTreeSet::new(),
             instrument_definitions: BTreeMap::new(),
             expansion_depth: 0,
             melisma_busy_disabled: false,
@@ -9231,6 +9284,7 @@ mod tests {
                 playback_articulate: false,
                 playback_unfold_repeats: false,
                 music_functions: BTreeMap::new(),
+            tweak_functions: BTreeSet::new(),
                 instrument_definitions: BTreeMap::new(),
                 expansion_depth: 0,
                 melisma_busy_disabled: false,

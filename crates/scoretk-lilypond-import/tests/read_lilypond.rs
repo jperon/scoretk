@@ -10089,6 +10089,32 @@ fn music_map_vers_skip_ne_joue_pas_les_notes() {
     assert_eq!(hauteurs(&score), vec![72, 77]);
 }
 
+/// `\tieShapeA = \shape #'(…) \etc` est une fonction musicale partielle :
+/// `-\tieShapeA _~` applique le tweak à la **liaison** qui suit
+/// (`lily/parser.yy`, `script_dir music_function_call`, l. 3337). La liaison
+/// doit donc rester une liaison, sinon la note est réattaquée
+/// (`Chop-28-22.ly`, mesure 3 : deux attaques sur mi bémol au lieu d'une).
+#[test]
+fn tweak_partiel_devant_une_liaison_garde_la_liaison() {
+    let source = "\\version \"2.26.0\"\n\\language \"english\"\n\
+        tieShapeA = \\shape #'((0.75 . 0.75) (0.5 . 0.75)) \\etc\n\
+        \\score { \\new Staff { \\fixed c' { <ef' -\\tieShapeA _~ g>4 <ef' fs>4 r8 } } }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![75, 67, 66]);
+    assert!(score
+        .notes
+        .iter()
+        .any(|note| note.pitch == 75 && note.tie_forward.is_some()));
+    // Une fonction partielle sans liaison ne consomme pas la note suivante.
+    let control = "\\version \"2.26.0\"\n\\language \"english\"\n\
+        tieShapeA = \\shape #'((0.75 . 0.75)) \\etc\n\
+        \\score { \\new Staff { \\fixed c' { <ef' -\\tieShapeA ^\\trill g>4 <ef' fs>4 r8 } } }\n";
+    assert_eq!(
+        hauteurs_attaques(&read_lilypond(control).expect("lecture")),
+        vec![75, 67, 75, 66]
+    );
+}
+
 /// `accidental-glyphs-test.ily` définit `\test` comme une fonction Scheme qui
 /// `add-score` un `\score` avec sept notes de portée et une de `ChordNames`
 /// (vérifié avec LilyPond 2.27 sur `alteration-glyphs.ly`). L'altération est
