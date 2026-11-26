@@ -185,7 +185,7 @@ Derived data is regenerated with `scripts/gen-references.sh` and
   only one direction stays in its own file; never a single-direction module
   in a `-common`, nor format logic in a common crate
   (full rule in `docs/agents/developpement.md`).
-- **Generated files**: `read/instruments.rs` and
+- **Generated files**: `crates/scoretk-core/src/instruments.rs` and
   `docs/agents/ecarts-complets.md` are regenerated, never hand-edited.
 - **Order of `<direction>`, spanners and `<credit>` is significant** for
   parity: do not sort a collection without checking the C++ and the reference.

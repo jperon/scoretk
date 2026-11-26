@@ -5,8 +5,8 @@
 // Portage de `importmidi_clef.cpp` de MuseScore Studio, Copyright (C)
 // MuseScore Limited and others, modifié (réécrit en Rust) en 2026. La
 // programmation dynamique qui choisit les changements de clef en cours de
-// portée n'est pas portée : seule la clef principale, déduite de la hauteur
-// moyenne, est posée.
+// portée n'est pas portée : la clef principale, déduite de la hauteur moyenne,
+// n'est posée que si le gabarit n'impose pas ses clefs de concert.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -21,12 +21,13 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Clefs de l'import MIDI : clef principale d'après la hauteur moyenne.
+//! Clefs de l'import MIDI : clefs de concert du gabarit ou clef principale
+//! d'après la hauteur moyenne.
 //!
 //! Portage de `MidiClef::createMainClefFromAveragePitch`,
-//! `clefTypeFromAveragePitch` et `createClef` (`importmidi_clef.cpp`). Les
-//! changements de clef (programmation dynamique `makeDynamicProgrammingStep`)
-//! restent hors périmètre.
+//! `clefTypeFromAveragePitch`, `hasGFclefs` et `createClef`
+//! (`importmidi_clef.cpp`). Les changements de clef (programmation dynamique
+//! `makeDynamicProgrammingStep`) restent hors périmètre.
 
 use scoretk_core::model::{Clef, ClefType, Score};
 

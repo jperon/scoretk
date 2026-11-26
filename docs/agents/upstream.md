@@ -39,11 +39,13 @@ change the reference version (see § 4).
   The `.mscx` sources come from the same upstream commit (see
   `tests/corpus/SOURCES.md`), mainly from
   `src/importexport/musicxml/tests/data/` and `src/engraving/tests/`.
-- **Instruments table** — `crates/scoretk-musescore-import/src/read/instruments.rs`,
-  a **generated file** produced by `scripts/gen-instruments-table.py` from
-  `share/instruments/instruments.xml`. The generated file and `NOTICE`
-  mention version **4.4** of the catalogue; do not edit the table by
-  hand, regenerate it.
+- **Instruments table** — `crates/scoretk-core/src/instruments.rs`, a
+  **generated file** produced by `scripts/gen-instruments-table.py` from the
+  5.0 snapshot's `share/instruments/instruments.xml` (identifiers, names,
+  MusicXML ids, MIDI programs) and the **4.7.4** catalogue for staff counts
+  and concert clefs (4 bits per staff). `NOTICE` records both sources; do not
+  edit the table by hand, regenerate it. The 4.7.4 clefs matter for MIDI
+  import: 5.0 changed 13 of them.
 - **Name tables** — `read302/tables.rs` and `read4xx/names.rs` follow
   `TConv::fromXml` (`engraving/rw/types/typesconv.cpp`, a file **generated at
   build time** by MuseScore, therefore absent from the reference copy) and the
@@ -368,10 +370,16 @@ with an independent parity fix.
 4. **Regenerate the derived data** with the target version:
 
    ```sh
-   # Instruments table (from the upstream copy)
+   # Instruments table: 5.0 snapshot for names/programs, 4.7.4 XML for
+   # staff counts and clefs, 5.0 C++ for GM1_SOUND_DATA.
+   curl -o /tmp/instruments-4.7.4.xml \
+     https://raw.githubusercontent.com/musescore/MuseScore/v4.7.4/share/instruments/instruments.xml
+   curl -o /tmp/importmidi_instrument.cpp \
+     https://raw.githubusercontent.com/musescore/MuseScore/2b9e82df847111d673c2051a93deeaaeea3f5a29/src/importexport/midi/internal/midiimport/importmidi_instrument.cpp
    python3 scripts/gen-instruments-table.py \
      ref-musescore/share/instruments/instruments.xml \
-     crates/scoretk-musescore-import/src/read/instruments.rs
+     /tmp/instruments-4.7.4.xml /tmp/importmidi_instrument.cpp \
+     crates/scoretk-core/src/instruments.rs
 
    # Corpus references (MuseScore 4.7.4 by default, headless)
    scripts/gen-references.sh            # tout le corpus

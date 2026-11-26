@@ -189,7 +189,8 @@ nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
 scripts/gen-references.sh
 python3 scripts/gen-instruments-table.py \
   ref-musescore/share/instruments/instruments.xml \
-  crates/scoretk-musescore-import/src/read/instruments.rs
+  instruments-4.7.4.xml importmidi_instrument.cpp \
+  crates/scoretk-core/src/instruments.rs
 
 # Already-built wasm package
 nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs

@@ -515,7 +515,7 @@ as the C++, upstream reference in each header):
 | `drum.rs` | `importmidi_drum.cpp` |
 | `lyrics.rs` | `importmidi_lyrics.cpp` |
 | `tempo.rs` | `importmidi_tempo.cpp` |
-| `instrument.rs` (+ `instrument/gm_names.rs`) | `importmidi_instrument.cpp`, `midishared/generalmidi.cpp` |
+| `instrument.rs` (+ `instrument/{gm_names,catalog}.rs`) | `importmidi_instrument.cpp`, `midishared/generalmidi.cpp`, `instrtemplate.cpp`, `importmidi_clef.cpp` |
 | `operations.rs` | `importmidi_operations.h` (default values) |
 
 The pipeline follows `convertMidi`: tracks and time-signature indications, chords
@@ -545,15 +545,14 @@ scale).
   ones overlapped by another voice or with a binary grid (duplets, quadruplets)
   are not detected: `v3/testTuplets8` and `v4/timesig-09` remain
   partially different from the references (see below).
-- **Instrument catalogue**: names come from the General MIDI table
-  (`getMidiName`) rather than MuseScore's catalogue search
-  (`findSuitableInstruments`). Program 0 is called "Grand Piano" instead of
-  "Piano", program 25 "Steel Gtr." instead of "Acoustic Guitar",
-  and short names (`Pno.`, `Vln.`, `Guit.`) are not produced. This is the
-  cause of most 1-to-7-line discrepancies in the import test.
-- **Clefs**: only the main clef (average pitch, threshold 60) is placed;
-  the dynamic programming of clef changes is not ported, and octave
-  clefs from the catalogue (guitar, double bass) are not inferred.
+- **Instrument catalogue**: the template selected by `findSuitableInstruments`
+  now supplies the part's long name, abbreviation (`Pno.`, `Vln.`, `Guit.`),
+  MusicXML sound id and track name; the General MIDI name remains the fallback
+  when no template is found (see the 2026-11-26 section below).
+- **Clefs**: the catalogue's concert clefs are placed per staff, including
+  octave clefs (guitar `G8vb`, double bass `F8Vb`). Only the *changes* of clef
+  inside a staff are still out of scope: `MidiClef`'s dynamic programming is
+  not ported, so `changeClef` has no observable effect on the main clef.
 - **Hand separation**: the split decision is the C++'s
   (chord exceeding an octave, outside an already present grand staff); note
   allocation uses the largest pitch gap, without the
@@ -586,12 +585,17 @@ as `crates/scoretk/tests/e2e_corpus.rs` (`tests/core_norm.rs`, plus
 normalisation of `<divisions>`: the value is an encoding convention,
 `<duration>`s are reduced to 480 per quarter note).
 
-Measured result as of 2026-11-17: **4/21 identical** (`v4/mmrest`,
+Measured result as of 2026-11-26: **4/21 identical** (`v4/mmrest`,
 `v4/repeat68`, `v4/repeat69`, `v4/testTempoPrecision`, all files with
-no or almost no notes). The other files differ by 1 to 7 lines (part names
-and abbreviations, octave clef) except `v3/testTuplets8` (224 lines) and
-`v4/timesig-09` (965 lines), because of complex n-tuplets. The
-`EXPECTED_IDENTICAL` list must not regress.
+no or almost no notes). Sixteen more files differ by **one line only**, the
+`<mode>major</mode>` deliberate divergence documented in "SMF fidelity";
+without that line 20/21 would be identical. `v4/timesig-09` still differs on
+complex n-tuplets. The `EXPECTED_IDENTICAL` list must not regress.
+
+Effect of the instrument-catalogue port (same binary otherwise, musical-core
+diff of the 21 files): instrument name/abbreviation/clef lines **33 → 0**,
+total changed lines **401 → 368** (−8.2 %); the exact-file count stays at
+4/21 because of the `<mode>` divergence above.
 
 The `.mscx` → MIDI → `read_midi` → MIDI round trip is checked by
 `crates/scoretk-midi-export/tests/roundtrip_midi.rs` on the 21 sources: **21/21**
@@ -2361,6 +2365,51 @@ dimensions (onset 142.0, duration 2 450.3, voice 2 451.0) are unchanged.
 The pitch multiset in concert pitch was already exact before the port (see
 below): what the port recovers is the **written** pitch, since MuseScore writes
 the chosen template's transposition and the port now does the same.
+
+## Instrument names, abbreviations and clefs from the 4.7.4 catalogue (2026-11-26)
+
+This ports the remaining part of the 2026-11-17 branch
+`t44-midi-import-ecarts` onto the current split crates. The catalogue search
+itself had already landed on master (2026-11-21 section above): what was
+missing is what MuseScore does with the *selected template*.
+
+| C++ 4.7.4 | Rust |
+| --- | --- |
+| `MidiInstr::msInstrName` (`importmidi_instrument.cpp`) | `instrument/catalog.rs::ms_instr_name` |
+| `Part::initFromInstrTemplate` (`part.cpp`) / `Instrument::fromTemplate` (`instrument.cpp`) | `create_instruments` in `lib.rs` |
+| `InstrumentTemplate::clefType`, `hasGFclefs` (`importmidi_clef.cpp`) | `concert_clefs`, `has_gf_clefs` |
+| `createInstruments`' three-staff organ (`areNext3OrganStaff`) | same function, `staves = 3` |
+| `setTrackInfo` (`importmidi.cpp`) | `set_track_info` in `lib.rs` |
+
+The part takes the template's long name, abbreviation, MusicXML sound id and
+track name; the General MIDI name remains the fallback when no template is
+found. Each staff gets the template's concert clef, so guitar (`G8vb`) and
+double bass (`F8Vb`) keep their octave clefs. As in
+`MidiClef::createClefs`, the main clef is recomputed from the average pitch
+only when `!hasInstrument || hasGFclefs(instr)`; `changeClef` still has no
+effect because the in-staff dynamic programming is not ported.
+
+**Compact clef data.** The 5.0 development snapshot differs from 4.7.4 for
+13 instruments' clefs (and 3 instruments' staff counts), so the clefs and
+staff counts are taken from the **4.7.4 `instruments.xml`**, the version that
+produced the references. They are attached by instrument id to the shared
+`scoretk_core::instruments::Template` table by
+`scripts/gen-instruments-table.py` (generated file, never hand-edited), as a
+`u16` with **4 bits per staff** instead of duplicated strings or a second
+644-entry table. Unknown clef names default to `G`, as in
+`TConv::fromXml(text, ClefType::G)`.
+
+Measured with `nix build .#wasm` (`esm/scoretk_wasm_bg.wasm`): **2 849 066 →
+2 862 679 raw bytes (+13 613, +0.48 %)**, gzip **1 117 795 → 1 119 178
+(+0.12 %)**. Against `tests/corpus/midi`: instrument name/abbreviation/clef
+diff lines **33 → 0**, total musical-core diff lines **401 → 368**; see the
+compliance section above for the exact-file count and the remaining `<mode>`
+divergence. The import oracle (`scripts/oracle/midi/import_mesure.py`, upstream
+lot, `--limit 20`) stays at **20/20 exact**, N = 1.0000 before and after: it
+compares pitches, onsets and durations, not the instrument fields, so the gain
+is only visible in the corpus diff above. Reduced tests:
+`instrument/catalog.rs` (names, clefs) and `tests/organ_and_names.rs`
+(three-staff organ, part names).
 
 ## Import oracle: unique identifiers for same-named scores (2026-11-21)
 
