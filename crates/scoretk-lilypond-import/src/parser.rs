@@ -181,6 +181,11 @@ struct MusicFunction {
     params: Vec<String>,
     /// Prédicats d'argument, un par paramètre.
     predicates: Vec<String>,
+    /// Default tokens of an optional argument (`Some` only for an optional
+    /// predicate). LilyPond's `function_arglist` accepts `(type? default)`
+    /// and `(type? *unspecified*)`; an absent argument is replaced by the
+    /// default expression re-parsed as if it had been written at the call.
+    optional_defaults: Vec<Option<Vec<Token>>>,
     /// Corps musical (`#{ … #}`), absent pour une fonction Scheme pure.
     body: Option<Vec<Token>>,
     /// Fonction dont le corps Scheme est un seul paramètre (`music`) : elle
@@ -2904,7 +2909,7 @@ impl<'a> Parser<'a> {
             // Consommer les arguments sans les interpréter : sinon le bloc de
             // musique resterait dans le flux et produirait des notes
             // parasites.
-            self.skip_function_arguments(&function.predicates);
+            self.skip_function_arguments(&function);
             self.warn(format!(
                 "profondeur d'expansion dépassée dans la fonction \\{name}"
             ));
@@ -2963,14 +2968,96 @@ impl<'a> Parser<'a> {
     /// Lit les arguments d'un appel, un par prédicat.
     fn read_function_arguments(&mut self, function: &MusicFunction) -> Vec<Vec<Token>> {
         let predicates = function.predicates.clone();
+        let defaults = function.optional_defaults.clone();
         let mut arguments = Vec::with_capacity(predicates.len());
-        for predicate in &predicates {
+        for (index, predicate) in predicates.iter().enumerate() {
+            let predicate = predicate_type(predicate);
+            if let Some(Some(default)) = defaults.get(index) {
+                if !self.argument_present(predicate) {
+                    arguments.push(default.clone());
+                    continue;
+                }
+            }
             let start = self.position;
             self.read_function_argument(predicate);
             let end = self.position.min(self.tokens.len());
             arguments.push(self.tokens.get(start..end).unwrap_or_default().to_vec());
         }
         arguments
+    }
+
+    /// Whether the next token can satisfy an optional argument's predicate.
+    ///
+    /// An optional argument must not swallow the following required argument
+    /// (or the next function call): LilyPond only consumes it when the next
+    /// token is a music expression (or a value of the requested type).
+    fn argument_present(&self, predicate: &str) -> bool {
+        let Some(token) = self.peek() else {
+            return false;
+        };
+        if predicate.ends_with("music?") || predicate.ends_with("music-list?") {
+            if token.is_punct('{') || token.is_punct('<') || self.at_double_angle_open() {
+                return true;
+            }
+            if token.kind == Kind::Word {
+                return self.language.parse(&token.text).is_some()
+                    || matches!(token.text.as_str(), "r" | "R" | "s" | "q");
+            }
+            if token.kind == Kind::Command {
+                return matches!(
+                    token.text.as_str(),
+                    "relative"
+                        | "fixed"
+                        | "absolute"
+                        | "transpose"
+                        | "new"
+                        | "context"
+                        | "grace"
+                        | "acciaccatura"
+                        | "appoggiatura"
+                        | "afterGrace"
+                        | "tuplet"
+                        | "times"
+                        | "repeat"
+                        | "unfoldRepeats"
+                        | "keepWithTag"
+                        | "removeWithTag"
+                        | "tag"
+                        | "once"
+                        | "override"
+                        | "set"
+                        | "clef"
+                        | "key"
+                        | "time"
+                        | "bar"
+                        | "skip"
+                        | "chordmode"
+                        | "drummode"
+                );
+            }
+            return false;
+        }
+        if predicate.ends_with("pitch?") {
+            return token.kind == Kind::Word && self.language.parse(&token.text).is_some();
+        }
+        if predicate.ends_with("duration?") {
+            return token.kind == Kind::Number
+                || (token.kind == Kind::Word
+                    && matches!(token.text.as_str(), "breve" | "longa" | "maxima"));
+        }
+        if predicate.ends_with("number?")
+            || predicate.ends_with("integer?")
+            || predicate == "index?"
+        {
+            return token.kind == Kind::Number || token.kind == Kind::Scheme || token.is_punct('-');
+        }
+        if predicate.contains("context-mod") {
+            return token.is_command("with") || token.kind == Kind::Scheme;
+        }
+        if predicate == "markup?" || predicate == "ly:markup?" {
+            return token.is_command("markup") || token.kind == Kind::Str;
+        }
+        matches!(token.kind, Kind::Word | Kind::Str | Kind::Scheme)
     }
 
     /// Consomme la hauteur secondaire d'un `\pitchedTrill`.
@@ -3071,10 +3158,17 @@ impl<'a> Parser<'a> {
 
     /// Consomme les arguments d'un appel sans les interpréter (garde-fou de
     /// profondeur).
-    fn skip_function_arguments(&mut self, predicates: &[String]) {
-        let predicates = predicates.to_vec();
-        for predicate in &predicates {
-            if predicate.trim().ends_with("music?") || predicate.trim().ends_with("music-list?") {
+    fn skip_function_arguments(&mut self, function: &MusicFunction) {
+        let predicates = function.predicates.clone();
+        let defaults = function.optional_defaults.clone();
+        for (index, predicate) in predicates.iter().enumerate() {
+            let predicate = predicate_type(predicate);
+            if let Some(Some(_)) = defaults.get(index) {
+                if !self.argument_present(predicate) {
+                    continue;
+                }
+            }
+            if predicate.ends_with("music?") || predicate.ends_with("music-list?") {
                 self.skip_music_token();
             } else {
                 self.read_function_argument(predicate);
@@ -7017,6 +7111,14 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
                 .unwrap_or_else(|| "ly:music?".to_owned())
         })
         .collect();
+    // `lily/parser.yy`, `function_arglist_optional`: a predicate wrapped in
+    // parentheses carries the value used when the argument is omitted. The
+    // default is stored as tokens (not as a Scheme value) so that the body is
+    // re-parsed exactly as LilyPond does with the substituted argument.
+    let optional_defaults = predicates
+        .iter()
+        .map(|predicate| optional_argument_default(predicate))
+        .collect();
 
     let body_source: String = characters[index.min(characters.len())..].iter().collect();
     // Le corps utile est le premier `#{ … #}` ; tout ce qui le précède est
@@ -7041,11 +7143,44 @@ fn music_function_definition(datum: &str) -> Option<MusicFunction> {
         kind,
         params,
         predicates,
+        optional_defaults,
         body,
         returns,
         relative_body,
         warned: false,
     })
+}
+
+/// Tokens used when an optional music-function argument is absent.
+///
+/// `lily/parser.yy` (`function_arglist_optional`) and
+/// `scm/music-functions.scm` use `(type? *unspecified*)` and
+/// `(type? #{ default #})`. `#{ … #}` is an ordinary LilyPond music
+/// expression, so it is tokenised like a small source fragment.
+fn optional_argument_default(predicate: &str) -> Option<Vec<Token>> {
+    let trimmed = predicate.trim();
+    if !trimmed.starts_with('(') {
+        return None;
+    }
+    if trimmed.contains("*unspecified*") {
+        return Some(Vec::new());
+    }
+    crate::lexer::embedded_music_body(trimmed)
+        .as_deref()
+        .map(crate::lexer::tokenize)
+}
+
+/// Type predicate inside an optional predicate such as
+/// `((ly:pitch? #{ f #})`: strips the wrapper parentheses so that the
+/// existing argument reader recognises the type.
+fn predicate_type(predicate: &str) -> &str {
+    let mut text = predicate.trim();
+    while let Some(inner) = text.strip_prefix('(') {
+        text = inner.trim_start();
+    }
+    text.split(|character: char| character.is_whitespace() || character == ')' || character == '#')
+        .next()
+        .unwrap_or(text)
 }
 
 /// Indice du paramètre renvoyé par une fonction dont la **dernière** forme du

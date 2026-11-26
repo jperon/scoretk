@@ -2274,6 +2274,34 @@ fn fonction_musicale_a_parametre_musical() {
 }
 
 #[test]
+fn argument_musical_optionnel_ne_consomme_pas_la_suite() {
+    // `lily/parser.yy` (`function_arglist_optional`): `(ly:music? *unspecified*)`
+    // is absent when the next token is not music. Consuming the style symbol
+    // here would eat it and then swallow the next function call (as in
+    // `input/regression/accidental-styles.ly`, where 20 calls overlap).
+    let score = lire(
+        "style = #(define-music-function (ctx extra name) \
+         (symbol? (ly:music? *unspecified*) symbol-list?) #{ $extra c'4 #}) \
+         \\style staff one \\style staff two",
+    );
+    assert_eq!(hauteurs(&score), vec![72, 72]);
+    assert_eq!(score.measures.len(), 1);
+}
+
+#[test]
+fn argument_optionnel_avec_valeur_par_defaut() {
+    // `((ly:pitch? #{ f #}) ly:music?)`: the default is re-parsed as LilyPond
+    // music. `{ c4 d4 }` is not a pitch, so the reference must be `f`; an
+    // explicit pitch must still be consumed (`optional-args.ly`).
+    let source = "\\version \"2.24.0\"\n\
+        ablative = #(define-music-function (ref music) ((ly:pitch? #{ f #}) ly:music?) \
+          #{ \\relative $ref $music #})\n\
+        \\score { \\fixed c' { \\ablative { c4 d4 } \\ablative c' { c4 d4 } } }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![48, 50, 60, 62]);
+}
+
+#[test]
 fn fonction_signature_ancienne_nom_de_fonction() {
     // LilyPond 2.8 écrit la signature `(nom location …)` : `nom` et `location`
     // ne sont pas des paramètres. Les confondre faisait consommer la musique
