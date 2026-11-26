@@ -131,6 +131,61 @@ fn tremolo_bar_type_name(kind: scoretk_core::model::TremoloBarType) -> &'static 
     }
 }
 
+/// One figured-bass modifier as a token inside `<f>` text.
+fn figured_bass_modifier(
+    modifier: Option<scoretk_core::model::FiguredBassModifier>,
+) -> &'static str {
+    use scoretk_core::model::FiguredBassModifier as Modifier;
+    match modifier {
+        None | Some(Modifier::None) => "-",
+        Some(Modifier::DoubleFlat) => "bb",
+        Some(Modifier::Flat) => "b",
+        Some(Modifier::Natural) => "n",
+        Some(Modifier::Sharp) => "#",
+        Some(Modifier::DoubleSharp) => "##",
+        Some(Modifier::Cross) => "x",
+        Some(Modifier::Backslash) => "\\",
+        Some(Modifier::Slash) => "/",
+    }
+}
+
+/// Lossless encoding of `FiguredBassItem`s in the text of a single `<f>`
+/// (`mei_f` accepts text). Fields are separated by `/`, items by `;`:
+/// `prefix/digit/suffix/continuation/brackets`. The carrier stays a standard
+/// MEI 5.1 figured-bass control event; only the port's token grammar is a
+/// convention, documented in `docs/agents/mei.md` §12.
+fn encode_figured_bass(items: &[scoretk_core::model::FiguredBassItem]) -> String {
+    use scoretk_core::model::FiguredBassContLine;
+    items
+        .iter()
+        .map(|item| {
+            let continuation = match item.cont_line {
+                FiguredBassContLine::None => "0",
+                FiguredBassContLine::Simple => "1",
+                FiguredBassContLine::Extended => "2",
+            };
+            let brackets: String = item
+                .brackets
+                .iter()
+                .map(|value| char::from(b'0' + (value % 10)))
+                .collect();
+            let digit = item
+                .digit
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_owned());
+            format!(
+                "{}/{}/{}/{}/{}",
+                figured_bass_modifier(item.prefix),
+                digit,
+                figured_bass_modifier(item.suffix),
+                continuation,
+                brackets
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
 /// `(meter, key)` in force at the beginning of a measure.
 type Signatures = (Option<(i32, i32, TimeSigType)>, Option<Key>);
 
@@ -1370,6 +1425,16 @@ fn write_control_events(
                         change_attrs.push(("trans.semi", chromatic.as_str()));
                     }
                     xml.tag_with("dir", &change_attrs, change.text.plain());
+                }
+                Annotation::FiguredBass(figure) => {
+                    // `<fb>`/`<f>` (`mei_fb`, `mei_f`, Guidelines §10) est le
+                    // porteur standard d'une basse continue ; `@type` distingue
+                    // la notation exacte du port de celle d'un encodeur externe.
+                    let mut figure_attrs = refs.clone();
+                    figure_attrs.push(("type", ids::FIGURED_BASS_TYPE));
+                    xml.start_element("fb", &figure_attrs);
+                    xml.tag_with("f", &[], &encode_figured_bass(&figure.items));
+                    xml.end_element();
                 }
                 Annotation::TremoloBar(bar) => {
                     // `<dir>` est un événement de contrôle standard (Guidelines

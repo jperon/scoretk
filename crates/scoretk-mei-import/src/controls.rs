@@ -24,11 +24,11 @@
 
 use scoretk_core::model::{
     Annotation, Arpeggio, ArpeggioType, Articulation, ArticulationType, Breath, BreathType,
-    ChordLineType, ChordRestKind, Dynamic, Fermata, FermataType, Fingering, Fraction, HairpinType,
-    Harmony, Layers, Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement,
-    RehearsalMark, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
-    SpannerNotation, SpannerType, StaffId, StaffText, SystemText, Tempo, Track, TremoloBar,
-    TremoloBarPoint, TremoloBarType,
+    ChordLineType, ChordRestKind, Dynamic, Fermata, FermataType, FiguredBass, FiguredBassContLine,
+    FiguredBassItem, FiguredBassModifier, Fingering, Fraction, HairpinType, Harmony, Layers,
+    Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement, RehearsalMark,
+    Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType,
+    StaffId, StaffText, SystemText, Tempo, Track, TremoloBar, TremoloBarPoint, TremoloBarType,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -66,6 +66,58 @@ pub(crate) fn articulations_of(node: &Element) -> Vec<Articulation> {
         .map(|name| Articulation {
             kind: articulation_kind(name),
             ..Articulation::new(ArticulationType::Staccato)
+        })
+        .collect()
+}
+
+/// Decode the lossless `<f>` token used by the additive writer (the inverse of
+/// `scoretk_mei_export::writer::encode_figured_bass`).
+fn decode_figured_bass(text: &str) -> Vec<FiguredBassItem> {
+    fn modifier(token: &str) -> Option<FiguredBassModifier> {
+        match token {
+            "-" | "" => None,
+            "bb" => Some(FiguredBassModifier::DoubleFlat),
+            "b" => Some(FiguredBassModifier::Flat),
+            "n" => Some(FiguredBassModifier::Natural),
+            "#" => Some(FiguredBassModifier::Sharp),
+            "##" => Some(FiguredBassModifier::DoubleSharp),
+            "x" => Some(FiguredBassModifier::Cross),
+            "\\" => Some(FiguredBassModifier::Backslash),
+            "/" => Some(FiguredBassModifier::Slash),
+            _ => None,
+        }
+    }
+    if text.is_empty() {
+        return Vec::new();
+    }
+    text.split(';')
+        .filter_map(|item| {
+            let fields: Vec<&str> = item.split('/').collect();
+            if fields.len() != 5 {
+                return None;
+            }
+            let brackets = fields[4]
+                .bytes()
+                .take(5)
+                .map(|value| value.saturating_sub(b'0'))
+                .chain(std::iter::repeat(0))
+                .take(5)
+                .collect::<Vec<u8>>();
+            Some(FiguredBassItem {
+                prefix: modifier(fields[0]),
+                digit: if fields[1] == "-" {
+                    None
+                } else {
+                    fields[1].parse().ok()
+                },
+                suffix: modifier(fields[2]),
+                cont_line: match fields[3] {
+                    "1" => FiguredBassContLine::Simple,
+                    "2" => FiguredBassContLine::Extended,
+                    _ => FiguredBassContLine::None,
+                },
+                brackets: brackets.try_into().ok()?,
+            })
         })
         .collect()
 }
@@ -120,6 +172,7 @@ impl<'a> Reader<'a> {
                 "arpeg" => self.add_arpeggio(node, measure),
                 "fing" => self.add_fingering(node, measure),
                 "harm" => self.add_harmony(node, measure),
+                "fb" => self.add_figured_bass(node, measure),
                 "breath" | "caesura" => self.add_breath(node, measure),
                 "trill-spanner" => self.read_slur(node, measure, true),
                 "mordent" => {
@@ -662,6 +715,19 @@ impl<'a> Reader<'a> {
         }
         let (tick, track) = self.anchor(node, measure);
         self.add_annotation(tick, track, Annotation::Harmony(Harmony::new(text)));
+    }
+
+    /// `<fb>`/`<f>` (MEI 5.1 `mei_fb`, Guidelines §10). Without our `@type`
+    /// the element follows the 4.7.4 best-effort path and is not read.
+    fn add_figured_bass(&mut self, node: &Element, measure: usize) {
+        if node.attribute("type") != Some(scoretk_mei_common::ids::FIGURED_BASS_TYPE) {
+            return;
+        }
+        let text = node.child("f").map(crate::lines_of).unwrap_or_default();
+        let mut figure = FiguredBass::new();
+        figure.items = decode_figured_bass(&text);
+        let (tick, track) = self.anchor(node, measure);
+        self.add_annotation(tick, track, Annotation::FiguredBass(figure));
     }
 
     /// `MeiImporter::readBreath`/`readCaesura` (`:2461`, `:2486`).

@@ -93,6 +93,10 @@ pub const TEMPO_INFER_FROM_TEXT: &str = "mscore-infer-from-text";
 /// `@type` prefix for a MuseScore tremolo bar written as a `<dir>`.
 pub const TREMOLO_BAR_TYPE: &str = "mscore-tremolo-bar-";
 
+/// `@type` identifying the lossless `<fb><f>` figure encoding on a control
+/// event (`mei_fb`/`mei_f`, Guidelines §10).
+pub const FIGURED_BASS_TYPE: &str = "mscore-figured-bass";
+
 pub const CHORDLINE_TYPE: &str = "mscore-";
 
 /// `@type` prefix for a MuseScore chord line (`falloff`, `doit`, …) on `<dir>`.

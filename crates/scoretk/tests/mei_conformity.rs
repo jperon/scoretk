@@ -331,3 +331,29 @@ fn breath_at_a_note_tick_does_not_erase_the_note() {
     assert!(kinds.contains(&scoretk::model::SegmentType::Breath));
     assert_eq!(score.notes.len(), 1);
 }
+
+/// A `<fb><f>` control event with our `@type` carries the exact figured-bass
+/// items (digits, modifiers, continuation and brackets) without `<annot>`.
+#[test]
+fn figured_bass_carrier_round_trips_the_items() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+        <section><measure n="1">
+          <staff n="1"><layer n="1"><note dur="4" tstamp="1.000" pname="c" oct="4"/></layer></staff>
+          <fb type="mscore-figured-bass" staff="1" tstamp="1.000">
+            <f>-/5/-/0/00000;-/3/-/0/00000</f>
+          </fb>
+        </measure></section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    let found = scoretk::model::inventory(&score)
+        .items
+        .into_iter()
+        .any(|item| {
+            item.kind == "figured-bass"
+                && item.value.contains("digit: Some(5)")
+                && item.value.contains("digit: Some(3)")
+        });
+    assert!(found, "both figures must survive the <fb><f> carrier");
+}
