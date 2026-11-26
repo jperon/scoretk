@@ -4115,13 +4115,14 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild], midi_voices_as_staves: bo
                         if index == voice_index {
                             return None;
                         }
-                        seq.iter().find_map(|&(tick, _, _, other, _, _, other_context, _)| {
-                            (tick == end
-                                && other_context == context
-                                && !deja_lies.contains(&other)
-                                && score.note(other).pitch == pitch)
-                                .then_some(other)
-                        })
+                        seq.iter()
+                            .find_map(|&(tick, _, _, other, _, _, other_context, _)| {
+                                (tick == end
+                                    && other_context == context
+                                    && !deja_lies.contains(&other)
+                                    && score.note(other).pitch == pitch)
+                                    .then_some(other)
+                            })
                     })
                 };
                 if let Some(cible) = cible {

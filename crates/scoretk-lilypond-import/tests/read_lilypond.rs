@@ -10463,7 +10463,10 @@ fn sustain_avant_une_liaison_garde_la_liaison() {
     // Une commande isolée en tête de voix reste acceptée.
     let seul = "\\version \"2.26.0\"\n\\language \"english\"\n\
         \\score { \\new Staff { \\sustainOn \\fixed c' { c'4 d'4 } } }\n";
-    assert_eq!(hauteurs(&read_lilypond(seul).expect("lecture")), vec![72, 74]);
+    assert_eq!(
+        hauteurs(&read_lilypond(seul).expect("lecture")),
+        vec![72, 74]
+    );
 }
 
 /// Un `\midi` qui retire `Staff_performer` de `Staff` et l'ajoute à `Voice`
