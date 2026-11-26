@@ -262,13 +262,24 @@ clefs have no single pivot `Clef` equivalent (`:854-856`). Every one of these
 is produced by the reader from parsed characters, never by slicing the source
 file. Everything else is generated.
 
-**What is lost on a round trip** (and therefore measured honestly): header
-comments, bracketed layout/tuning/TeX attributes stripped by
+**Inter-group whitespace is kept** (`Gregorian::opening_separator`,
+`Syllable::separator_after`, `Gabc.tex:60-61,241-245`): the exact text after
+an opening clef-only group and between groups, including the final newline,
+is parsed and written back. `Syllable::space_after` still carries the *fact*
+of a word break for the derived view and the other directions; the exact
+spelling is only used by the GABC writer. `Some("")` means the source had no
+separator, `None` means the payload was built without a source body and the
+writer falls back to `space_after` (§18).
+
+**What is still lost on a round trip** (and therefore measured honestly):
+header comments, bracketed layout/tuning/TeX attributes stripped by
 `strip_attributes` (`:689-700,908-931,1093-1118`), custos and line breaks
-`z`/`Z` (`:872-906`), NABC cuts `|`, zero-width spaces `!`, within-group
-ordering of bars versus notes, and exact line breaks/indentation. These are
-not fields of the payload, so a byte comparison would have hidden their loss
-by copying them; see §9 for the canonical results.
+`z`/`Z` (`:872-906`), zero-width spaces `!` outside a snippet, within-group
+ordering of bars versus notes, and line breaks/indentation *inside* a group.
+NABC cuts and the slash opening a square snippet after a cut are no longer in
+this list (§16/§17); they are structured fields of the payload. The losses
+above are not fields of the payload, so a byte comparison would have hidden
+them by copying raw text; see §9 for the canonical results.
 
 ### Scores without an L6 payload
 
@@ -707,8 +718,9 @@ This is a **tolerance beyond Gregorio**, chosen for raw GregoBase data; it
 does not change the GABC grammar, the oracle or any file that contains a `%%`
 line, which takes the original path unchanged. The structured writer keeps a
 headerless payload headerless: it emits neither `name: ;` nor a `%%` marker
-(§17), so a body-only round trip does not gain a header. Other layout
-whitespace is still normalised from structured fields (§8). Other formats
+(§17), so a body-only round trip does not gain a header. Inter-group layout
+whitespace (space after the clef, word spaces, final newline) is now kept
+verbatim in the payload and written back (§8, §18). Other formats
 keep their stronger signatures and are tested before the body rule in
 `Format::detect` (`\version` → LilyPond, `%abc`/`X:` → ABC, XML namespaces →
 MusicXML/MEI); a header without `%%` is still neither detected nor readable.
@@ -825,19 +837,25 @@ identical to reading it with `nabc-lines: 1;` prepended.
 
 **Writer.** A payload with no headers comes from a raw body; the GABC writer
 (`scoretk-gabc-export/src/lib.rs`) emits neither `name: ;` nor `%%` for it, so
-a headerless body does not acquire a header on a round trip. Other whitespace
-is still rebuilt from structured fields (§8); this changes the previous §15
-statement that every output gained `%%`. Files with headers are emitted
-exactly as before. The cut-back `|` is emitted only when square notes really
+a headerless body does not acquire a header on a round trip. Inter-group
+whitespace is now reproduced from structured fields (§8, §18), so a raw body
+keeps its spaces and its final newline instead of receiving the newline a
+file with a header uses after the clef. Files with headers keep their existing
+header emission. The cut-back `|` is emitted only when square notes really
 separate two manuscript snippets (commit `ab63078c`): with more than one
-declared voice, successive cuts advance to the next NABC voice, so an
+declared voice, consecutive cuts advance to the next NABC voice, so an
 unconditional cut-back produced `||` and lost the voice index. With the
 inferred single line the segments alternate, so each snippet after the first
 is preceded by square notes and the cut-back is restored: the headerless
-seven-cut body and the 18205 group keep every cut and gain no header. On the
-latter the only textual change is a pre-existing glyph normalisation — a
-slash opening the `/giHG` square segment is attached by the reader to the
-preceding note, so the writer emits `hh/|ds-|giHG`.
+seven-cut body and the 18205 group keep every cut and gain no header.
+
+A slash directly after a cut-back is stored as `NabcSnippet::resume` on the
+manuscript snippet it follows, not glued to the last square note's glyph. The
+reader detaches the leading `/` of the square segment from the note stream and
+the writer emits it immediately after the cut-back: GregoBase 18205 now round
+trips byte for byte as `…|hh|ds-|/giHG|…` instead of `…|hh/|ds-|giHG|…`. This
+changes only the GABC payload fields; the derived modern view never treated
+`/` as a note sign, so the other destinations are unchanged (§18).
 
 Tests: `crates/scoretk-gabc-import/tests/nabc_autodetect.rs` (1-cut and 7-cut
 and 13-cut headerless bodies equal to `nabc-lines: 1`, explicit `7` and `0`
@@ -856,3 +874,57 @@ notes before the first cut; inferring 1 alternates and sings the 13 square
 notes, writing back all four snippets and every cut without adding a header.
 On GregoBase 18205's 13-cut group it sings 18 square notes and keeps all seven
 manuscript snippets.
+
+## 18. Verbatim body layout and the cut slash (2026-11-26, branch `gabcrt`)
+
+`crates/scoretk/tests/gabc_body.rs` used to enshrine two normalisations of
+GregoBase 18205, although §15/§17 promise a verbatim L6 body: a newline after
+`(c4)` and a slash moved from the start of the `/giHG` square snippet to the
+glyph of the preceding `h`. Both come from the same design gap: the writer
+rebuilt separators from `space_after` and the reader let a square segment's
+leading slash fall into the previous note's glyph. The payload now keeps
+`Gregorian::opening_separator`, `Syllable::separator_after` and
+`NabcSnippet::resume` (§8, §17); the GABC writer uses them and the other
+destinations keep using `space_after`, unchanged.
+
+The test now asserts the exact source bytes for all three headerless bodies,
+including the final newline. Unit tests in the GABC reader and writer cover
+the 13-cut group, the detached slash and the cut-back emission.
+
+### Measurement
+
+The instrument is `scripts/oracle/gabc/roundtrip_bytes.py`. It reads the nine
+versioned Gregorio examples and the 252 private GregoBase lot files (**261
+inputs**), strips each header at the `%%` line to build a header-less variant,
+and runs `scoretk - -o - --from gabc --to <format>` on each input. The
+"body_nabc" row covers the six header-less variants containing `|` (three
+versioned examples, each also present in the private lot). The private lot is
+never copied into the repository.
+
+```sh
+python3 scripts/oracle/gabc/roundtrip_bytes.py \
+  --cli /tmp/gabcrt-scoretk-after --baseline /tmp/gabcrt-scoretk-before \
+  --out /tmp/gabcrt-after2 \
+  --dir tests/corpus/gabc \
+  --dir /home/jacques/programmes/musique/specs/gabc/lot/corpus
+```
+
+| GABC → GABC | Before (`cf7a3415`) | After |
+| --- | ---: | ---: |
+| Full files, header included | **0/261** byte-identical | **0/261** byte-identical |
+| Header-less variants, all files | **0/261** | **115/261** (44.06 %), 137 different, 9 rejected |
+| Header-less variants with NABC | **0/6** | **4/6**, 2 different |
+
+A full file still cannot be byte-identical: header comments, TeX `%` lines
+and bracketed `[…]` layout attributes are not payload fields (§8/§10). The
+nine rejected header-less variants are four body-only pitch-diagram files
+(counted twice, versioned and lot) that start with an empty `( )` group, plus
+one GregoBase file rejected by Gregorio itself. The two remaining NABC
+differences are a `,` bar inside a square run and other bracketed attributes;
+within-square bar ordering stays out of reach (§10).
+
+**No other direction moved.** The same 261 sources were converted to
+MusicXML, MIDI, LilyPond, ABC and MEI with the baseline and the branch CLI:
+**1305/1305 outputs byte-identical** (fixed `--encoding-date 2026-01-01`,
+0 failures). The baseline CLI compared with itself is also 1305/1305, which
+makes the instrument deterministic.
