@@ -10195,3 +10195,88 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk --test
 e2e_corpus -- --nocapture` (8/8), and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 56. Reading campaign, third phase (2026-11-26)
+
+### 56.1 Protocol
+
+The frozen manifests (`mus` 1447, `ra` 1724, `mut` 1377, `rw` 1448 rows),
+the refreshed reference tree `ly95lect-refs-54` of §54, the exactness rule of
+§52.5 (same note count, same pitch multiset, same Q16 attack multiset — or the
+grace-aware variant), all exclusions and all comparator rules are unchanged.
+Each lot was measured separately with
+
+```sh
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 \
+  scripts/oracle/lilypond/mesure.sh --out … \
+  --refs /home/jacques/tmp/scoretk/ly95lect-refs-54 --refs-only \
+  --scoretk target-lyreel/debug/scoretk --python-ly '' --music21 '' \
+  --lot …=/home/jacques/tmp/scoretk/ly-import-lots/manifestes/….txt
+```
+
+with a worktree-local `CARGO_TARGET_DIR` and one cargo command at a time.
+No reference was regenerated, no denominator was shrunk, no comparison was
+relaxed. Third-party `.ly` sources were only compiled through the
+`bwrap --unshare-all --die-with-parent` sandbox of `references.py`; the data
+was analysed with `python3 -I`.
+
+### 56.2 Causes fixed, each committed with its measured gain
+
+1. **A partial tweak keeps its post-event** (`48c0d891`). A definition such
+   as `tieShapeA = \shape #'(…) \etc` is a *partial music function*:
+   `-\tieShapeA _~` applies the shape tweak to the following **tie event**
+   (`lily/parser.yy`, `script_dir music_function_call`, l. 3337;
+   `ly/music-functions-init.ly:2191-2230`). The reader consumed the command
+   but dropped the argument, so `Chop-28-22.ly` re-attacked an E-flat instead
+   of sustaining it. `Parser::parse_single_post_event` now reads exactly one
+   post-event (crossing a bare direction such as `_`), and `assign` records
+   the partial-function names. Reduced test
+   `tweak_partiel_devant_une_liaison_garde_la_liaison`. Gain: +1 exact on
+   `mut` (1248 → 1249) and on `rw` (1291 → 1292), no loss.
+2. **A tagged tie survives its direction** (`37c138b3`). The early `-`
+   branch of `parse_direction_event` returned before the general `tag`
+   handling. In `<g' ees''>1 -\tag #'organ ~ | <g' ees''>2 …` of
+   `wedding.ly` the Scheme tag and the `~` were left in the stream, so the
+   chord was re-attacked eight times. The `-` branch now consumes the tag
+   names and reads the tagged post-event. Reduced test
+   `tag_devant_une_liaison_garde_la_liaison`. Gain: +1 exact on `mut`
+   (1249 → 1250) and on `rw` (1292 → 1293), no loss.
+3. **`rustfmt`** (`70fb43f5`), formatting only.
+
+A third attempt, applying the quoted source's `instrumentTransposition` to
+`\cueDuring` notes (`lily/staff-performer.cc:190-199`), was implemented in a
+new module and then **reverted**: it changed no measured output on `mut`,
+`rw` or `ra`, so no unproven change was kept. Quotation remains an open cause.
+
+### 56.3 Results
+
+| Lot | Rows | Exact before §56 | Exact after §56 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1631 (94.6 %) | **1631 (94.6 %)** | 98.67 | 96.40 | 1 + 66 |
+| `mut` | 1316 | 1248 (94.8 %) | **1250 (95.0 % displayed, 94.98 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1291 (94.6 %) | **1293 (94.7 %)** | 99.54 | 97.63 | 83 |
+
+The strict 95 % threshold is reached on **none** of the three lots: `mut`
+needs one more file (1251), `rw` four (1297) and `ra` seven (1638). The 66
+deleted `ra` sources keep that lot below 96.2 % even with a perfect reader.
+The 98 % target therefore remains open.
+
+### 56.4 Remaining causes, by frequency (§55.3 ranking, unchanged)
+
+| Cause | `ra` | `mut` | `rw` | Status after §56 |
+| --- | ---: | ---: | ---: | --- |
+| Grace real-time timing and note count | 6 | 12 | 12 | Old sources (e.g. `\version "2.7.40"`, `"2.17.6"`) play 16th graces with a fixed quarter-length grace part; `lily/audio-item.cc:122`, `lily/grace-iterator.cc`, `ly/grace-init.ly`. The oracle's grace pairing assumes the written duration, so the Q16 grid differs; a faithful fix must reproduce the compatibility rule by source version. |
+| Per-Voice repeats and ties | 8 | 12 | 12 | Two systematic post-event losses are fixed above; the residual files (`bwv910`, `entertainer`, `BWV533`, `BWV857_Praeludium12`) re-articulate a tie across a voice/repeat boundary. A per-Voice MIDI track allocation (`lily/staff-performer.cc:138-182`, `get_audio_staff`) is needed for the remaining unison cases (`bwv735`, `bwv657`). |
+| Tuplets and ossia/metric contexts | 5 | 3 | 3 | `alignment-order.ly` and `polymetric-time-ossia-staff.ly` have all pitches and notes but a constant +16/+28-quarter shift of the ossia voice against the shared measure frame. |
+| Quotations | 6 | 1 | 2 | Forward `\addQuote` resolution of §53.3 is kept; source-minus-target `\transposition` and deferred cue resolution are still missing (`adding-orchestral-cues-to-a-vocal-score.ly` has 6 missing notes). |
+| Scheme-driven music | 8 | 3 | 3 | Four glyph tests, `music-map` and makam are done; the rest need a Scheme evaluator. |
+| Microtonal key signatures / tablature | 8 | 0 | 0 | `persian.ly`, `turkish-makam.ly`, fretboard playback; outside this phase. |
+
+### 56.5 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
