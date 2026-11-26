@@ -63,6 +63,8 @@ pub(crate) enum Language {
     Svenska,
     /// Flamand.
     Vlaams,
+    /// Makam (noms de `ly/makam.ly`, altérations en neuvièmes de ton).
+    Makam,
 }
 
 impl Language {
@@ -88,6 +90,7 @@ impl Language {
             "suomi" => Some(Self::Suomi),
             "svenska" => Some(Self::Svenska),
             "vlaams" => Some(Self::Vlaams),
+            "makam" => Some(Self::Makam),
             _ => None,
         }
     }
@@ -107,6 +110,7 @@ impl Language {
             Self::Suomi => SUOMI,
             Self::Svenska => SVENSKA,
             Self::Vlaams => VLAAMS,
+            Self::Makam => MAKAM,
         }
     }
 
@@ -728,6 +732,93 @@ const VLAAMS: &[(&str, u8, i8)] = &[
 ];
 
 /// Demi-tons d'un degré diatonique.
+/// Noms makam (`ly/makam.ly`, `makamPitchNames`).
+///
+/// Les altérations du fichier sont en neuvièmes de ton (`KOMA 1/9`,
+/// `BAKIYE 4/9`, `KUCUK 5/9`, `BUYUKMUCENNEB 8/9`, `EKSIK-IKI 5/18`,
+/// `EKSIK-UC 6/18`). Le MIDI de LilyPond 2.27 arrondit la hauteur au
+/// demi-ton le plus proche (`ly:pitch->midi`) : la table stocke cette
+/// valeur jouée, comme pour les noms à quarts de ton néerlandais.
+const MAKAM: &[(&str, u8, i8)] = &[
+    ("c", 0, 0),
+    ("d", 1, 0),
+    ("e", 2, 0),
+    ("f", 3, 0),
+    ("g", 4, 0),
+    ("a", 5, 0),
+    ("b", 6, 0),
+    ("cc", 0, 0),
+    ("dc", 1, 0),
+    ("ec", 2, 0),
+    ("fc", 3, 0),
+    ("gc", 4, 0),
+    ("ac", 5, 0),
+    ("bc", 6, 0),
+    ("cb", 0, 1),
+    ("db", 1, 1),
+    ("eb", 2, 1),
+    ("fb", 3, 1),
+    ("gb", 4, 1),
+    ("ab", 5, 1),
+    ("bb", 6, 1),
+    ("ck", 0, 1),
+    ("dk", 1, 1),
+    ("ek", 2, 1),
+    ("fk", 3, 1),
+    ("gk", 4, 1),
+    ("ak", 5, 1),
+    ("bk", 6, 1),
+    ("cbm", 0, 2),
+    ("dbm", 1, 2),
+    ("ebm", 2, 2),
+    ("fbm", 3, 2),
+    ("gbm", 4, 2),
+    ("abm", 5, 2),
+    ("bbm", 6, 2),
+    ("cfc", 0, 0),
+    ("dfc", 1, 0),
+    ("efc", 2, 0),
+    ("ffc", 3, 0),
+    ("gfc", 4, 0),
+    ("afc", 5, 0),
+    ("bfc", 6, 0),
+    ("cfb", 0, -1),
+    ("dfb", 1, -1),
+    ("efb", 2, -1),
+    ("ffb", 3, -1),
+    ("gfb", 4, -1),
+    ("afb", 5, -1),
+    ("bfb", 6, -1),
+    ("cfk", 0, -1),
+    ("dfk", 1, -1),
+    ("efk", 2, -1),
+    ("ffk", 3, -1),
+    ("gfk", 4, -1),
+    ("afk", 5, -1),
+    ("bfk", 6, -1),
+    ("cfi", 0, -1),
+    ("dfi", 1, -1),
+    ("efi", 2, -1),
+    ("ffi", 3, -1),
+    ("gfi", 4, -1),
+    ("afi", 5, -1),
+    ("bfi", 6, -1),
+    ("cfu", 0, -1),
+    ("dfu", 1, -1),
+    ("efu", 2, -1),
+    ("ffu", 3, -1),
+    ("gfu", 4, -1),
+    ("afu", 5, -1),
+    ("bfu", 6, -1),
+    ("cfbm", 0, -2),
+    ("dfbm", 1, -2),
+    ("efbm", 2, -2),
+    ("ffbm", 3, -2),
+    ("gfbm", 4, -2),
+    ("afbm", 5, -2),
+    ("bfbm", 6, -2),
+];
+
 const SEMITONES: [i8; 7] = [0, 2, 4, 5, 7, 9, 11];
 
 /// Décalage de quinte d'un degré naturel (do, ré, mi, fa, sol, la, si).
@@ -1043,6 +1134,18 @@ mod tests {
         assert_eq!(Language::Svenska.parse("b"), Some((6, -1)));
         assert_eq!(Language::Vlaams.parse("dok"), Some((0, 1)));
         assert_eq!(Language::Vlaams.parse("sikk"), Some((6, 2)));
+    }
+
+    #[test]
+    fn noms_makam() {
+        // `ly/makam.ly` : `afbm` = A - 8/9 de ton, `fk` = F + 5/9 de ton,
+        // `cfk` = C - 5/9 de ton ; le MIDI arrondit au demi-ton voisin.
+        assert_eq!(Language::Makam.parse("afbm"), Some((5, -2)));
+        assert_eq!(Language::Makam.parse("fk"), Some((3, 1)));
+        assert_eq!(Language::Makam.parse("cfk"), Some((0, -1)));
+        assert_eq!(Language::Makam.parse("efi"), Some((2, -1)));
+        assert_eq!(Language::Makam.parse("g"), Some((4, 0)));
+        assert_eq!(Language::from_name("makam"), Some(Language::Makam));
     }
 
     #[test]

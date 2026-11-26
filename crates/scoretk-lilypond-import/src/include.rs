@@ -68,7 +68,6 @@ const FICHIERS_LILYPOND: &[&str] = &[
     "arabic.ly",
     "bagpipe.ly",
     "hel-arabic.ly",
-    "makam.ly",
     "persian.ly",
     "turkish-makam.ly",
     // Aides à l'écriture (chœurs, accords de guitare, swing).
@@ -473,6 +472,12 @@ mod tests {
         assert_eq!(
             texts("\\include \"catalan.ly\""),
             vec!["\\language", "\"catalan\""]
+        );
+        // `ly/makam.ly` définit des noms de notes : il vaut `\language
+        // "makam"` et non un fichier livré sans musique (`note-names-makam.ly`).
+        assert_eq!(
+            texts("\\include \"makam.ly\" afbm4"),
+            vec!["\\language", "\"makam\"", "afbm", "4"]
         );
     }
 
