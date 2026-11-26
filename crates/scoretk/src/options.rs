@@ -128,7 +128,11 @@ impl Options {
             // `write_playback` force `stable_ids`.
             stable_ids: false,
             gabc_modern_clef: self.gabc_modern_clef,
-            gabc_neume_smufl: self.gabc_neume_smufl,
+            // Le mode `xml_full_support` active tous les porteurs XSD 4.0
+            // disponibles, y compris les noms de glyphes SMuFL des neumes
+            // (`xsd:other-notation/@smufl`, §14.4 du rapport GABC). L'option
+            // dédiée reste disponible seule, sans les autres porteurs.
+            gabc_neume_smufl: self.gabc_neume_smufl || self.xml_full_support,
             full_support: self.xml_full_support,
             lossless_round_trip: self.xml_lossless_round_trip,
         }

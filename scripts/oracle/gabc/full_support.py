@@ -401,10 +401,10 @@ RECLASSIFIED: dict[str, dict[str, str]] = {
         "custos": "notation-big-page.html §17.2.3 'Custodes' (:43345-43381): `Custos_engraver`",
         "letter": "notation-big-page.html §17.4.2 'Gregorian clefs' (:44295-44350) and §17.4.7: pitch + `\\clef vaticana-doN/faN` give the staff position",
         "header": "notation-big-page.html §21.2.3 'Custom titles, headers, and footers' (:48383, :48597 'User-defined field')",
-        "rubric": "notation-big-page.html §2.1.2 'Lyrics' and format-ref/lilypond.md §Repeats and lyrics (:98-110): `\lyricsto` words and markup strings",
+        "rubric": r"notation-big-page.html §2.1.2 'Lyrics' and format-ref/lilypond.md §Repeats and lyrics (:98-110): `\lyricsto` words and markup strings",
         "glyph": "notation-big-page.html §17.4.7 (:44630-44675): note-head modifiers and `\\[ … \\]` ligatures",
         "shape": "notation-big-page.html §17.4.7 (:44652-44662): `\\virga`, `\\stropha`, `\\inclinatum`, `\\oriscus`, `\\deminutum`, `\\cavum`, `\\linea`",
-        "attribute": "notation-big-page.html §21.2.3 (:48597): arbitrary user-defined `\header` fields",
+        "attribute": r"notation-big-page.html §21.2.3 (:48597): arbitrary user-defined `\header` fields",
     },
     "abc": {
         "quilisma": "abc-standard-v2.1.wiki.txt §4.14 'Decorations' (:1124) and §4.16 'Redefinable symbols' (:1222): `!symbol!`/`U:` are user-definable",
@@ -497,7 +497,11 @@ def strip_private(destination: str, data: bytes) -> bytes:
 
 
 def convert_back(cli: Path, data: bytes, destination: str) -> tuple[bytes, str]:
-    return convert_from(cli, strip_private(destination, data), destination, "gabc")
+    # Le mode « full support » s'applique aussi à la lecture de retour : sans
+    # lui, les porteurs standard écrits (méta-texte SMF, ticks exacts, NEUMES
+    # MEI…) seraient ignorés et la mesure pénaliserait le lecteur, pas le format.
+    return convert_from(cli, strip_private(destination, data), destination, "gabc",
+                        FULL_SUPPORT_EXTRA[destination])
 
 
 def run(cli: Path, directories: list[Path], out: Path) -> dict:
