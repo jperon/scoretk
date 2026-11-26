@@ -10113,8 +10113,8 @@ files, no comparator rule and no denominator was changed.
 | `mut` | 1 316 | 1 247 (94.8 %) | 1 248 (94.8 %) | **1 248 (94.8 %)** | 99.54 | 97.65 | unchanged (61) |
 | `rw` | 1 365 | 1 290 (94.5 %) | 1 291 (94.6 %) | **1 291 (94.6 %)** | 99.54 | 97.63 | unchanged (83) |
 
-The ≥ 95 % target is reached on **none** of the three lots. Fourteen more
-exact files are needed on `ra`, three on `mut` and six on `rw`. The 66 `ra`
+The ≥ 95 % target is reached on **none** of the three lots. Seven more
+exact files are needed on `ra` (1 638/1 724), three on `mut` and six on `rw`. The 66 `ra`
 sources whose file has disappeared cap that lot at 1 658/1 724 = 96.2 % even
 with a perfect reader; they stay in the denominator.
 
