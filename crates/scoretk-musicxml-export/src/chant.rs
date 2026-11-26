@@ -476,7 +476,7 @@ mod tests {
     /// inside a group. None of them is a sung fact and none gets an XML field.
     #[test]
     fn out_of_reach_gabc_facts_have_no_xml_field() {
-        let mut out = Out::new();
+        let mut out = Out::new_with(false, false);
         let gregorian = Gregorian {
             clefs: vec!["c3".to_owned()],
             syllables: vec![Syllable {
@@ -516,7 +516,7 @@ mod tests {
             }],
             ..Gregorian::default()
         };
-        let mut out = Out::new();
+        let mut out = Out::new_with(false, false);
         write_syllable_direction(&mut out, &gregorian, 0);
         let xml = out.xml.finish();
         assert!(xml.contains("gabc:syllable:i=0|t=De\\|us|w=1"), "{xml}");

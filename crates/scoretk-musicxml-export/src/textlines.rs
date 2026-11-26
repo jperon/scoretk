@@ -38,19 +38,19 @@ use scoretk_core::model::{
 use super::exportmusicxml::{format_number, placement_name, Context, Out};
 
 /// Écrit le début d'une ligne de texte (`textLine` avec `isStart`).
-pub(crate) fn start(out: &mut Out, spanner: &Spanner, xml_staff: usize) {
+pub(crate) fn start(out: &mut Out, spanner: &Spanner, xml_staff: usize, full_support: bool) {
     let Some(info) = &spanner.text_line else {
         return;
     };
-    write_text_line(out, spanner, info, true, xml_staff);
+    write_text_line(out, spanner, info, true, xml_staff, full_support);
 }
 
 /// Écrit la fin d'une ligne de texte (`textLine` appelé par `spannerStop`).
-pub(crate) fn stop(out: &mut Out, spanner: &Spanner, xml_staff: usize) {
+pub(crate) fn stop(out: &mut Out, spanner: &Spanner, xml_staff: usize, full_support: bool) {
     let Some(info) = &spanner.text_line else {
         return;
     };
-    write_text_line(out, spanner, info, false, xml_staff);
+    write_text_line(out, spanner, info, false, xml_staff, full_support);
 }
 
 fn write_text_line(
@@ -59,6 +59,7 @@ fn write_text_line(
     info: &TextLineInfo,
     is_start: bool,
     xml_staff: usize,
+    full_support: bool,
 ) {
     let text = if is_start {
         info.begin_text.as_ref()
@@ -67,14 +68,48 @@ fn write_text_line(
     };
 
     if !info.line_visible {
-        let Some(text) = text else {
+        if !full_support {
+            // Export 4.7.4 : une ligne invisible n'est écrite que si elle porte
+            // un texte ; `spannerStop` passe la sentinelle `Fraction(-1, 1)`
+            // à `textLine`, d'où l'`<offset>` négatif de la fin.
+            let Some(text) = text else {
+                return;
+            };
+            let font = if is_start {
+                &info.begin_font
+            } else {
+                &info.end_font
+            };
+            out.attr(false);
+            let placement = placement_name(info.placement);
+            let mut attributes: Vec<(&str, &str)> = vec![("placement", placement)];
+            if info.system {
+                attributes.push(("system", "only-top"));
+            }
+            out.xml.start_element("direction", &attributes);
+            out.xml.start_element("direction-type", &[]);
+            write_line_words(out, text.plain(), font);
+            out.xml.end_element();
+            let tick = if is_start {
+                spanner.start.tick
+            } else {
+                Fraction::from_integer(-1)
+            };
+            let offset = out.duration_in_divisions(tick - out.tick);
+            if offset != 0 {
+                out.xml
+                    .tag_with("offset", &[("sound", "yes")], &offset.to_string());
+            }
+            if xml_staff > 0 {
+                out.xml.tag("staff", &xml_staff.to_string());
+            }
+            out.xml.end_element();
             return;
-        };
-        let font = if is_start {
-            &info.begin_font
-        } else {
-            &info.end_font
-        };
+        }
+        // `full_support` : `<bracket>` / `<dashes>` porte l'existence du
+        // spanner même sans trait dessiné. La visibilité du trait n'a pas de
+        // porteur XSD (`xsd:direction` n'a pas `print-object`) : perte déclarée.
+        // Le tick de fin est celui du modèle, pas la sentinelle -1 du C++.
         out.attr(false);
         let placement = placement_name(info.placement);
         let mut attributes: Vec<(&str, &str)> = vec![("placement", placement)];
@@ -82,15 +117,35 @@ fn write_text_line(
             attributes.push(("system", "only-top"));
         }
         out.xml.start_element("direction", &attributes);
+        if let Some(text) = text {
+            let font = if is_start {
+                &info.begin_font
+            } else {
+                &info.end_font
+            };
+            out.xml.start_element("direction-type", &[]);
+            write_line_words(out, text.plain(), font);
+            out.xml.end_element();
+        }
         out.xml.start_element("direction-type", &[]);
-        write_line_words(out, text.plain(), font);
+        let kind = if is_start { "start" } else { "stop" };
+        if info.line_style == TextLineStyle::Dashed
+            && info.begin_hook == HookType::None
+            && info.end_hook == HookType::None
+        {
+            out.xml
+                .tag_empty("dashes", &[("type", kind), ("number", "1")]);
+        } else {
+            out.xml.tag_empty(
+                "bracket",
+                &[("type", kind), ("number", "1"), ("line-end", "none")],
+            );
+        }
         out.xml.end_element();
-        // `spannerStop` passe la position sentinelle `Fraction(-1, 1)` à
-        // `textLine`, d'où l'`<offset>` négatif des fins de ligne invisibles.
         let tick = if is_start {
             spanner.start.tick
         } else {
-            Fraction::from_integer(-1)
+            spanner.end.tick
         };
         let offset = out.duration_in_divisions(tick - out.tick);
         if offset != 0 {

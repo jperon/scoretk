@@ -27,7 +27,7 @@
 use scoretk_core::model::{Capabilities, Layers};
 
 /// Couches écrivables vers MusicXML.
-pub const CAPABILITIES: Capabilities = Capabilities::new(
+pub const CAPABILITIES: Capabilities = Capabilities::with_kinds(
     Layers::NONE,
     Layers::COMMON
         .union(Layers::METRIC)
@@ -35,4 +35,5 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
         .union(Layers::TEXT)
         .union(Layers::PLAYBACK)
         .union(Layers::ENGRAVING),
+    scoretk_xml_common::XML_ITEM_KINDS,
 );

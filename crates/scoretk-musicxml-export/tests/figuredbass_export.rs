@@ -10,7 +10,7 @@ use scoretk_core::model::{
     tpc, Annotation, ChordRest, Duration, FiguredBass, FiguredBassItem, Fraction, Measure, Note,
     Part, Score, Segment, SegmentItem, SegmentType, Track,
 };
-use scoretk_musicxml_export::export_musicxml;
+use scoretk_musicxml_export::{export_musicxml, export_musicxml_with, ExportOptions};
 
 /// Partition minimale : une noire sur une portée, une mesure de 4/4.
 fn partition_avec_chiffrage(brackets: [u8; 5]) -> Score {
@@ -50,6 +50,43 @@ fn chiffrage_crochets_ecrit_parentheses() {
         xml.contains("<figured-bass parentheses=\"yes\">"),
         "encadrement non exporté :\n{xml}"
     );
+}
+
+/// Un chiffrage vide (`items.is_empty()`) est omis par MuseScore 4.7.4.
+/// `<figured-bass><figure/></figured-bass>` est valide dans la XSD 4.0
+/// (`xsd:figured-bass`, `xsd:figure`) et l'écrit dans `full_support` et dans
+/// le mode secondaire ; le défaut garde les octets 4.7.4.
+#[test]
+fn chiffrage_vide_preserve_en_mode_complet() {
+    let mut score = partition_avec_chiffrage([0; 5]);
+    let segment = &mut score.measures[0].segments[0];
+    let entry = segment
+        .annotations
+        .iter_mut()
+        .find(|entry| matches!(entry.annotation, Annotation::FiguredBass(_)))
+        .expect("chiffrage");
+    if let Annotation::FiguredBass(bass) = &mut entry.annotation {
+        bass.items.clear();
+    }
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(!plain.contains("<figured-bass"), "{plain}");
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let full = export_musicxml_with(&score, &options).expect("export secondaire");
+    assert!(full.contains("<figured-bass>"));
+    assert!(full.contains("<figure/>"), "{full}");
+    let xsd = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(xsd.contains("<figured-bass>"), "{xsd}");
+    assert!(xsd.contains("<figure/>"), "{xsd}");
 }
 
 #[test]

@@ -876,9 +876,9 @@ pub(crate) fn write_rehearsal(out: &mut Out, mark: &RehearsalMark, xml_staff: us
 ///
 /// MuseScore parcourt les cadres verticaux de toutes les pages, dans l'ordre
 /// des pages ; `Credit::page` vient des `<LayoutBreak>` lus par le lecteur.
-pub(crate) fn write_credits(out: &mut Out, score: &Score) {
+pub(crate) fn write_credits(out: &mut Out, score: &Score, lossless: bool, full_support: bool) {
     for credit in &score.engraving.credits {
-        write_credit(out, credit, &score.engraving.style);
+        write_credit(out, credit, &score.engraving.style, lossless, full_support);
     }
 
     // MuseScore ajoute le copyright en bas au centre de chaque page.
@@ -894,7 +894,7 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
                 vbox_height: 10.0,
                 extra_words: Vec::new(),
             };
-            write_credit(out, &credit, &score.engraving.style);
+            write_credit(out, &credit, &score.engraving.style, lossless, full_support);
         }
     }
 }
@@ -904,12 +904,29 @@ pub(crate) fn write_credits(out: &mut Out, score: &Score) {
 /// La position est celle que calcule `textAsCreditWords` : `default-x` selon
 /// l'alignement et les marges, `default-y` depuis le haut de la page et la
 /// marge haute (voir [`layout::credit_position`]).
-fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
+fn write_credit(
+    out: &mut Out,
+    credit: &Credit,
+    settings: &StyleSettings,
+    lossless: bool,
+    full_support: bool,
+) {
     if credit.text.is_empty() {
         return;
     }
     let page = credit.page.to_string();
-    out.xml.start_element("credit", &[("page", &page)]);
+    let mut credit_attrs: Vec<(&str, &str)> = vec![("page", &page)];
+    let height = if lossless {
+        Some(format!("{:.5}", credit.vbox_height))
+    } else {
+        None
+    };
+    if let Some(height) = &height {
+        // Attribut privé du mode secondaire : la hauteur du cadre vient de la
+        // mise en page et n'a aucun élément XSD (§55).
+        credit_attrs.push(("scoretk-vbox-height", height));
+    }
+    out.xml.start_element("credit", &credit_attrs);
     // MuseScore passe le type au crédit lui-même : `tidToCreditType` pour les
     // textes de cadre, `rights` pour le copyright.
     let is_rights = matches!(&credit.style, CreditStyle::Other(name) if name == "rights");
@@ -921,6 +938,15 @@ fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
     if let Some(kind) = kind {
         out.xml.tag("credit-type", kind);
     }
+    // XSD 4.0 `xsd:credit-type` est une chaîne libre (plusieurs occurrences
+    // autorisées). La hauteur du cadre vertical n'a pas d'élément dédié ; on
+    // la porte par une valeur de type distincte, lisible par un lecteur
+    // standard comme par le nôtre, à la place de l'ancien attribut privé.
+    // Porteur du seul mode `full_support` (§55).
+    if full_support && (credit.vbox_height - 10.0).abs() > 0.00001 {
+        let height = format!("vbox-height={:.5}", credit.vbox_height);
+        out.xml.tag("credit-type", &height);
+    }
 
     let (x, y) = if is_rights {
         layout::rights_position(settings)
@@ -929,23 +955,58 @@ fn write_credit(out: &mut Out, credit: &Credit, settings: &StyleSettings) {
     };
     let x = format_number(x, 2);
     let y = format_number(y, 2);
-    let attributes: Vec<(&str, &str)> = vec![
+    let mut attributes: Vec<(&str, &str)> = vec![
         ("default-x", &x),
         ("default-y", &y),
         ("justify", credit.justify.musicxml_name()),
         ("valign", credit.valign.musicxml_name()),
     ];
+    if full_support {
+        let plain = credit.text.plain();
+        if plain.starts_with(char::is_whitespace)
+            || plain.ends_with(char::is_whitespace)
+            || plain.contains('\n')
+        {
+            // `xsd:formatted-text` autorise `xml:space` : les blancs du texte
+            // MuseScore font partie du modèle, pas de l'indentation XML.
+            attributes.push(("xml:space", "preserve"));
+        }
+    } else if lossless && credit.text.plain().ends_with(char::is_whitespace) {
+        // Le lecteur MusicXML rogne le texte ; le `.mscx` conserve les espaces
+        // finaux. Extension privée du mode secondaire (§55).
+        attributes.push(("scoretk-no-trim", "yes"));
+    }
     let mut style = credit_style(credit, settings);
     if let Some(font_size) = credit.font_size {
         style.font_size = font_size;
+    } else if lossless || full_support {
+        // MuseScore déduit une taille du style et l'écrit même quand le
+        // `.mscx` n'en porte aucune. En mode secondaire on ne l'écrit pas,
+        // pour retrouver `font_size: None`. En mode `full_support`, écrire la
+        // taille de référence de `xsd:formatted-text` fait omission de
+        // l'attribut par `write_fragments`, sans attribut privé (§55).
+        style.font_size = BASE_FORMAT.font_size;
     }
-    write_fragments(
-        out,
-        "credit-words",
-        &attributes,
-        credit.text.fragments(),
-        &style,
-    );
+    let escaped;
+    let fragments = if lossless || full_support {
+        // Le lecteur `.mscx` conserve les entités XML telles quelles dans le
+        // texte (`&quot;`) ; le lecteur MusicXML les décode. Doubler
+        // l'esperluette donne la chaîne exacte du modèle avec du XML standard.
+        escaped = credit
+            .text
+            .fragments()
+            .iter()
+            .cloned()
+            .map(|mut fragment| {
+                fragment.text = fragment.text.replace('&', "&amp;");
+                fragment
+            })
+            .collect::<Vec<_>>();
+        escaped.as_slice()
+    } else {
+        credit.text.fragments()
+    };
+    write_fragments(out, "credit-words", &attributes, fragments, &style);
     for extra in &credit.extra_words {
         out.xml.tag("credit-words", extra.plain());
     }

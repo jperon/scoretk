@@ -52,6 +52,7 @@ mod figured_bass;
 mod fret;
 mod harmony;
 mod layout;
+mod lossless;
 mod notations;
 mod nuances;
 mod ottava;

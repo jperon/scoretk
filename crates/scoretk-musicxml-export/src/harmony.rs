@@ -41,7 +41,7 @@ use super::pitch;
 ///
 /// `offset` est la position de l'accord par rapport au début du segment qui le
 /// porte, quand MuseScore le rattache à un accord ou un silence précédent.
-pub(crate) fn write(out: &mut Out, harmony: &Harmony, offset: Tick) {
+pub(crate) fn write(out: &mut Out, harmony: &Harmony, offset: Tick, staff: Option<usize>) {
     out.attr(false);
     let mut attributes: Vec<(&str, String)> = Vec::new();
     if harmony.placement == Placement::Below {
@@ -70,6 +70,13 @@ pub(crate) fn write(out: &mut Out, harmony: &Harmony, offset: Tick) {
     // `harmony()` écrit le `<frame>` après l'`<offset>` (`:9244-9249`).
     if let Some(diagram) = &harmony.fret_diagram {
         fret::write_frame(out, diagram);
+    }
+
+    // `harmony/staff` (XSD 4.0 `xs:group ref="staff"`) : MuseScore n'écrit pas
+    // cette portée, mais le modèle peut attacher une harmonie à la seconde
+    // portée d'une partie. Le mode additif la conserve.
+    if let Some(staff) = staff {
+        out.xml.tag("staff", &staff.to_string());
     }
 
     out.xml.end_element();

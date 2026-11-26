@@ -92,6 +92,12 @@ struct Cli {
     #[arg(long, value_name = "AAAA-MM-JJ", value_parser = parse_encoding_date)]
     encoding_date: Option<String>,
 
+    /// Export MusicXML : porteurs XSD 4.0 standard au-delà de 4.7.4
+    /// (tailles de crédits omises, lignes invisibles, n-olets 1:1…). Le défaut
+    /// reste octet pour octet conforme à MuseScore 4.7.4.
+    #[arg(long)]
+    xml_full_support: bool,
+
     /// Ne pas dérouler les reprises dans la sortie MIDI
     #[arg(long)]
     no_expand_repeats: bool,
@@ -257,6 +263,7 @@ fn main() -> ExitCode {
             expand_repeats: !cli.no_expand_repeats,
             smf_text: cli.midi_text,
         },
+        xml_full_support: cli.xml_full_support,
         ..Options::default()
     };
 

@@ -456,8 +456,96 @@ fn sound(out: &mut Out, attributes: &[(&str, &str)]) {
     out.xml.tag_empty("sound", attributes);
 }
 
+/// `<sound>` avec les attributs privés du mode « modèle complet » : le type
+/// exact du marqueur et sa portée, que MusicXML ne peut pas distinguer.
+fn marker_staffs(measure: &Measure, marker: &Marker) -> String {
+    let mut staffs: Vec<u32> = measure
+        .repeat_marks
+        .iter()
+        .filter_map(|mark| match mark {
+            RepeatMark::Marker(value)
+                if value.kind == marker.kind && value.label == marker.label =>
+            {
+                Some(value.track.staff().raw() + 1)
+            }
+            _ => None,
+        })
+        .collect();
+    staffs.sort_unstable();
+    staffs.dedup();
+    staffs
+        .iter()
+        .map(|staff| staff.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn marker_sound(
+    out: &mut Out,
+    attributes: &[(&str, &str)],
+    marker: &Marker,
+    staffs: &str,
+    lossless: bool,
+) {
+    if lossless {
+        let kind = format!("{:?}", marker.kind);
+        let mut all = attributes.to_vec();
+        all.push(("scoretk-marker-kind", &kind));
+        all.push(("scoretk-marker-label", &marker.label));
+        all.push(("scoretk-marker-staff", staffs));
+        return sound(out, &all);
+    }
+    sound(out, attributes);
+}
+
+fn jump_staffs(measure: &Measure, jump: &Jump) -> String {
+    let mut staffs: Vec<u32> = measure
+        .repeat_marks
+        .iter()
+        .filter_map(|mark| match mark {
+            RepeatMark::Jump(value) if value.kind == jump.kind && value.jump_to == jump.jump_to => {
+                Some(value.track.staff().raw() + 1)
+            }
+            _ => None,
+        })
+        .collect();
+    staffs.sort_unstable();
+    staffs.dedup();
+    staffs
+        .iter()
+        .map(|staff| staff.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn jump_sound(
+    out: &mut Out,
+    attributes: &[(&str, &str)],
+    jump: &Jump,
+    staffs: &str,
+    lossless: bool,
+) {
+    if lossless {
+        let kind = format!("{:?}", jump.kind);
+        let mut all = attributes.to_vec();
+        all.push(("scoretk-jump-kind", &kind));
+        all.push(("scoretk-jump-to", &jump.jump_to));
+        all.push(("scoretk-jump-staff", staffs));
+        return sound(out, &all);
+    }
+    sound(out, attributes);
+}
+
 /// Écrit un marqueur (`directionMarker`).
-fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&Jump]) {
+#[allow(clippy::too_many_arguments)]
+fn direction_marker(
+    out: &mut Out,
+    marker: &Marker,
+    kind: MarkerType,
+    jumps: &[&Jump],
+    staffs: &str,
+    lossless: bool,
+) {
     // `directionMarker` (`exportmusicxml.cpp:6354-6365`) : `canWrite(marker)`
     // est faux pour un marqueur invisible, donc seul le `<sound>` est écrit.
     if !marker.visible {
@@ -467,21 +555,26 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
             marker.label.as_str()
         };
         match kind {
-            MarkerType::VarSegno | MarkerType::Segno => sound(out, &[("segno", label)]),
-            MarkerType::VarCoda | MarkerType::Coda | MarkerType::Codetta => {
-                sound(out, &[("coda", label)]);
+            MarkerType::VarSegno | MarkerType::Segno => {
+                marker_sound(out, &[("segno", label)], marker, staffs, lossless)
             }
-            MarkerType::Fine => sound(out, &[("fine", "yes")]),
+            MarkerType::VarCoda | MarkerType::Coda | MarkerType::Codetta => {
+                marker_sound(out, &[("coda", label)], marker, staffs, lossless);
+            }
+            MarkerType::Fine => marker_sound(out, &[("fine", "yes")], marker, staffs, lossless),
             MarkerType::ToCoda
             | MarkerType::ToCodaSym
             | MarkerType::DaCoda
             | MarkerType::DaDoubleCoda => {
-                sound(
+                marker_sound(
                     out,
                     &[(
                         "tocoda",
                         find_coda_label(jumps, &marker.label).unwrap_or("1"),
                     )],
+                    marker,
+                    staffs,
+                    lossless,
                 );
             }
             MarkerType::User => {}
@@ -505,7 +598,7 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
             } else {
                 marker.label.as_str()
             };
-            sound(out, &[("segno", label)]);
+            marker_sound(out, &[("segno", label)], marker, staffs, lossless);
             out.xml.end_element();
         }
         MarkerType::VarCoda | MarkerType::Coda | MarkerType::Codetta => {
@@ -523,7 +616,7 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
             } else {
                 marker.label.as_str()
             };
-            sound(out, &[("coda", label)]);
+            marker_sound(out, &[("coda", label)], marker, staffs, lossless);
             out.xml.end_element();
         }
         MarkerType::Fine => {
@@ -532,7 +625,7 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
             out.xml.start_element("direction-type", &[]);
             out.xml.tag("words", &marker.text);
             out.xml.end_element();
-            sound(out, &[("fine", "yes")]);
+            marker_sound(out, &[("fine", "yes")], marker, staffs, lossless);
             out.xml.end_element();
         }
         MarkerType::ToCoda
@@ -550,7 +643,7 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
             out.xml.tag("words", words);
             out.xml.end_element();
             let label = find_coda_label(jumps, &marker.label).unwrap_or("1");
-            sound(out, &[("tocoda", label)]);
+            marker_sound(out, &[("tocoda", label)], marker, staffs, lossless);
             out.xml.end_element();
         }
         MarkerType::User => {}
@@ -558,7 +651,7 @@ fn direction_marker(out: &mut Out, marker: &Marker, kind: MarkerType, jumps: &[&
 }
 
 /// Écrit un saut (`directionJump`).
-fn direction_jump(out: &mut Out, jump: &Jump) {
+fn direction_jump(out: &mut Out, jump: &Jump, staffs: &str, lossless: bool) {
     let words = if !jump.text.is_empty() {
         jump.text.as_str()
     } else {
@@ -596,7 +689,7 @@ fn direction_jump(out: &mut Out, jump: &Jump) {
     // uniquement le `<sound>` autonome.
     if words.is_empty() || !jump.visible {
         if !sound_attributes.is_empty() {
-            sound(out, &sound_attributes);
+            jump_sound(out, &sound_attributes, jump, staffs, lossless);
         }
         return;
     }
@@ -609,7 +702,7 @@ fn direction_jump(out: &mut Out, jump: &Jump) {
     out.xml.tag("words", words);
     out.xml.end_element();
     if !sound_attributes.is_empty() {
-        sound(out, &sound_attributes);
+        jump_sound(out, &sound_attributes, jump, staffs, lossless);
     }
     out.xml.end_element();
 }
@@ -644,7 +737,14 @@ pub(super) fn repeat_at_measure_start(
         let kind = effective_marker_type(marker, &jumps);
         if kind.is_start_marker() {
             out.attr(false);
-            direction_marker(out, marker, kind, &jumps);
+            direction_marker(
+                out,
+                marker,
+                kind,
+                &jumps,
+                &marker_staffs(measure, marker),
+                context.lossless(),
+            );
         }
     }
 }
@@ -669,7 +769,14 @@ pub(super) fn repeat_at_measure_stop(
                 let kind = effective_marker_type(marker, &jumps);
                 if kind.is_stop_marker() {
                     out.attr(false);
-                    direction_marker(out, marker, kind, &jumps);
+                    direction_marker(
+                        out,
+                        marker,
+                        kind,
+                        &jumps,
+                        &marker_staffs(measure, marker),
+                        context.lossless(),
+                    );
                 }
             }
             RepeatMark::Jump(jump) => {
@@ -677,7 +784,7 @@ pub(super) fn repeat_at_measure_stop(
                     continue;
                 }
                 out.attr(false);
-                direction_jump(out, jump);
+                direction_jump(out, jump, &jump_staffs(measure, jump), context.lossless());
             }
         }
     }

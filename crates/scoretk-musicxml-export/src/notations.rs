@@ -98,9 +98,25 @@ pub(crate) struct NotationsState {
     /// Une même `NotationsState` sert à tout un export, sur le même `Score` :
     /// c'est ce qui rend le cache valable.
     spanner_index: Option<SpannerIndex>,
+    /// Mode additif : porte le tick de fin exact des trilles.
+    lossless: bool,
+    /// Mode XSD : le `stop` du trille est porté par un `<wavy-line>` distinct
+    /// au tick de fin, au lieu de l'attribut privé `scoretk-end`.
+    full_support: bool,
+    /// Trilles dont le `<wavy-line type="stop">` a déjà été écrit.
+    trill_stopped: std::collections::BTreeSet<usize>,
 }
 
 impl NotationsState {
+    /// État initial pour une exportation (4.7.4, XSD ou secondaire).
+    pub(crate) fn new(lossless: bool, full_support: bool) -> Self {
+        Self {
+            lossless,
+            full_support,
+            ..Self::default()
+        }
+    }
+
     /// Réinitialise l'état au début d'une partie.
     pub(crate) fn reset_part(&mut self) {
         self.slur_slots = [None; MAX_NUMBER_LEVEL];
@@ -108,6 +124,7 @@ impl NotationsState {
         self.slide_slots = [None; MAX_NUMBER_LEVEL];
         self.wavy_slots = [None; MAX_NUMBER_LEVEL];
         self.arpeggios.clear();
+        self.trill_stopped.clear();
     }
 
     /// Réinitialise les numéros d'arpèges au début d'une mesure.
@@ -596,11 +613,49 @@ fn write_trills(
         let number_text = number.to_string();
         notations.tag(xml, Some("ornaments"));
         write_trill_symbol(xml, trill);
-        xml.tag_empty("wavy-line", &[("type", "start"), ("number", &number_text)]);
+        let mut start_attrs: Vec<(&str, String)> = vec![
+            ("type", "start".to_owned()),
+            ("number", number_text.clone()),
+        ];
+        // MuseScore écrit le `stop` sur le même accord que le `start`. En mode
+        // additif on porte le tick de fin pour que la relecture retrouve la
+        // durée réelle du trille.
+        if state.lossless {
+            start_attrs.push(("scoretk-end", spanner.end.tick.to_string()));
+        }
+        let borrowed: Vec<(&str, &str)> = start_attrs
+            .iter()
+            .map(|(name, value)| (*name, value.as_str()))
+            .collect();
+        xml.tag_empty("wavy-line", &borrowed);
         if let Some(accidental) = &trill.accidental {
             write_accidental_mark(xml, accidental, Placement::Above);
         }
-        xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
+        // MuseScore écrit le `stop` sur l'accord de départ ; en mode XSD on
+        // le décale à l'accord du tick de fin (carrier `xsd:wavy-line`).
+        if !state.full_support {
+            xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number_text)]);
+        }
+    }
+
+    if !state.full_support || state.lossless {
+        return;
+    }
+    // `full_support` : un `<wavy-line type="stop">` distinct porte la durée
+    // du trille, sans attribut privé. Il est écrit sur le premier accord du
+    // tick de fin ; le lecteur apparie les deux par numéro.
+    for (index, spanner) in score.spanners.iter().enumerate() {
+        if spanner.kind != SpannerType::Trill
+            || spanner.end.tick != tick
+            || spanner.start.tick >= tick
+            || spanner.start.track != track
+            || !state.trill_stopped.insert(index)
+        {
+            continue;
+        }
+        let number = trill_number(score, index).to_string();
+        notations.tag(xml, Some("ornaments"));
+        xml.tag_empty("wavy-line", &[("type", "stop"), ("number", &number)]);
     }
 }
 

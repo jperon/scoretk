@@ -62,6 +62,7 @@ use super::chant;
 use super::figured_bass;
 use super::harmony;
 use super::layout;
+use super::lossless;
 use super::notations;
 use super::nuances::{self, Nuances};
 use super::ottava;
@@ -116,6 +117,21 @@ pub struct ExportOptions {
     /// smufl="chantQuilisma">`, XSD 4.0 `attributeGroup smufl`). Additif :
     /// `false` par défaut, car il change la sortie XML standard.
     pub gabc_neume_smufl: bool,
+    /// Porteurs XSD 4.0 standard au-delà de l'export 4.7.4 (tailles de
+    /// crédits déduites omises, `<bracket>` des lignes invisibles,
+    /// `<tuplet-actual>` des n-olets 1:1, `<staff>` des harmonies,
+    /// `<print>` final, `print-object` des notes…). Additif : `false` par
+    /// défaut, donc les octets restent conformes aux `*.ref.musicxml`.
+    /// Voir `docs/agents/musicxml-export.md` §55.
+    pub full_support: bool,
+    /// Export additif « modèle complet » : n'écrit que les valeurs réellement
+    /// portées par le modèle, au lieu de déduire les valeurs de mise en page
+    /// que MuseScore 4.7.4 écrit (taille de police des crédits, directions
+    /// invisibles, hampes calculées…). `false` par défaut : les octets restent
+    /// ceux de la référence 4.7.4. `true` rend l'aller-retour plus fidèle au
+    /// modèle et sert à mesurer la couverture des couches que le format porte
+    /// (`docs/agents/musicxml-export.md`).
+    pub lossless_round_trip: bool,
 }
 
 impl Default for ExportOptions {
@@ -127,6 +143,8 @@ impl Default for ExportOptions {
             stable_ids: false,
             gabc_modern_clef: false,
             gabc_neume_smufl: false,
+            full_support: false,
+            lossless_round_trip: false,
         }
     }
 }
@@ -138,9 +156,21 @@ pub fn export_musicxml(score: &Score) -> Result<String> {
 
 /// Variante de [`export_musicxml`] avec options.
 pub fn export_musicxml_with(score: &Score, options: &ExportOptions) -> Result<String> {
+    let visible = if options.lossless_round_trip {
+        Some(lossless::make_all_visible(score))
+    } else if options.full_support {
+        // Les directions invisibles ont des porteurs XSD standard ; les notes
+        // gardent leur visibilité pour `xsd:note@print-object`.
+        Some(lossless::make_export_visible(score))
+    } else {
+        None
+    };
+    let score = visible.as_ref().unwrap_or(score);
     let context = Context::new(score, options);
-    let mut out = Out::new();
-    let mut nuances = Nuances::default();
+    let mut out = Out::new_with(options.lossless_round_trip, options.full_support);
+    // Les soufflets-lignes sont portés par `xsd:wedge` (et non `<dashes>`,
+    // qui serait relu comme `TextLine`) dans les deux modes étendus.
+    let mut nuances = Nuances::new(options.lossless_round_trip, options.full_support);
     context.write(&mut out, &mut nuances);
     Ok(out.xml.finish())
 }
@@ -169,14 +199,14 @@ pub(crate) struct Out {
 }
 
 impl Out {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new_with(lossless: bool, full_support: bool) -> Self {
         Self {
             xml: XmlWriter::new(),
             div: 1,
             tick: Tick::ZERO,
             in_attributes: false,
             attributes_has_details: false,
-            notations: notations::NotationsState::default(),
+            notations: notations::NotationsState::new(lossless, full_support),
         }
     }
 
@@ -462,6 +492,16 @@ impl<'a> Context<'a> {
         }
     }
 
+    /// Vrai en mode « modèle complet » (extension additive 4.7.4+).
+    pub(crate) fn lossless(&self) -> bool {
+        self.options.lossless_round_trip
+    }
+
+    /// Vrai quand les porteurs XSD 4.0 standard sont activés (§55).
+    pub(crate) fn full_support(&self) -> bool {
+        self.options.full_support
+    }
+
     /// Vrai si l'export écrit les hauteurs en sons réels (`concertPitch`).
     pub(crate) fn concert_pitch(&self) -> bool {
         self.concert_pitch
@@ -512,7 +552,12 @@ impl<'a> Context<'a> {
         self.work(out);
         self.identification(out);
         layout::write_defaults(out, &self.score.engraving.style, self.concert_pitch);
-        text::write_credits(out, self.score);
+        text::write_credits(
+            out,
+            self.score,
+            self.options.lossless_round_trip,
+            self.options.full_support,
+        );
         self.part_list(out);
         self.write_parts(out, nuances);
 
@@ -525,7 +570,18 @@ impl<'a> Context<'a> {
         if !metadata.work_title.is_empty() || !metadata.work_number.is_empty() {
             out.xml.start_element("work", &[]);
             if !metadata.work_number.is_empty() {
-                out.xml.tag("work-number", &metadata.work_number);
+                let mut number = metadata.work_number.as_str();
+                let marked;
+                if self.options.lossless_round_trip && number.ends_with('\n') {
+                    // Caractère invisible non blanc : le lecteur le retire et
+                    // reconstitue le saut de ligne final que `trim()` perdrait.
+                    // Porteur privé du mode secondaire seulement (§55).
+                    marked = format!("{number}\u{200b}");
+                    number = &marked;
+                }
+                // En mode `full_support`, `xsd:work-number` est une `xs:string`
+                // et le saut final est porté par le texte brut, sans marqueur.
+                out.xml.tag("work-number", number);
             }
             if !metadata.work_title.is_empty() {
                 out.xml.tag("work-title", &metadata.work_title);
@@ -1069,6 +1125,20 @@ impl<'a> Context<'a> {
         self.barline_right(out, measure, part_index, measure_index);
         out.attr_stop();
 
+        // Le C++ annonce une rupture au début de la mesure suivante : une
+        // rupture sur la dernière mesure n'a donc aucun successeur pour la
+        // porter. L'export 4.7.4 ne l'écrit pas. En mode `full_support`,
+        // `<print new-system="yes"/>` est le porteur XSD standard (`xsd:print`) ;
+        // en mode secondaire, l'ancien marqueur `scoretk-own` est conservé.
+        if measure_index + 1 == self.score.measures.len() && measure.line_break {
+            if self.options.lossless_round_trip {
+                out.xml
+                    .tag_empty("print", &[("new-system", "yes"), ("scoretk-own", "yes")]);
+            } else if self.options.full_support {
+                out.xml.tag_empty("print", &[("new-system", "yes")]);
+            }
+        }
+
         out.xml.end_element();
     }
 
@@ -1171,7 +1241,7 @@ impl<'a> Context<'a> {
                     // piste portant un élément, avec cette piste : une harmonie
                     // attachée à la voix 2 est écrite par la boucle de cette
                     // voix, pas par celle de la voix 1.
-                    self.harmonies(out, measure, segment, staff_id, track);
+                    self.harmonies(out, measure, segment, staff_id, track, xml_staff);
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.annotations(out, segment, staff_id, xml_staff, false);
                         if let SegmentItem::ChordRest(chord_rest) = item {
@@ -1183,6 +1253,8 @@ impl<'a> Context<'a> {
                                 chord_rest,
                                 staff_id,
                                 &mut spanners.fig_bass,
+                                self.options.lossless_round_trip,
+                                self.options.full_support,
                             );
                         }
                     }
@@ -1196,7 +1268,9 @@ impl<'a> Context<'a> {
                             continue;
                         }
                         match spanner.kind {
-                            SpannerType::TextLine => textlines::start(out, spanner, xml_staff),
+                            SpannerType::TextLine => {
+                                textlines::start(out, spanner, xml_staff, self.full_support())
+                            }
                             SpannerType::Hairpin(_) => {
                                 nuances.start_one(self.score, out, index, xml_staff)
                             }
@@ -1236,7 +1310,7 @@ impl<'a> Context<'a> {
                         {
                             continue;
                         }
-                        textlines::stop(out, spanner, xml_staff);
+                        textlines::stop(out, spanner, xml_staff, self.full_support());
                         spanners.stopped.push(index);
                     }
                     // `spannerStop` : pédales et ottavas finissant à ce tick.
@@ -1525,7 +1599,12 @@ impl Context<'_> {
         notations: &mut Notations,
     ) {
         let nesting = self.tuplet_nesting(chord_rest);
-        let need_actual_and_normal = nesting > 1;
+        // MuseScore n'écrit actual/normal que pour les n-olets imbriqués ; le
+        // mode secondaire les écrit pour tous (base du n-olet). Le mode
+        // `full_support` ajoute seulement le cas ambigu du n-olet 1:1 avec
+        // `xsd:tuplet-actual` / `xsd:tuplet-normal`, sans changer les octets
+        // par défaut (§55).
+        let need_actual_and_normal = nesting > 1 || self.options.lossless_round_trip;
 
         for level in (0..nesting).rev() {
             if let Some(tuplet) = self.start_tuplet_at_level(chord_rest, tick, track, level + 1) {
@@ -1554,6 +1633,8 @@ impl Context<'_> {
     ) {
         let tuplet = self.score.tuplet(id);
         let simple = self.tuplets.is_simple(self.score, id);
+        let need_actual_and_normal =
+            need_actual_and_normal || (self.options.full_support && tuplet.ratio == Fraction::ONE);
 
         let mut attributes: Vec<(&str, String)> = vec![("type", "start".to_owned())];
         if !simple {
@@ -1874,6 +1955,12 @@ impl Context<'_> {
                 ),
             });
             let mut note_attributes: Vec<(&str, &str)> = Vec::new();
+            // XSD 4.0 `xsd:note@print-object` porte l'invisibilité d'une note
+            // que MuseScore 4.7.4 omet à l'export (`canWrite`). Porteur standard
+            // du seul mode `full_support` (§55).
+            if self.options.full_support && !note.visible {
+                note_attributes.push(("print-object", "no"));
+            }
             if let Some(value) = &dynamics {
                 note_attributes.push(("dynamics", value));
             }
@@ -1968,6 +2055,18 @@ impl Context<'_> {
                     && matches!(self.score.extensions.format, Some(Extension::Gregorian(_)))
                 {
                     out.xml.tag("stem", "none");
+                } else if self.options.lossless_round_trip || self.options.full_support {
+                    // MuseScore écrit la direction *calculée* par la mise en
+                    // page (`Chord::up()`), qui peut différer de la direction
+                    // explicite stockée dans le `.mscx`. `xsd:stem` porte la
+                    // direction voulue ; l'absence de l'élément porte `Auto`.
+                    // Porteur XSD du mode `full_support`, extension du mode
+                    // secondaire ; le défaut garde la direction calculée.
+                    match chord.engraving.stem {
+                        StemDirection::Auto => {}
+                        StemDirection::Up => out.xml.tag("stem", "up"),
+                        StemDirection::Down => out.xml.tag("stem", "down"),
+                    }
                 } else {
                     let actual = if grace.is_some() {
                         Fraction::ZERO
@@ -2406,7 +2505,7 @@ impl Context<'_> {
             if measure.start_tick.is_zero() {
                 // MuseScore crée une armure factice à l'armure inconnue : seul
                 // <fifths> est écrit.
-                self.keysig(out, 0, Key::C, KeyMode::Unknown, true);
+                self.keysig(out, 0, Key::C, KeyMode::Unknown, true, None);
             }
         } else {
             let first = self.active_key(keysigs[0].1);
@@ -2418,7 +2517,16 @@ impl Context<'_> {
                     .all(|(_, keysig)| self.active_key(keysig) == first);
             if single {
                 let keysig = keysigs[0].1;
-                self.keysig(out, 0, first, keysig.mode, keysig.visible);
+                self.keysig(
+                    out,
+                    0,
+                    first,
+                    keysig.mode,
+                    keysig.visible,
+                    self.options
+                        .lossless_round_trip
+                        .then(|| keysig.concert_key.fifths()),
+                );
             } else {
                 for (position, keysig) in keysigs {
                     self.keysig(
@@ -2427,6 +2535,9 @@ impl Context<'_> {
                         self.active_key(keysig),
                         keysig.mode,
                         keysig.visible,
+                        self.options
+                            .lossless_round_trip
+                            .then(|| keysig.concert_key.fifths()),
                     );
                 }
             }
@@ -2457,7 +2568,15 @@ impl Context<'_> {
     }
 
     /// Écrit `<key>` (`keysig`).
-    fn keysig(&self, out: &mut Out, staff: usize, key: Key, mode: KeyMode, visible: bool) {
+    fn keysig(
+        &self,
+        out: &mut Out,
+        staff: usize,
+        key: Key,
+        mode: KeyMode,
+        visible: bool,
+        concert: Option<i8>,
+    ) {
         out.attr(true);
         let number = staff.to_string();
         let mut attributes: Vec<(&str, &str)> = Vec::new();
@@ -2466,6 +2585,12 @@ impl Context<'_> {
         }
         if !visible {
             attributes.push(("print-object", "no"));
+        }
+        let concert_text = concert.map(|value| value.to_string());
+        if let Some(text) = &concert_text {
+            // Un instrument transpositeur porte une armure écrite et une
+            // armure concert ; attribut privé du mode secondaire seulement.
+            attributes.push(("scoretk-concert-fifths", text));
         }
         out.xml.start_element("key", &attributes);
         // TODO(parité): armures non traditionnelles (key-step/key-alter/
@@ -2822,8 +2947,9 @@ impl Context<'_> {
         segment: &Segment,
         staff_id: StaffId,
         track: Track,
+        xml_staff: usize,
     ) {
-        self.segment_harmonies(out, segment, staff_id, track, Tick::ZERO);
+        self.segment_harmonies(out, segment, staff_id, track, Tick::ZERO, xml_staff);
         for next in &measure.segments {
             if !next.kind.is_chord_rest_type() || next.tick <= segment.tick {
                 continue;
@@ -2831,7 +2957,14 @@ impl Context<'_> {
             if next.element(track).is_some() {
                 break;
             }
-            self.segment_harmonies(out, next, staff_id, track, next.tick - segment.tick);
+            self.segment_harmonies(
+                out,
+                next,
+                staff_id,
+                track,
+                next.tick - segment.tick,
+                xml_staff,
+            );
         }
     }
 
@@ -2849,13 +2982,25 @@ impl Context<'_> {
         staff_id: StaffId,
         track: Track,
         offset: Tick,
+        xml_staff: usize,
     ) {
+        // XSD 4.0 `xsd:harmony/xsd:staff` : porteur standard de la portée
+        // d'une harmonie, employé seulement en mode `full_support` (§55).
+        // Le mode secondaire conserve `<staff>` même pour la portée 1,
+        // comme dans l'export additif d'origine ; le défaut n'écrit rien.
+        let staff = if self.options.lossless_round_trip {
+            Some(xml_staff)
+        } else if self.options.full_support {
+            (xml_staff > 1).then_some(xml_staff)
+        } else {
+            None
+        };
         for entry in &segment.annotations {
             if entry.track != track || entry.track.staff() != staff_id {
                 continue;
             }
             if let Annotation::Harmony(harmony) = &entry.annotation {
-                harmony::write(out, harmony, offset);
+                harmony::write(out, harmony, offset, staff);
             }
         }
     }

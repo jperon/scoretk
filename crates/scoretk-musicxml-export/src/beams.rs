@@ -930,7 +930,12 @@ fn element_chord<'a>(score: &'a Score, element: &Element) -> Option<&'a Chord> {
 /// Ligature d'un groupe de notes d'ornement.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GraceBeam {
-    /// Direction de hampe imposée aux ornements.
+    /// Direction de hampe calculée par `BeamLayout::beamGraceNotes`.
+    ///
+    /// Conservée avec le portage de la disposition ; l'export MusicXML écrit
+    /// désormais `xsd:stem` depuis la direction stockée dans le modèle, donc
+    /// ce champ n'est plus lu ici.
+    #[allow(dead_code)]
     pub up: bool,
     /// Texte des niveaux de cet ornement.
     pub texts: Vec<String>,

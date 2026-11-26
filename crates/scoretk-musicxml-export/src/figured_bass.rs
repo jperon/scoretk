@@ -40,6 +40,7 @@ use super::exportmusicxml::{Context, Out};
 pub(crate) struct Pending(BTreeMap<StaffId, (Tick, FiguredBass)>);
 
 /// Écrit les chiffrages figurés du segment (`figuredBass`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn write(
     context: &Context<'_>,
     out: &mut Out,
@@ -48,6 +49,8 @@ pub(crate) fn write(
     chord_rest: &ChordRest,
     staff_id: StaffId,
     pending: &mut Pending,
+    lossless: bool,
+    full_support: bool,
 ) {
     if !segment.kind.is_chord_rest_type() {
         return;
@@ -61,8 +64,11 @@ pub(crate) fn write(
         let Annotation::FiguredBass(bass) = &entry.annotation else {
             continue;
         };
-        // `fb->items().empty()` : un chiffrage vide n'est pas exporté.
-        if bass.items.is_empty() {
+        // `fb->items().empty()` : MuseScore 4.7.4 n'écrit pas le chiffrage
+        // vide. `<figured-bass><figure/></figured-bass>` est valide dans la
+        // XSD 4.0 (`xsd:figured-bass`, `xsd:figure`) et porte l'annotation
+        // dans les modes `full_support` et secondaire ; le défaut l'omet (§55).
+        if bass.items.is_empty() && !(lossless || full_support) {
             continue;
         }
         let bass_end = segment.tick + bass.ticks;
@@ -140,6 +146,12 @@ fn write_musicxml(
         attributes.push(("print-object", "no"));
     }
     out.xml.start_element("figured-bass", &attributes);
+    if bass.items.is_empty() {
+        // `xsd:figured-bass` impose au moins un `xsd:figure` ; un `<figure/>`
+        // vide porte l'annotation vide du modèle dans les modes qui la
+        // conservent (§55).
+        out.xml.tag_empty("figure", &[]);
+    }
     for item in &bass.items {
         write_item(out, item, is_original, chord_end, bass_end);
     }

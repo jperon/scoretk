@@ -51,9 +51,24 @@ pub(super) struct Nuances {
     stopped: BTreeSet<usize>,
     /// Soufflets dont le début a déjà été écrit.
     started: BTreeSet<usize>,
+    /// Mode secondaire : porte le tick de fin par `scoretk-end` et écrit
+    /// aussi les soufflets-lignes sans texte.
+    lossless: bool,
+    /// Mode XSD : écrit les soufflets-lignes comme `xsd:wedge`, sans aucun
+    /// attribut privé.
+    full_support: bool,
 }
 
 impl Nuances {
+    /// État initial pour une exportation (4.7.4, XSD ou secondaire).
+    pub(super) fn new(lossless: bool, full_support: bool) -> Self {
+        Self {
+            lossless,
+            full_support,
+            ..Self::default()
+        }
+    }
+
     /// Réinitialise l'ensemble des soufflets arrêtés au début d'une partie.
     pub(super) fn reset_part(&mut self) {
         self.stopped.clear();
@@ -124,6 +139,9 @@ impl Nuances {
             number,
             xml_staff,
             score.engraving.style.hairpin_height_sp,
+            self.lossless,
+            self.full_support,
+            Some(spanner.end.tick),
         );
         // L'arrêt a déjà été écrit (voix traitée avant celle du début) :
         // le numéro n'a plus à rester réservé.
@@ -167,6 +185,9 @@ impl Nuances {
                 number,
                 xml_staff,
                 score.engraving.style.hairpin_height_sp,
+                self.lossless,
+                self.full_support,
+                None,
             );
             if self.started.remove(&index) {
                 self.release(SpannerId::from_index(index), line, number);
@@ -184,6 +205,7 @@ fn hairpin_kind(spanner: &Spanner) -> Option<HairpinType> {
 }
 
 /// Écrit un `<direction>` de soufflet (`ExportMusicXml::hairpin`).
+#[allow(clippy::too_many_arguments)]
 fn write_hairpin(
     out: &mut Out,
     kind: HairpinType,
@@ -192,9 +214,16 @@ fn write_hairpin(
     number: usize,
     xml_staff: usize,
     hairpin_height: f64,
+    lossless: bool,
+    full_support: bool,
+    end_tick: Option<Tick>,
 ) {
     // MuseScore n'écrit rien pour un soufflet de ligne invisible sans texte.
-    if data.line && data.begin_text.is_empty() && data.end_text.is_empty() {
+    if !(lossless || full_support)
+        && data.line
+        && data.begin_text.is_empty()
+        && data.end_text.is_empty()
+    {
         return;
     }
 
@@ -208,7 +237,10 @@ fn write_hairpin(
         write_hairpin_text(out, &data.begin_text, &data.begin_font);
     }
 
-    if data.line {
+    if data.line && !(lossless || full_support) {
+        // En mode XSD ou secondaire, un soufflet-ligne est écrit comme `<wedge>` : la
+        // relecture le reconstruit comme un `Hairpin`, alors que `<dashes>`
+        // deviendrait une `TextLine` et perdrait le type dynamique.
         let number = (number + 1).to_string();
         out.xml.start_element("direction-type", &[]);
         if is_start {
@@ -248,6 +280,15 @@ fn write_hairpin(
         }
         let number = (number + 1).to_string();
         attributes.push(("number", &number));
+        // Le `<wedge stop>` peut manquer quand le soufflet se termine à la fin
+        // d'une mesure sans accord : le mode additif porte le tick exact sur
+        // le départ, pour que la relecture retrouve la durée du modèle.
+        let end_attr = end_tick
+            .filter(|_| lossless && is_start)
+            .map(|tick| tick.to_string());
+        if let Some(end) = &end_attr {
+            attributes.push(("scoretk-end", end));
+        }
         out.xml.tag_empty("wedge", &attributes);
         out.xml.end_element();
     }

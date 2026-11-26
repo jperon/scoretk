@@ -72,6 +72,14 @@ pub struct Options {
     /// Carrier SMuFL optionnel des neumes grégoriens (MusicXML). Additif,
     /// `false` par défaut : voir `docs/agents/gabc.md` §14.
     pub gabc_neume_smufl: bool,
+    /// Porteurs XSD 4.0 standard au-delà de l'exporteur 4.7.4. Additif :
+    /// `false` par défaut, donc les octets MusicXML restent conformes aux
+    /// références `*.ref.musicxml`; voir `docs/agents/musicxml-export.md` §55.
+    pub xml_full_support: bool,
+    /// Export MusicXML additif : préserver les valeurs du modèle au lieu des
+    /// valeurs de mise en page déduites par MuseScore 4.7.4. Faux par défaut,
+    /// pour ne pas changer les octets des références.
+    pub xml_lossless_round_trip: bool,
 }
 
 impl Default for Options {
@@ -95,6 +103,8 @@ impl Default for Options {
             gabc_modern_clef: false,
             mei_full_support: false,
             gabc_neume_smufl: false,
+            xml_full_support: false,
+            xml_lossless_round_trip: false,
         }
     }
 }
@@ -113,6 +123,8 @@ impl Options {
             stable_ids: false,
             gabc_modern_clef: self.gabc_modern_clef,
             gabc_neume_smufl: self.gabc_neume_smufl,
+            full_support: self.xml_full_support,
+            lossless_round_trip: self.xml_lossless_round_trip,
         }
     }
 }

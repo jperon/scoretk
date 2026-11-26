@@ -71,6 +71,8 @@ pub fn convert_with_report(
         gabc_modern_clef: options.export.gabc_modern_clef,
         mei_full_support: false,
         gabc_neume_smufl: options.export.gabc_neume_smufl,
+        xml_full_support: options.export.full_support,
+        xml_lossless_round_trip: options.export.lossless_round_trip,
     };
     write_with_report(&score, format, &write_options)
 }

@@ -27,9 +27,9 @@ use scoretk_core::model::{
     GraceChord, GraceType, Harmony, Instrument, InstrumentChange, Key, KeyMode, KeySig, Lyrics,
     LyricsSyllabic, Measure, MeasureRepeatMark, Note, NoteHeadGroup, NoteId, OttavaType, Part,
     PartId, Placement, RehearsalFrame, RehearsalMark, RichText, Score, Segment, SegmentItem,
-    SegmentType, Spanner, SpannerAnchor, SpannerType, Staff, StaffBracket, StaffId, StaffText,
-    StemDirection, SwingParameters, SwingUnit, SystemText, TboxText, Tempo, TempoKind,
-    TextLineInfo, TimeSig, Track, Transpose, Tuplet,
+    SegmentType, Spanner, SpannerAnchor, SpannerNotation, SpannerType, Staff, StaffBracket,
+    StaffId, StaffText, StemDirection, SwingParameters, SwingUnit, SystemText, TboxText, Tempo,
+    TempoKind, TextLineInfo, TimeSig, Track, Transpose, Trill, TrillType, Tuplet,
 };
 
 use super::{export_musicxml, export_musicxml_with, ExportOptions};
@@ -532,6 +532,89 @@ fn defaults_de_page_et_credits_positionnes() {
         "<credit-words default-x=\"600.17\" default-y=\"85.71\" justify=\"center\" \
          valign=\"bottom\" font-size=\"8\">© 2026</credit-words>"
     ));
+}
+
+/// Une taille de police *déduite du style* n'est pas portée par le modèle.
+/// Le mode `full_support` l'omet avec la XSD seule ; le mode secondaire la
+/// remplace par un attribut privé pour la relecture. Le défaut garde les
+/// octets 4.7.4 (test ci-dessus).
+#[test]
+fn credit_sans_taille_est_preserve_en_mode_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    score.add_credit(Credit::new(RichText::new("Titre"), CreditStyle::Title));
+
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let xml = export_musicxml_with(&score, &options).expect("export");
+    assert!(xml.contains("<credit-words"));
+    assert!(
+        !xml.contains("font-size=\"22\""),
+        "la taille déduite du style ne doit pas être écrite en mode complet"
+    );
+    assert!(xml.contains("scoretk-vbox-height"), "{xml}");
+
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(!full.contains("font-size=\"22\""));
+    assert!(!full.contains("scoretk-vbox-height"), "{full}");
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(plain.contains("font-size=\"22\""));
+}
+
+/// Le texte des crédits est stocké avec ses entités XML et ses espaces finaux
+/// dans le `.mscx`. Le mode additif les protège pour la relecture MusicXML.
+#[test]
+fn texte_de_credit_protege_en_mode_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut credit = Credit::new(
+        RichText::new("Sonata &quot;Moonlight&quot; "),
+        CreditStyle::Title,
+    );
+    credit.text = RichText::new("Sonata &quot;Moonlight&quot; ");
+    score.add_credit(credit);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_silence_mesure(&mut score, &mut measure, track, Fraction::ZERO);
+    score.add_measure(measure);
+
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let xml = export_musicxml_with(&score, &options).expect("export");
+    assert!(xml.contains("scoretk-no-trim=\"yes\""));
+    assert!(xml.contains("&amp;quot;Moonlight&amp;quot;"));
+    assert!(!xml.contains("xml:space"));
+
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(full.contains("xml:space=\"preserve\""));
+    assert!(full.contains("&amp;quot;Moonlight&amp;quot;"));
+    assert!(!full.contains("scoretk-no-trim"));
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(!plain.contains("xml:space"));
+    assert!(!plain.contains("scoretk-no-trim"));
 }
 
 #[test]
@@ -1758,8 +1841,18 @@ fn textes_de_portee_et_de_systeme() {
         "<direction placement=\"above\" system=\"only-top\">\n        <direction-type>\n          \
          <words>Chœur</words>"
     ));
-    // Un texte invisible n'est pas exporté (`canWrite`).
+    // Un texte invisible n'est pas exporté (`canWrite`) par défaut ; le
+    // porteur XSD `xsd:words` l'écrit dans `full_support` (§55).
     assert!(!xml.contains("caché"));
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(full.contains("<words>caché</words>"), "{full}");
     assert!(xml.contains("<words>espressivo</words>"));
     // Le changement d'instrument reprend le style « Instrument Name » :
     // gras, taille 12.
@@ -2053,11 +2146,25 @@ fn ligne_de_texte_invisible_avec_texte_de_fin() {
     let score = score_avec_ligne(info);
     let xml = export_musicxml(&score).expect("export");
 
-    // `writeHairpinText` écrit toujours la police de l'extrémité.
+    // Export 4.7.4 : seul le texte est écrit ; `spannerStop` passe la
+    // sentinelle -1, d'où l'offset négatif.
     assert!(xml.contains("<words font-family=\"Edwin\" font-size=\"10\">3x</words>"));
+    assert!(xml.contains("<direction placement=\"above\">"));
     assert!(!xml.contains("<bracket"));
-    // `spannerStop` passe la position sentinelle -1 : 4 * 1 * (-1 - 1) = -8.
     assert!(xml.contains("<offset sound=\"yes\">-8</offset>"));
+
+    // `full_support` : le spanner est porté par `<bracket>` et le tick de fin
+    // est celui du modèle, sans sentinelle (§55).
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(full.contains("<bracket type=\"stop\" number=\"1\" line-end=\"none\"/>"));
+    assert!(!full.contains("<offset sound=\"yes\">-8</offset>"));
 }
 
 #[test]
@@ -3512,6 +3619,169 @@ fn rapport_de_nolet_non_reduit_dans_time_modification() {
     );
 }
 
+/// Un n-olet 1:1 n'a aucun `<time-modification>` dans MuseScore 4.7.4 ;
+/// `full_support` porte sa base avec `xsd:tuplet-actual`/`-normal`, et le mode
+/// secondaire avec les mêmes éléments. Le défaut garde les octets 4.7.4.
+#[test]
+fn nolet_simple_garde_sa_base_en_mode_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    let tuplet = score.add_tuplet(Tuplet::new(
+        Fraction::ONE,
+        Fraction::QUARTER,
+        Fraction::ZERO,
+        Fraction::ONE,
+    ));
+    for index in 0..4 {
+        let mut chord_rest = ChordRest::chord(Duration::quarter());
+        chord_rest.tuplet = Some(tuplet);
+        let note = score.add_note(Note::new(60 + index, tpc::C));
+        chord_rest.chord_mut().expect("accord").notes.push(note);
+        ajouter_element(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::new(i64::from(index), 4),
+            chord_rest,
+        );
+    }
+    score.add_measure(measure);
+
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let xml = export_musicxml_with(&score, &options).expect("export");
+    assert!(
+        xml.contains("<tuplet-actual>"),
+        "le mode complet doit écrire la base du n-olet :\n{xml}"
+    );
+    assert!(xml.contains("<tuplet-type>quarter</tuplet-type>"));
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(full.contains("<tuplet-actual>"), "{full}");
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(!plain.contains("<tuplet-actual>"), "{plain}");
+}
+
+/// MuseScore écrit la hampe calculée par la mise en page ; un `.mscx` qui
+/// porte `Auto` n'a aucun `<stem>` dans le mode `full_support` (la relecture
+/// retrouve `Auto`), alors que le défaut écrit la direction calculée.
+#[test]
+fn hampe_explicite_preservee_en_mode_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+
+    // Une note aiguë en clé de sol a une hampe calculée vers le bas ; le
+    // modèle porte `Auto`, que le mode `full_support` laisse sans `<stem>`.
+    let note = score.add_note(Note::new(84, tpc::C));
+    let mut chord_rest = ChordRest::chord(Duration::eighth());
+    chord_rest.chord_mut().expect("accord").notes.push(note);
+    ajouter_element(&mut score, &mut measure, track, Fraction::ZERO, chord_rest);
+    score.add_measure(measure);
+
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let full = export_musicxml_with(&score, &options).expect("export");
+    assert!(!full.contains("<stem>"), "{full}");
+
+    let xsd = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(!xsd.contains("<stem>"), "{xsd}");
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(plain.contains("<stem>down</stem>"), "{plain}");
+}
+
+/// Une harmonie portée par la seconde portée d'une partie n'est pas écrite
+/// avec `<staff>` par MuseScore 4.7.4. Le mode additif utilise l'élément
+/// `<staff>` de la XSD 4.0 pour préserver cette attribution.
+#[test]
+fn harmonie_de_seconde_portee_ecrite_en_mode_complet() {
+    let mut score = Score::new();
+    let (part_id, _) = piano(&mut score);
+    let second = score.add_staff(part_id);
+    let track = Track::new(second, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_clef(&mut score, &mut measure, track, ClefType::G);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(60, tpc::C)],
+    );
+    let segment = measure.segments.last_mut().expect("segment");
+    let mut harmony = Harmony::new("C");
+    harmony.root_tpc = tpc::C;
+    harmony.name = "major".to_owned();
+    harmony.kind = "normal".to_owned();
+    segment.add_annotation(track, Annotation::Harmony(harmony));
+    score.add_measure(measure);
+
+    let options = ExportOptions {
+        lossless_round_trip: true,
+        ..ExportOptions::default()
+    };
+    let xml = export_musicxml_with(&score, &options).expect("export");
+    assert!(xml.contains("<staff>2</staff>"), "{xml}");
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    // MuseScore 4.7.4 n'écrit pas de `<staff>` dans l'accord, même si la note
+    // de la seconde portée en porte un.
+    let plain_harmony = plain
+        .split("<harmony")
+        .nth(1)
+        .unwrap()
+        .split("</harmony>")
+        .next()
+        .unwrap();
+    let full_harmony = xml
+        .split("<harmony")
+        .nth(1)
+        .unwrap()
+        .split("</harmony>")
+        .next()
+        .unwrap();
+    assert!(!plain_harmony.contains("<staff>"), "{plain_harmony}");
+    assert!(full_harmony.contains("<staff>2</staff>"), "{full_harmony}");
+
+    let xsd = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    let xsd_harmony = xsd
+        .split("<harmony")
+        .nth(1)
+        .unwrap()
+        .split("</harmony>")
+        .next()
+        .unwrap();
+    assert!(xsd_harmony.contains("<staff>2</staff>"), "{xsd_harmony}");
+}
+
 #[test]
 fn note_non_jouee_liee_necrit_pas_de_tie_avec_cue() {
     // XSD musicxml-4.0.xsd:5182-5200 : la branche `<cue/>` du choix `note`
@@ -3932,6 +4202,110 @@ fn triolet_au_milieu_d_une_ligature() -> String {
     }
     score.add_measure(measure);
     export_musicxml(&score).expect("export")
+}
+
+/// Une rupture sur la dernière mesure n'a pas de mesure suivante pour la
+/// porter. Le défaut 4.7.4 ne l'écrit pas ; `full_support` la porte avec
+/// `xsd:print`, le mode secondaire avec l'attribut privé `scoretk-own`.
+#[test]
+fn rupture_finale_ecrite_en_mode_complet() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    ajouter_accord(
+        &mut score,
+        &mut measure,
+        track,
+        Fraction::ZERO,
+        Duration::whole(),
+        &[(60, tpc::C)],
+    );
+    measure.line_break = true;
+    score.add_measure(measure);
+
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    assert!(!plain.contains("scoretk-own"));
+    assert!(!plain.contains("<print"), "{plain}");
+
+    let xsd = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    assert!(xsd.contains("<print new-system=\"yes\"/>"), "{xsd}");
+    assert!(!xsd.contains("scoretk-own"), "{xsd}");
+
+    let private = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            lossless_round_trip: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export secondaire");
+    assert!(
+        private.contains("<print new-system=\"yes\" scoretk-own=\"yes\"/>"),
+        "{private}"
+    );
+}
+
+/// Un trille d'un temps commence sur la première croche et se termine sur la
+/// suivante. MuseScore place les deux `<wavy-line>` sur la même note ; en
+/// `full_support` le `stop` est déplacé au tick de fin avec la XSD seule.
+#[test]
+fn trille_arrete_au_tick_de_fin_en_mode_xsd() {
+    let mut score = Score::new();
+    let (_, staff) = piano(&mut score);
+    let track = Track::new(staff, 0);
+    let mut measure = ajouter_mesure(0, Fraction::ZERO, Fraction::ONE, Fraction::ONE);
+    for index in 0..2 {
+        ajouter_accord(
+            &mut score,
+            &mut measure,
+            track,
+            Fraction::new(index, 4),
+            Duration::quarter(),
+            &[(60, tpc::C)],
+        );
+    }
+    score.add_measure(measure);
+    let mut spanner = Spanner::new(
+        SpannerType::Trill,
+        SpannerAnchor::new(Fraction::ZERO, track),
+        SpannerAnchor::new(Fraction::new(1, 4), track),
+    );
+    spanner.notation = Some(SpannerNotation::Trill(Trill::new(TrillType::TrillLine)));
+    score.add_spanner(spanner);
+
+    let plain = export_musicxml(&score).expect("export 4.7.4");
+    let start = plain.find("<wavy-line type=\"start\"").expect("départ");
+    let stop = plain.find("<wavy-line type=\"stop\"").expect("arrêt");
+    // Le défaut garde les deux moitiés sur la même note.
+    let first_note_end = plain[start..]
+        .find("</note>")
+        .map(|offset| start + offset)
+        .unwrap();
+    assert!(stop < first_note_end, "{plain}");
+
+    let full = export_musicxml_with(
+        &score,
+        &ExportOptions {
+            full_support: true,
+            ..ExportOptions::default()
+        },
+    )
+    .expect("export XSD");
+    let second_note = full[full.find("<note>").expect("note") + 6..]
+        .find("<note>")
+        .map(|offset| full.find("<note>").unwrap() + 6 + offset)
+        .expect("deuxième note");
+    let stop = full.find("<wavy-line type=\"stop\"").expect("arrêt XSD");
+    assert!(stop > second_note, "{full}");
+    assert!(!full.contains("scoretk-end"), "{full}");
 }
 
 #[test]
