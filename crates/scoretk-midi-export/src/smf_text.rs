@@ -41,8 +41,17 @@ pub(crate) const SYSTEM_PREFIX: &str = "@SY:";
 /// Prefix of a score metadata field in `FF 01` (`@TK:<field>:<value>`).
 pub(crate) const TITLE_PREFIX: &str = "@TK:";
 
-/// `(tick, text)` of the staff/system texts of one staff.
-pub(crate) fn staff_text_events(score: &Score, staff: StaffId) -> Vec<(i64, String)> {
+/// `(tick, text)` of the staff texts of one staff.
+///
+/// `private = true` keeps the historical `@ST:`/`@SY:` payloads of the
+/// secondary `smf_text` mode. `private = false` writes the text itself in a
+/// standard `FF 01` of the staff's track; system texts then go to a separate
+/// `FF 07` (`system_text_events`), so no private prefix is needed.
+pub(crate) fn staff_text_events(
+    score: &Score,
+    staff: StaffId,
+    private: bool,
+) -> Vec<(i64, String)> {
     let mut result = Vec::new();
     for measure in &score.measures {
         for segment in &measure.segments {
@@ -51,15 +60,44 @@ pub(crate) fn staff_text_events(score: &Score, staff: StaffId) -> Vec<(i64, Stri
                     continue;
                 }
                 match &entry.annotation {
-                    Annotation::StaffText(value) | Annotation::Expression(value) => result.push((
-                        segment.tick.ticks(UNITS_PER_WHOLE),
-                        format!("{STAFF_PREFIX}{}", value.text.plain()),
-                    )),
-                    Annotation::SystemText(value) => result.push((
+                    Annotation::StaffText(value) | Annotation::Expression(value) => {
+                        let plain = value.text.plain();
+                        result.push((
+                            segment.tick.ticks(UNITS_PER_WHOLE),
+                            if private {
+                                format!("{STAFF_PREFIX}{plain}")
+                            } else {
+                                plain.to_owned()
+                            },
+                        ));
+                    }
+                    Annotation::SystemText(value) if private => result.push((
                         segment.tick.ticks(UNITS_PER_WHOLE),
                         format!("{SYSTEM_PREFIX}{}", value.text.plain()),
                     )),
                     _ => {}
+                }
+            }
+        }
+    }
+    result
+}
+
+/// `(tick, text)` of the system texts of one staff, written as the standard
+/// `FF 07` cue point (a text meta at system scope, `[SMF §Meta-Events]`).
+pub(crate) fn system_text_events(score: &Score, staff: StaffId) -> Vec<(i64, String)> {
+    let mut result = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for entry in &segment.annotations {
+                if entry.track.staff() != staff {
+                    continue;
+                }
+                if let Annotation::SystemText(value) = &entry.annotation {
+                    result.push((
+                        segment.tick.ticks(UNITS_PER_WHOLE),
+                        value.text.plain().to_owned(),
+                    ));
                 }
             }
         }
@@ -110,12 +148,25 @@ pub(crate) const METADATA_FIELDS: &[MetadataField] = &[
 ];
 
 /// `(tick, text)` of the score metadata, all at tick 0 of the first track.
-pub(crate) fn metadata_events(score: &Score) -> Vec<(i64, String)> {
+///
+/// The standard mode uses RP-026 song-information tags (`{#NAME=value}`),
+/// whose generic `{#}` form is defined by MMA RP-026. `work_title` and
+/// `copyright` are not repeated here: they use `FF 03` and `FF 02`.
+pub(crate) fn metadata_events(score: &Score, private: bool) -> Vec<(i64, String)> {
     METADATA_FIELDS
         .iter()
         .filter_map(|(name, get)| {
             let value = get(&score.metadata);
-            (!value.is_empty()).then(|| (0, format!("{TITLE_PREFIX}{name}:{value}")))
+            (!value.is_empty()).then(|| {
+                (
+                    0,
+                    if private {
+                        format!("{TITLE_PREFIX}{name}:{value}")
+                    } else {
+                        format!("{{#{}={value}}}", name.to_ascii_uppercase())
+                    },
+                )
+            })
         })
         .collect()
 }

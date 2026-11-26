@@ -85,10 +85,13 @@ pub(crate) enum EventKind {
     KeySignature(i8, bool),
     /// Parole `FF 05`, avec l'espace final des syllabes terminales déjà posé.
     Lyric(String),
-    /// Extension additive `smf_text` : `FF 01` texte générique.
+    /// `FF 01` texte générique : portée, ou balise RP-026 en mode standard.
     Text(String),
-    /// Extension additive `smf_text` : `FF 06` repère / `FF 07` cue point.
+    /// `FF 06` repère (rehearsal mark, `[SMF §Meta-Events]`).
     Marker(String),
+    /// `FF 07` cue point : texte système en mode `full_support`
+    /// (`[SMF §Meta-Events]`, types `01`–`0F` réservés au texte).
+    CuePoint(String),
     /// Extension additive `smf_text` : `FF 02` copyright.
     Copyright(String),
     Tempo(u32),
@@ -148,6 +151,7 @@ pub(crate) fn render(
     repeat_list: &RepeatList,
     capture_timemap: bool,
     smf_text: bool,
+    full_support: bool,
 ) -> Result<Rendered> {
     let channels = channels(score);
     let velocities = build_velocities(score);
@@ -181,7 +185,7 @@ pub(crate) fn render(
         // piste des suivantes. Le titre de l'œuvre y est donc porté par un
         // méta standard, avant le nom de partie, que le lecteur reconnaît par
         // l'ordre des deux `FF 03` au tick 0.
-        if smf_text && staff_index == 0 && !score.metadata.work_title.is_empty() {
+        if (smf_text || full_support) && staff_index == 0 && !score.metadata.work_title.is_empty() {
             track.events.push(Event {
                 tick: 0,
                 kind: EventKind::TrackName(score.metadata.work_title.clone()),
@@ -260,12 +264,14 @@ pub(crate) fn render(
             },
         );
 
-        // Extension additive `smf_text` : textes génériques (FF 01), repères
-        // de répétition (FF 06) et métadonnées. MuseScore 4.7.4 ne les écrit
-        // pas : le chemin par défaut reste identique octet pour octet.
-        if smf_text {
+        // Extensions additives : textes génériques (FF 01), repères (FF 06),
+        // cue points (FF 07) et métadonnées. MuseScore 4.7.4 ne les écrit pas :
+        // le chemin par défaut reste identique octet pour octet. En mode
+        // `full_support`, seuls des porteurs `FF 01`–`FF 07` standard sont
+        // utilisés ; les préfixes `@…` restent propres au mode `smf_text`.
+        if smf_text || full_support {
             if staff_index == 0 {
-                for (tick, text) in smf_text::metadata_events(score) {
+                for (tick, text) in smf_text::metadata_events(score, !full_support) {
                     track.events.push(Event {
                         tick,
                         kind: EventKind::Text(text),
@@ -278,7 +284,7 @@ pub(crate) fn render(
                     });
                 }
             }
-            let texts = smf_text::staff_text_events(score, staff.id);
+            let texts = smf_text::staff_text_events(score, staff.id, !full_support);
             push_unwound(
                 track,
                 repeat_list,
@@ -289,6 +295,19 @@ pub(crate) fn render(
                     kind: EventKind::Text(text.clone()),
                 },
             );
+            if full_support {
+                let systems = smf_text::system_text_events(score, staff.id);
+                push_unwound(
+                    track,
+                    repeat_list,
+                    &pause_map,
+                    &systems,
+                    |tick, text: &String| Event {
+                        tick,
+                        kind: EventKind::CuePoint(text.clone()),
+                    },
+                );
+            }
             let markers = smf_text::marker_events(score, staff.id);
             push_unwound(
                 track,

@@ -72,8 +72,15 @@ pub struct MidiOptions {
     pub expand_repeats: bool,
     /// Extension additive « fidélité SMF » : écrit les textes et repères que
     /// le format porte (`FF 01`, `FF 02`, `FF 06`, `FF 07`) en plus des noms
-    /// de piste et des paroles. Faux par défaut, comme MuseScore 4.7.4.
+    /// de piste et des paroles. Les trois préfixes `@ST:`/`@SY:`/`@TK:` sont
+    /// des sémantiques privées dans un `FF 01` standard : ce mode reste une
+    /// mesure secondaire. Faux par défaut, comme MuseScore 4.7.4.
     pub smf_text: bool,
+    /// Porteurs **standard** des métadonnées et textes que le SMF peut porter
+    /// (`FF 03` nom de séquence, `FF 02` copyright, `FF 01` texte et balises
+    /// RP-026, `FF 06` repère, `FF 07` cue point), sans aucun préfixe privé.
+    /// Additif : faux par défaut, donc les références 4.7.4 restent intactes.
+    pub full_support: bool,
 }
 
 impl Default for MidiOptions {
@@ -81,6 +88,7 @@ impl Default for MidiOptions {
         Self {
             expand_repeats: true,
             smf_text: false,
+            full_support: false,
         }
     }
 }
@@ -140,7 +148,13 @@ fn write_midi_impl(
     } else {
         RepeatList::flatten(score)
     };
-    let rendered = render::render(score, &repeat_list, capture, options.smf_text)?;
+    let rendered = render::render(
+        score,
+        &repeat_list,
+        capture,
+        options.smf_text,
+        options.full_support,
+    )?;
     let bytes = writer::write_smf(&rendered.performance)?;
     Ok((bytes, rendered.timemap))
 }
