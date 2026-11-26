@@ -64,6 +64,11 @@ pub struct Options {
     /// registre est bas) et portée à 5 lignes au lieu de la clé d'ut et des
     /// 4 lignes du `.gabc`. Additif : `false` par défaut.
     pub gabc_modern_clef: bool,
+    /// Porteurs SMF standard au-delà de l'exporteur 4.7.4 (`FF 01`/`FF 02`/
+    /// `FF 03`/`FF 06`/`FF 07`, balises RP-026, ticks exacts à la lecture).
+    /// Additif : `false` par défaut, donc les octets MIDI restent conformes
+    /// aux références `*.ref.mid`; voir `docs/agents/midi.md`.
+    pub midi_full_support: bool,
     /// Porteurs MEI 5.1 additionnels au-delà de l'exporteur 4.7.4
     /// (vitesses des nuances, identité des instruments, ordre des credits…).
     /// Additif : `false` par défaut, donc les octets MEI restent conformes
@@ -100,6 +105,7 @@ impl Default for Options {
             encoding_date,
             concert_pitch,
             midi: MidiOptions::default(),
+            midi_full_support: false,
             gabc_modern_clef: false,
             mei_full_support: false,
             gabc_neume_smufl: false,

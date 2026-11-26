@@ -198,6 +198,7 @@ pub(crate) fn write_midi(score: &Score, options: &Options) -> Result<Vec<u8>> {
         scoretk_midi_export::MidiOptions {
             expand_repeats: options.midi.expand_repeats,
             smf_text: options.midi.smf_text,
+            full_support: options.midi_full_support,
         },
     )
     .map_err(|error| Error::Midi(error.to_string()))
@@ -225,6 +226,7 @@ pub(crate) fn write_playback(
         scoretk_midi_export::MidiOptions {
             expand_repeats: options.midi.expand_repeats,
             smf_text: options.midi.smf_text,
+            full_support: options.midi_full_support,
         },
     )
     .map_err(|error| Error::Midi(error.to_string()))

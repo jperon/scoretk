@@ -112,9 +112,15 @@ struct Cli {
     midi_quant: Option<u16>,
 
     /// Export MIDI : écrit les textes et repères que le SMF porte (`FF 01`,
-    /// `FF 02`, `FF 06`), absents de l'export MuseScore 4.7.4.
+    /// `FF 02`, `FF 06`), absents de l'export MuseScore 4.7.4. Mode secondaire
+    /// à préfixes privés `@ST:`/`@SY:`/`@TK:`.
     #[arg(long)]
     midi_text: bool,
+
+    /// MIDI : porteurs SMF standard uniquement (textes, repères, cue points,
+    /// RP-026, ticks exacts), sans préfixe privé. Le défaut reste 4.7.4.
+    #[arg(long)]
+    midi_full_support: bool,
 
     /// Import MIDI : fidélité SMF additive — quantification au tick source
     /// (1/1920 de ronde), sans n-olets ni simplification de durée. Le défaut
@@ -197,6 +203,13 @@ fn main() -> ExitCode {
         };
         custom_midi = true;
     }
+    if cli.midi_full_support {
+        midi_options = scoretk::MidiImportOptions {
+            full_support: true,
+            ..midi_options
+        };
+        custom_midi = true;
+    }
     if let Some(quant) = cli.midi_quant {
         midi_options.quant_value = match quant {
             4 => scoretk::QuantValue::Q4,
@@ -263,6 +276,7 @@ fn main() -> ExitCode {
             expand_repeats: !cli.no_expand_repeats,
             smf_text: cli.midi_text,
         },
+        midi_full_support: cli.midi_full_support,
         xml_full_support: cli.xml_full_support,
         ..Options::default()
     };

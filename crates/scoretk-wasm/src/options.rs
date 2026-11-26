@@ -42,6 +42,8 @@ pub(crate) struct ApiOptions {
     pub(crate) xml_lossless_round_trip: Option<bool>,
     pub(crate) midi_exact_ticks: Option<bool>,
     pub(crate) midi_text: Option<bool>,
+    /// Porteurs SMF standard (aucun préfixe privé), lecture et écriture.
+    pub(crate) midi_full_support: Option<bool>,
     /// Fichiers d'un dossier, indexés par leur chemin relatif à sa racine.
     /// Utilisés uniquement pour résoudre les `\include` LilyPond.
     pub(crate) includes: Option<BTreeMap<String, Vec<u8>>>,
@@ -69,6 +71,7 @@ impl ApiOptions {
             xml_lossless_round_trip: boolean(&value, "xmlLosslessRoundTrip"),
             midi_exact_ticks: boolean(&value, "midiExactTicks"),
             midi_text: boolean(&value, "midiText"),
+            midi_full_support: boolean(&value, "midiFullSupport"),
             includes: includes(&value),
         }
     }

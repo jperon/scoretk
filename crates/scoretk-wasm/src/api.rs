@@ -58,8 +58,10 @@ export interface ConvertOptions {
   expandRepeats?: boolean;
   /** Import MIDI : quantification au tick source, sans n-olets ni simplification. Option additive : absente, l'import reste celui de MuseScore 4.7.4 (double croche). */
   midiExactTicks?: boolean;
-  /** Export MIDI : écrit les textes génériques, copyrights et repères (`FF 01`/`FF 02`/`FF 06`). Option additive : absente, l'export reste celui de MuseScore 4.7.4. */
+  /** Export MIDI : écrit les textes génériques, copyrights et repères (`FF 01`/`FF 02`/`FF 06`), avec les préfixes privés `@ST:`/`@SY:`/`@TK:`. Option secondaire : absente, l'export reste celui de MuseScore 4.7.4. */
   midiText?: boolean;
+  /** MIDI : porteurs SMF standard uniquement (textes, cue points, RP-026, ticks exacts à la lecture), sans préfixe privé. Option additive : absente, le comportement reste celui de MuseScore 4.7.4. */
+  midiFullSupport?: boolean;
   /** Fichiers d'un dossier, indexés par leur chemin relatif à sa racine (ex. `"noaten.ily"`, `"sub/x.ily"`), avec leurs octets UTF-8. Résout les `\include` des sources LilyPond ; ignoré pour les autres formats. Option additive : absente, le comportement est inchangé. */
   includes?: Record<string, Uint8Array>;
   /** Vue moderne du chant grégorien : clé de sol (`8vb` si le registre est bas) et portée à 5 lignes au lieu de la clé d'ut/4 lignes. Additive, défaut `false`. */
@@ -340,6 +342,9 @@ fn build_write_options(options: &ApiOptions) -> scoretk::Options {
     if let Some(midi_text) = options.midi_text {
         write_options.midi.smf_text = midi_text;
     }
+    if let Some(full) = options.midi_full_support {
+        write_options.midi_full_support = full;
+    }
     write_options
 }
 
@@ -355,9 +360,12 @@ fn read_score(
         let mut resolve = lilypond_resolver(files);
         return scoretk::read_lilypond_with_includes(input, &mut resolve).map_err(js_error);
     }
-    if from == scoretk::Format::Midi && options.midi_exact_ticks == Some(true) {
+    if from == scoretk::Format::Midi
+        && (options.midi_exact_ticks == Some(true) || options.midi_full_support == Some(true))
+    {
         let midi_options = scoretk::MidiImportOptions {
-            smf_exact_ticks: true,
+            smf_exact_ticks: options.midi_exact_ticks == Some(true),
+            full_support: options.midi_full_support == Some(true),
             ..Default::default()
         };
         return scoretk::read_midi_with(input, &midi_options).map_err(js_error);
