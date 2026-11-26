@@ -576,6 +576,17 @@ impl<'a> Reader<'a> {
                 "meterSig" => self.read_meter_sig(node, measure, track, ticks),
                 "bTrem" | "fTrem" => self.read_tremolo(node, measure, track, ticks),
                 "graceGrp" => self.read_grace_group(node, measure, track, ticks),
+                "dir"
+                    if node.attribute("type").is_some_and(|typ| {
+                        typ.starts_with(ids::CHORD_LINE_TYPE)
+                            || typ.starts_with(ids::TREMOLO_BAR_TYPE)
+                    }) =>
+                {
+                    // Les deux porteurs additionnels sont écrits comme des
+                    // `<dir>` frères de l'événement dans la couche. Les autres
+                    // événements de contrôle suivent le chemin 4.7.4.
+                    self.read_control_event(node, node, measure);
+                }
                 "accid" | "artic" | "arpeg" | "fermata" | "fing" | "dir" | "dynam" | "reh"
                 | "harm" | "trill" | "mordent" | "turn" | "ornam" => {
                     self.read_control_events(node, measure);

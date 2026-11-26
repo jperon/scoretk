@@ -116,6 +116,21 @@ fn format_tstamp(value: f64, full_support: bool) -> String {
     }
 }
 
+/// Token-safe name of a MuseScore tremolo bar kind for `<dir @type>`
+/// (`att.typed/@type` is an NMTOKEN: the MusicXML names contain spaces).
+fn tremolo_bar_type_name(kind: scoretk_core::model::TremoloBarType) -> &'static str {
+    use scoretk_core::model::TremoloBarType as Kind;
+    match kind {
+        Kind::Dip => "Dip",
+        Kind::Dive => "Dive",
+        Kind::ReleaseUp => "ReleaseUp",
+        Kind::InvertedDip => "InvertedDip",
+        Kind::Return => "Return",
+        Kind::ReleaseDown => "ReleaseDown",
+        Kind::Custom => "Custom",
+    }
+}
+
 /// `(meter, key)` in force at the beginning of a measure.
 type Signatures = (Option<(i32, i32, TimeSigType)>, Option<Key>);
 
@@ -1005,6 +1020,22 @@ fn write_layer(
                 }
             }
         }
+        if options.full_support {
+            if let ChordRestKind::Chord(chord) = &cr.kind {
+                if let Some(line) = chord.chord_line {
+                    // `<dir>` (`mei_dir`, Guidelines §10) porte la ligne
+                    // d'accord ; `@startid` l'ancre sur la première note.
+                    let type_name = format!("{}{line:?}", ids::CHORD_LINE_TYPE);
+                    if let Some(id) = chord.notes.first().map(|id| format!("n{}", id.index())) {
+                        let anchor = format!("#{id}");
+                        xml.tag_empty(
+                            "dir",
+                            &[("type", type_name.as_str()), ("startid", anchor.as_str())],
+                        );
+                    }
+                }
+            }
+        }
         if open_tremolo {
             xml.end_element();
         }
@@ -1339,6 +1370,25 @@ fn write_control_events(
                         change_attrs.push(("trans.semi", chromatic.as_str()));
                     }
                     xml.tag_with("dir", &change_attrs, change.text.plain());
+                }
+                Annotation::TremoloBar(bar) => {
+                    // `<dir>` est un événement de contrôle standard (Guidelines
+                    // §10, `mei_dir`) ; `@type` porte la variante MuseScore et
+                    // le texte les points `time,pitch` de la courbe.
+                    let type_name = format!(
+                        "{}{}",
+                        ids::TREMOLO_BAR_TYPE,
+                        tremolo_bar_type_name(bar.kind)
+                    );
+                    let points = bar
+                        .points
+                        .iter()
+                        .map(|point| format!("{},{}", point.time, point.pitch))
+                        .collect::<Vec<_>>()
+                        .join(";");
+                    let mut bar_attrs = refs.clone();
+                    bar_attrs.push(("type", type_name.as_str()));
+                    xml.tag_with("dir", &bar_attrs, &points);
                 }
                 _ => {}
             }

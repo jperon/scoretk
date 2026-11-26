@@ -90,7 +90,13 @@ pub const CREDIT_FRAME_LABEL: &str = "mscore-frame-";
 pub const TEMPO_INFER_FROM_TEXT: &str = "mscore-infer-from-text";
 
 /// `@type` prefix for chord lines on `<artic>`.
+/// `@type` prefix for a MuseScore tremolo bar written as a `<dir>`.
+pub const TREMOLO_BAR_TYPE: &str = "mscore-tremolo-bar-";
+
 pub const CHORDLINE_TYPE: &str = "mscore-";
+
+/// `@type` prefix for a MuseScore chord line (`falloff`, `doit`, …) on `<dir>`.
+pub const CHORD_LINE_TYPE: &str = "mscore-chordline-";
 
 /// `@type` prefix carrying the MuseScore instrument id on `<instrDef>`.
 /// The numeric MIDI fields use standard `midi.*` attributes; the id itself

@@ -24,10 +24,11 @@
 
 use scoretk_core::model::{
     Annotation, Arpeggio, ArpeggioType, Articulation, ArticulationType, Breath, BreathType,
-    ChordRestKind, Dynamic, Fermata, FermataType, Fingering, Fraction, HairpinType, Harmony,
-    Layers, Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement,
+    ChordLineType, ChordRestKind, Dynamic, Fermata, FermataType, Fingering, Fraction, HairpinType,
+    Harmony, Layers, Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement,
     RehearsalMark, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
-    SpannerNotation, SpannerType, StaffId, StaffText, SystemText, Tempo, Track,
+    SpannerNotation, SpannerType, StaffId, StaffText, SystemText, Tempo, Track, TremoloBar,
+    TremoloBarPoint, TremoloBarType,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -85,12 +86,21 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::readControlEvents` (`meiimporter.cpp:2358`).
     pub(crate) fn read_control_events(&mut self, parent: &Element, measure: usize) {
         for node in &parent.children {
-            if IGNORED_CONTROLS.contains(&node.name.as_str()) {
-                self.score
-                    .report
-                    .record(Layers::EXTENSIONS, "control-event", None, None);
-                continue;
-            }
+            self.read_control_event(node, parent, measure);
+        }
+    }
+
+    /// A single control event, whether it sits after the `<staff>`s of a
+    /// measure or directly inside a `<layer>` (MEI `model.controlEventLike`).
+    /// `parent` is the event that owns a child `<artic>`/`<verse>`.
+    pub(crate) fn read_control_event(&mut self, node: &Element, parent: &Element, measure: usize) {
+        if IGNORED_CONTROLS.contains(&node.name.as_str()) {
+            self.score
+                .report
+                .record(Layers::EXTENSIONS, "control-event", None, None);
+            return;
+        }
+        {
             match node.name.as_str() {
                 "tie" => self.read_tie(node, measure),
                 "slur" | "phrase" => self.read_slur(node, measure, false),
@@ -381,6 +391,55 @@ impl<'a> Reader<'a> {
         // Changement d'instrument en cours de partition : MuseScore 4.7.4 ne
         // l'écrit pas, mais `<dir>` porte le texte et `@trans.*` la nouvelle
         // transposition (porteur additionnel).
+        if let Some(name) = typ.strip_prefix(scoretk_mei_common::ids::CHORD_LINE_TYPE) {
+            let kind = match name {
+                "Fall" => ChordLineType::Fall,
+                "Doit" => ChordLineType::Doit,
+                "Plop" => ChordLineType::Plop,
+                "Scoop" => ChordLineType::Scoop,
+                _ => return,
+            };
+            let (tick, track) = self.anchor(node, measure);
+            let position = self.score.measures[measure]
+                .segments
+                .iter()
+                .position(|segment| segment.tick == tick && segment.kind == SegmentType::ChordRest);
+            if let Some(position) = position {
+                if let Some(SegmentItem::ChordRest(cr)) =
+                    self.score.measures[measure].segments[position].element_mut(track)
+                {
+                    if let ChordRestKind::Chord(chord) = &mut cr.kind {
+                        chord.chord_line = Some(kind);
+                    }
+                }
+            }
+            return;
+        }
+        if let Some(kind_name) = typ.strip_prefix(scoretk_mei_common::ids::TREMOLO_BAR_TYPE) {
+            let mut bar = TremoloBar::from_points(
+                text.split(';')
+                    .filter_map(|point| {
+                        let mut fields = point.split(',');
+                        Some(TremoloBarPoint {
+                            time: fields.next()?.parse().ok()?,
+                            pitch: fields.next()?.parse().ok()?,
+                        })
+                    })
+                    .collect(),
+            );
+            bar.kind = match kind_name {
+                "Dip" => TremoloBarType::Dip,
+                "Dive" => TremoloBarType::Dive,
+                "ReleaseUp" => TremoloBarType::ReleaseUp,
+                "InvertedDip" => TremoloBarType::InvertedDip,
+                "Return" => TremoloBarType::Return,
+                "ReleaseDown" => TremoloBarType::ReleaseDown,
+                _ => TremoloBarType::Custom,
+            };
+            let (tick, track) = self.anchor(node, measure);
+            self.add_annotation(tick, track, Annotation::TremoloBar(bar));
+            return;
+        }
         if typ == scoretk_mei_common::ids::TEXT_LINE_TYPE {
             let line_text = text.clone();
             self.add_span(node, measure, SpannerType::TextLine);
