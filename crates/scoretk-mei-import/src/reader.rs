@@ -378,8 +378,8 @@ impl<'a> Reader<'a> {
         // absentes. La plus large restaure le plus de mesures sans décaler
         // les suivantes (v4/mmrest, v3/testTboxWords1).
         let hidden = gap.max(jump).max(1) as usize;
-        let explicit_rest = self.score.measures[index].multi_measure_rest;
-        if let Some(count) = explicit_rest {
+        let explicit_rest = self.score.measures[index].multi_measure_rest.is_some();
+        if explicit_rest {
             // Un `<multiRest @n>` écrit par scoretk : la mesure ne saute pas
             // son `@n`, mais porte explicitement le nombre de mesures couvertes.
             self.score.measures[index].len = nominal;

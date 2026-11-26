@@ -90,6 +90,29 @@ pub(crate) fn write(
     Ok(xml.finish())
 }
 
+/// Denominator the MEI reader uses for `@tstamp`. `Measure::new` reduces the
+/// meter (`4/4` → `1/1`), so the reader's `Convert::tstampToFraction` always
+/// divides by the *reduced* denominator. The additive writer must use the same
+/// one: the pivot's `time_sig_numerator` can be a local, unreduced value
+/// (e.g. `3` for a `1/1` measure), which would otherwise shift every stamp
+/// written after that local signature (`Convert::tstampFromFraction`,
+/// `docs/agents/format-ref/mei.md` §6).
+fn round_trip_tstamp_denominator(measure: &scoretk_core::model::Measure) -> i64 {
+    measure.nominal_len.denominator().max(1)
+}
+
+/// `@tstamp` (`data.NUMBER`, `att.timestamp`) in the requested precision.
+/// Three decimals cannot represent thirds exactly (`757/12`); the additive
+/// mode writes nine so that the reader's continued-fraction conversion
+/// recovers the original tick (`Convert::tstampToFraction`).
+fn format_tstamp(value: f64, full_support: bool) -> String {
+    if full_support {
+        format!("{value:.9}")
+    } else {
+        format!("{value:.3}")
+    }
+}
+
 /// `(meter, key)` in force at the beginning of a measure.
 type Signatures = (Option<(i32, i32, TimeSigType)>, Option<Key>);
 
@@ -583,7 +606,11 @@ fn write_layer(
     xml.start_element("layer", &[("xml:id", &layer_id), ("n", &layer_n)]);
     // MEI `<meterSig>` carries a time signature that changes inside a measure,
     // which a `<scoreDef>` at the measure boundary cannot express.
-    let den = convert::tstamp_denominator(measure);
+    let den = if options.full_support {
+        round_trip_tstamp_denominator(measure)
+    } else {
+        convert::tstamp_denominator(measure)
+    };
     for segment in &measure.segments {
         if segment.tick == measure.start_tick {
             continue;
@@ -602,9 +629,9 @@ fn write_layer(
             }
             attrs.push((
                 "tstamp".to_owned(),
-                format!(
-                    "{:.3}",
-                    convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
+                format_tstamp(
+                    convert::tstamp_from_fraction(segment.tick - measure.start_tick, den),
+                    options.full_support,
                 ),
             ));
             let refs: Vec<(&str, &str)> = attrs
@@ -651,9 +678,9 @@ fn write_layer(
         if let Some(place) = place {
             attrs.push(("dis.place", place));
         }
-        let stamp = format!(
-            "{:.3}",
-            convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
+        let stamp = format_tstamp(
+            convert::tstamp_from_fraction(segment.tick - measure.start_tick, den),
+            options.full_support,
         );
         attrs.push(("tstamp", &stamp));
         xml.tag_empty("clef", &attrs);
@@ -765,7 +792,10 @@ fn write_layer(
             *tick - measure.start_tick,
             convert::tstamp_denominator(measure),
         );
-        attributes.push(("tstamp".to_owned(), format!("{stamp:.3}")));
+        attributes.push((
+            "tstamp".to_owned(),
+            format_tstamp(stamp, options.full_support),
+        ));
         let refs: Vec<(&str, &str)> = attributes
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
@@ -1049,9 +1079,9 @@ fn write_control_events(
             let type_name = format!("{}{:?}", ids::BREATH_TYPE, breath.kind);
             let stamp = convert::tstamp_from_fraction(
                 segment.tick - measure.start_tick,
-                convert::tstamp_denominator(measure),
+                round_trip_tstamp_denominator(measure),
             );
-            let stamp = format!("{stamp:.3}");
+            let stamp = format_tstamp(stamp, true);
             let attrs = [
                 ("staff", "1"),
                 ("tstamp", stamp.as_str()),
@@ -1064,13 +1094,18 @@ fn write_control_events(
     for segment in &measure.segments {
         for annotation in &segment.annotations {
             let staff = annotation.track.staff().raw() + 1;
-            let stamp = convert::tstamp_from_fraction(
-                segment.tick - measure.start_tick,
-                convert::tstamp_denominator(measure),
-            );
+            let den = if options.full_support {
+                round_trip_tstamp_denominator(measure)
+            } else {
+                convert::tstamp_denominator(measure)
+            };
+            let stamp = convert::tstamp_from_fraction(segment.tick - measure.start_tick, den);
             let mut attrs = vec![
                 ("staff".to_owned(), staff.to_string()),
-                ("tstamp".to_owned(), format!("{stamp:.3}")),
+                (
+                    "tstamp".to_owned(),
+                    format_tstamp(stamp, options.full_support),
+                ),
             ];
             if options.full_support {
                 let event = event_at
@@ -1190,7 +1225,11 @@ fn write_control_events(
         if spanner.start.tick < measure.start_tick || spanner.start.tick >= measure.end_tick() {
             continue;
         }
-        let den = convert::tstamp_denominator(measure);
+        let den = if options.full_support {
+            round_trip_tstamp_denominator(measure)
+        } else {
+            convert::tstamp_denominator(measure)
+        };
         let start = convert::tstamp_from_fraction(spanner.start.tick - measure.start_tick, den);
         let end = convert::tstamp_from_fraction(
             (spanner.end.tick - measure.start_tick).max(Fraction::ZERO),
@@ -1209,8 +1248,14 @@ fn write_control_events(
             attrs.push(("startid".to_owned(), format!("#{start_event}")));
             attrs.push(("endid".to_owned(), format!("#{end_event}")));
         } else {
-            attrs.push(("tstamp".to_owned(), format!("{start:.3}")));
-            attrs.push(("tstamp2".to_owned(), format!("{end:.3}")));
+            attrs.push((
+                "tstamp".to_owned(),
+                format_tstamp(start, options.full_support),
+            ));
+            attrs.push((
+                "tstamp2".to_owned(),
+                format_tstamp(end, options.full_support),
+            ));
         }
         let mut refs: Vec<(&str, &str)> = attrs
             .iter()
