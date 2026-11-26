@@ -602,7 +602,9 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
             scoretk_core::model::recognize_musicxml_id(&instr_name, Some(tracks[index].program))
                 .unwrap_or("")
                 .to_owned();
-        part.instrument.track_name = template.map_or("", |template| template.track_name).to_owned();
+        part.instrument.track_name = template
+            .map_or("", |template| template.track_name)
+            .to_owned();
         if let Some(template) = template {
             part.instrument.transpose = if template.transpose_chromatic == 0 {
                 None
@@ -644,10 +646,7 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
         if let Some(template) = template {
             let clefs = instrument::concert_clefs(template);
             for staff_index in 0..staves {
-                let clef = clefs
-                    .get(staff_index)
-                    .copied()
-                    .unwrap_or(ClefType::G);
+                let clef = clefs.get(staff_index).copied().unwrap_or(ClefType::G);
                 if let Some(staff) = score.staves.get_mut(first_staff.index() + staff_index) {
                     staff.default_clef = Clef::new(clef);
                 }

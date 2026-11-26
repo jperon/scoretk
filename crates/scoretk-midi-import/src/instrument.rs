@@ -37,7 +37,9 @@ use super::chord::{is_grand_staff_program, MTrack};
 mod catalog;
 mod gm_names;
 
-pub use catalog::{assign_templates, clef_type_from_code, concert_clefs, has_gf_clefs, ms_instr_name};
+pub use catalog::{
+    assign_templates, clef_type_from_code, concert_clefs, has_gf_clefs, ms_instr_name,
+};
 pub use gm_names::{get_midi_name, GM1_NAMES};
 
 /// Nom du programme (`MidiInstr::instrumentName`).

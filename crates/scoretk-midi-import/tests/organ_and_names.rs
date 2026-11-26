@@ -38,7 +38,11 @@ fn orgue_a_trois_portees_une_seule_partie() {
     let score = read_midi(&smf(&[manual, left_hand, pedal])).expect("lecture");
 
     assert_eq!(score.parts.len(), 1, "une partie pour les trois portées");
-    assert_eq!(score.parts[0].staves.len(), 3, "deux claviers et une pédale");
+    assert_eq!(
+        score.parts[0].staves.len(),
+        3,
+        "deux claviers et une pédale"
+    );
     assert_eq!(score.staves.len(), 3);
 }
 

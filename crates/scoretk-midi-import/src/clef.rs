@@ -87,8 +87,8 @@ pub fn create_clefs(score: &mut Score, tracks: &[MTrack], options: &ImportOption
             }
             continue;
         }
-        let can_change_clef = !has_instrument
-            || track.ms_instr.is_some_and(instrument::has_gf_clefs);
+        let can_change_clef =
+            !has_instrument || track.ms_instr.is_some_and(instrument::has_gf_clefs);
         if !can_change_clef {
             continue;
         }
