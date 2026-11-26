@@ -250,3 +250,33 @@ fn mei_numbered_rest_carriers_are_read() {
     let repeat = score.measures[1].measure_repeat.expect("measure repeat");
     assert_eq!(repeat.count, 2);
 }
+
+/// A `<staffDef>` clef and a layer `<clef>` at the same tick are two distinct
+/// facts in MuseScore's model; `mei_clef` places no restriction on either.
+#[test]
+fn two_clefs_at_one_tick_are_both_read() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><staffGrp><staffDef n="1" lines="5">
+          <clef shape="G" line="2"/>
+        </staffDef></staffGrp></scoreDef>
+        <section><measure n="1">
+          <staff n="1"><layer n="1">
+            <clef shape="F" line="4" tstamp="1.000"/>
+            <note dur="4" pname="c" oct="4"/>
+          </layer></staff>
+        </measure></section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    let clefs: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .filter_map(
+            |segment| match segment.element(scoretk::model::Track::from_raw(0)) {
+                Some(scoretk::model::SegmentItem::Clef(clef)) => Some(clef.concert),
+                _ => None,
+            },
+        )
+        .collect();
+    assert_eq!(clefs.len(), 2, "both clefs must survive the import");
+}

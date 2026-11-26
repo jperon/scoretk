@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 
 use scoretk_core::model::{
     Annotation, BeamMode, ChordRest, ChordRestKind, DurationType, Fraction, Key, Score,
-    SegmentItem, SpannerNotation, SpannerType, TimeSigType, Track, VOICES,
+    SegmentItem, SegmentType, SpannerNotation, SpannerType, TimeSigType, Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -614,28 +614,49 @@ fn write_layer(
             xml.tag_empty("meterSig", &refs);
         }
     }
-    // `<clef>` inside a layer carries a clef change within the measure.
+    // `<clef>` inside a layer carries a clef change within the measure. The
+    // additive mode also writes the clefs that share the first measure's
+    // start tick: MEI allows both the `<staffDef>` clef and a layer clef, and
+    // `mei_clef` has no restriction against two clefs at one position.
+    let mut first_at_start_seen = false;
     for segment in &measure.segments {
-        if segment.tick == measure.start_tick {
+        let at_start = segment.tick == measure.start_tick;
+        if at_start && !options.full_support {
             continue;
         }
-        if let Some(SegmentItem::Clef(clef)) = segment.element(track) {
-            let (shape, line, dis, place) = convert::clef_to_mei(clef.concert);
-            let line_owned = line.to_string();
-            let mut attrs = vec![("shape", shape), ("line", &line_owned)];
-            if let Some(dis) = dis {
-                attrs.push(("dis", dis));
+        if options.full_support && segment.kind == SegmentType::HeaderClef {
+            // Déjà porté par `<staffDef>` (MEI 5.1 `mei_staffDef/mei_clef`).
+            if at_start && measure_index == 0 {
+                first_at_start_seen = true;
             }
-            if let Some(place) = place {
-                attrs.push(("dis.place", place));
-            }
-            let stamp = format!(
-                "{:.3}",
-                convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
-            );
-            attrs.push(("tstamp", &stamp));
-            xml.tag_empty("clef", &attrs);
+            continue;
         }
+        let Some(SegmentItem::Clef(clef)) = segment.element(track) else {
+            continue;
+        };
+        if at_start && measure_index == 0 {
+            // The first one is already in `<staffDef>` (write_score_def uses
+            // the same document order via `find`).
+            if !first_at_start_seen {
+                first_at_start_seen = true;
+                continue;
+            }
+        }
+        let (shape, line, dis, place) = convert::clef_to_mei(clef.concert);
+        let line_owned = line.to_string();
+        let mut attrs = vec![("shape", shape), ("line", &line_owned)];
+        if let Some(dis) = dis {
+            attrs.push(("dis", dis));
+        }
+        if let Some(place) = place {
+            attrs.push(("dis.place", place));
+        }
+        let stamp = format!(
+            "{:.3}",
+            convert::tstamp_from_fraction(segment.tick - measure.start_tick, den)
+        );
+        attrs.push(("tstamp", &stamp));
+        xml.tag_empty("clef", &attrs);
     }
     // `<mRpt @n>` (MEI 5.1 `att.numbered`) est le porteur d'un symbole de
     // reprise de mesure. MuseScore 4.7.4 ne l'écrit pas ; une mesure qui ne

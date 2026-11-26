@@ -987,14 +987,35 @@ impl<'a> Reader<'a> {
             .unwrap_or(*ticks);
         let tick = self.score.measures[measure].start_tick + offset;
         let staff_count = self.score.staves.len();
-        Self::insert_segment(
-            &mut self.score.measures[measure],
-            staff_count,
-            tick,
-            SegmentType::Clef,
-            track.staff().raw() as usize,
-            SegmentItem::Clef(Clef::new(clef)),
-        );
+        let staff_idx = track.staff().raw() as usize;
+        let duplicate = self.score.measures[measure].segments.iter().any(|segment| {
+            segment.tick == tick
+                && segment.kind == SegmentType::Clef
+                && segment
+                    .element(Track::new(StaffId::from_index(staff_idx), 0))
+                    .is_some()
+        });
+        if duplicate {
+            // Deux clés au même tick sont légales en MEI 5.1 (`<staffDef>`
+            // puis `<clef>` dans la couche) et le modèle les conserve dans
+            // deux segments distincts : `insert_segment` écraserait la
+            // première au lieu d'ajouter la seconde.
+            let mut segment = Segment::new(SegmentType::Clef, tick, staff_count.max(1));
+            segment.set_element(
+                Track::new(StaffId::from_index(staff_idx), 0),
+                SegmentItem::Clef(Clef::new(clef)),
+            );
+            self.score.measures[measure].add_segment(segment);
+        } else {
+            Self::insert_segment(
+                &mut self.score.measures[measure],
+                staff_count,
+                tick,
+                SegmentType::Clef,
+                staff_idx,
+                SegmentItem::Clef(Clef::new(clef)),
+            );
+        }
     }
 
     /// `MeiImporter::readBTrem`/`readFTrem` (`meiimporter.cpp:1812`, `:1910`).

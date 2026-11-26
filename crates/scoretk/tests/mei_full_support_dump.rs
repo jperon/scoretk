@@ -97,6 +97,23 @@ fn diagnose_one_score() {
     let back = read(&mei, Format::Mei).expect("read MEI");
     for (label, value) in [("reference", &score), ("reimported", &back)] {
         println!("--- {label}: {name} ---");
+        if std::env::var("SCORETK_MEI_CLEFS").is_ok() {
+            for (measure_index, measure) in value.measures.iter().enumerate() {
+                for (segment_index, segment) in measure.segments.iter().enumerate() {
+                    for (track, item) in segment.iter_elements() {
+                        if let scoretk::model::SegmentItem::Clef(clef) = item {
+                            println!(
+                                "    clef segment m{measure_index}/{segment_index} kind {:?} tick {:?} track {} {:?}",
+                                segment.kind,
+                                segment.tick,
+                                track.raw(),
+                                clef.concert
+                            );
+                        }
+                    }
+                }
+            }
+        }
         if std::env::var("SCORETK_MEI_MEASURES").is_ok() {
             for measure in &value.measures {
                 println!(

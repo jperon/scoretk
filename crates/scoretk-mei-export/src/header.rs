@@ -354,24 +354,27 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score, options: &MeiO
                 .measures
                 .first()
                 .and_then(|measure| {
-                    measure
-                        .segments
-                        .iter()
-                        .find(|segment| {
-                            segment.kind == SegmentType::Clef
-                                && segment.tick == measure.start_tick
-                                && segment
-                                    .element(Track::new(StaffId::from_index(staff_id.index()), 0))
-                                    .is_some()
-                        })
-                        .and_then(|segment| {
-                            match segment
-                                .element(Track::new(StaffId::from_index(staff_id.index()), 0))
-                            {
+                    // Le porteur additionnel distingue la clé d'en-tête
+                    // (`SegmentType::HeaderClef`, écrite dans `<staffDef>`)
+                    // de la clé du premier segment `Clef` (écrite dans la
+                    // couche) : les deux sont des faits distincts du modèle.
+                    let track = Track::new(StaffId::from_index(staff_id.index()), 0);
+                    let pick = |kind| {
+                        measure.segments.iter().find_map(|segment| {
+                            if segment.kind != kind || segment.tick != measure.start_tick {
+                                return None;
+                            }
+                            match segment.element(track) {
                                 Some(SegmentItem::Clef(clef)) => Some(clef.concert),
                                 _ => None,
                             }
                         })
+                    };
+                    if options.full_support {
+                        pick(SegmentType::HeaderClef).or_else(|| pick(SegmentType::Clef))
+                    } else {
+                        pick(SegmentType::Clef)
+                    }
                 })
                 .unwrap_or(staff.default_clef.concert);
             let (shape, line, dis, place) = convert::clef_to_mei(clef_type);
