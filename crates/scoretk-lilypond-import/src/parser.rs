@@ -137,6 +137,12 @@ pub(crate) struct Parser<'a> {
     /// Variables musicales définies en Scheme (`#(define nom #{ … #})`) et
     /// insérées par `$nom` (Extending §1).
     scheme_variables: BTreeMap<String, Music>,
+    /// Fonctions Scheme définies par `#(define (nom …) …)` qui transforment
+    /// un événement rythmique en `SkipEvent` (`music-map.ly`). Le corpus ne
+    /// content que `notes-to-skip`, mais la règle vaut pour toute fonction
+    /// de ce forme : `music-map` applique la fonction à chaque événement et
+    /// la musique résultante ne joue plus ses notes.
+    skip_map_functions: BTreeSet<String>,
     /// Identifiants de durée définis par `#(ly:make-duration …)` :
     /// durée de base et facteur de compression (`lily/duration-scheme.cc`).
     duration_identifiers: BTreeMap<String, (Duration, Fraction)>,
@@ -406,6 +412,7 @@ pub(crate) fn parse(
         in_relative_function: false,
         tag_groups: default_tag_groups(),
         scheme_variables: BTreeMap::new(),
+        skip_map_functions: BTreeSet::new(),
         duration_identifiers: BTreeMap::new(),
         numbers: BTreeMap::new(),
         quotes: BTreeMap::new(),
@@ -766,6 +773,9 @@ impl<'a> Parser<'a> {
                 }
                 if let Some(size) = scheme_staff_size(&datum) {
                     self.staff_size = Some(size);
+                }
+                if let Some(name) = scheme_skip_map_function(&datum) {
+                    self.skip_map_functions.insert(name);
                 }
                 if !self.record_after_grace_fraction(&datum) {
                     let _ = self.record_scheme_define(&datum);
@@ -4512,7 +4522,13 @@ impl<'a> Parser<'a> {
                 }
                 let argument = self.parse_music();
                 if proc.as_deref().is_some_and(|text| {
-                    text.contains("skip-of-length") || text.contains("mmrest-of-length")
+                    text.contains("skip-of-length")
+                        || text.contains("mmrest-of-length")
+                        || (text.contains("music-map")
+                            && self
+                                .skip_map_functions
+                                .iter()
+                                .any(|name| text.contains(name)))
                 }) {
                     let duree = music_duration(&argument, self.default_duration);
                     Music::Chord(Chord {
@@ -7070,6 +7086,37 @@ fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
     Some((name, body))
 }
 
+/// Nom d'une fonction Scheme qui transforme un événement en `SkipEvent`.
+///
+/// `music-map.ly` définit `#(define (notes-to-skip m) … (make-music 'SkipEvent
+/// m) …)` puis l'applique avec `\applyMusic #(lambda (x) (music-map
+/// notes-to-skip x))`. `music-map` (`scm/music-functions.scm`) garde la durée
+/// mais retire les notes : seule la reconnaissance du nom et du `SkipEvent`
+/// est nécessaire, sans évaluer le Scheme.
+fn scheme_skip_map_function(datum: &str) -> Option<String> {
+    if !datum.contains("SkipEvent") {
+        return None;
+    }
+    let characters: Vec<char> = datum.chars().collect();
+    let mut index = skip_scheme_space(&characters, 0);
+    if characters.get(index) != Some(&'(') {
+        return None;
+    }
+    index += 1;
+    index = skip_scheme_space(&characters, index);
+    let (head, next) = read_scheme_word(&characters, index);
+    if head != "define" && head != "define-public" {
+        return None;
+    }
+    index = skip_scheme_space(&characters, next);
+    if characters.get(index) != Some(&'(') {
+        return None;
+    }
+    index += 1;
+    let (name, _) = read_scheme_word(&characters, index);
+    (!name.is_empty()).then_some(name)
+}
+
 /// Reconnaît un identifiant de durée Scheme `#(ly:make-duration …)`.
 ///
 /// `lily/duration-scheme.cc:53-99` : le premier argument est le logarithme
@@ -9046,6 +9093,7 @@ mod tests {
             in_relative_function: false,
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
+        skip_map_functions: BTreeSet::new(),
             duration_identifiers: BTreeMap::new(),
             numbers: BTreeMap::new(),
             quotes: BTreeMap::new(),
@@ -9105,6 +9153,7 @@ mod tests {
                 in_relative_function: false,
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
+        skip_map_functions: BTreeSet::new(),
                 duration_identifiers: BTreeMap::new(),
                 numbers: BTreeMap::new(),
                 quotes: BTreeMap::new(),

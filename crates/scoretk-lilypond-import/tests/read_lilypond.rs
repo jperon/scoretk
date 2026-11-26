@@ -10074,3 +10074,17 @@ fn taille_de_texte_dans_un_header_markup_standard() {
     assert_eq!(score.metadata.work_title, "");
     assert_eq!(score.engraving.credits.len(), 1);
 }
+
+/// `music-map` applique une fonction à chaque événement (`scm/music-functions.scm`).
+/// Quand cette fonction renvoie un `SkipEvent`, la musique garde sa durée
+/// mais ne joue plus ses notes (`music-map.ly`, `\applyMusic` du regtest).
+#[test]
+fn music_map_vers_skip_ne_joue_pas_les_notes() {
+    let source = "#(define (notes-to-skip m)\n\
+        (if (music-is-of-type? m 'rhythmic-event)\n\
+            (make-music 'SkipEvent m) m))\n\
+        \\score { \\new Staff { \\fixed c' { c'4 \
+        \\applyMusic #(lambda (x) (music-map notes-to-skip x)) { d'4 e'4 } f'4 } } }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs(&score), vec![72, 77]);
+}
