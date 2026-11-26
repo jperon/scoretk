@@ -714,3 +714,46 @@ still neither detected nor readable.
 Tests: `crates/scoretk-gabc-import/tests/body.rs`,
 `crates/scoretk/tests/gabc_body.rs`, and the negative cases in
 `crates/scoretk/tests/formats.rs`.
+
+## 16. NABC manuscript snippets (2026-11-26, branch `meinabc`)
+
+NABC is the manuscript voice of a syllable: with `nabc-lines: 1`
+(`Gabc.tex:129-130`), a group alternates square and manuscript snippets
+`(square|nabc|square|nabc)`; the `|` cut cycles a state modulo
+`nabc_lines + 1` (`gabc-score-determination.y:870-907`). The glyph alphabet
+(St. Gall and Laon, `GregorioNabcRef.tex:207-240,402-420`) includes `vi`,
+`pu`, `ta`, `gr`, `cl`, `pe`, `po`, `to`, `ci`, `sc`, `pf`, `sf`, `tr`, `st`,
+`ds`, `ts`, `tg`, `bv`, `tv`, `pr`, `pi`, `vs`, `or`, `sa`, `pq`, `ql`, `qi`,
+`pt`, `ni`, plus Laon's `un`/`oc`. A descriptor also carries modifiers
+(`S`, `G`, `M`, `-`, `>`, `~`), subpunctis/prepunctis (`su`/`pp`), `hX` pitch
+descriptors and significant letters (`ls…`, `lt…`).
+
+**Model.** The primary payload now stores `Syllable::nabc: Vec<NabcSnippet>`
+(`crates/scoretk-core/src/model/gregorian.rs`), one entry per cut with the
+exact snippet text and `notes_before`, the number of square notes preceding
+it. The `nabc-lines` header stays in `Gregorian::headers` as before. The
+reader no longer mistakes manuscript letters for square pitches: only
+state-0 segments are parsed as notes; square snippets after a later cut are
+still notes, and the cut back to square state is re-emitted on write. The
+writer reproduces the interleaving and keeps every snippet byte-for-byte.
+This closes a real defect: previously `(e|talsi8)` became `(ealsi8)`, i.e.
+the NABC glyph letters were silently sung as square notes.
+
+**MEI.** `mei_full_support` writes the snippets as real neumes in a second,
+parallel, unpitched staff, with the exact text retained in
+`<signifLet type="gabc-nabc">`; the full mapping table (one citation per
+row) is in [`format-mapping/mei.md`](format-mapping/mei.md) and the measured
+campaign in [`mei.md`](mei.md) §13. Default MEI output is unchanged: the 56
+`.mscx` exports and the six non-NABC GABC exports are byte-identical to
+`master`. The three NABC exports deliberately change: they now keep their
+manuscript snippets instead of singing their glyph letters as square notes.
+
+**Measured on the three versioned NABC examples** (`cargo test -p scoretk
+--test gabc_nabc`, `scripts/check-mei-nabc.sh`): 144/144 snippets cross MEI
+byte-for-byte; GABC → MEI → GABC equals today's direct GABC → model →
+GABC bytes on all 3 files; 3/3 MEI outputs are valid against
+`mei-all-5.1.rng`; 178/193 (92.23 %) descriptors are structural neumes and
+15/193 (7.77 %) are text-only (modifier variants and spacing with no MEI
+equivalent). The non-NABC corpus outputs are untouched. Schematron's single
+`@lines` conflict on an adiastematic staff is documented in `mei.md`
+§12.3.1; it is not hidden.

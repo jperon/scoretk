@@ -86,6 +86,7 @@ scoretk-abc-import = { path = "../scoretk-abc-import" }
 scoretk-abc-export = { path = "../scoretk-abc-export" }
 scoretk-mei-import = { path = "../scoretk-mei-import" }
 scoretk-mei-export = { path = "../scoretk-mei-export" }
+scoretk-mei-common = { path = "../scoretk-mei-common" }
 scoretk-xml-common = { path = "../scoretk-xml-common" }
 scoretk-gabc-import = { path = "../scoretk-gabc-import" }
 scoretk-gabc-export = { path = "../scoretk-gabc-export" }

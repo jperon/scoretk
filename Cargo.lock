@@ -541,6 +541,7 @@ dependencies = [
  "scoretk-gabc-import",
  "scoretk-lilypond-export",
  "scoretk-lilypond-import",
+ "scoretk-mei-common",
  "scoretk-mei-export",
  "scoretk-mei-import",
  "scoretk-midi-export",

@@ -669,7 +669,7 @@ with no change to the CMN path.
 | Pitch, case and stroke shape | `<nc @pname @oct>`, `@tilt` (stroke direction), `@curve`, `@con` = `g`/`l`/`e`, `@intm`; the inclinatum (uppercase GABC letter) is `@tilt="se"` and `@type="punctum-inclinatum"` | §6.4.2 (`att.nc.log`, `att.ncForm`, `att.curvatureDirection`); RNG `att.ncForm.attribute.con` (`g` gapped, `l` looped, `e` extended) |
 | Oriscus, quilisma, liquescent, strophicus | children of `<nc>`; variants via `@looped`/`@curve` on `<liquescent>`, `@waves` on `<quilisma>`, `@n` on `<strophicus>` | §6.4.1, §6.4.5, §6.4.7; RNG `mei_liquescent`, `mei_quilisma`, `mei_strophicus` |
 | Horizontal/vertical episema, ictus, mora, virga, cavum, alteration, line | `<episema form="h\|v" place>` for `_`/`'`; `<signifLet type="PunctumMora\|Virga\|Cavum\|Accent\|Alteration\|Linea" n place>` for signs without a dedicated element | §6.4.4, §6.4.8, §6.4.9 ("other articulation marks"); RNG `att.episema.vis/@place` (`data.EVENTREL`) |
-| Significant NABC letters (`su1`, `st2`, `ta`, …) and placement digits | text of `<signifLet>` with `@type="gabc-nabc"` and `@place` | §6.4.1, §6.4.8 ("significant letter(s) attached to a neume or a nc"); RNG `mei_signifLet` (free text content) |
+| Significant NABC letters (`su1`, `st2`, `ta`, …) and placement digits | text of `<signifLet>` with `@type="gabc-nabc-letter"` and `@place`, on the **second staff** | §6.4.1, §6.4.8 ("significant letter(s) attached to a neume or a nc"); RNG `mei_signifLet` (free text content); full table in `format-mapping/mei.md`, implementation in §13 |
 | Separation bars | `<divLine form>`: `virgula`, `caesura`, `minima`, `minor`, `maior`, `finalis` and additional NMTOKENs (`virgula-ledger`, `minima-ledger`, `maior-dotted`, `dominican-1`…`dominican-8`) | §6.4.1; RNG `att.divLine.log/@form` (six suggested values **and** `data.NMTOKEN`) |
 | Clef, bass clef, line count | `<staffDef @lines>`, `<clef shape="C\|F" line="n">`, GABC flat clef `cbN` → `@type="clef-flat"` | §4.2.2, §6.4.10; RNG `mei_clef` (`att.clef.log`, `att.typed/@type`) |
 | Custos | `<custos @pname @oct>` (not emitted: the L6 payload has no custos field, `gabc.md` §10) | §6.4.3 (`att.custos`) |
@@ -738,7 +738,7 @@ offsets included, when the extension is enabled.
 | `gregorian-above-text`, `gregorian-rubric` | `<signifLet type="gabc-above" place="above">`; rubric kept in the text of `<syl>` | — |
 | `space_after`, elisions | `<syl @wordpos @con>` | RNG `att.syl.log/@con` (`s` space, `t` tilde) |
 | Styles `<b>`, `<i>`, `<c>`, `<sc>`, `<tt>`, `<ul>` | `<rend>` + `@fontstyle`/`@fontweight`/`@color`/`@fontfam` | Only these reversible styles are converted; `<sp>`, `<v>`, `<e>`, `<clear>`, `<pr>` remain exact text in `<syl>` (§6.4.10 shows `<rend>` but defines no GABC mapping) |
-| `custos`, NABC cuts `\|`, `[…]` layout, `z`/`Z` line breaks | **none in the L6 payload** | `gabc.md` §10: these facts are already absent from the model (MEI has `<custos>`, §6.4.3, but nothing to feed it) |
+| `custos`, `[…]` layout, `z`/`Z` line breaks | **none in the L6 payload** | `gabc.md` §10: these facts are already absent from the model (MEI has `<custos>`, §6.4.3, but nothing to feed it). NABC cuts *are* carried since §13: `Syllable::nabc` + a second staff. |
 | UTF-16 offsets `source_offset`/`source_end` | **none** | Tracking attribute for the wasm client (`timemap.md`), not a musical MEI fact; kept only by the private extension and excluded from the compared inventory |
 
 No element was removed from the denominator and no layer declaration was
@@ -905,3 +905,94 @@ validity. The `mscore-*` values remain documented MuseScore extensions of
 standard elements/attributes, not private payloads. `nix build .#wasm` after
 the consolidation gives **2 825 964 raw bytes / 1 103 570 gzip** (§11's figure
 predates the full-support campaigns).
+
+## 13. NABC manuscript neumes as a second staff (2026-11-26, branch `meinabc`)
+
+### 13.1 Encoding
+
+Gregorio's NABC snippets (`Gabc.tex:129`, `GregorioNabcRef.tex:174-199`,
+`gabc-score-determination.y:870-907`) are the *manuscript* voice of a
+syllable (St. Gall or Laon adiastematic neumes), parallel to the square
+notes. They are no longer opaque text in the square staff: with
+`MeiOptions::full_support` **only**, the writer emits a second, parallel,
+unpitched `<staff n="2">` as validated against `mei-all-5.1.rng` with `jing`:
+
+```xml
+<scoreDef><staffGrp>
+  <staffDef n="1" lines="4" notationtype="neume" label="square"><clef shape="C" line="3"/></staffDef>
+  <staffDef n="2" notationtype="neume" label="manuscript"/>
+</staffGrp></scoreDef>
+<section>
+  <staff n="1"><layer n="1"><syllable xml:id="s1a" corresp="#s1b">
+    <syl>FAc</syl><neume type="punctum"><nc pname="g" oct="3"/></neume>
+  </syllable></layer></staff>
+  <staff n="2"><layer n="1"><syllable xml:id="s1b" corresp="#s1a">
+    <syl>FAc</syl><neume type="tractulus"><nc/></neume>
+    <signifLet type="gabc-nabc" n="1">talsi8</signifLet>
+  </syllable></layer></staff>
+</section>
+```
+
+Staff 2 has **no `@lines`** (the RNG types it as `positiveInteger`, so
+`lines="0"` is invalid) and its `<nc>` have no `@pname`/`@oct`: this is the
+MEI 5.1 adiastematic convention of Guidelines §6.3 Listings 244–247 and 253
+(unpitched `<nc>` with `@tilt`/`@intm`). Complex NABC glyph descriptors
+become `<neume type="virga|punctum|tractulus|...">` with the glyph's note
+count of `<nc>`; modifiers `-`, `>` and `~` become `<episema>`, `<liquescent>`
+and `@intm` carries the direction between successive `hX` pitch descriptors;
+significant letters become `<signifLet @place>` (§6.4.8). The complete table,
+with one citation per row, is in
+[`format-mapping/mei.md`](format-mapping/mei.md) §"NABC (manuscript neumes)
+↔ MEI 5.1". `@xml:id`/`@corresp` link each pair of syllables (RNG :21213).
+
+The exact NABC snippet text always stays in `<signifLet type="gabc-nabc">`,
+with `@n` = the number of square notes before the cut. That carrier is what
+makes the conversion reversible independently of any semiological
+interpretation; a third-party MEI tool sees the real `<neume>`/`<nc>`
+structure and can ignore the carrier. Where MEI has no equivalent
+(`S`/`G`/`M` variants, spacing, Laon position 5 inside the neume), only the
+carrier keeps the information, and the mapping table says so explicitly.
+
+### 13.2 Files and wiring
+
+| File | Role |
+| --- | --- |
+| `crates/scoretk-core/src/model/gregorian.rs` | `NabcSnippet { notes_before, text }`, `Syllable::nabc` (L6) |
+| `crates/scoretk-gabc-import/src/read.rs` | `|` cut with `nabc-lines` state (`y:870-907`); square snippets stay notes, NABC snippets become atomic text |
+| `crates/scoretk-gabc-export/src/lib.rs` | re-emits square/NABC snippets in source order, including the cut back to square state |
+| `crates/scoretk-mei-common/src/nabc.rs` | Gregorio NABC → MEI 5.1 table, parser and inverse base codes |
+| `crates/scoretk-mei-export/src/nabc.rs` | second staff, `<neume>`/`<nc>`, exact-text carrier, `@corresp` |
+| `crates/scoretk-mei-import/src/nabc.rs` | reads the carrier back, falls back to structured neumes for third-party files |
+| `crates/scoretk/tests/gabc_nabc.rs` | round trip, structure, default-byte invariance, coverage measurement |
+| `scripts/check-mei-nabc.sh` | `jing` + Schematron validation and measured report |
+
+Without `full_support`, or without NABC, the writer is unchanged: the 56
+`.mscx` corpus exports are byte-identical to `master` (0/56 diffs measured),
+and the six non-NABC GABC exports likewise. The three NABC exports change in
+the GABC direction only, because the reader no longer sings NABC glyph
+letters as square notes; their MEI output stays byte-identical to `master`
+unless `full_support` is enabled; their *square* notes in default MEI do
+change because the GABC reader no longer parses NABC glyph letters as sung
+pitches (that is the defect being fixed, not a layout change).
+
+### 13.3 Measured results
+
+| Measurement | Command | Result |
+| --- | --- | ---: |
+| NABC files carried in L6 | `cargo test -p scoretk --test gabc_nabc` | 3/3 Gregorio examples |
+| NABC snippets crossing MEI byte-for-byte | same | **144/144** |
+| GABC → MEI → GABC vs today's direct bytes | same (`assert_eq!(gabc, baseline)`) | **3/3 identical** |
+| MEI 5.1 RelaxNG validity of the 2-staff outputs | `scripts/check-mei-nabc.sh` (`jing`) | **3/3** |
+| Embedded Schematron on those outputs | `scripts/oracle/mei/schematron.py` | 3 errors, all the same declared `@lines` conflict of §12.3.1 |
+| Default MEI bytes vs `master`, 56 `.mscx` | CLI + `cmp` | **0/56 diffs** |
+| Structural share (descriptor with a `<neume>`) | `nabc_structural_vs_textual_coverage_is_measured` | **178/193 = 92.23 %** |
+| Text-only share (no MEI equivalent) | same | 15/193 = 7.77 % |
+| Modifiers with a dedicated element | same | 53 episemata, 22 liquescences |
+| Significant letters with `@place` | same | 48/50 (2 Laon "inside", no MEI value) |
+
+Limits: the `S`/`G`/`M` variant digits and horizontal spacing have no MEI
+element (RNG/Guidelines §6.4.9), the two Laon "inside" letters have no
+`data.EVENTREL` value (RNG :6466), and a third-party file without the
+`<signifLet>` carrier can only be read back approximately. Exactness of the
+GABC round trip never depends on those interpretations. No default output
+changed, no declaration was narrowed and no new wasm API was introduced.

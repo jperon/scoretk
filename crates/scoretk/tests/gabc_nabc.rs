@@ -80,7 +80,7 @@ fn nabc_output_is_a_second_unpitched_staff_linked_by_corresp() {
         let score = read(&source, Format::Gabc).expect("GABC read");
         let has_nabc = matches!(&score.extensions.format, Some(Extension::Gregorian(g)) if g.syllables.iter().any(|s| !s.nabc.is_empty()));
         let mei = scoretk_mei_export::write_mei_with(&score, &full_options()).expect("MEI");
-        if let Some(dir) = std::env::var_os("SCORETK_MEI_NABC_DUMP_DIR") {
+        if let (Some(dir), true) = (std::env::var_os("SCORETK_MEI_NABC_DUMP_DIR"), has_nabc) {
             let name = path.file_name().expect("file name");
             fs::write(Path::new(&dir).join(name), &mei).expect("dump");
         }
@@ -191,6 +191,63 @@ fn gabc_to_mei_to_gabc_keeps_every_nabc_snippet_byte_for_byte() {
     assert_eq!(files, 3);
     assert!(snippets > 50, "{snippets} NABC snippets measured");
     println!("GABC → MEI → GABC: {files} files, {snippets} NABC snippets byte-exact");
+}
+
+#[test]
+fn nabc_structural_vs_textual_coverage_is_measured() {
+    use scoretk_mei_common::nabc;
+
+    let mut snippets = 0usize;
+    let mut descriptors = 0usize;
+    let mut structural = 0usize;
+    let mut text_only = 0usize;
+    let mut episemata = 0usize;
+    let mut liquescents = 0usize;
+    let mut letters_with_place = 0usize;
+    let mut letters_without_place = 0usize;
+    for path in corpus() {
+        let source = fs::read(&path).expect("GABC source");
+        let score = read(&source, Format::Gabc).expect("GABC read");
+        let Some(Extension::Gregorian(gregorian)) = &score.extensions.format else {
+            panic!("L6 payload");
+        };
+        for syllable in &gregorian.syllables {
+            for snippet in &syllable.nabc {
+                snippets += 1;
+                for descriptor in nabc::parse(&snippet.text) {
+                    descriptors += 1;
+                    if descriptor.glyphs.is_empty() {
+                        text_only += 1;
+                    } else {
+                        structural += 1;
+                        for glyph in &descriptor.glyphs {
+                            episemata += usize::from(glyph.modifiers.contains('-'));
+                            liquescents += usize::from(
+                                glyph.modifiers.contains('>') || glyph.modifiers.contains('~'),
+                            );
+                        }
+                    }
+                    for (_, position) in &descriptor.letters {
+                        if nabc::place(*position).is_some() {
+                            letters_with_place += 1;
+                        } else {
+                            letters_without_place += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(descriptors > 0);
+    let structural_pct = format!("{:.2}%", 100.0 * structural as f64 / descriptors as f64);
+    let text_pct = format!("{:.2}%", 100.0 * text_only as f64 / descriptors as f64);
+    println!(
+        "NABC coverage: {snippets} snippets, {descriptors} descriptors, \
+         {structural} structural ({structural_pct}), {text_only} text-only ({text_pct}), \
+         {episemata} episemata, {liquescents} liquescences, \
+         {letters_with_place}/{letters_without_place} significant letters with/without @place"
+    );
+    assert_eq!(structural + text_only, descriptors);
 }
 
 #[test]
