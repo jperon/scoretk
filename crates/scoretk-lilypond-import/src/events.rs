@@ -2795,8 +2795,12 @@ pub(crate) fn bar_line_type(text: &str) -> Option<BarLineType> {
         ":|" | ":|." => BarLineType::EndRepeat,
         ":|:|" | ":|:" => BarLineType::EndStartRepeat,
         ";" | ";;" => BarLineType::Dotted,
-        "!" => BarLineType::Short,
-        "-" => BarLineType::Tick,
+        // Notation Reference §1.2.5 "Bar lines" : « Ticks and short bar
+        // lines are also available » ; `'` est la barre `tick` et `,` la
+        // barre `short` (les deux formes `\bar "-"`/`\bar "!"` restent lues pour
+        // les fichiers déjà écrits par d'anciennes versions).
+        "'" | "-" => BarLineType::Tick,
+        "," | "!" => BarLineType::Short,
         _ => return None,
     };
     Some(kind)
@@ -2856,5 +2860,20 @@ pub(crate) fn breath_object(kind: BreathType, placement: Placement) -> Breath {
         kind,
         placement,
         pause_ms: None,
+    }
+}
+
+#[cfg(test)]
+mod bar_line_type_tests {
+    use super::*;
+
+    /// Notation Reference §1.2.5 "Bar lines" : les barres tick et short
+    /// s'écrivent respectivement `\bar "'"` et `\bar ","`.
+    #[test]
+    fn tick_and_short_bar_lines() {
+        assert_eq!(bar_line_type("'"), Some(BarLineType::Tick));
+        assert_eq!(bar_line_type(","), Some(BarLineType::Short));
+        assert_eq!(bar_line_type("|."), Some(BarLineType::End));
+        assert_eq!(bar_line_type("not-a-bar"), None);
     }
 }

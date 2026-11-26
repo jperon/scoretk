@@ -40,8 +40,9 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, BarLineType, ChordRest, Fraction, JumpType, MarkerType, Measure, RepeatMark, Score,
-    SegmentType, SpannerType, StaffId, Tick, Track, TupletId, VOICES,
+    Annotation, BarLineType, BreathType, ChordRest, Fraction, JumpType, MarkerType, Measure,
+    RepeatMark, Score, SegmentItem, SegmentType, SpannerType, StaffId, Tick, Track, TupletId,
+    VOICES,
 };
 
 use crate::chord;
@@ -683,10 +684,14 @@ pub(crate) fn render_body(
         // tick de fin incohérent.
         close_tuplets_until(&[], &mut tuplets, &mut emitter);
 
+        // La respiration grégorienne est un fait du modèle (`SegmentItem::
+        // Breath`), pas du style de barre : une virgule peut accompagner une
+        // barre `Tick` sans que toute barre `Tick` appelle une respiration.
         let chant_breath = matches!(
             &score.extensions.format,
             Some(scoretk_core::model::Extension::Gregorian(gregorian))
-                if gregorian.derived_modern_view && matches!(measure.end_bar_line, scoretk_core::model::BarLineType::Tick | scoretk_core::model::BarLineType::Short)
+                if gregorian.derived_modern_view
+                    && has_comma_breath(measure, staff, voice)
         );
         emitter.token(&bar_line_token(
             measure,
@@ -796,6 +801,20 @@ fn fill_rest(start: Tick, end: Tick, _measure: &Measure) -> String {
     format!("s{}", length_token(len))
 }
 
+/// Vrai si la mesure porte une respiration `Comma` sur la voix écrite.
+fn has_comma_breath(measure: &Measure, staff: usize, voice: usize) -> bool {
+    measure.segments.iter().any(|segment| {
+        segment.iter_elements().any(|(track, element)| {
+            track.staff().index() == staff
+                && track.voice() as usize == voice
+                && matches!(
+                    element,
+                    SegmentItem::Breath(breath) if breath.kind == BreathType::Comma
+                )
+        })
+    })
+}
+
 /// Barre de fin de mesure.
 ///
 /// Le contrôle de mesure (`|`) est omis quand l'indication de mesure de la
@@ -803,15 +822,26 @@ fn fill_rest(start: Tick, end: Tick, _measure: &Measure) -> String {
 /// des indications locales de MuseScore, où une portée en 3/4 partage une
 /// mesure de 9/8 avec les autres. LilyPond signalerait alors un échec de
 /// contrôle à chaque barre sans que la musique soit fausse.
+///
+/// Notation Reference §1.2.5 "Bar lines" : les barres `Tick` et `Short` ont
+/// des glyphes standard, respectivement `\bar "'"` et `\bar ","` (« Ticks
+/// and short bar lines are also available »). `\defineBarLine` n'est pas
+/// nécessaire, et le lecteur tiers retrouve ces deux styles.
 fn bar_line_token(measure: &Measure, last: bool, bar_check: bool, breath: bool) -> String {
     let explicit = match measure.end_bar_line {
         BarLineType::End => Some("\\bar \"|.\""),
         BarLineType::Double => Some("\\bar \"||\""),
         BarLineType::Dotted | BarLineType::DoubleDotted => Some("\\bar \";\""),
+        BarLineType::Tick => Some("\\bar \"'\""),
+        BarLineType::Short => Some("\\bar \",\""),
         _ => None,
     };
     if let Some(token) = explicit {
-        return token.to_owned();
+        return if breath {
+            format!("\\breathe {token}")
+        } else {
+            token.to_owned()
+        };
     }
     if breath {
         // Notation Reference §3.2 : `\breathe` pose une virgule sur la
@@ -1295,10 +1325,15 @@ pub(crate) fn lyrics_verses(
         for (index, entry) in entries.iter().enumerate() {
             match entry {
                 Some(lyrics) => {
-                    // Un trait d'union n'a de sens que si l'accord suivant du
-                    // même couplet porte une syllabe : `-- \skip` déclenche
-                    // « trait d'union sans suite ».
-                    let has_next = entries.get(index + 1).is_some_and(Option::is_some);
+                    // Le trait d'union LilyPond porte la syllabicité : `\mot --`
+                    // est `Begin`/`Middle`, et le syllabe qui suit (même après
+                    // des `\skip`) devient `Middle`/`End`. La prochaine syllabe
+                    // peut être à plusieurs accords d'ici quand le chant étend
+                    // une syllabe sur un mélisme : chercher plus loin que
+                    // l'accord immédiatement suivant perdait le `--` et la
+                    // relecture renvoyait `Single` (Notation Reference
+                    // §2.1.2 "Lyrics hyphens").
+                    let has_next = entries[index + 1..].iter().any(Option::is_some);
                     syllables.push(syllable(lyrics, has_next));
                 }
                 None => syllables.push("\\skip 1".to_owned()),
@@ -1638,6 +1673,53 @@ mod tests {
 
         let verses = lyrics_verses(&score, 0, 0);
         assert_eq!(verses[&0], vec!["de".to_owned(), "\\skip 1".to_owned()]);
+    }
+
+    /// Notation Reference §2.1.2 : le `--` porte la syllabicité même quand la
+    /// syllabe suivante est séparée par un `\skip` (une syllabe chantée sur un
+    /// mélisme couvre plusieurs accords).
+    #[test]
+    fn trait_dunion_a_travers_un_skip() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Chœur", "Ch."));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(3, 4));
+        let texts = [
+            Some((LyricsSyllabic::Begin, "de")),
+            None,
+            Some((LyricsSyllabic::End, "nus")),
+        ];
+        for (index, text) in texts.into_iter().enumerate() {
+            let mut segment =
+                Segment::new(SegmentType::ChordRest, Fraction::new(index as i64, 4), 1);
+            let mut chord_rest = ChordRest::chord(Duration::quarter());
+            if let Some((syllabic, value)) = text {
+                chord_rest.lyrics.push(Lyrics::new(0, syllabic, value));
+            }
+            segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord_rest));
+            measure.add_segment(segment);
+        }
+        score.add_measure(measure);
+        let verses = lyrics_verses(&score, 0, 0);
+        assert_eq!(
+            verses[&0],
+            vec!["de --".to_owned(), "\\skip 1".to_owned(), "nus".to_owned()]
+        );
+    }
+
+    #[test]
+    fn barres_tick_et_short_sont_des_glyphes_standard() {
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::ONE);
+        measure.end_bar_line = BarLineType::Tick;
+        assert_eq!(bar_line_token(&measure, false, true, false), "\\bar \"'\"");
+        assert_eq!(
+            bar_line_token(&measure, false, true, true),
+            "\\breathe \\bar \"'\""
+        );
+        measure.end_bar_line = BarLineType::Short;
+        assert_eq!(bar_line_token(&measure, false, true, false), "\\bar \",\"");
+        measure.end_bar_line = BarLineType::End;
+        assert_eq!(bar_line_token(&measure, true, false, false), "\\bar \"|.\"");
     }
 }
 

@@ -3595,7 +3595,10 @@ fn attach_lyrics(
             tick
         };
         if syllable.skip || syllable.text.is_empty() {
-            previous_hyphen = false;
+            // `\skip` est une note sans syllabe, pas une fin de mot : le `--`
+            // qui précède s'applique à la syllabe suivante (Notation
+            // Reference §2.1.2 "Lyrics hyphens"). Réinitialiser ici faisait
+            // lire `Begin`/`End` comme `Single` après un mélisme.
             continue;
         }
         let syllabic = if syllable.hyphen {

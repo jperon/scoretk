@@ -37,7 +37,9 @@ Reader `crates/scoretk-lilypond-import`, writer `crates/scoretk-lilypond-export`
 - `\time 3/4`; `\partial 4` = anacrusis (shifts bar numbering); `\time` changes
   do **not** rescale existing durations. Complex fractions need Scheme syntax.
   (Notation §2.3.1, §2.3.3, §2.3.5)
-- Bars `|`, `||`, `|.`; `\bar "|:|"`. Rehearsal marks `\mark \default`.
+- Bars `|`, `||`, `|.`; `\bar "|:|"`. Tick and short bars are standard too:
+  `\bar "'"` and `\bar ","` (Notation Reference §1.2.5 "Bar lines").
+  Rehearsal marks `\mark \default`.
   Automatic bar lines are inserted at measure boundaries; a stray `|` in the
   middle creates an extra bar check error. (Notation §2.5.1–§2.5.5)
 

@@ -252,7 +252,7 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | `Clef` | `\clef treble`, `bass`, `alto`, `tenor`, `"treble_8"`, `varbaritone`, `percussion`… |
 | `Staff.default_clef` without a `Clef` at the head of the first measure | `\clef …` at the start of voice 0; `read4xx` does not materialise a `HeaderClef` segment, unlike `read302` |
 | `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… when one model measure spans several nominal measures; one `R1` per model measure when the grid carries several successive rest measures (`R1 | R1 | R1`), so their boundaries survive the round trip |
-| `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` for repeats, `\bar "|."`, `\bar "||"`, `\bar ";"` |
+| `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` for repeats, `\bar "|."`, `\bar "||"`, `\bar ";"`, `\bar "'"` (`Tick`) and `\bar ","` (`Short`), Notation Reference §1.2.5 "Bar lines" |
 | `section_break_before` | `\section` |
 | `line_break` | `\break`, including on the last measure: the model's break is then carried at its own tick (§52.5) |
 | `MeasureRepeatMark` | not rendered (the copied music is written) |
@@ -318,9 +318,12 @@ alignment; rests are skipped by `\lyricsto` itself. Several
 verses receive `\set stanza = "n."` **inside** the lyrics block: this is
 `musicxml2ly`'s form, compilable by LilyPond 2.26 (unlike
 `\stanza "n."`, a music function added in 2.27). The
-hyphen is emitted only if the following chord of the same verse carries a
-syllable, and tie continuations (all notes tied from the previous chord
-) receive no token, since `\lyricsto` skips them.
+hyphen is emitted for `Begin`/`Middle` whenever a later syllable of the same
+verse exists, even across `\skip` tokens (a syllable held over a melisma spans
+several chords): Notation Reference §2.1.2 "Lyrics hyphens" makes `--` the
+carrier of `begin`/`middle`/`end`, with `__` for the melisma. Tie continuations
+(all notes tied from the previous chord) receive no token, since `\lyricsto`
+skips them.
 
 On the reading side, a lyric word is a sequence of non-whitespace
 characters (`<lyrics>` of `lily/lexer.ll`, `lexer::mot_de_paroles`): attached

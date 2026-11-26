@@ -27,9 +27,9 @@ staffOneVoiceOne = \fixed c' {
     \new Staff = "staffOne" \with { instrumentName = "Voice" midiInstrument = "choir aahs" } <<
       \new Voice = "staffOneVoiceOne" { \staffOneVoiceOne }
       \new Lyrics \lyricsto "staffOneVoiceOne" {
-        Nel mez -- zo del cam \skip 1
+        Nel mez -- zo del cam -- \skip 1
         min __ \skip 1 \skip 1 di no -- stra
-        vi \skip 1 ta. \skip 1 \skip 1 \skip 1
+        vi -- \skip 1 ta. \skip 1 \skip 1 \skip 1
         \skip 1 \skip 1 \skip 1 \skip 1 \skip 1 \skip 1
         \skip 1 \skip 1 \skip 1 \skip 1 \skip 1 \skip 1
       }

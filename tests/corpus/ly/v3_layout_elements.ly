@@ -78,7 +78,7 @@ staffTwoVoiceOne = \fixed c' {
       \new Staff = "staffTwo" <<
         \new Voice = "staffTwoVoiceOne" { \staffTwoVoiceOne }
         \new Lyrics \lyricsto "staffTwoVoiceOne" {
-          \skip 1 Ly -- rics __ \skip 1 ly \skip 1
+          \skip 1 Ly -- rics __ \skip 1 ly -- \skip 1
           rics -- ly \skip 1 \skip 1 \skip 1 \skip 1
           \skip 1 \skip 1 \skip 1
         }
