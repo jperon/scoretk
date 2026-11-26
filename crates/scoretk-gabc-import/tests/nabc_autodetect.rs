@@ -109,6 +109,6 @@ fn pipes_in_lyrics_comments_or_verbatim_tex_do_not_create_a_voice() {
     assert_eq!(note_count(&gregorian), 4);
     assert_eq!(read_gabc(body).expect("derived view").notes.len(), 4);
 
-    let headed = format!("% a | comment in the header\nname: Test;\n%%\n(c4) Ky(f) e(g) (::)\n");
-    assert_eq!(snippet_count(&payload(&headed)), 0);
+    let headed = "% a | comment in the header\nname: Test;\n%%\n(c4) Ky(f) e(g) (::)\n";
+    assert_eq!(snippet_count(&payload(headed)), 0);
 }
