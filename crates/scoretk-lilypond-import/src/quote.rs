@@ -44,7 +44,10 @@ pub(crate) fn quote_delta(source: &Music, target: Option<&PitchSpec>) -> (i32, i
     let (target_diatonic, target_chromatic) = target
         .map(crate::pitch::instrument_transpose)
         .unwrap_or((0, 0));
-    (source_diatonic - target_diatonic, source_chromatic - target_chromatic)
+    (
+        source_diatonic - target_diatonic,
+        source_chromatic - target_chromatic,
+    )
 }
 
 /// Premier `\transposition` porté par une musique citée.
@@ -71,8 +74,9 @@ fn cited_transposition(music: &Music) -> Option<PitchSpec> {
             | Context::Invisible { music }
             | Context::Retrograde { music }
             | Context::NonRelative { music } => cited_transposition(music),
-            Context::AfterGrace { main, grace, .. } => cited_transposition(main)
-                .or_else(|| cited_transposition(grace)),
+            Context::AfterGrace { main, grace, .. } => {
+                cited_transposition(main).or_else(|| cited_transposition(grace))
+            }
             Context::Alternative(items) => items.iter().find_map(cited_transposition),
             Context::Volta { music, .. } => cited_transposition(music),
             _ => None,

@@ -1306,10 +1306,15 @@ impl<'a> Interpreter<'a> {
                 // ses événements de `pitch_interval (cible, source)`. La
                 // transposition cible sera appliquée par le constructeur à
                 // toute la portée ; n'ajouter ici que l'écart source − cible.
-                let cible = self.voice.events.iter().rev().find_map(|event| match &event.kind {
-                    EventKind::Meta(MetaEvent::Transposition(pitch)) => Some(pitch),
-                    _ => None,
-                });
+                let cible = self
+                    .voice
+                    .events
+                    .iter()
+                    .rev()
+                    .find_map(|event| match &event.kind {
+                        EventKind::Meta(MetaEvent::Transposition(pitch)) => Some(pitch),
+                        _ => None,
+                    });
                 let ecart = crate::quote::quote_delta(music, cible);
                 let transpose_avant = self.transpose;
                 // Les événements cités viennent de la propre partition de la
