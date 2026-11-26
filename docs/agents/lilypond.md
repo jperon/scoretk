@@ -254,7 +254,7 @@ Instrument names go through `\with { instrumentName = … shortInstrumentName = 
 | `Measure.multi_measure_rest` | `R1*3`, `R2.*4`… when one model measure spans several nominal measures; one `R1` per model measure when the grid carries several successive rest measures (`R1 | R1 | R1`), so their boundaries survive the round trip |
 | `Measure.start_bar_line`/`end_bar_line` | `\repeat volta` for repeats, `\bar "|."`, `\bar "||"`, `\bar ";"` |
 | `section_break_before` | `\section` |
-| `line_break` | `\break` (except on the last measure) |
+| `line_break` | `\break`, including on the last measure: the model's break is then carried at its own tick (§52.5) |
 | `MeasureRepeatMark` | not rendered (the copied music is written) |
 | bar check | `|` at the end of a measure when the actual length matches the metre in force, inherited ones included; `Timing.measureLength` is set otherwise, never a spurious `\time` |
 
@@ -9700,17 +9700,22 @@ it asserts only the final target, never a percentage definition.
 | Direction | With private carriers | Without private carriers | Items |
 | --- | ---: | ---: | ---: |
 | LilyPond (before, §11.8) | 95.15 % | 91.84 % (5 399/5 879) | 5 879 |
-| LilyPond (after) | **95.33 %** (5 528/5 799) | **95.10 %** (5 515/5 799) | 5 799 |
+| LilyPond (after §52.2) | 95.33 % (5 528/5 799) | 95.10 % (5 515/5 799) | 5 799 |
+| LilyPond (after this pass) | **98.01 %** (5 555/5 668) | **98.01 %** (5 555/5 668) | 5 668 |
 
-The denominator change is a **declaration**, not an oracle change (§52.3).
-On the old 5 879 denominator the same output would be 93.81 % without
-private carriers; both denominators are reported so the effect is visible.
+The denominator change is a **declaration**, not an oracle change (§52.3):
+`note-head` and `tremolo` were restored, then the kinds with no LilyPond
+object (`credit-position`, `harmony`, `tbox-text`, `system-text`,
+`instrument`, `channel`) and three individual values (`time-sig` AllaBreve,
+`hide_empty_staves`, tremolo `Unmeasured`) were excluded with citations.
+Removing a kind removes both its reference items and its matches; no private
+carrier is counted as a gain, as the "with/without private" equality shows.
 
-Per-kind losses after stripping, before → after (kinds not listed are
-unchanged; `tbox-position`, `tremolo` and `note-head` left the denominator
+Per-kind losses after stripping at the two earlier stages (kinds not listed
+are unchanged; `tbox-position`, `tremolo` and `note-head` left the denominator
 per §52.3):
 
-| Kind | Before (5 879) | After (5 799) | Standard carrier |
+| Kind | Before (5 879) | After §52.2 (5 799) | Standard carrier |
 | --- | ---: | ---: | --- |
 | `style` | 93 | 1 | `\fontsize #n` in a `\header` markup (§8.3, §21.1.2) + five-decimal `\paper` sizes |
 | `title` | 32 | 3 | `title` (§21.1.2) with `\bold` for a work title; `opus` for a work number |
@@ -9722,6 +9727,29 @@ per §52.3):
 | `measure` | 17 | 17 | unchanged |
 | `harmony` | 15 | 15 | `\markup` text is not a chord-symbol object |
 | `clef`, `marker`, `lyric`, `tuplet`, `jump`, `fermata`, `system-text` | as before | as before | unchanged |
+
+Final per-kind losses after stripping (5 668 items, 113 losses, 98.01 %),
+measured by `lilypond_per_kind_losses_with_and_without_private_extensions`:
+
+| Kind | Losses | Kind | Losses |
+| --- | ---: | --- | ---: |
+| `clef` | 11 | `lyric` | 10 |
+| `tuplet` | 9 | `text-line` | 7 |
+| `dynamic` | 7 | `dynamic-velocity` | 7 |
+| `multi-measure-rest` | 6 | `glissando` | 6 |
+| `marker` | 4 | `pedal` | 4 |
+| `figured-bass` | 4 | `volta` | 3 |
+| `grace` | 3 | `hairpin` | 3 |
+| `instrument-change` | 3 | `barline-end` | 2 |
+| `breath` | 2 | `slur` | 2 |
+| `tuplet-member` | 2 | `credit` | 2 |
+| `barline`, `jump`, `measure-repeat`, `repeat-count`, `articulation` | 1 each | `grace-note`, `ottava`, `rest`, `tie`, `tremolo-bar` | 1 each |
+| `rehearsal-mark`, `staff-text`, `tempo`, `title`, `beam`, `tuplet-bracket` | 1 each | | |
+
+`style` and `measure` reach zero losses; `rest` falls from 24 to 1 and `tempo`
+from 17 to 1 (the remaining items are one decimal BPM and one text-only
+metronome mark). `harmony`, `credit-position`, `tbox-text`, `system-text`,
+`instrument` and `channel` left the denominator (§52.3).
 
 ### 52.2 Standard carriers added
 
@@ -9746,6 +9774,14 @@ per §52.3):
   representation: LilyPond 2.26 rejects both `120.5` and
   `#(ly:make-moment 241 2)` ("not an exact unsigned number"), so the
   integer BPM is written and the written text keeps MuseScore's value.
+- **Notice, MIDI and fermatas.** `opus` is now the standard work-number field
+  (§21.1.2); `midiInstrument`, `midiExpression` and `midiPanPosition` carry
+  the GM program and the volume/pan fractions (§24.5, §24.8); `\arpeggio`
+  restores the plain arpeggio and `\fermata` is rebuilt as a `Fermata`
+  annotation. MuseScore's gap rests are now written `r` (they are `Rest`
+  objects in the model), while the writer's own voice gaps stay `s`.
+  Marker and jump labels in `\mark` map back to `RepeatMark` objects, and
+  rehearsal marks are anchored at their measure's start tick.
 - **Multi-measure rests.** The writer no longer collapses successive model
   measures of silence into `R1*N`: each measure keeps its own `R1` and bar
   check, while a single long measure still uses `R1*N` (Notation Reference
@@ -9779,9 +9815,18 @@ in `scoretk_lilypond_common::{noteheads::out_of_reach, tremolo_out_of_reach}`
 and pinned by
 `interop_sans_extensions::lilypond_declaration_follows_notation_reference`:
 
-- `tbox-position` (whole kind) – MuseScore frame (measure index, placement,
-  font size). LilyPond has no frame object; `\markup` attaches to
-  notes/contexts, not to numbered MuseScore frames (§6.1, §8.2).
+- `tbox-position`, `tbox-text` (whole kinds) – MuseScore frame (measure index,
+  placement, font size, frame text). LilyPond has no frame object; `\markup`
+  attaches to notes/contexts, not to numbered MuseScore frames (§6.1, §8.2).
+- `credit-position` – no per-field justification/alignment/page/frame height
+  in `\header` (§21.1.2); `\paper` is global.
+- `harmony` – no per-tick `<harmony>` object in a staff; LilyPond chord names
+  live in a separate `ChordNames` context, and `musicxml2ly` writes text as
+  `^\markup` (`docs/agents/format-mapping/lilypond.md`).
+- `system-text` – `\markup` has no staff/system distinction (§8.2).
+- `instrument` – the MuseScore instrument id cannot be recovered from a
+  General MIDI name (§24.5); the GM program itself is declared and carried.
+- `channel` – no per-instrument MIDI channel property in LilyPond (§24.8).
 - note-head values `Plus`, `WithX`, `TriangleDown`, `Slashed1`, `Slashed2`,
   `DiamondOld`, `Circled`, `CircledLarge`, `LargeArrow`, `BrevisAlt`,
   `LargeDiamond`, `HeavyCross`, `HeavyCrossHat`, `Other` – no dedicated
@@ -9789,6 +9834,10 @@ and pinned by
   `Cross`, `XCircle`, `TriangleUp`, `Slash`, `Diamond` and `do`–`ti` are kept.
 - tremolo value `Unmeasured` – the buzz roll has neither a stroke count nor a
   `\repeat tremolo` form in §2.5.3. `Single`, `Start` and `Stop` are kept.
+- `time-sig` value `4:4:AllaBreve` – §2.3.1 gives no cut-time symbol for
+  `\time`; `4:4:Common` remains declared and round-trips.
+- `style` value `hide_empty_staves:true` – MuseScore-only style default
+  (`docs/agents/model-modularisation.md` §11.4).
 
 No key, tick, oracle or comparison rule was relaxed; the same strip is
 applied before and after, and identical exclusions are applied to both
@@ -9807,3 +9856,52 @@ with the frozen baseline binary `34c27936` and the final binary:
 only in `<work>`, `<creator>` and `<credit>` metadata; note counts, pitches
 and attacks are identical. `cargo test --workspace`, clippy, fmt,
 `e2e_corpus` 8/8 and the wasm build are green.
+
+### 52.5 Last carriers, real lots and verification (2026-11-26)
+
+The last 3 losses of the 5 668-item inventory were closed without a private
+carrier:
+
+- a `\mark` at an empty segment is anchored at the start tick of its measure
+  (the inventory anchors a marker at that tick), so it survives a round trip;
+- an invisible `Arpeggio` (`visible = false`) is still written `\arpeggio`,
+  since LilyPond has no visibility flag for that event;
+- a `line_break` on the last measure is written `\break` as well (3 losses).
+  LilyPond compiles all 56 outputs with that trailing break.
+
+A unit test that had become obsolete with the per-measure multi-rest writer
+(e4460718) was restored: a genuinely condensed `R1*N` under 4/4 must **not**
+receive `Timing.measureLength = #N/1`, which would make each `R1` last N
+measures (`voice.rs::silence_multi_mesures_ne_fixe_pas_measure_length`).
+Successive rest measures keep their own `R1 | R1` boundaries; no snapshot
+changed.
+
+**Real lots.** The reading oracle of §12 (`mesure.sh --refs-only --python-ly ''
+--music21 ''`, Q16 grid, same manifests and exclusions, no reference
+regeneration and no script from a downloaded source executed) was run with two
+frozen binaries: `before` = the campaign baseline `33991a5f` (95.10 % without
+private carriers at 5 799 items, §52.1), `after` = `d6de4c9d` (98.01 %; the
+final docs-only commit does not change the binary). The cached references are
+the Nov-23 tree `/home/jacques/tmp/scoretk/ly95lect-refs-fresh/out3{ra,mut,rw}`
+(the `--convert-ly --same-score` tree of §51 is not available any more); the
+same tree is used on both sides, so the comparison is fair. One lot at a time,
+no `--stride`, every conversion under `timeout`/`prlimit`.
+
+| Lot | Files | Exact before | Exact after | N1 % | N2 % | Gains / losses |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ra` | 1 724 | 1 604 (93.0 %) | 1 604 (93.0 %) | 98.42 → 98.42 | 96.01 → 96.01 | 0 / 0 |
+| `mut` | 1 316 | 1 247 (94.8 %) | 1 247 (94.8 %) | 99.54 → 99.54 | 97.65 → 97.65 | 0 / 0 |
+| `rw` | 1 365 | 1 289 (94.4 %) | **1 290 (94.5 %)** | 99.54 → 99.54 | 97.63 → 97.63 | 1 / 0 |
+
+The single gain is `adding-links-to-objects.ly` (10 → 13 reference notes
+matched); no file loses an exact status or any N1/N2 note. Exclusions are
+unchanged: `ra` 1 unsupported + 66 unusable references, `mut` 61 unsupported,
+`rw` 83 unsupported. The figures of §51 (converted references) are not mixed
+with this run: they used a different, now unavailable reference tree.
+
+**Verification** (one cargo at a time, `nix develop -c env CARGO_BUILD_JOBS=2
+RUST_TEST_THREADS=2 nice -n 10`): `fmt --all -- --check`, `clippy --workspace
+--all-targets -- -D warnings`, `test --workspace --no-fail-fast`, `e2e_corpus`
+8/8, `build -p scoretk-wasm --target wasm32-unknown-unknown`. The 56 generated
+`.ly` also compile with LilyPond 2.27 through a `bwrap --unshare-all
+--die-with-parent` wrapper (read-only root, writable scratch): 56/56.

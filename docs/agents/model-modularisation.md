@@ -1296,20 +1296,36 @@ per-kind loss table and asserts the final target only.
 | --- | ---: | ---: | ---: | ---: |
 | abc (L0–L4, 4 870 items) | 95.24 % | **95.67 %** | 92.26 % | **95.13 %** |
 | lilypond (L0–L5) | 95.15 % | **95.33 %** (5 528/5 799) | 91.84 % (5 399/5 879) | **95.10 %** (5 515/5 799) |
+| lilypond (after the standard-carrier campaign) | — | **98.01 %** (5 555/5 668) | — | **98.01 %** (5 555/5 668) |
 
-For LilyPond the declared item kinds were restricted to what the format can
-carry, following the SMF precedent of §11.9: `tbox-position`, `tremolo` and
-`note-head` (exact MuseScore group) are out of reach with notation-reference
-sections and a test, so the denominator falls from 5 879 to 5 799. No
-comparison key, oracle or snapshot was relaxed, and the private-carrier row
-is measured on exactly the same declared kinds. No ABC layer declaration was
+For LilyPond the declared item kinds were first restricted to what the format
+can carry, following the SMF precedent of §11.9: `tbox-position`, `tremolo`
+and `note-head` were declared out of reach, so the denominator fell from
+5 879 to 5 799. That was too broad: LilyPond 2.26 carries single-note and
+two-note tremolos (`\repeat tremolo n`) and the note-head styles of appendix
+B.9. Both kinds were restored and their carriers implemented without private
+markup (`docs/agents/lilypond.md` §52.3). The final declaration excludes only
+seven whole kinds with no LilyPond object (`tbox-position`, `tbox-text`,
+`credit-position`, `harmony`, `system-text`, `instrument`, `channel`) and
+three individual values (`time-sig` AllaBreve, `hide_empty_staves`, tremolo
+`Unmeasured`), each cited per kind/value and pinned by a test. The denominator
+is 5 668 and the "with" and "without private carriers" rows are equal at
+98.01 %: no private carrier is any longer needed to reach the target. No
+comparison key or oracle was relaxed, and no ABC layer declaration was
 changed.
 
 Both formats now reach the 95 % target with **and** without scoretk-private
 extensions. The residual private carriers are kept only where the format
 has no equivalent (four ambiguous MuseScore instrument identifiers, a few
-multi-line frame texts and two-note tremolo on the ABC side; exact note-head
-groups and tremolo kinds on the LilyPond side).
+multi-line frame texts and two-note tremolo on the ABC side; **none** on the
+LilyPond side at the 98.01 % level).
+
+The real reading lots confirm non-regression (`docs/agents/lilypond.md` §52.5):
+with the campaign's baseline binary against the final one and the same cached
+LilyPond MIDI references, `ra` stays at 1 604/1 724, `mut` at 1 247/1 316 and
+`rw` gains one exact file (1 289 → 1 290/1 365), with no N1 or N2 loss. A last
+unit-test regression in the writer's `measureLength` plan for a condensed
+`R1*N` was also repaired without changing any snapshot.
 
 ### 11.12 MEI: additive carriers and the 99.9 % target (2026-11-26)
 
