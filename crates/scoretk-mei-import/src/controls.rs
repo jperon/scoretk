@@ -636,18 +636,13 @@ impl<'a> Reader<'a> {
         };
         breath.placement = convert::place_from_mei(node.attribute("place"));
         let staff_count = self.score.staves.len().max(1);
-        let position = self.score.measures[measure]
-            .segments
-            .iter()
-            .position(|segment| segment.tick == tick);
-        if let Some(position) = position {
-            self.score.measures[measure].segments[position]
-                .set_element(track, SegmentItem::Breath(breath));
-        } else {
-            let mut segment = Segment::new(SegmentType::Breath, tick, staff_count);
-            segment.set_element(track, SegmentItem::Breath(breath));
-            self.score.measures[measure].add_segment(segment);
-        }
+        // `<breath>`/`<caesura>` est un fait distinct de la note au même tick :
+        // `set_element` dans un segment existant écraserait le `ChordRest` et
+        // ferait perdre la note (v4/copypaste_parts). MEI autorise plusieurs
+        // éléments à un même `tstamp` (`att.timestamp`, Guidelines §10).
+        let mut segment = Segment::new(SegmentType::Breath, tick, staff_count);
+        segment.set_element(track, SegmentItem::Breath(breath));
+        self.score.measures[measure].add_segment(segment);
     }
 
     /// `MeiImporter::readOrnam` / `readMordent` / `readTurn` / `readTrill`.

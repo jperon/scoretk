@@ -517,6 +517,7 @@ fn write_graces(
     score: &Score,
     chord: &scoretk_core::model::Chord,
     transpose: i32,
+    full_support: bool,
 ) {
     for grace in &chord.grace_chords {
         let Some(grace_type) = grace.chord.grace else {
@@ -548,7 +549,15 @@ fn write_graces(
         for id in &grace.chord.notes {
             let note = &score.notes[id.index()];
             let (pname, oct, accid) = convert::pitch_to_mei_written(note.pitch, transpose);
-            let uid = format!("gn{}", id.index());
+            // En mode additif les notes d'agrément portent l'`xml:id` de
+            // leur index de modèle : un `<tie @startid/@endid>` peut ainsi
+            // viser une note de grâce. Le lecteur enregistre cet identifiant
+            // dans `id_notes` (`readGraceGrp`), comme pour une note normale.
+            let uid = if full_support {
+                format!("n{}", id.index())
+            } else {
+                format!("gn{}", id.index())
+            };
             let oct = oct.to_string();
             let mut note_attrs = vec![
                 ("pname", pname.as_str()),
@@ -709,7 +718,7 @@ fn write_layer(
         };
         if options.full_support {
             if let ChordRestKind::Chord(chord) = &cr.kind {
-                write_graces(xml, score, chord, transpose);
+                write_graces(xml, score, chord, transpose, options.full_support);
             }
         }
         // MuseScore wraps consecutive beamed events in a `<beam>` container.

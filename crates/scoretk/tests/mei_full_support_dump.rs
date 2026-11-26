@@ -81,14 +81,22 @@ fn diagnose_one_score() {
         .map(str::to_owned)
         .filter(|kind| !kind.is_empty())
         .collect();
-    let (version, stem) = name.split_once('/').expect("version/name");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("tests")
         .join("corpus");
-    let bytes = fs::read(root.join(version).join(format!("{stem}.mscx"))).expect("score");
-    let score = read(&bytes, Format::Mscx).expect("read score");
+    let bytes = if let Ok(file) = std::env::var("SCORETK_MEI_FILE") {
+        fs::read(file).expect("read MEI file")
+    } else {
+        let (version, stem) = name.split_once('/').expect("version/name");
+        fs::read(root.join(version).join(format!("{stem}.mscx"))).expect("score")
+    };
+    let score = if std::env::var("SCORETK_MEI_FILE").is_ok() {
+        read(&bytes, Format::Mei).expect("read MEI")
+    } else {
+        read(&bytes, Format::Mscx).expect("read score")
+    };
     let options = Options {
         mei_full_support: true,
         ..Default::default()
@@ -108,6 +116,23 @@ fn diagnose_one_score() {
                                 segment.tick,
                                 track.raw(),
                                 clef.concert
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if std::env::var("SCORETK_MEI_SEGMENTS").is_ok() {
+            for (measure_index, measure) in value.measures.iter().enumerate() {
+                for (segment_index, segment) in measure.segments.iter().enumerate() {
+                    for (track, item) in segment.iter_elements() {
+                        if let scoretk::model::SegmentItem::ChordRest(cr) = item {
+                            println!(
+                                "    cr segment m{measure_index}/{segment_index} kind {:?} tick {:?} track {} dur {:?}",
+                                segment.kind,
+                                segment.tick,
+                                track.raw(),
+                                cr.duration
                             );
                         }
                     }

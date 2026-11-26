@@ -312,3 +312,22 @@ fn additive_text_carriers_keep_trailing_whitespace() {
         .any(|credit| credit.text.plain() == "Sonata \"Moonlight\" "));
     assert_eq!(score.engraving.tbox_texts[0].text.plain(), "volta\n");
 }
+
+/// A breath at the same `tstamp` as a note is a separate fact: the reader
+/// must add its own segment instead of replacing the chord rest.
+#[test]
+fn breath_at_a_note_tick_does_not_erase_the_note() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+        <section><measure n="1">
+          <staff n="1"><layer n="1"><note dur="4" tstamp="1.000" pname="c" oct="4"/></layer></staff>
+          <breath staff="1" tstamp="1.000" type="mscore-breath-Tick"/>
+        </measure></section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    let kinds: Vec<_> = score.measures[0].segments.iter().map(|s| s.kind).collect();
+    assert!(kinds.contains(&scoretk::model::SegmentType::ChordRest));
+    assert!(kinds.contains(&scoretk::model::SegmentType::Breath));
+    assert_eq!(score.notes.len(), 1);
+}
