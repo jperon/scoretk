@@ -144,6 +144,7 @@ fn read_direction(text: &str, collected: &mut Collected) {
                     glyph,
                     source_offset: value(&fields, 'o').and_then(|value| value.parse().ok()),
                     source_end: value(&fields, 'e').and_then(|value| value.parse().ok()),
+                    attributes: Vec::new(),
                 };
                 collected
                     .notes
@@ -209,6 +210,7 @@ fn read_note(
             signs: Vec::new(),
             source_offset: value(&fields, 'o').and_then(|value| value.parse().ok()),
             source_end: value(&fields, 'e').and_then(|value| value.parse().ok()),
+            attributes: Vec::new(),
         },
     ))
 }

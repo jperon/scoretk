@@ -25,7 +25,7 @@
 //! relus par le lecteur. Le format interne est ASCII hexadécimal, donc
 //! insensible à l'échappement XML.
 
-use scoretk_core::model::{Gregorian, GregorianHeaderItem};
+use scoretk_core::model::{Gregorian, GregorianHeaderItem, Syllable};
 
 /// Préfixe de la valeur `@label` portant le layout du document GABC.
 pub const HEADER_LABEL: &str = "gabc:layout:";
@@ -140,6 +140,64 @@ pub fn read_header_label(label: Option<&str>, gregorian: &mut Gregorian) {
     };
 }
 
+/// Préfixe du `@label` portant les attributs `[…]` d'une syllabe.
+pub const SYLLABLE_LABEL: &str = "gabc:attrs:";
+
+/// Sérialise les attributs de groupe et de chaque note (`Gabc.tex:689-700,
+/// 908-931,1093-1118`) dans un `@label` de `<syllable>`.
+#[must_use]
+pub fn attributes_label(syllable: &Syllable) -> Option<String> {
+    if syllable.leading_attributes.is_empty()
+        && syllable.notes.iter().all(|note| note.attributes.is_empty())
+    {
+        return None;
+    }
+    let mut inner = String::from("L");
+    for attribute in &syllable.leading_attributes {
+        inner.push_str(&hex(attribute));
+        inner.push(';');
+    }
+    inner.push('|');
+    for note in &syllable.notes {
+        if note.attributes.is_empty() {
+            inner.push_str("E|");
+        } else {
+            inner.push('A');
+            for attribute in &note.attributes {
+                inner.push_str(&hex(attribute));
+                inner.push(';');
+            }
+            inner.push('|');
+        }
+    }
+    Some(format!("{SYLLABLE_LABEL}{}", hex(&inner)))
+}
+
+/// Restaure les attributs `[…]` depuis un `@label` de `<syllable>`.
+/// Appelé après la lecture des `<nc>`, dont l'ordre donne l'index de note.
+pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
+    let Some(value) = label.and_then(|text| text.strip_prefix(SYLLABLE_LABEL)) else {
+        return;
+    };
+    let Some(inner) = unhex(value) else {
+        return;
+    };
+    let mut parts = inner.split('|');
+    if let Some(leading) = parts.next().and_then(|part| part.strip_prefix('L')) {
+        syllable.leading_attributes = leading
+            .split(';')
+            .filter_map(|token| unhex(token))
+            .collect();
+    }
+    for note in &mut syllable.notes {
+        if let Some(part) = parts.next() {
+            if let Some(tokens) = part.strip_prefix('A') {
+                note.attributes = tokens.split(';').filter_map(|token| unhex(token)).collect();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +231,36 @@ mod tests {
         assert_eq!(back.notation_prefix, gregorian.notation_prefix);
         read_header_label(None, &mut back);
         assert_eq!(back.header_items, gregorian.header_items);
+    }
+
+    #[test]
+    fn note_attributes_cross_a_syllable_label() {
+        let syllable = Syllable {
+            leading_attributes: vec!["[alt:Intro]".to_owned()],
+            notes: vec![
+                scoretk_core::model::GregorianNote {
+                    letter: 'g',
+                    attributes: vec!["[cs:t]".to_owned(), "[oh:h]".to_owned()],
+                    ..Default::default()
+                },
+                scoretk_core::model::GregorianNote {
+                    letter: 'h',
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let label = attributes_label(&syllable).expect("a label");
+        let mut back = Syllable {
+            notes: syllable.notes.clone(),
+            ..Default::default()
+        };
+        for note in &mut back.notes {
+            note.attributes.clear();
+        }
+        read_attributes_label(Some(&label), &mut back);
+        assert_eq!(back.leading_attributes, syllable.leading_attributes);
+        assert_eq!(back.notes[0].attributes, syllable.notes[0].attributes);
+        assert!(back.notes[1].attributes.is_empty());
     }
 }

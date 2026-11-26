@@ -312,7 +312,7 @@ fn parse_group(
         above_text: above_text.clone(),
         ..Syllable::default()
     };
-    let (code, mapping) = strip_attributes(raw_code);
+    let (code, mapping, brackets) = strip_attributes(raw_code);
     // A `|` cut cycles the NABC state modulo `nabc_lines + 1`
     // (`gabc-score-determination.y:870-907`): state 0 is square notation,
     // states 1…n are the parallel manuscript snippets. NABC letters (`a`…`n`)
@@ -379,6 +379,7 @@ fn parse_group(
     let clefs = syntax::parse_clefs(&chars.iter().collect::<String>());
     let square_len = chars.len();
     let mut note_starts: Vec<usize> = Vec::new();
+    let mut note_ends: Vec<usize> = Vec::new();
     let mut index = 0;
     while index < square_len {
         let rest: String = chars[index..].iter().collect();
@@ -447,6 +448,7 @@ fn parse_group(
                 index += 1;
             }
             let glyph: String = chars[start + 1..index].iter().collect();
+            note_ends.push(index);
             syllable.notes.push(GregorianNote {
                 letter: char,
                 signs: syntax::parse_signs(&glyph),
@@ -457,10 +459,24 @@ fn parse_group(
                         .get(last)
                         .map(|start| start + chars[last].len_utf16())
                 }),
+                attributes: Vec::new(),
             });
             continue;
         }
         index += 1;
+    }
+    // Each bracketed attribute lives on the note whose token it follows,
+    // not on the group: that is the level where Gregorio attaches it and
+    // the level from which the GABC writer re-emits it in place.
+    for (position, token) in brackets {
+        let owner = note_starts
+            .iter()
+            .zip(&note_ends)
+            .position(|(start, end)| position >= *start && position <= *end);
+        match owner {
+            Some(index) => syllable.notes[index].attributes.push(token),
+            None => syllable.leading_attributes.push(token),
+        }
     }
     syllable.nabc = cuts
         .into_iter()
@@ -490,11 +506,15 @@ fn above_staff_text(code: &str) -> Option<String> {
 /// primitive notes that are all sung (`@[ehg]` = `e`, `h`, `g`), so stripping
 /// them silently lost notes. The caller iterates the same characters and
 /// treats the `@` as a fusion marker, leaving one note per letter.
-fn strip_attributes(code: &str) -> (String, Vec<usize>) {
+fn strip_attributes(code: &str) -> (String, Vec<usize>, Vec<(usize, String)>) {
     let chars: Vec<char> = code.chars().collect();
     let mut result = String::with_capacity(code.len());
     // Position d'origine de chaque caractère conservé, plus un sentinelle.
     let mut mapping = Vec::with_capacity(chars.len() + 1);
+    // Brackets kept as local tokens: their position in the stripped stream
+    // says which note's glyph they belong to, their text is atomic because
+    // Gregorio parses `[cs:t]` / `[oh:h]` as one attribute (`:908-931`).
+    let mut brackets: Vec<(usize, String)> = Vec::new();
     let mut index = 0;
     while index < chars.len() {
         if chars[index] == '[' {
@@ -518,6 +538,8 @@ fn strip_attributes(code: &str) -> (String, Vec<usize>) {
                     result.push(*char);
                     mapping.push(index + 1 + offset);
                 }
+            } else {
+                brackets.push((result.chars().count(), chars[index..end].iter().collect()));
             }
             index = end;
             continue;
@@ -527,7 +549,7 @@ fn strip_attributes(code: &str) -> (String, Vec<usize>) {
         index += 1;
     }
     mapping.push(chars.len());
-    (result, mapping)
+    (result, mapping, brackets)
 }
 
 #[cfg(test)]

@@ -156,12 +156,24 @@ fn emit(gregorian: &Gregorian) -> String {
         if let Some(clef) = &syllable.clef {
             out.push_str(clef);
         }
+        for attribute in &syllable.leading_attributes {
+            out.push_str(attribute);
+        }
         if let Some(above) = &syllable.above_text {
             // `Gabc.tex:1088-1091` : `[alt:…]` est un texte au-dessus de la
-            // portée, émis à côté des notes mais jamais comme une note.
-            out.push_str("[alt:");
-            out.push_str(above);
-            out.push(']');
+            // portée, émis à côté des notes mais jamais comme une note. Un
+            // payload lu depuis du GABC porte déjà l'attribut à sa place
+            // (dans `GregorianNote::attributes`) : ne pas le déplacer.
+            let already_in_place = syllable.notes.iter().any(|note| {
+                note.attributes
+                    .iter()
+                    .any(|attribute| attribute == &format!("[alt:{above}]"))
+            });
+            if !already_in_place {
+                out.push_str("[alt:");
+                out.push_str(above);
+                out.push(']');
+            }
         }
         // NABC snippets are atomic source tokens: the manuscript voice has
         // no decomposed GABC representation (spacing, modifiers, significant
@@ -278,6 +290,11 @@ fn write_note(out: &mut String, note: &scoretk_core::model::GregorianNote) {
         for sign in &note.signs {
             out.push_str(&sign.raw);
         }
+    }
+    // Layout/tuning/TeX attributes are atomic GABC tokens attached to this
+    // glyph (`Gabc.tex:689-700,908-931,1093-1118`), emitted in source order.
+    for attribute in &note.attributes {
+        out.push_str(attribute);
     }
 }
 

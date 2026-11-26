@@ -256,6 +256,12 @@ pub struct GregorianNote {
     pub source_offset: Option<usize>,
     /// Décalage UTF-16 juste après le jeton source de la note.
     pub source_end: Option<usize>,
+    /// Bracketed layout/tuning/TeX attributes attached to this note's glyph
+    /// (`[cs:t]`, `[oh:h]`, `[ll:1]`, `[-0.5]`, …; `Gabc.tex:689-700,
+    /// 908-931,1093-1118`). They are not sung and never become signs, but
+    /// their exact spelling and position are source facts, so the GABC
+    /// writer emits them after this note rather than dropping them.
+    pub attributes: Vec<String>,
 }
 
 /// One manuscript snippet after a NABC cut `|`, with the number of square
@@ -315,6 +321,11 @@ pub struct Syllable {
     /// manuscript snippets (`GregorioNabcRef.tex:178-199`). Empty by default:
     /// a chant without NABC has no second voice.
     pub nabc: Vec<NabcSnippet>,
+    /// Bracketed attributes occurring before the first pitch of the group
+    /// (`Gabc.tex:689-700,908-931,1093-1118`). Empty for ordinary chants:
+    /// the corpus only has fusion sequences there, whose primitives are
+    /// kept as sung notes instead.
+    pub leading_attributes: Vec<String>,
     /// A space or an end of line followed the last `)` (`:60-61,241-245`).
     ///
     /// Spaces are music in GABC: this flag is part of the primary data even
@@ -1456,6 +1467,7 @@ mod tests {
             signs: Vec::new(),
             bars: vec![BarKind::DivisioFinalis],
             nabc: Vec::new(),
+            leading_attributes: Vec::new(),
             space_after: true,
             separator_after: None,
         });

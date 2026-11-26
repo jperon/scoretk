@@ -160,6 +160,14 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
             }
         }
 
+        // `@label` porte les attributs `[…]` non chantés, attachés à leur
+        // note ; ils ne sont pas des signes MEI et ne deviennent pas des
+        // `<nc>` supplémentaires.
+        scoretk_mei_common::gabc_layout::read_attributes_label(
+            syllable_node.attribute("label"),
+            &mut syllable,
+        );
+
         let mut bar_index = 0;
         for node in &syllable_node.children {
             if node.name == "divLine" {

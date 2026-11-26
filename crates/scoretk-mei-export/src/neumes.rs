@@ -341,11 +341,14 @@ fn write_syllable(
     if let Some(label) = &separator_label {
         syl_attributes.push(("label", label.as_str()));
     }
-    let attributes = if linked {
+    let mut attributes = if linked {
         nabc::link(syllable_index, 1)
     } else {
         Vec::new()
     };
+    if let Some(label) = scoretk_mei_common::gabc_layout::attributes_label(syllable) {
+        attributes.push(("label".to_owned(), label));
+    }
     let link_refs: Vec<(&str, &str)> = attributes
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))
