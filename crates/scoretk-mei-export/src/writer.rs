@@ -47,7 +47,7 @@ pub(crate) fn write(
         return neumes::write(gregorian, options);
     }
     let mut xml = XmlWriter::new();
-    header::mei_start(&mut xml, &options.encoding_date);
+    header::mei_start(&mut xml, &options.encoding_date, options.full_support);
     header::write_header(&mut xml, score, &options.encoding_date, options);
     xml.start_element("music", &[]);
     xml.start_element("body", &[]);
@@ -860,21 +860,10 @@ fn write_layer(
         && track.staff().raw() == 0
         && measure.end_bar_line == scoretk_core::model::BarLineType::Dashed
     {
-        let stamp = format_tstamp(
-            convert::tstamp_from_fraction(
-                measure.end_tick() - measure.start_tick,
-                round_trip_tstamp_denominator(measure),
-            ),
-            true,
-        );
-        xml.tag_empty(
-            "barLine",
-            &[
-                ("form", "dashed"),
-                ("tstamp", stamp.as_str()),
-                ("staff", "1"),
-            ],
-        );
+        // `mei_barLine` porte `att.barLine.log/@form` mais pas `att.staff`
+        // ni `att.timestamp` : le tick reste celui de la fin de mesure et le
+        // lecteur n'a besoin que de `@form`.
+        xml.tag_empty("barLine", &[("form", "dashed")]);
     }
     let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
@@ -1072,22 +1061,6 @@ fn write_layer(
                     write_artics(xml, chord, options.full_support);
                     write_verses(xml, cr);
                     xml.end_element();
-                }
-            }
-        }
-        if options.full_support {
-            if let ChordRestKind::Chord(chord) = &cr.kind {
-                if let Some(line) = chord.chord_line {
-                    // `<dir>` (`mei_dir`, Guidelines §10) porte la ligne
-                    // d'accord ; `@startid` l'ancre sur la première note.
-                    let type_name = format!("{}{line:?}", ids::CHORD_LINE_TYPE);
-                    if let Some(id) = chord.notes.first().map(|id| format!("n{}", id.index())) {
-                        let anchor = format!("#{id}");
-                        xml.tag_empty(
-                            "dir",
-                            &[("type", type_name.as_str()), ("startid", anchor.as_str())],
-                        );
-                    }
                 }
             }
         }
@@ -1430,10 +1403,13 @@ fn write_control_events(
                     // `<fb>`/`<f>` (`mei_fb`, `mei_f`, Guidelines §10) est le
                     // porteur standard d'une basse continue ; `@type` distingue
                     // la notation exacte du port de celle d'un encodeur externe.
-                    let mut figure_attrs = refs.clone();
-                    figure_attrs.push(("type", ids::FIGURED_BASS_TYPE));
-                    xml.start_element("fb", &figure_attrs);
+                    // `mei_fb` n'est admissible qu'enfant de `mei_harm` dans
+                    // `mei-all-5.1.rng` (`model.figbassLike`) : le `<harm>`
+                    // porte l'ancrage, `<fb>` le genre et `<f>` les chiffres.
+                    xml.start_element("harm", &refs);
+                    xml.start_element("fb", &[("type", ids::FIGURED_BASS_TYPE)]);
                     xml.tag_with("f", &[], &encode_figured_bass(&figure.items));
+                    xml.end_element();
                     xml.end_element();
                 }
                 Annotation::TremoloBar(bar) => {
@@ -1456,6 +1432,41 @@ fn write_control_events(
                     xml.tag_with("dir", &bar_attrs, &points);
                 }
                 _ => {}
+            }
+        }
+    }
+    if options.full_support {
+        // `<dir>` est un événement de contrôle de mesure, pas un enfant de
+        // `<layer>` (`mei-all-5.1.rng`, `model.controlEventLike`). La ligne
+        // d'accord est ancrée sur la première note de l'accord par `startid`.
+        for staff_idx in 0..score.staves.len() {
+            for voice in 0..VOICES as u8 {
+                let track = Track::new(scoretk_core::model::StaffId::from_index(staff_idx), voice);
+                for segment in &measure.segments {
+                    let Some(SegmentItem::ChordRest(cr)) = segment.element(track) else {
+                        continue;
+                    };
+                    let ChordRestKind::Chord(chord) = &cr.kind else {
+                        continue;
+                    };
+                    let Some(line) = chord.chord_line else {
+                        continue;
+                    };
+                    let type_name = format!("{}{line:?}", ids::CHORD_LINE_TYPE);
+                    let Some(id) = chord.notes.first().map(|id| format!("n{}", id.index())) else {
+                        continue;
+                    };
+                    let anchor = format!("#{id}");
+                    let staff = (staff_idx + 1).to_string();
+                    xml.tag_empty(
+                        "dir",
+                        &[
+                            ("type", type_name.as_str()),
+                            ("staff", staff.as_str()),
+                            ("startid", anchor.as_str()),
+                        ],
+                    );
+                }
             }
         }
     }

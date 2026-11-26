@@ -709,6 +709,16 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readHarm` (`meiimporter.cpp:2795`).
     fn add_harmony(&mut self, node: &Element, measure: usize) {
+        if let Some(fb) = node.child("fb") {
+            if fb.attribute("type") == Some(scoretk_mei_common::ids::FIGURED_BASS_TYPE) {
+                let text = fb.child("f").map(crate::lines_of).unwrap_or_default();
+                let mut figure = FiguredBass::new();
+                figure.items = decode_figured_bass(&text);
+                let (tick, track) = self.anchor(node, measure);
+                self.add_annotation(tick, track, Annotation::FiguredBass(figure));
+                return;
+            }
+        }
         let text = crate::lines_of(node);
         if text.is_empty() {
             return;

@@ -445,23 +445,30 @@ fn first_time_sig(score: &Score) -> (i32, i32, scoretk_core::model::TimeSigType)
 }
 
 /// Namespace declaration of the MEI root, as written by MuseScore.
-pub(crate) fn mei_start(xml: &mut XmlWriter, date: &str) {
+pub(crate) fn mei_start(xml: &mut XmlWriter, date: &str, full_support: bool) {
     xml.start_document();
-    xml.processing_instruction(
-        "xml-model href=\"https://music-encoding.org/schema/5.1/mei-basic.rng\" \
-         type=\"application/xml\" schematypens=\"http://relaxng.org/ns/structure/1.0\"",
-    );
-    xml.processing_instruction(
-        "xml-model href=\"https://music-encoding.org/schema/5.1/mei-basic.rng\" \
-         type=\"application/xml\" schematypens=\"http://purl.oclc.org/dsdl/schematron\"",
-    );
+    // Le mode additif écrit des éléments de `mei-all` : il annonce `mei-all`
+    // et la version de la RNG normative (`meiversion="5.1"`), tandis que le
+    // chemin 4.7.4 garde `mei-basic`/`5.1+basic` octet pour octet.
+    let schema = if full_support { "mei-all" } else { "mei-basic" };
+    for schematypens in [
+        "http://relaxng.org/ns/structure/1.0",
+        "http://purl.oclc.org/dsdl/schematron",
+    ] {
+        xml.processing_instruction(&format!(
+            "xml-model href=\"https://music-encoding.org/schema/5.1/{schema}.rng\" \
+             type=\"application/xml\" schematypens=\"{schematypens}\""
+        ));
+    }
     let _ = date;
+    let version = if full_support {
+        "5.1"
+    } else {
+        ids::MEI_VERSION
+    };
     xml.start_element(
         "mei",
-        &[
-            ("xmlns", ids::MEI_NAMESPACE),
-            ("meiversion", ids::MEI_VERSION),
-        ],
+        &[("xmlns", ids::MEI_NAMESPACE), ("meiversion", version)],
     );
 }
 

@@ -341,9 +341,9 @@ fn figured_bass_carrier_round_trips_the_items() {
         <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
         <section><measure n="1">
           <staff n="1"><layer n="1"><note dur="4" tstamp="1.000" pname="c" oct="4"/></layer></staff>
-          <fb type="mscore-figured-bass" staff="1" tstamp="1.000">
-            <f>-/5/-/0/00000;-/3/-/0/00000</f>
-          </fb>
+          <harm staff="1" tstamp="1.000">
+            <fb type="mscore-figured-bass"><f>-/5/-/0/00000;-/3/-/0/00000</f></fb>
+          </harm>
         </measure></section>
       </score></mdiv></body></music></mei>"#;
     let score = read(mei, Format::Mei).expect("read MEI");
