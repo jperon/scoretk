@@ -69,6 +69,17 @@ def convert_from(cli: Path, data: bytes, source_format: str,
 DESTINATIONS = ("musicxml", "midi", "ly", "abc", "mei")
 ENCODING_DATE = "2026-01-01"
 
+# Each destination is measured in its *full-support* mode, i.e. the mode in
+# which its specification's standard carriers are actually enabled. The CLI
+# keeps every default byte unchanged; the option only adds carriers.
+FULL_SUPPORT_EXTRA: dict[str, tuple[str, ...]] = {
+    "musicxml": ("--xml-full-support",),
+    "midi": ("--midi-full-support",),
+    "mei": ("--mei-full-support",),
+    "ly": (),
+    "abc": (),
+}
+
 # Fact kinds, with the Gregorio rule that makes them a GABC fact.
 KIND_SOURCE = {
     "header": "Gabc.tex:67-154 (header definitions other than the title)",
@@ -322,15 +333,37 @@ def facts(gabc_text: str) -> Counter[tuple[str, str]]:
     return result
 
 
-# Some sign/barrier spellings have no carrier even when the kind does.
-# Patterns are matched against the fact value; the first match wins.
+# Some individual spellings have no carrier even when the *kind* does.
+# Patterns are matched against the fact value; the first match wins. The
+# citation is always to the DESTINATION specification (Gabc.tex explains the
+# source token, not why the destination cannot carry it).
 INHERENT_VALUES: dict[str, dict[str, list[tuple[str, str]]]] = {
-    destination: {
-        "mora": [(r"^\.{2,}|^\.[0-9]", "Gabc.tex:742-755: sign placement digits and repeated morae have no separate object in this format")],
-        "episema": [(r"^_", "Gabc.tex:769-797: only one tenuto/episema can be attached to a written note in this format; repeated and positioned episemata have no separate carrier")],
-        "bar": [(r"^[,;][1-8]$", "Gregorio `gabc-notes-determination.l:1246-1248`: Dominican bar digits have no element in this format (`gabc.md` §19)")],
-    }
-    for destination in DESTINATIONS
+    "musicxml": {
+        "mora": [(r"^\.{2,}|^\.[0-9]", "musicxml-4.0.xsd `complexType note` / `note/dot` (:5160, :5213): a dot is a count, not a placement digit or a repeated mora (`Gabc.tex:742-755`)")],
+        "episema": [(r"^_", "musicxml-4.0.xsd `complexType articulation` / `tenuto` (:5300): one tenuto per note, no position digits for `_502` (`Gabc.tex:769-797`)")],
+        "bar": [(r"^[,;][1-8]$", "musicxml-4.0.xsd `bar-style` enumeration (:3225) has no Dominican digit and 4.0 defines no `other-barline` (`gabc-notes-determination.l:1246-1248`)")],
+    },
+    "midi": {
+        "mora": [(r"^\.{2,}|^\.[0-9]", "format-ref/midi.md §Events and time: Note On/Off has no notation-sign object, hence no mora placement digit")],
+        "episema": [(r"^_", "format-ref/midi.md §Events and time: no articulation object, hence no episema placement digit")],
+        "bar": [(r"^[,;][1-8]$", "format-ref/midi.md §Container layout: an MTrk has no bar object, a fortiori no Dominican digit")],
+    },
+    "ly": {
+        "mora": [(r"^\.{2,}|^\.[0-9]", "notation-big-page.html §17.4.6 'Augmentum dots (morae)': `\\augmentum` has no placement-digit argument")],
+        "episema": [(r"^_", "notation-big-page.html §17.4.5 'Gregorian articulation signs': `\\episemInitium`/`\\episemFinis` have no placement-digit argument")],
+        "bar": [(r"^[,;][1-8]$", "notation-big-page.html §17.4.4 'Divisiones': `\\divisioMinima`…`\\finalis` have no Dominican-digit variant")],
+    },
+    "abc": {
+        "mora": [(r"^\.{2,}|^\.[0-9]", "abc-standard-v2.1.wiki.txt §4.3 'Note lengths': dot is a duration modifier, not a mora placement digit")],
+        "episema": [(r"^_", "abc-standard-v2.1.wiki.txt §4.14 'Decorations': `!tenuto!` is one decoration per note, no placement digits")],
+        "bar": [(r"^[,;][1-8]$", "abc-standard-v2.1.wiki.txt §4.8 'Repeat bar symbols': phrase decorations carry a bar kind, no Dominican digit")],
+    },
+    "mei": {
+        "mora": [(r"^\.{2,}|^\.[0-9]", "mei-all-5.1.rng `att.duration` / `<dot>`: a dot is a duration multiplier, not a mora placement digit")],
+        "episema": [(r"^_", "mei-all-5.1.rng `<episema>` (mei_all module Neumes): no placement-digit attribute")],
+        # MEI does carry Dominican digits in `att.divLine.log/@form`
+        # (docs/agents/mei.md §10), so no bar pattern is inherent here.
+    },
 }
 
 
@@ -341,72 +374,89 @@ def inherent_citation(destination: str, kind: str, value: str) -> str | None:
     return INHERENT.get(destination, {}).get(kind)
 
 
-# A loss is inherent only with a citation here. `None` / absence means the
-# format has a carrier and the loss is a defect.
-INHERENT: dict[str, dict[str, str]] = {
+# Rows RECLASSIFIED from "inherent" to defect after the spec audit. A row is
+# inherent only if the destination specification has no carrier; "our writer
+# does not use it" is a defect of the writer, not a limit of the format.
+# Kept here as an audit trail and printed with every report.
+RECLASSIFIED: dict[str, dict[str, str]] = {
     "musicxml": {
-        "letter": "XSD 4.0 `pitch/step` names a pitch, not a staff position; `notehead-value` has no punctum inclusum/inclinatum value (format-ref/musicxml.md §Notes)",
-        "header": "MusicXML XSD 4.0 `work`/`identification` define a closed header vocabulary (format-ref/musicxml.md §Document shape); GregoBase headers have no standard field",
-        "rubric": "XSD 4.0 `<words>` carries plain text only, not GABC `<sp>`/`<alt>` TeX markup (gabc.md §9.1)",
-        "glyph": "MusicXML XSD 4.0 `notations` has no element for a GABC glyph spelling; only SMuFL *names* are standard (`xsd:other-notation/@smufl`), see gabc.md §14.4",
-        "shape": "XSD 4.0 `ornaments`/`articulations` enumerate a fixed vocabulary; most chant shapes have no element (gabc.md §9.1)",
-        "ictus": "XSD 4.0 has no ictus object (`xsd:notations` enumeration)",
-        "nabc": "XSD 4.0 `notations` has no manuscript-neume object (gabc.md §16)",
-        "custos": "XSD 4.0 `note` offers pitch/rest only; no `<custos>` element",
-        "attribute": "XSD 4.0 `direction-type` has no TeX attribute object",
-        "layout": "XSD 4.0 `print`/`spacing` describe page geometry, not inter-syllable source whitespace",
+        "letter": "musicxml-4.0.xsd `complexType clef` (:2930), `staff-lines` (:3136) and `pitch/step` (:5160): clef + pitch give the staff position",
+        "header": "musicxml-4.0.xsd `identification/miscellaneous-field/@name` (:4327-4348): arbitrary name/value metadata",
+        "rubric": "musicxml-4.0.xsd `words` (:3495, `formatted-text` :2610, xs:string): markup text can be written verbatim",
+        "glyph": "musicxml-4.0.xsd `other-notation/@smufl` (:5361-5375): SMuFL chant glyph names are standard carriers",
+        "shape": "musicxml-4.0.xsd `other-notation/@smufl` (:5361), `other-ornament` (:5350), `other-articulation` (:4671)",
+        "ictus": "musicxml-4.0.xsd `other-notation/@smufl` (:5361): SMuFL `chantIctusAbove`/`chantIctusBelow`",
+        "custos": "musicxml-4.0.xsd `other-notation/@smufl` (:5361): SMuFL `chantCustosStemUp`/`chantCustosStemDown`",
+        "attribute": "musicxml-4.0.xsd `other-technical` (:5625, `other-placement-text` :5378, xs:string)",
     },
     "midi": {
-        "letter": "SMF has no staff/clef fields (`format-ref/midi.md` §Container layout); only sounding pitch is carried",
-        "header": "SMF meta events have no structured header object (`format-ref/midi.md` §Meta-event types)",
-        "rubric": "RP-017 lyric meta carries syllable text only (`format-ref/midi.md` §Lyrics)",
-        "title": "SMF `FF 03` is a sequence/track name, not a Gregorian `name:` header; the MuseScore-compatible default export writes no text meta (`format-ref/midi.md` §Meta-event types)",
-        "text": "RP-017 carries syllable text but not GABC markup (`format-ref/midi.md` §Lyrics)",
-        "glyph": "SMF has no notation objects (`format-ref/midi.md` §Instruments, parts, repeats)",
-        "mora": "SMF Note On/Off carries sound, not rhythmic signs (`format-ref/midi.md` §Events and time)",
-        "ictus": "SMF has no ictus object (`format-ref/midi.md` §Events and time)",
-        "episema": "SMF has no articulation object (`format-ref/midi.md` §Events and time)",
-        "quilisma": "SMF renders an ornament as notes, not as a sign (`format-ref/midi.md` §Instruments, parts, repeats)",
-        "shape": "SMF has no glyph object (`format-ref/midi.md` §Events and time)",
-        "bar": "SMF `MTrk` has no bar/measure fields (`format-ref/midi.md` §Container layout)",
-        "clef": "SMF `MTrk` has no staff/clef fields (`format-ref/midi.md` §Container layout)",
-        "custos": "SMF has no engraving objects (`format-ref/midi.md` §Instruments, parts, repeats)",
-        "nabc": "SMF has no manuscript-neume object (`format-ref/midi.md` §Events and time)",
-        "attribute": "SMF has no TeX attribute object (`format-ref/midi.md` §Events and time)",
-        "layout": "SMF has no layout object (`format-ref/midi.md` §Container layout)",
+        "title": "format-ref/midi.md §Meta-event types (:81-83): `FF 03` sequence name and `FF 01` text event carry the string",
+        "header": "format-ref/midi.md §Meta-event types (:81): `FF 01` text event is arbitrary text",
+        "rubric": "format-ref/midi.md §Lyrics (:125-140): `FF 05` carries the syllable text, `FF 01` other text",
+        "text": "format-ref/midi.md §Lyrics (:125-140): literal syllable text is carried by `FF 05`",
     },
     "ly": {
-        "quilisma": "The `\\fixed` chant dialect writes a generic `\\prall`; the quilisma glyph requires the vaticana/gregoriano syntax of Notation Reference §17.4 (gabc.md §14.4)",
-        "letter": "LilyPond pitches are absolute note names, not GABC staff positions (`format-ref/lilypond.md` §Pitch, key, clef, accidentals)",
-        "header": r"LilyPond `\header` has no standard field for GregoBase definitions such as `office-part` or `nabc-lines` (format-ref/lilypond.md §File structure)",
-        "rubric": "LilyPond lyrics are plain words with hyphens (`format-ref/lilypond.md` §Repeats and lyrics)",
-        "glyph": "The scoretk chant dialect is `\\fixed` with ordinary notes (gabc.md §14.4); no GABC glyph spelling is a token of it",
-        "shape": "Same `\\fixed` dialect: only `\\prall`, `_`, `-` and `\\breathe` are emitted; arbitrary chant glyphs are not tokens (`format-ref/lilypond.md` §Pitch, clef, accidentals)",
-        "ictus": "No ictus token in the `\\fixed` dialect (`format-ref/lilypond.md` §Articulations ornaments)",
-        "custos": "LilyPond has no custos object in the `\\fixed` dialect (`format-ref/lilypond.md` §Pitch, key, clef, accidentals)",
-        "nabc": "NABC snippets need the vaticana/gregoriano dialect, not the `\\fixed` output (gabc.md §14.4)",
-        "attribute": "TeX layout attributes are not LilyPond syntax tokens",
-        "layout": "Exact source whitespace is not an engraving fact of LilyPond input",
+        "quilisma": "notation-big-page.html §17.4.7 'Gregorian square neume ligatures' (:44646-44662): `\\quilisma`",
+        "ictus": "notation-big-page.html §17.4.5 'Gregorian articulation signs' (:44497-44531): `\\ictus`",
+        "custos": "notation-big-page.html §17.2.3 'Custodes' (:43345-43381): `Custos_engraver`",
+        "letter": "notation-big-page.html §17.4.2 'Gregorian clefs' (:44295-44350) and §17.4.7: pitch + `\\clef vaticana-doN/faN` give the staff position",
+        "header": "notation-big-page.html §21.2.3 'Custom titles, headers, and footers' (:48383, :48597 'User-defined field')",
+        "rubric": "notation-big-page.html §2.1.2 'Lyrics' and format-ref/lilypond.md §Repeats and lyrics (:98-110): `\lyricsto` words and markup strings",
+        "glyph": "notation-big-page.html §17.4.7 (:44630-44675): note-head modifiers and `\\[ … \\]` ligatures",
+        "shape": "notation-big-page.html §17.4.7 (:44652-44662): `\\virga`, `\\stropha`, `\\inclinatum`, `\\oriscus`, `\\deminutum`, `\\cavum`, `\\linea`",
+        "attribute": "notation-big-page.html §21.2.3 (:48597): arbitrary user-defined `\header` fields",
     },
     "abc": {
-        "quilisma": "ABC 2.1 §4.14 has `P` (upper mordent) but no distinct quilisma decoration",
-        "letter": "ABC §4.1/§4.2: only note-letter case and octave marks encode pitch; clef never alters the written letter (`format-ref/abc.md` §Pitch, accidentals, key)",
-        "header": "ABC 2.1 §3.1 defines a closed tune-header field list; GregoBase headers have no field (format-ref/abc.md §File and tune structure)",
-        "rubric": "ABC 2.1 lyrics are plain words (`format-ref/abc.md` §Lyrics)",
-        "glyph": "ABC 2.1 decorations are a fixed vocabulary (`format-ref/abc.md` §4.14); no GABC glyph spelling",
-        "shape": "ABC 2.1 §4.14 has no arbitrary chant glyph token",
-        "ictus": "ABC 2.1 §4.14 has no ictus decoration",
-        "custos": "ABC 2.1 §4.6 clef/ staff syntax has no custos object",
-        "nabc": "ABC 2.1 has no manuscript-neume object",
-        "attribute": "TeX layout attributes are not ABC tokens",
-        "layout": "ABC line breaks are layout, not source whitespace (`format-ref/abc.md` §File and tune structure)",
+        "quilisma": "abc-standard-v2.1.wiki.txt §4.14 'Decorations' (:1124) and §4.16 'Redefinable symbols' (:1222): `!symbol!`/`U:` are user-definable",
+        "ictus": "abc-standard-v2.1.wiki.txt §4.14/§4.16 (:1124, :1222): user-defined `!ictus!`",
+        "custos": "abc-standard-v2.1.wiki.txt §4.14/§4.16 (:1124, :1222): user-defined `!custos!` on a note or `y` spacer (:1547)",
+        "header": "abc-standard-v2.1.wiki.txt §3.1 'Information fields' (:437, :476, :634, :655): `N:`, `H:`, `I:`, `U:` are free text/instructions",
+        "rubric": "abc-standard-v2.1.wiki.txt §4.19 'Annotations' (:1313): quoted text annotations carry arbitrary strings",
+        "glyph": "abc-standard-v2.1.wiki.txt §4.14/§4.16 (:1124, :1222): user-defined `!symbol!` decorations",
+        "shape": "abc-standard-v2.1.wiki.txt §4.14/§4.16 (:1124, :1222): user-defined `!symbol!` decorations",
+        "attribute": "abc-standard-v2.1.wiki.txt §3.1 'Information fields' (:716) and §6.1.3: `I:` / `%%` directives",
     },
     "mei": {
-        "letter": "MEI `@pname`/`@oct` name a pitch, not a GABC staff position (`format-ref/mei.md` §7); only the sounding pitch is standard",
-        "header": "MEI `<meiHead>` defines bibliographic fields, not GregoBase header names (`format-ref/mei.md` §3)",
-        "rubric": "MEI `<syl>` carries plain text; GABC rubric markup is not a standard MEI element (`format-ref/mei.md` §11)",
-        "attribute": "MEI 5.1 has no element for TeX tuning/attribute tokens (`format-ref/mei.md` §13)",
-        "layout": "MEI `@label` carriers are removed here as source-private; no standard element encodes exact GABC whitespace",
+        "header": "mei-all-5.1.rng `mei_workList` (:16375), `mei_notesStmt` (:15551), `mei_extMeta` (:15122) inside `meiHead` (:15424-15430)",
+        "rubric": "mei-all-5.1.rng `rend` (:27618); format-ref/mei.md §Lyrics (:250-259): `<rend>` inside `<syl>`",
+        "attribute": "mei-all-5.1.rng `mei_extMeta` (:15122): arbitrary metadata element",
+        "custos": "mei-all-5.1.rng `custos` (:26034): standard MEI element",
+    },
+}
+
+# A loss is inherent only with a citation here. Absence means the format has
+# a carrier and the loss is a defect: it stays in the denominator.
+INHERENT: dict[str, dict[str, str]] = {
+    "musicxml": {
+        "nabc": "musicxml-4.0.xsd `complexType notations` (:5140-5158) enumerates no manuscript-neume object; the SMuFL chant range has no St-Gall/Laon NABC descriptor (docs/agents/format-ref/gabc.md §16)",
+        "layout": "musicxml-4.0.xsd `complexType print` / `spacing` (:3120-3140) describe page geometry, not inter-syllable source whitespace",
+    },
+    "midi": {
+        "letter": "format-ref/midi.md §Instruments, parts, repeats (:117-123) and §Container layout: an MTrk has no staff/clef/staff-position field",
+        "glyph": "format-ref/midi.md §Instruments, parts, repeats (:117-123): SMF has no notation objects",
+        "shape": "format-ref/midi.md §Events and time: Note On/Off carries sound, not glyphs",
+        "bar": "format-ref/midi.md §Container layout: an MTrk has no bar/measure fields",
+        "ictus": "format-ref/midi.md §Events and time: no ictus object",
+        "episema": "format-ref/midi.md §Events and time: no articulation object",
+        "quilisma": "format-ref/midi.md §Instruments, parts, repeats (:117-123): an ornament is rendered as notes, not as a sign",
+        "mora": "format-ref/midi.md §Events and time: Note On/Off carries no rhythmic sign",
+        "clef": "format-ref/midi.md §Container layout: an MTrk has no staff/clef fields",
+        "custos": "format-ref/midi.md §Instruments, parts, repeats (:117-123): no engraving objects",
+        "nabc": "format-ref/midi.md §Events and time: no manuscript-neume object",
+        "attribute": "format-ref/midi.md §Events and time: no TeX attribute object",
+        "layout": "format-ref/midi.md §Container layout: no layout object",
+    },
+    "ly": {
+        "nabc": "notation-big-page.html §17.4 'Typesetting Gregorian chant' (:44195-44708) defines Vatican/Medicaea/Hufnagel styles, no St-Gall/Laon NABC alphabet (docs/agents/format-ref/gabc.md §16)",
+        "layout": "Exact source inter-group whitespace is not a LilyPond engraving fact (format-ref/lilypond.md §File structure)",
+    },
+    "abc": {
+        "letter": "abc-standard-v2.1.wiki.txt §4.1 'Pitch' and §4.2 'Note lengths': note letters encode pitch, not GABC staff positions; §4.6 clefs do not alter written letters",
+        "nabc": "abc-standard-v2.1.wiki.txt §4.14/§4.16: decorations are note articulations, not manuscript-neume descriptors (docs/agents/format-ref/gabc.md §16)",
+        "layout": "abc-standard-v2.1.wiki.txt §5 'Line breaking': line breaks are layout, not exact source whitespace",
+    },
+    "mei": {
+        "layout": "mei-all-5.1.rng has no element for the exact spelling of inter-group whitespace; the `@label` carrier is removed here as source-private (docs/agents/gabc.md §19-20)",
     },
 }
 
@@ -470,7 +520,7 @@ def run(cli: Path, directories: list[Path], out: Path) -> dict:
             continue
         reference = facts(canonical.decode("utf-8"))
         for destination in DESTINATIONS:
-            extra = ("--mei-full-support",) if destination == "mei" else ()
+            extra = FULL_SUPPORT_EXTRA[destination]
             written, error = convert_from(cli, source, "gabc", destination, extra)
             if error or not written:
                 totals[destination]["failed"] += 1
@@ -524,6 +574,8 @@ def run(cli: Path, directories: list[Path], out: Path) -> dict:
             "inherent": dict(inherent),
             "defects": dict(defects),
             "citations": citations,
+            "options": list(FULL_SUPPORT_EXTRA[destination]),
+            "reclassified": RECLASSIFIED.get(destination, {}),
             "headline_total": all_facts - inherent_total,
             "headline_percent": (
                 100.0 * all_carried / (all_facts - inherent_total)
@@ -551,6 +603,8 @@ def print_report(report: dict) -> None:
             print(f"    DEFECT {kind}: {count} (no carrier citation)")
         for kind, count in sorted(row["inherent"].items(), key=lambda item: -item[1]):
             print(f"    inherent {kind}: {count} — {row['citations'][kind]}")
+        for kind, citation in sorted(row.get("reclassified", {}).items()):
+            print(f"    carrier {kind}: {citation}")
     print(f"report: {report.get('out', '(see --out)/full_support.json')}")
 
 
