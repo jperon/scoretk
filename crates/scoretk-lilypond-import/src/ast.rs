@@ -699,6 +699,11 @@ pub(crate) struct GroupBlock {
     /// éléments simultanés d'un `<< … >>`. Sert à la reprise de contextes
     /// nommés (`\context Staff = "x"` réapparaissant plus loin).
     pub sequence_start: bool,
+    /// Début absolu imposé par une branche ossia : le contexte ouvert par un
+    /// élément de `{ … }` commence à l'écoulement **de sa branche**, pas après
+    /// la musique des autres branches d'un `<< … >>`
+    /// (`lily/context-specced-music-iterator.cc:38-99`).
+    pub absolute_start: Option<Fraction>,
     /// Nom d'instrument du groupe (`\with`).
     pub instrument_name: Option<String>,
     /// Nom abrégé du groupe.

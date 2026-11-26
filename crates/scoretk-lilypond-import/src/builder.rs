@@ -365,6 +365,10 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
                 .max()
                 .unwrap_or(Fraction::ZERO);
         }
+        // Une branche ossia porte son début absolu : il remplace le début
+        // global de la séquence, qui suit la fin de toutes les portées déjà
+        // construites et placerait l'ossia après la musique voisine.
+        let group_start = group.absolute_start.unwrap_or(element_start);
         if group.staves.is_empty() {
             // Portée précédente : c'est elle qui porte la voix la plus proche
             // quand les paroles n'ont pas de cible explicite.
@@ -730,7 +734,7 @@ pub(crate) fn build(document: &Document, warnings: &mut Warnings) -> Score {
             } else if staff_block.sequence_continue {
                 element_start_current
             } else {
-                element_start
+                group_start
             };
             let (built, octave_suivante) = build_voices(
                 &mut score,

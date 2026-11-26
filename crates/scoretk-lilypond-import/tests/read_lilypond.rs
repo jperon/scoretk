@@ -9716,6 +9716,54 @@ fn portee_ossia_dans_une_sequence_demarre_au_tick_de_l_element() {
 }
 
 #[test]
+fn portee_ossia_apres_skip_dans_une_branche_simultanee() {
+    // `<< { f8 × 8 } { \skip 2. \new Staff { f8 × 6 } } >>` : la seconde
+    // portée naît trois temps après le début de sa branche, pas après la
+    // fin de la première (`polymetric-time-ossia-staff.ly`, vérifié avec le
+    // MIDI de LilyPond 2.26).
+    let source = "\\version \"2.25.32\"\n\\score { \\fixed c' << \
+        \\new Staff { f8 f8 f8 f8 f8 f8 f8 f8 } \
+        { \\skip 2. \\new Staff { f8 f8 f8 f8 f8 f8 } } \
+        >> }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let mut attaques = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for voice in 0..(4 * score.staves.len() as u32) {
+                let track = Track::from_raw(voice);
+                if let Some(chord_rest) = segment.chord_rest(track) {
+                    if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                        if !chord.notes.is_empty() {
+                            attaques.push((track.staff().index(), segment.tick));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    attaques.sort();
+    assert_eq!(
+        attaques,
+        vec![
+            (0, Fraction::new(0, 1)),
+            (0, Fraction::new(1, 8)),
+            (0, Fraction::new(1, 4)),
+            (0, Fraction::new(3, 8)),
+            (0, Fraction::new(1, 2)),
+            (0, Fraction::new(5, 8)),
+            (0, Fraction::new(3, 4)),
+            (0, Fraction::new(7, 8)),
+            (2, Fraction::new(3, 4)),
+            (2, Fraction::new(7, 8)),
+            (2, Fraction::new(1, 1)),
+            (2, Fraction::new(9, 8)),
+            (2, Fraction::new(5, 4)),
+            (2, Fraction::new(11, 8)),
+        ]
+    );
+}
+
+#[test]
 fn voices_prolonge_la_voix_nommee() {
     // `voices-command.ly` : `\voices 1,"sop" << e''2 \\ { a'2~ } >>` dans
     // `\new Voice = "sop"` — la branche affectée à « sop » prolonge la voix

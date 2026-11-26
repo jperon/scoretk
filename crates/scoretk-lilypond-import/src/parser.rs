@@ -1066,17 +1066,23 @@ impl<'a> Parser<'a> {
     fn score_groups(&mut self, music: Music) -> Vec<GroupBlock> {
         let mut filtres = Vec::new();
         let music = filtrer_structures_tags(music, &mut filtres);
-        self.score_groups_in(music, &mut Vec::new())
+        self.score_groups_in(music, &mut Vec::new(), Fraction::ZERO, false)
     }
 
     /// [`Self::score_groups`], avec la pile des enveloppes rencontrées.
-    fn score_groups_in(&mut self, music: Music, wrappers: &mut Vec<Wrapper>) -> Vec<GroupBlock> {
+    fn score_groups_in(
+        &mut self,
+        music: Music,
+        wrappers: &mut Vec<Wrapper>,
+        base: Fraction,
+        in_branch: bool,
+    ) -> Vec<GroupBlock> {
         match music {
             Music::Empty => Vec::new(),
             // Un `\tag` peut envelopper un contexte (`\tag #'x \new Staff …`) :
             // le filtre a déjà été appliqué à l'analyse, l'étiquette n'a plus
             // de rôle ici et la structure est celle de la musique intérieure.
-            Music::Tag { music, .. } => self.score_groups_in(*music, wrappers),
+            Music::Tag { music, .. } => self.score_groups_in(*music, wrappers, base, in_branch),
             Music::Filtered {
                 filter,
                 wanted,
@@ -1085,7 +1091,7 @@ impl<'a> Parser<'a> {
             } => {
                 // Le filtre doit survivre à l'extraction de la structure :
                 // sans lui l'interpréteur perdrait les étiquettes à filtrer.
-                let mut result = self.score_groups_in(*music, wrappers);
+                let mut result = self.score_groups_in(*music, wrappers, base, in_branch);
                 for group in &mut result {
                     for staff in &mut group.staves {
                         for voice in &mut staff.voices {
@@ -1104,7 +1110,7 @@ impl<'a> Parser<'a> {
                 Some((wrapper, inner)) => {
                     let inner = inner.clone();
                     wrappers.push(wrapper);
-                    let groups = self.score_groups_in(inner, wrappers);
+                    let groups = self.score_groups_in(inner, wrappers, base, in_branch);
                     wrappers.pop();
                     groups
                 }
@@ -1118,6 +1124,7 @@ impl<'a> Parser<'a> {
                 kind: GroupKind::Other,
                 existing: false,
                 sequence_start: false,
+                absolute_start: None,
                 instrument_name: None,
                 short_instrument_name: None,
                 midi_instrument: None,
@@ -1141,7 +1148,7 @@ impl<'a> Parser<'a> {
                         .map(|item| anonymous_group(wrap_all(wrappers, item)))
                         .collect();
                 }
-                self.context_groups(items, wrappers, Music::Sim, false, true)
+                self.context_groups(items, wrappers, Music::Sim, false, true, base, in_branch)
             }
             Music::Seq(items) => {
                 // Un `{ … }` peut lui aussi contenir des contextes : LilyPond
@@ -1152,7 +1159,7 @@ impl<'a> Parser<'a> {
                     return vec![anonymous_group(wrap_all(wrappers, Music::Seq(items)))];
                 }
                 self.warn_sequential_contexts(&items);
-                self.context_groups(items, wrappers, Music::Seq, true, false)
+                self.context_groups(items, wrappers, Music::Seq, true, false, base, in_branch)
             }
             other => vec![anonymous_group(wrap_all(wrappers, other))],
         }
@@ -1171,6 +1178,8 @@ impl<'a> Parser<'a> {
         combine: fn(Vec<Music>) -> Music,
         sequential: bool,
         simultaneous: bool,
+        base: Fraction,
+        in_branch: bool,
     ) -> Vec<GroupBlock> {
         // Musique simultanée (`<< … >>`) : chaque élément sans contexte est un
         // contexte à lui seul. `<< \relative … \addlyrics … \relative … >>`
@@ -1182,7 +1191,7 @@ impl<'a> Parser<'a> {
             let mut groups = Vec::new();
             for item in items {
                 if has_context(&item) {
-                    groups.extend(self.score_groups_in(item, wrappers));
+                    groups.extend(self.score_groups_in(item, wrappers, base, true));
                 } else {
                     groups.push(anonymous_group(wrap_all(wrappers, item)));
                 }
@@ -1211,7 +1220,25 @@ impl<'a> Parser<'a> {
         // environnante reçoit donc un silence de la durée de l'élément, et la
         // portée ouverte un silence de la durée écoulée avant lui
         // (`staff-*-ossia*.ly`).
+        // Un contexte qui suit de la musique ordinaire dans la même
+        // séquence naît à l'écoulement de cette musique (`\skip 2.` puis
+        // `\new Staff` d'une branche de `<< … >>`, `polymetric-time-ossia-
+        // staff.ly`), que la branche soit un bloc simultané ou un contexte
+        // direct. Dans les deux cas le début est propre à la branche, pas
+        // à la fin de toutes les portées déjà construites.
         let ossia: Vec<bool> = items.iter().map(is_ossia_block).collect();
+        // Un `\new Staff` direct qui suit un `\skip` dans une branche de
+        // `<< … >>` naît à l'écoulement de sa branche
+        // (`polymetric-time-ossia-staff.ly`). Contrairement au bloc ossia
+        // ci-dessus, son début doit être absolu : la branche concurrente est
+        // déjà plus longue que ce décalage.
+        let ossia_abs: Vec<bool> = items
+            .iter()
+            .enumerate()
+            .map(|(position, item)| {
+                in_branch && has_context(item) && position > 0 && est_un_skip(&items[position - 1])
+            })
+            .collect();
         let mut decalages: Vec<Fraction> = Vec::with_capacity(items.len());
         let mut ecoule = Fraction::ZERO;
         for (position, item) in items.iter().enumerate() {
@@ -1242,21 +1269,26 @@ impl<'a> Parser<'a> {
         for (position, item) in items.into_iter().enumerate() {
             let avant = groups.len();
             if has_context(&item) {
-                let mut ouverts = self.score_groups_in(item, wrappers);
-                if ossia[position] {
+                let item_base = base + decalages[position];
+                let mut ouverts = self.score_groups_in(item, wrappers, item_base, in_branch);
+                if ossia[position] || ossia_abs[position] {
                     let decalage = decalages[position];
                     for group in &mut ouverts {
-                        for staff in &mut group.staves {
-                            for voice in &mut staff.voices {
-                                voice.music = Music::Seq(vec![
-                                    skip_music(decalage),
-                                    std::mem::replace(&mut voice.music, Music::Empty),
-                                ]);
+                        if ossia_abs[position] {
+                            group.absolute_start = Some(item_base);
+                        } else {
+                            // Le silence porte l'écoulement dans la voix :
+                            // l'interpréteur place l'élément après la musique
+                            // précédente (`staff-*-ossia*.ly`).
+                            for staff in &mut group.staves {
+                                for voice in &mut staff.voices {
+                                    voice.music = Music::Seq(vec![
+                                        skip_music(decalage),
+                                        std::mem::replace(&mut voice.music, Music::Empty),
+                                    ]);
+                                }
                             }
                         }
-                        // La portée démarre au début de la séquence puis saute
-                        // `decalage` : elle ne se chaîne pas après la musique
-                        // environnante.
                         group.sequence_start = false;
                     }
                 }
@@ -1420,6 +1452,7 @@ impl<'a> Parser<'a> {
                     kind: GroupKind::Staff,
                     existing,
                     sequence_start: false,
+                    absolute_start: None,
                     instrument_name,
                     short_instrument_name,
                     midi_instrument,
@@ -1530,6 +1563,7 @@ impl<'a> Parser<'a> {
                 kind: GroupKind::Staff,
                 existing,
                 sequence_start: false,
+                absolute_start: None,
                 instrument_name: None,
                 short_instrument_name: None,
                 midi_instrument: None,
@@ -1558,6 +1592,7 @@ impl<'a> Parser<'a> {
                 kind: GroupKind::Staff,
                 existing,
                 sequence_start: false,
+                absolute_start: None,
                 instrument_name: None,
                 short_instrument_name: None,
                 midi_instrument: None,
@@ -1694,6 +1729,7 @@ impl<'a> Parser<'a> {
                 kind: GroupKind::Other,
                 existing,
                 sequence_start: false,
+                absolute_start: None,
                 instrument_name: None,
                 short_instrument_name: None,
                 midi_instrument: None,
@@ -1738,6 +1774,7 @@ impl<'a> Parser<'a> {
                     kind,
                     existing,
                     sequence_start: false,
+                    absolute_start: None,
                     instrument_name,
                     short_instrument_name,
                     midi_instrument: midi_instrument.clone(),
@@ -1784,6 +1821,7 @@ impl<'a> Parser<'a> {
                     kind: GroupKind::Voice,
                     existing,
                     sequence_start: false,
+                    absolute_start: None,
                     instrument_name,
                     short_instrument_name,
                     midi_instrument,
@@ -1843,6 +1881,7 @@ impl<'a> Parser<'a> {
                     kind,
                     existing,
                     sequence_start: false,
+                    absolute_start: None,
                     instrument_name,
                     short_instrument_name,
                     midi_instrument,
@@ -7939,6 +7978,7 @@ fn anonymous_group(music: Music) -> GroupBlock {
         kind: GroupKind::Staff,
         existing: false,
         sequence_start: false,
+        absolute_start: None,
         instrument_name: None,
         short_instrument_name: None,
         midi_instrument: None,
@@ -8895,6 +8935,13 @@ pub(crate) fn scale_music(music: &mut Music, factor: &Fraction) {
         Music::Tag { music, .. } | Music::Filtered { music, .. } => scale_music(music, factor),
         Music::Empty | Music::New(_) | Music::Lyrics(_) | Music::Unknown(_) => {}
     }
+}
+
+/// Vrai pour un `\skip` ou un silence invisible numérique : la durée
+/// écoulée avant un contexte frère d'une branche simultanée.
+fn est_un_skip(music: &Music) -> bool {
+    matches!(music, Music::Chord(chord)
+        if matches!(chord.kind, ChordKind::Skip | ChordKind::SkipNumeric))
 }
 
 /// Vrai pour un `<< … \\ … >>` mêlant musique et contextes (ossia) : la
