@@ -10099,10 +10099,7 @@ fn test_des_glyphes_genere_le_score_de_reference() {
         \\include \"accidental-glyphs-test.ily\"\n\
         \\test \"accidentals.sharp\" #1/2 ##f\n";
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(
-        hauteurs(&score),
-        vec![61, 73, 73, 73, 73, 73, 73, 73]
-    );
+    assert_eq!(hauteurs(&score), vec![61, 73, 73, 73, 73, 73, 73, 73]);
     let quart = "\\version \"2.24.0\"\n\
         \\include \"accidental-glyphs-test.ily\"\n\
         \\test \"accidentals.flat\" #-1/4 ##t\n";

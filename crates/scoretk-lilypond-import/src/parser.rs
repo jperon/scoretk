@@ -2823,8 +2823,10 @@ impl<'a> Parser<'a> {
              r4 {high}4 r4 {high}4 r4 r4 {high}2 {high}2 {high}2 }} }} \
              \\new ChordNames {{ \\fixed c {{ {high}2 }} }} >> }}\n"
         );
-        self.tokens
-            .splice(self.position..self.position, crate::lexer::tokenize(&source));
+        self.tokens.splice(
+            self.position..self.position,
+            crate::lexer::tokenize(&source),
+        );
     }
 
     /// `\parallelMusic voix… { musique }` : découpe la musique aux contrôles de
@@ -9178,8 +9180,8 @@ mod tests {
             in_relative_function: false,
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
-        skip_map_functions: BTreeSet::new(),
-        glyph_test_helper: false,
+            skip_map_functions: BTreeSet::new(),
+            glyph_test_helper: false,
             duration_identifiers: BTreeMap::new(),
             numbers: BTreeMap::new(),
             quotes: BTreeMap::new(),
@@ -9239,8 +9241,8 @@ mod tests {
                 in_relative_function: false,
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
-        skip_map_functions: BTreeSet::new(),
-        glyph_test_helper: false,
+                skip_map_functions: BTreeSet::new(),
+                glyph_test_helper: false,
                 duration_identifiers: BTreeMap::new(),
                 numbers: BTreeMap::new(),
                 quotes: BTreeMap::new(),
