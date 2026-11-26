@@ -54,3 +54,38 @@ fn a_body_only_gabc_is_detected_and_converted_to_musicxml() {
         7
     );
 }
+
+#[test]
+fn a_headerless_body_with_seven_manuscript_voices_round_trips() {
+    const RAW: &str = "(f3) (ii//|bv-|gh!ivHG//|vi-hhppu2su1sut1|fhg/|to|eef.|pt) (,)\n";
+    let score = read(RAW.as_bytes(), Format::Gabc).expect("NABC body import");
+    let written =
+        String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC export"))
+            .expect("UTF-8 GABC");
+    assert!(!written.contains("%%"), "{written}");
+    assert!(!written.contains("name:"), "{written}");
+    assert_eq!(
+        written,
+        "(f3)\n(ii//|bv-|gh!ivHG//|vi-hhppu2su1sut1|fhg/|to|eef.|pt) (,)"
+    );
+    let again = read(written.as_bytes(), Format::Gabc).expect("second import");
+    assert_eq!(again.notes.len(), score.notes.len());
+    let Some(scoretk::model::Extension::Gregorian(before)) = &score.extensions.format else {
+        panic!("first L6 payload");
+    };
+    let Some(scoretk::model::Extension::Gregorian(after)) = &again.extensions.format else {
+        panic!("second L6 payload");
+    };
+    assert_eq!(
+        before
+            .syllables
+            .iter()
+            .map(|syllable| syllable.nabc.clone())
+            .collect::<Vec<_>>(),
+        after
+            .syllables
+            .iter()
+            .map(|syllable| syllable.nabc.clone())
+            .collect::<Vec<_>>()
+    );
+}

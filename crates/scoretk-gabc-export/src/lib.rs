@@ -147,10 +147,13 @@ fn emit(gregorian: &Gregorian) -> String {
         let mut note_index = 0;
         let mut after_snippet = false;
         for (snippet_position, snippet) in syllable.nabc.iter().enumerate() {
-            // After a manuscript snippet the next cut returns to square
-            // notation (state cycles modulo nabc-lines+1): the `|` before
-            // the following square run is structural, not a new snippet.
-            if after_snippet {
+            // With `nabc-lines: 1`, a cut after a manuscript snippet returns
+            // to square notation before the next square run. With more
+            // manuscript voices, consecutive cuts stay in NABC state: adding
+            // a cut-back would duplicate the separator (`||`) and lose the
+            // voice index. Only emit it when square notes really separate
+            // the two snippets (`gabc-score-determination.y:879,906`).
+            if after_snippet && note_index < snippet.notes_before.min(syllable.notes.len()) {
                 out.push('|');
             }
             while note_index < snippet.notes_before.min(syllable.notes.len()) {
@@ -326,6 +329,36 @@ mod tests {
             ..Gregorian::default()
         };
         assert_eq!(emit(&gregorian), "(c4)\n Ky(f) ");
+    }
+
+    #[test]
+    fn consecutive_manuscript_voices_keep_a_single_cut_each() {
+        // With seven declared voices, consecutive cuts move from NABC voice
+        // 1 to 7, not back to square notation: a cut-back would emit `||`
+        // (`gabc-score-determination.y:879,906`).
+        let mut gregorian = Gregorian {
+            headers: vec![header("nabc-lines", "7")],
+            clefs: vec!["f3".to_owned()],
+            ..Gregorian::default()
+        };
+        gregorian.syllables.push(scoretk_core::model::Syllable {
+            notes: vec![GregorianNote {
+                letter: 'i',
+                ..GregorianNote::default()
+            }],
+            nabc: ["bv-", "gh", "to"]
+                .iter()
+                .map(|text| scoretk_core::model::NabcSnippet {
+                    notes_before: 1,
+                    text: (*text).to_owned(),
+                })
+                .collect(),
+            ..scoretk_core::model::Syllable::default()
+        });
+        assert_eq!(
+            emit(&gregorian),
+            "name: ;\nnabc-lines: 7;\n%%\n\n(f3)\n(i|bv-|gh|to)"
+        );
     }
 
     #[test]

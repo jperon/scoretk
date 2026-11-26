@@ -810,9 +810,24 @@ comment or verbatim markup can therefore never invent a NABC voice.
 a headerless body does not acquire a header on a round trip. Other whitespace
 is still rebuilt from structured fields (§8); this changes the previous §15
 statement that every output gained `%%`. Files with headers are emitted
-exactly as before.
+exactly as before. The writer also no longer inserts a cut-back `|` between
+two manuscript snippets when no square notes separate them: with more than
+one declared voice, successive cuts advance to the next NABC voice, so the
+old cut-back produced a doubled `||` and lost the voice index. This is a
+latent bug that the inferred multi-cut bodies expose; the nine versioned
+examples (`nabc-lines: 1`) are unaffected.
 
 Tests: `crates/scoretk-gabc-import/tests/nabc_autodetect.rs` (1-cut body equal
 to `nabc-lines: 1`, multi-cut body equal to `nabc-lines: 7`, explicit `0`
 respected, pipes in lyrics/comments/verbatim ignored), the unit tests in
-`nabc.rs`, a writer unit test and `crates/scoretk/tests/gabc_body.rs`.
+`nabc.rs`, two writer unit tests (headerless output and consecutive voices)
+and `crates/scoretk/tests/gabc_body.rs`.
+
+**Measured (2026-11-26).** Comparing the CLI built at `ffbfb47a` (before the
+change) with the branch CLI on **261 GABC files** (9 versioned Gregorio
+examples + 252 private GregoBase lot files), GABC → GABC is **261/261
+byte-identical**, 0 differences and 0 conversion failures. On a raw body with
+seven cuts in one group, the old reader sang 13 notes because it cycled the
+state modulo 2; the new reader sings only the 2 square notes before the first
+cut and writes back the seven manuscript snippets with one `|` each, without
+adding a header.
