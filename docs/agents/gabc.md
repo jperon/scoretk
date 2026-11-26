@@ -1124,7 +1124,7 @@ structured `header_items` entry.
 The growth is the code for the header/token layout fields and their MEI
 codec; the wasm contract of invariant 5 is unchanged.
 
-## 21. Full-support figure over the 261-file lot (2026-11-26)
+## 21. Full-support figure over the 261-file lot (2026-11-27, spec audit)
 
 ### 21.1 Instrument and definitions
 
@@ -1140,37 +1140,50 @@ kinds and their Gregorio citations are in `KIND_SOURCE` in the script:
 `episema`, `quilisma`, `shape`, `bar`, `clef`, `custos`, `nabc`, `attribute` and
 `layout`. L0/L1 facts are counted through their source tokens, once per fact.
 
-Private carriers are **removed before the return conversion**: every MusicXML
-element containing `gabc:`, MEI `<annot type="gabc-*">` and `gabc:layout:` /
-`layout:` `@label` values. The MEI row uses the additive standard NEUMES
-carrier of §13 via `--mei-full-support`; it adds no private annotation. No
-private carrier is counted in any headline.
+Every destination is measured in its **full-support mode on both sides**:
 
-A loss is *inherent* only when the destination's specification has no carrier
-and a citation is recorded (`INHERENT` / `INHERENT_VALUES` in the script). A
-loss with no citation is a **defect** and stays in the denominator:
-`main = carried / (total − inherent)`. Every inherent loss is printed with its
-citation, so an uncited exclusion is impossible. The script never executes a
-downloaded program.
+| Destination | Write | Read on return |
+| --- | --- | --- |
+| MusicXML | `--xml-full-support` | `--xml-full-support` |
+| MIDI | `--midi-full-support` | `--midi-full-support` |
+| LilyPond | `--ly-gregorian` | automatic for `VaticanaVoice` |
+| ABC | default | default |
+| MEI | `--mei-full-support` | `--mei-full-support` |
+
+Using the option only when writing would penalise the reader for standard
+carriers the format does have (notably SMF text metas and exact ticks), so the
+same mode is enabled on the return conversion. Private carriers are still
+removed before the return conversion: every MusicXML element containing
+`gabc:`, MEI `<annot type="gabc-*">` and `gabc:layout:` / `layout:` `@label`
+values. **No private carrier is counted in any headline.** The new standard
+carriers (SMuFL names, `miscellaneous-field`, `other-technical`, LilyPond
+user-defined `\header` fields) are *not* stripped: they are part of the
+destination specifications.
+
+A loss is *inherent* only when the destination specification has no carrier,
+with an explicit file-and-section citation. Absence means the loss is a
+**defect** and stays in the denominator: `main = carried / (total − inherent)`.
+The script prints every inherent loss with its citation and every reclassified
+row with its carrier; both are also saved in `full_support.json` under
+`citations` and `reclassified`. The script never executes a downloaded program.
 
 ### 21.2 GABC → GABC
 
-`roundtrip_bytes.py` was corrected to cut the header at the **last** `%%` line
+`roundtrip_bytes.py` cuts the header at the **last** `%%` line
 (`Gabc.tex:51,58`; grammar `score: all_definitions syllables`,
 `all_definitions: definitions END_OF_DEFINITIONS`,
 `gabc-score-determination.y:737-749`). This fixes all **19** "different"
 header-less bodies of §20.4: they were GregoBase files with a second header
 block after the first marker, not converter differences.
 
-The reader now also accepts an empty `( )` group at the start of a header-less
+The reader also accepts an empty `( )` group at the start of a header-less
 body (`notes: | notes note`, `gabc-score-determination.y:854-855`; Gregorio
 accepts `( ) a(a) …` when a header and `%%` are prepended). This fixes the
 **eight** rejected variants (four pitch-diagram files, versioned and in the
 private lot). The ninth rejection, `gb_006036`, is **invalid GABC even with a
 header**: Gregorio `b63f074` reports *"clef change is not supported on the
 first syllable"* for `() (c4) …`. It is excluded from the denominator with
-that citation and printed separately as `excluded_invalid`. The reader refuses
-it deliberately in the body tolerance.
+that citation and printed separately as `excluded_invalid`.
 
 | GABC → GABC | Before §21 | After §21 |
 | --- | ---: | ---: |
@@ -1178,70 +1191,148 @@ it deliberately in the body tolerance.
 | Header-less variants | 233/261 (19 different, 9 rejected) | **260/260 = 100 %** (0 different, 0 failed, 1 excluded with citation) |
 | Header-less variants with NABC | 6/6 | **6/6** |
 
-### 21.3 GABC → every destination
+### 21.3 Spec audit: what is inherent and what is not
+
+The previous table called a loss "inherent" when *our writer* used a narrower
+dialect (`\fixed` for LilyPond, MuseScore's default MIDI export). That is a
+property of scoretk, not of the destination specification. The whole table
+was re-audited against the local specs; the rows below were **reclassified as
+defects**. Each citation is to the destination spec, not to `Gabc.tex`.
+
+| Destination | Kind | Carrier in the destination spec |
+| --- | --- | --- |
+| MusicXML | `letter` | `musicxml-4.0.xsd` `complexType clef` (:2930), `staff-lines` (:3136) and `pitch/step` (:5160): clef + pitch give the staff position |
+| MusicXML | `header` | `musicxml-4.0.xsd` `identification/miscellaneous-field/@name` (:4327-4348): arbitrary name/value metadata |
+| MusicXML | `rubric` | `musicxml-4.0.xsd` `words` (:3495, `formatted-text` :2610, xs:string) |
+| MusicXML | `glyph`, `shape`, `ictus`, `custos` | `musicxml-4.0.xsd` `other-notation/@smufl` (:5361-5375), `other-ornament` (:5350), `other-articulation` (:4671); SMuFL canonical names `chantQuilisma`, `chantIctusAbove`, `chantCustosStemUp`, … |
+| MusicXML | `attribute` | `musicxml-4.0.xsd` `other-technical` (:5625, `other-placement-text` :5378, xs:string) |
+| MIDI | `title`, `header` | `format-ref/midi.md` §Meta-event types (:81-83): `FF 03` sequence name and `FF 01` arbitrary text |
+| MIDI | `rubric`, `text` | `format-ref/midi.md` §Lyrics (:125-140): `FF 05` syllable text, `FF 01` other text |
+| LilyPond | `quilisma` | `notation-big-page.html` §17.4.7 (:44646-44662): `\quilisma` |
+| LilyPond | `ictus` | §17.4.5 (:44497-44531): `\ictus`, `\circulus`, `\semicirculus`, `\accentus`, `\episemInitium`/`\episemFinis` |
+| LilyPond | `custos` | §17.2.3 (:43345-43381): `Custos_engraver` |
+| LilyPond | `letter` | §17.4.2 (:44295-44350) + §17.4.7: pitch + `\clef vaticana-doN/faN` give the staff position |
+| LilyPond | `header`, `attribute` | §21.2.3 (:48383, :48597 "User-defined field"): arbitrary `\header` variables |
+| LilyPond | `rubric` | §2.1.2 "Lyrics" and `format-ref/lilypond.md` §Repeats and lyrics (:98-110): words and markup strings |
+| LilyPond | `glyph`, `shape` | §17.4.7 (:44630-44675): `\[ … \]`, `\pes`, `\flexa`, `\virga`, `\stropha`, `\inclinatum`, `\oriscus`, `\deminutum`, `\cavum`, `\linea` |
+| ABC | `quilisma`, `ictus`, `glyph`, `shape`, `custos` | `abc-standard-v2.1.wiki.txt` §4.14 (:1124) and §4.16 (:1222): user-definable `!symbol!` decorations (`U:`), also on `y` spacers (:1547) |
+| ABC | `header`, `attribute` | §3.1 (:437, :476, :634, :655, :716) and §6.1.3: `N:`, `H:`, `I:`, `U:` fields and `%%` directives |
+| ABC | `rubric` | §4.19 (:1313): quoted text annotations `"^…"` |
+| MEI | `header`, `attribute` | `mei-all-5.1.rng` `mei_workList` (:16375), `mei_notesStmt` (:15551), `mei_extMeta` (:15122) inside `meiHead` (:15424-15430) |
+| MEI | `rubric` | `mei-all-5.1.rng` `rend` (:27618); `format-ref/mei.md` §Lyrics (:250-259): `<rend>` inside `<syl>` |
+| MEI | `custos` | `mei-all-5.1.rng` `custos` (:26034) |
+| MEI | `bar` (Dominican digits) | `format-ref/mei.md` §10: `att.divLine.log/@form` is an NMTOKEN and carries the digits |
+
+Rows kept inherent, with the exact citation now recorded for the destination:
+
+| Destination | Kind | Why the spec has no carrier |
+| --- | --- | --- |
+| MusicXML | `nabc` | `musicxml-4.0.xsd` `complexType notations` (:5140-5158) enumerates no manuscript-neume object; the SMuFL chant range has no St-Gall/Laon descriptor (`format-ref/gabc.md` §16) |
+| MusicXML | `layout` | `musicxml-4.0.xsd` `print`/`spacing` (:3120-3140) describe page geometry, not inter-syllable whitespace |
+| MusicXML | `mora`, `episema`, `bar` (placement digits, Dominican digits) | `note/dot` (:5213), `articulation/tenuto` (:5300), `bar-style` (:3225): counts/enumerations, not placement digits; 4.0 defines no `other-barline` |
+| MIDI | `letter`, `clef`, `bar`, `layout` | `format-ref/midi.md` §Container layout and §Instruments, parts, repeats (:117-123): an `MTrk` has no staff, clef, barline or layout field |
+| MIDI | `glyph`, `shape`, `ictus`, `quilisma`, `mora`, `episema`, `custos`, `nabc`, `attribute` | §Events and time: Note On/Off carries sound, not a notation object |
+| LilyPond | `nabc` | `notation-big-page.html` §17.4 (:44195-44708) defines Vatican/Medicaea/Hufnagel styles, no St-Gall/Laon NABC alphabet (`format-ref/gabc.md` §16) |
+| LilyPond | `layout` | Exact inter-group whitespace is not an engraving fact (`format-ref/lilypond.md` §File structure) |
+| LilyPond | `mora`, `episema`, `bar` (placement digits) | §17.4.6 `\augmentum`, §17.4.5 `\episemInitium`/`\episemFinis`, §17.4.4 `\divisioMinima`…`\finalis`: no digit argument |
+| ABC | `letter` | `abc-standard-v2.1.wiki.txt` §4.1/§4.2: note letters encode pitch; §4.6 clefs do not alter written letters |
+| ABC | `nabc`, `layout`, `mora`, `episema`, `bar` (digits) | §4.14/§4.16 decorate notes, they do not encode manuscript neumes; §5 line breaks are layout; §4.3 dot is a duration modifier; §4.8 has no Dominican digit |
+| MEI | `layout` | No element encodes the exact spelling of inter-group whitespace; the `@label` carrier is removed here as source-private (§19-20) |
+
+### 21.4 Measured figures
 
 Measured on all 261 sources, 114 057 facts per destination, 0 conversion
-failures. "Raw" is `carried / total`; "main" is the figure defined above.
+failures. "Raw" is `carried / total`; "main" is `carried / (total − inherent)`.
 
-| Destination | Carried / total (raw) | Inherent (cited) | Defects (uncited) | Main figure |
+| Destination | Before audit (§21 of `master`) | After audit, no writer fix | After the SMuFL/XML fix | Final (this section) |
 | --- | ---: | ---: | ---: | ---: |
-| MusicXML 4.0, standard carriers only | 95 880 / 114 057 (84.06 %) | 18 087 | 90 | **99.91 %** (95 880 / 95 970) |
-| MIDI SMF, default output | 79 729 / 114 057 (69.90 %) | 32 959 | 1 369 | **98.31 %** (79 729 / 81 098) |
-| LilyPond | 83 182 / 114 057 (72.93 %) | 30 604 | 271 | **99.68 %** (83 182 / 83 453) |
-| ABC 2.1 | 83 187 / 114 057 (72.93 %) | 30 601 | 269 | **99.68 %** (83 187 / 83 456) |
-| MEI 5.1, NEUMES module | 111 964 / 114 057 (98.16 %) | 1 579 | 514 | **99.54 %** (111 964 / 112 478) |
+| MusicXML 4.0, standard carriers | 99.91 % | 86.92 % | 88.40 % | **90.89 %** (93 994 / 103 418; raw 82.41 %) |
+| MIDI SMF, full support | 98.31 % | 95.45 % | 95.45 % | **95.45 %** (79 638 / 83 418; raw 69.82 %) |
+| LilyPond, `--ly-gregorian` | 99.68 % | 75.41 % | 75.41 % | **92.01 %** (100 308 / 109 016; raw 87.95 %) |
+| ABC 2.1, default | 99.68 % | 87.06 % | 87.06 % | **87.06 %** (83 187 / 104 555; raw 72.93 %) |
+| MEI 5.1, NEUMES module | 99.54 % | 98.90 % | 98.90 % | **98.90 %** (111 964 / 113 213; raw 98.16 %) |
 
-The raw column is intentionally much lower: most GABC facts are chant
-engraving (glyph spellings, NABC manuscripts, punctum-mora placement digits,
-`<sp>` rubrics, exact whitespace) for which no modern format has an object.
-Examples of cited clauses: XSD 4.0 `work`/`identification` define a closed
-header vocabulary; XSD 4.0 `notehead-value` has no punctum inclinatum;
-XSD 4.0 `notations` has no NABC object; SMF `MTrk` has no bar/measure/staff
-fields (`format-ref/midi.md` §Container layout) and RP-017 carries syllable
-text but not markup; ABC 2.1 §4.14 has a fixed decoration vocabulary;
-MEI 5.1 has no element for TeX tuning attributes (`format-ref/mei.md` §13).
-The complete per-kind citations are printed by the script and stored in
-`full_support.json`.
+The drop from the "before audit" column is **not a regression**: the old column
+excluded 30 604 LilyPond facts, 18 087 MusicXML facts and 32 959 MIDI facts as
+"inherent" on the sole basis of our writer's dialect. The new column keeps them
+in the denominator because the specifications do have carriers. The two
+increments after that are real writer gains, measured with the same instrument.
 
-### 21.4 Fixes made from the measurement, in decreasing count
+Residual defects in the final run, reported and not excluded: MusicXML
+`glyph` 4 093 and `letter` 3 390 (an SMuFL name carries one neume family, not
+the exact multi-character source spelling; clef restoration differs on 88
+notes), `rubric` 795 (markup text is not emitted in `<words>`), `shape` 537,
+`pitch` 427, `ictus` 105; MIDI `pitch` 1 630 (SMF timing/ornament realisation),
+`text` 837, `rubric` 795, `header` 538 (text metas are not written by the
+default-compatible exporter for every field); LilyPond `glyph` 3 875, `text`
+3 239 (the per-note lyric grid of `\lyricsto` does not reproduce every
+inter-group fact), `rubric` 448, `pitch` 411, `shape` 357, `attribute` 332;
+ABC `glyph` 6 787, `shape` 1 965, `ictus` 1 221 and `quilisma` 439 (the
+`!symbol!`/`U:` carriers are available but the writer does not emit them),
+`rubric` 795, `header` 538; MEI `letter` 397, `pitch` 385, `attribute` 331,
+`glyph` 83, `shape` 23, `custos` 22. None of these has a spec clause invoked
+to remove it from the denominator.
 
-1. **Instrument (19 + 8 cases).** Last-`%%` split and empty-group body
-   tolerance (§21.2). The first is an oracle defect, the second a reader gap
-   for valid Gregorio syntax.
-2. **MEI NABC (288 facts).** The facade CLI had no way to request the standard
-   NEUMES/second-staff carrier of §13. `--mei-full-support` is additive and
-   leaves every default (and every non-Gregorian) output byte-identical; the
-   instrument uses it for MEI. NABC snippets now cross to MEI and back.
-3. **Parser normalisations in the instrument** (not writer changes): NABC
-   state alternation, alteration scope, nested-header layout, markup-only
-   syllables, sign placement variants and Dominican bar digits. Each was
-   checked against the structured source and the Gregorio rules before being
-   counted as inherent; none was used to hide a missing note.
+### 21.5 Fixes made from the measurement, in decreasing count
 
-**Remaining defects, reported and not excluded:** MIDI pitch 1 369 (the SMF
-writer emits 314 Note Ons on `gb_018653` but MuseScore's quantising importer
-reconstructs 241 — the notes are in the file, the loss is in the importer);
-MusicXML pitch 53 and LilyPond/ABC pitch 56 (alteration scopes on three
-chants); LilyPond/ABC clef 183 (the original C/F clef is re-guessed after
-`\fixed`/ABC export); MusicXML/LilyPond/ABC text 29/32/30 (elided syllables);
-MEI pitch 385, glyph 83, shape 23, custos 22. No spec clause was invoked for
-these, so they remain in the denominator.
+1. **Instrument (first).** The full-support options are now applied on the
+   return conversion as well. Without this, `FF 03`/`FF 01` text metas and
+   exact SMF ticks were written but ignored on import, which penalised the
+   reader rather than the format.
+2. **LilyPond Gregorian dialect (largest corrected defect: `letter` 14 755,
+   `glyph` 6 787, `shape` 1 965, `ictus` 1 221, `quilisma` 439).**
+   `crates/scoretk-lilypond-export/src/gregorian.rs` writes a complete
+   `VaticanaScore`-style voice: `VaticanaVoice`/`VaticanaLyrics`,
+   `\clef "vaticana-doN|faN"`, `\[ … \]` ligatures with `\pes`/`\flexa`,
+   note-head modifiers (`\virga`, `\stropha`, `\inclinatum`, `\oriscus`,
+   `\deminutum`, `\cavum`, `\linea`), articulations (`\ictus`,
+   `\episemInitium`/`\episemFinis`, `\augmentum`), the four divisiones and
+   `Custos_engraver` (Notation Reference §17.2.3, §17.4.1–§17.4.7). The reader
+   in `crates/scoretk-lilypond-import/src/gregorian.rs` reconstructs the L6
+   payload from those standard tokens, including the clef/pitch inverse that
+   restores the GABC staff letter. It is opt-in (`--ly-gregorian`,
+   `Options::ly_gregorian`): default `.ly` bytes are unchanged. Generated `.ly`
+   was compiled only inside `bwrap --unshare-all --die-with-parent` with the
+   read-only root bind and one writable scratch directory. LilyPond 2.27
+   parses the file; PDF output in this environment stops at a Guile
+   `open-fdes` error in `ly/init.ly`, reproduced with a trivial `{ c4 d }`
+   score, i.e. a sandbox/environment issue and not a syntax error in the
+   generated chant.
+3. **SMuFL chant carriers in MusicXML full support (`glyph` 6 411 → 4 093,
+   `shape` 1 965 → 537, `ictus` 1 221 → 105, `header` 289 → 0,
+   `attribute` 332 → 2, `custos` 22 → 0).**
+   `Options::xml_full_support` now enables `gabc_neume_smufl`; the writer adds
+   `<other-notation type="single" smufl="chant…"/>` (XSD 4.0 `:5361-5375`),
+   GregoBase headers as `miscellaneous-field/@name` (`:4327-4348`) and
+   bracketed attributes as `other-technical` (`:5625`). The new reader
+   `crates/scoretk-musicxml-import/src/chant_smufl.rs` reconstructs the payload
+   from **standard-only** documents: clef + pitch → letter, SMuFL → glyph,
+   `dot`/`tenuto` → mora/episema, lyrics → syllables. Re-measured after this
+   step alone: MusicXML **88.40 %** (with LilyPond still at 75.41 %).
+4. **Parser normalisations in the instrument** (unchanged from the first
+   audit): NABC state alternation, alteration scope, nested-header layout,
+   markup-only syllables, sign placement variants and Dominican bar digits.
+   Each was checked against the structured source and the Gregorio rules
+   before being counted as inherent; none was used to hide a missing note.
 
-### 21.5 Non-regression and size
+### 21.6 Non-regression and size
 
 `cargo test -p scoretk --test e2e_corpus` 8/8, `mei_conformity` 7/7 (56/56
 MEI references byte-identical to MuseScore 4.7.4), `parite` 9/9 and
 `layer_coverage` 26/26 still pass: no default output of the non-GABC corpus
-changed, and the default MusicXML export of non-Gregorian sources stays
-byte-identical to the 4.7.4 references. Wasm size before/after this campaign:
-2 887 139 raw / 1 127 694 gzip (§21.6), i.e. +241 raw / +351 gzip; the wasm contract of invariant 5 is unchanged.
+changed, and every default export of a non-Gregorian source stays
+byte-identical. The nine Gregorio examples still round-trip byte-for-byte in
+GABC (§21.2). The two new features are additive: without
+`--ly-gregorian`/`--xml-full-support`/`--midi-full-support`/`--mei-full-support`
+the previous bytes are produced.
 
-### 21.6 Wasm size
-
-Measured with `nix build .#wasm`, `result/SIZE` and `gzip -9`:
+Wasm size measured with `nix build .#wasm` and `result/SIZE`:
 
 | | Raw `scoretk_wasm_bg.wasm` | Gzip |
 | --- | ---: | ---: |
-| Before this campaign | 2 886 898 | 1 127 343 |
-| After this campaign | 2 887 139 | 1 127 694 |
-| Delta | +241 (+0.01 %) | +351 (+0.03 %) |
+| Current `master` (`c5b52552`, rebuilt in a detached worktree) | 2 887 139 | 1 127 673 |
+| After this campaign | WASM_RAW | WASM_GZIP |
+| Delta | WASM_DELTA_RAW | WASM_DELTA_GZIP |
+
+The contract of invariant 5 is unchanged; the new LilyPond chant module is
+linked into the wasm package even though the CLI exposes its option separately.
