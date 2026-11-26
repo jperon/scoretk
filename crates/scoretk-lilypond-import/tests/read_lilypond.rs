@@ -8155,6 +8155,21 @@ fn quote_during_joue_la_citation() {
 /// au temps absolu courant. Dans `<< \quoteDuring … s4 >>`, la classer parmi
 /// les commandes de contexte la faisait avancer le curseur avant la branche
 /// `s4` : la citation suivante commençait une noire trop tard.
+/// `lily/parser.yy:3126-3141` : la durée vient avant les post-événements.
+/// Après `f]~`, le `8` est une durée nue qui rejoue la note liée, pas la
+/// durée de la note déjà lue. Sans cela, une attaque disparaissait
+/// (`part-combine-global.ly`, deuxième mesure).
+#[test]
+fn duree_nue_apres_une_liaison_rejoue_la_note() {
+    let src = "\\version \"2.24.0\"\n\
+         \\new Staff \\fixed c' { f'8[ f]~ 8[ f] | f8[ f] f8[ f] }\n";
+    let score = read_lilypond(src).expect("lecture");
+    let attaques = hauteurs_attaques(&score);
+    assert_eq!(attaques.len(), 7);
+    assert_eq!(attaques[0], 77);
+    assert!(attaques[1..].iter().all(|pitch| *pitch == 65));
+}
+
 #[test]
 fn citation_dans_un_simultane_ne_decale_pas_la_suivante() {
     let src = "\\version \"2.24.0\"\n\

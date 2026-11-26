@@ -5788,8 +5788,19 @@ impl<'a> Parser<'a> {
             .pending_exact_head
             .take()
             .unwrap_or_else(|| std::mem::take(&mut self.pending_head));
+        // `lily/parser.yy:3126-3141` : `note_chord_element` est
+        // `chord_body optional_notemode_duration post_events`. La durée
+        // précède donc les post-événements. Si un `~` (ou un autre post) a
+        // déjà été consommé, un nombre suivant est une **durée nue** qui
+        // rejoue la note (`f]~ 8[ f]`) : le lui donner comme durée ici
+        // supprimait un événement et une attaque (`part-combine-global.ly`).
+        let avant_posts = self.position;
         let mut note_posts = self.parse_posts_until_note_end();
-        let (duration, multiplier) = self.parse_optional_duration_spec();
+        let (duration, multiplier) = if self.position == avant_posts {
+            self.parse_optional_duration_spec()
+        } else {
+            (None, None)
+        };
         // `pitch_or_music` de `lily/parser.yy:3714-3742` accepte aussi les
         // marques d'octave **après** la durée (`c8'`, production
         // `erroneous_quotes`, l. 3367-3371) : LilyPond avertit
