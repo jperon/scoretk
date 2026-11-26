@@ -10494,3 +10494,93 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 59. Reading campaign, sixth phase (2026-11-26)
+
+### 59.1 Protocol
+
+The frozen manifests, exclusions, exactness rule and refreshed reference tree
+`ly95lect-refs-54` of §57/§58 are unchanged; `--refs-only --python-ly '' --music21
+''` was used for every lot, one lot at a time, with a worktree-local
+`CARGO_TARGET_DIR`, one cargo command at a time and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`. Each
+candidate binary was frozen to a stable path before measuring (`ly59-base-scoretk`,
+`ly59-fix1-scoretk`, `ly59-fix2-scoretk`, `ly59-fix3-scoretk`). No reference was
+regenerated, no denominator changed, no comparison was relaxed and no file was
+excluded. LilyPond 2.26 was used only to compile small, self-written snippets
+outside the repository; third-party `.ly` sources were not executed, and
+downloaded data was analysed with `python3 -I`.
+
+### 59.2 Results
+
+| Lot | Rows | Exact after §58 | Exact after §59 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1638 (95.0 %) | **1638 (95.0 %)** | 98.70 | 96.62 | 1 + 66 |
+| `mut` | 1316 | 1251 (95.1 %) | **1251 (95.1 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1295 (94.9 %) | **1296 (94.9 %)** | 99.54 | 97.63 | 83 |
+
+`ra` and `mut` keep their exact files and their 95 % level. `rw` gains one exact
+file (`adding-orchestral-cues-to-a-vocal-score.ly`, 14 → 18 notes); 1297 exact
+files would be needed for 95.0 %, so the lot remains one file short. The 66
+deleted `ra` sources still cap that lot at 96.2 % with a perfect reader, and the
+98 % target remains open on all three lots. No lot lost an exact file.
+
+### 59.3 `\cueDuring` also plays its principal music
+
+`lily/quote-iterator.cc:229-271` inserts quoted notes in a `CueVoice`
+*alongside* the music written in the principal argument; the reader replaced
+that music by the quote. The minimal reduction
+
+```lilypond
+quote = \relative { c'4 d e f }
+\addQuote "Q" \quote
+\score { \relative { \cueDuring "Q" #UP { g'4 a'4 } } }
+```
+
+produced only the two quoted notes. `Context::Cue` now carries the principal
+music; `events.rs` walks it at the cue's start tick before reading the quote
+window, then restores the cursor so that `Quote_iterator`'s absolute-time
+window is unchanged. Because the model holds at most one chord per tick and per
+voice, quoted notes at the same tick are merged into the existing chord
+(including its `grace_before`/`grace_after` events) rather than overwriting it;
+otherwise the written notes disappeared again. `\killCues` keeps the principal
+music only when it actually contains notes, so an `r2`/`s1` argument is not
+doubled by the replacement silence.
+
+The LSR snippet `adding-orchestral-cues-to-a-vocal-score.ly` calls
+`\cueDuring` inside a Scheme music function (`\cueWhile "clarinet" "Clar." #DOWN
+{ c4. g8 }`). With the principal music restored it produced 18 notes but with
+two wrong pitches: `cited_transposition` in `quote.rs` did not descend through
+`Context::Relative` or `Context::Fixed`, so the source instrument's
+`\transposition bes` was ignored inside `\addQuote "clarinet" { \clarinet }`.
+Adding those two wrapper cases applies `pitch_interval (target, source)` as
+`lily/quote-iterator.cc` does: the cue sounds E4/C4 instead of F#4/D4.
+
+Measured: `rw` 1295 → **1296** and `pct_n1` 99.54 unchanged; `ra` and `mut`
+unchanged after two corrections. An intermediate version without the
+`\killCues` and grace merges lost three exact `ra` files
+(`quote-cue-during.ly`, `quote-grace.ly`, `quote-kill-cues.ly`); both corrections
+were verified by full-lot measurements (`d5828602`). Reduced tests
+`cue_during_garde_la_musique_de_l_argument_principal` and `read_quote.rs`
+(3/3).
+
+An experiment setting `midiMergeUnisons` true by default was measured and
+rejected: it lost hundreds of exact files on all three lots, confirming that
+the explicit context property, not a global unison merge, models LilyPond's
+MIDI. The ranked per-voice unison/tie causes (`BWV533`, `bwv910`, `two-jews`,
+`ToccataFugue`, `BWV-830-4/6`, `BWV857`, `schumann`, `rach-prelude23-05`) were
+re-examined: their remaining differences come from same-pitch attacks in
+different voices or from overlapping ties that the frozen oracle counts
+differently, and no narrow rule was measured without a loss. Likewise, the
+constant shifts of the old `\autochange` hub scores were left alone because the
+relevant MIDI references come from obsolete syntax that 2.26/2.27 cannot
+compile verbatim.
+
+### 59.4 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
