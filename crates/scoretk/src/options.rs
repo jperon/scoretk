@@ -70,7 +70,7 @@ pub struct Options {
     /// aux références `*.ref.mei` ; voir `docs/agents/mei.md` §10.
     pub mei_full_support: bool,
     /// Carrier SMuFL optionnel des neumes grégoriens (MusicXML). Additif,
-    /// `false` par défaut : voir `docs/agents/gabc.md` §13.
+    /// `false` par défaut : voir `docs/agents/gabc.md` §14.
     pub gabc_neume_smufl: bool,
 }
 

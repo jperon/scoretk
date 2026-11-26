@@ -30,14 +30,14 @@
 //! **played** time, while LilyPond and ABC note lengths are **written** time.
 //! The reference is projected onto that timeline before comparison, so a tick
 //! shift caused by the target's own time model is not reported as a lost note
-//! (`docs/agents/gabc.md` §13). The `duration` item likewise contains exactly
+//! (`docs/agents/gabc.md` §14). The `duration` item likewise contains exactly
 //! the components the destination can carry (written figure, played ticks, or
 //! both). An item is keyed by `(kind, tick, value)` and compared as a multiset.
 //!
 //! **Essential** = `pitch` + `bar` (the `note` + `measure` analogue of §11).
 //! **Full support** = the kinds the destination's specification can carry;
 //! the declaration and its citation live in `DESTINATIONS` and are documented
-//! in `docs/agents/gabc.md` §13.
+//! in `docs/agents/gabc.md` §14.
 //!
 //! This test never fails on a percentage: it prints a measurement table and
 //! panics only on a broken setup. Run with `--nocapture`.
@@ -134,7 +134,7 @@ const MIDI_VIEW: View = View {
 /// The declaration is about the format, not about today's writer: a declared
 /// kind that is absent after a round trip is a fixable transport gap; a kind
 /// absent from the declaration is an inherent loss, cited in `spec` and in
-/// `docs/agents/gabc.md` §13.
+/// `docs/agents/gabc.md` §14.
 struct Destination {
     name: &'static str,
     format: Format,
@@ -144,7 +144,11 @@ struct Destination {
 }
 
 const ALL_KINDS: &[&str] = KINDS;
-const ABSENT_FROM_SMF: &[&str] = &["pitch", "duration", "lyric", "title"];
+/// Kinds the SMF specification declares a carrier for (§`Destination::declared`):
+/// Note On/Off for pitch and duration, `FF 05` for lyric text and `FF 03`/`FF 01`
+/// for names. "Declared" is about the format, not about today's writer: the
+/// round-trip misses below are transport/comparator gaps, not inherent losses.
+const DECLARED_BY_SMF: &[&str] = &["pitch", "duration", "lyric", "title"];
 
 const DESTINATIONS: &[Destination] = &[
     Destination {
@@ -193,7 +197,7 @@ const DESTINATIONS: &[Destination] = &[
         name: "midi",
         format: Format::Midi,
         view: MIDI_VIEW,
-        declared: ABSENT_FROM_SMF,
+        declared: DECLARED_BY_SMF,
         spec: "format-ref/midi.md §Events and time, §Meta-event types (FF 03 name, FF 05 lyrics), §Instruments parts repeats; no clef/bar/accidental/ornament object",
     },
 ];
