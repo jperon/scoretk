@@ -351,6 +351,38 @@ const ITALIANO: &[(&str, u8, i8)] = &[
     ("si", 6, 0),
     ("sid", 6, 1),
     ("sidd", 6, 2),
+    // Noms à quarts de ton de `scm/define-note-names.scm` (`italiano`),
+    // utilisés par `ly/arabic.ly` (`\language "italiano"`). Les altérations
+    // sont arrondies au demi-ton joué par `ly:pitch->midi` (demis au pair) :
+    // `solsb` joue 66, pas 67.
+    ("dobsb", 0, -2),
+    ("dosb", 0, 0),
+    ("dosd", 0, 0),
+    ("dodsd", 0, 2),
+    ("rebsb", 1, -2),
+    ("resb", 1, 0),
+    ("resd", 1, 0),
+    ("redsd", 1, 2),
+    ("mibsb", 2, -2),
+    ("misb", 2, 0),
+    ("misd", 2, 0),
+    ("midsd", 2, 2),
+    ("fabsb", 3, -1),
+    ("fasb", 3, -1),
+    ("fasd", 3, 1),
+    ("fadsd", 3, 1),
+    ("solbsb", 4, -1),
+    ("solsb", 4, -1),
+    ("solsd", 4, 1),
+    ("soldsd", 4, 1),
+    ("labsb", 5, -1),
+    ("lasb", 5, -1),
+    ("lasd", 5, 1),
+    ("ladsd", 5, 1),
+    ("sibsb", 6, -1),
+    ("sisb", 6, -1),
+    ("sisd", 6, 1),
+    ("sidsd", 6, 1),
 ];
 
 /// Noms français (`do`, `ré`, `mib`, `sold`…), avec les variantes sans accent.
@@ -1146,6 +1178,11 @@ mod tests {
         assert_eq!(Language::Makam.parse("efi"), Some((2, -1)));
         assert_eq!(Language::Makam.parse("g"), Some((4, 0)));
         assert_eq!(Language::from_name("makam"), Some(Language::Makam));
+        // `ly/arabic.ly` utilise les noms italiens à quarts de ton :
+        // `solsb` joue 66 (sol 67 − 1/2 ton, arrondi au pair).
+        assert_eq!(Language::Italiano.parse("solsb"), Some((4, -1)));
+        assert_eq!(Language::Italiano.parse("lab"), Some((5, -1)));
+        assert_eq!(Language::Italiano.parse("fa"), Some((3, 0)));
     }
 
     #[test]

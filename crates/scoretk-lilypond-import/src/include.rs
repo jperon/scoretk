@@ -234,6 +234,22 @@ impl Expander<'_> {
                     // `ssaattbb-template-with-all-staves`).
                     if text == "satb.ly" || text == "ssaattbb.ly" {
                         injecter_score_gabarit(&mut self.tokens, line, column);
+                    } else if text == "arabic.ly" {
+                        // `ly/arabic.ly:20` declares `\language "italiano"` :
+                        // les noms `fa`, `solsb`, `lab`… du fichier inclus
+                        // sont italiens, pas néerlandais (`midi-key-signature.ly`).
+                        self.tokens.push(Token {
+                            kind: Kind::Command,
+                            text: "language".to_owned(),
+                            line,
+                            column,
+                        });
+                        self.tokens.push(Token {
+                            kind: Kind::Str,
+                            text: "italiano".to_owned(),
+                            line,
+                            column,
+                        });
                     } else if text == "accidental-glyphs-test.ily" {
                         // `accidental-glyphs-test.ily` définit `test` par un
                         // `define-scheme-function` qui **ajoute un score**
@@ -492,6 +508,11 @@ mod tests {
         assert_eq!(
             texts("\\include \"makam.ly\" afbm4"),
             vec!["\\language", "\"makam\"", "afbm", "4"]
+        );
+        // `ly/arabic.ly:20` pose `\language "italiano"`.
+        assert_eq!(
+            texts("\\include \"arabic.ly\" solsb4"),
+            vec!["\\language", "\"italiano\"", "solsb", "4"]
         );
     }
 
