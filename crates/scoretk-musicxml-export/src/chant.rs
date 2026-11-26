@@ -279,12 +279,50 @@ pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
 
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,
 /// `complexType other-technical`).
+/// Glyphe SMuFL d'une note grégorienne (`smufl-glyph-name`, XSD 4.0).
+///
+/// Les noms `chant*` sont ceux du registre SMuFL officiel (`glyphnames.json`,
+/// range chant). Un seul glyph par note est émis : le plus caractéristique.
+fn smufl_neume(note: &GregorianNote) -> &'static str {
+    let has = |kind| note.signs.iter().any(|sign| sign.kind == kind);
+    if has(SignKind::Quilisma) {
+        "chantQuilisma"
+    } else if has(SignKind::Oriscus) {
+        "chantOriscusAscending"
+    } else if has(SignKind::Virga) {
+        "chantPunctumVirga"
+    } else if has(SignKind::Liquescentia) {
+        "chantDeminutumLower"
+    } else if has(SignKind::HorizontalEpisema) {
+        "chantEpisema"
+    } else if has(SignKind::Ictus) {
+        "chantIctusAbove"
+    } else if note.glyph.is_empty() {
+        "chantPunctum"
+    } else {
+        "chantPunctumInclinatum"
+    }
+}
+
 pub(crate) fn write_note_signs(
     out: &mut Out,
     note: &GregorianNote,
     syllable_index: usize,
     breath: bool,
+    smufl: bool,
 ) {
+    if smufl {
+        // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
+        // **interopérabilité applicative** (« allowing application
+        // interoperability »), contrairement aux champs privés `gabc:`.
+        out.xml.start_element("notations", &[]);
+        out.xml.tag_with(
+            "other-notation",
+            &[("type", "single"), ("smufl", smufl_neume(note))],
+            "",
+        );
+        out.xml.end_element();
+    }
     if note.signs.is_empty() && !breath {
         return;
     }

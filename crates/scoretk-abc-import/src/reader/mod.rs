@@ -458,6 +458,8 @@ pub(crate) struct MeasureData {
     pub len: Fraction,
     /// Longueur nominale.
     pub nominal_len: Fraction,
+    /// Respiration portée par une décoration de phrase (ABC 2.1 §4.14).
+    pub breath: bool,
 }
 
 impl MeasureData {
@@ -470,6 +472,7 @@ impl MeasureData {
             volta: None,
             len: Fraction::ZERO,
             nominal_len: Fraction::ZERO,
+            breath: false,
         }
     }
 }
@@ -544,6 +547,11 @@ pub(crate) struct Voice {
     pub lyric_word_open: bool,
     /// Barre de début de la prochaine mesure.
     pub next_start_bar: BarLineType,
+    /// Barre de fin issue d'une décoration de phrase (`!shortphrase!`,
+    /// `!mediumphrase!`) placée juste avant la barre. ABC 2.1 §4.14.
+    pub pending_end_bar: Option<BarLineType>,
+    /// Respiration issue de `!shortphrase!`/`!mediumphrase!`.
+    pub pending_breath: bool,
     /// Facteur de rythme brisé appliqué à la prochaine note.
     pub pending_rhythm: Option<Fraction>,
     /// Changements d'armure `(mesure, tick, armure)`.
@@ -592,6 +600,8 @@ impl Voice {
             next_verse: 0,
             lyric_word_open: false,
             next_start_bar: BarLineType::Normal,
+            pending_end_bar: None,
+            pending_breath: false,
             pending_rhythm: None,
             key_changes: Vec::new(),
             time_changes: Vec::new(),
@@ -654,6 +664,8 @@ impl Voice {
         // longueur ÉCRITE, anacrouse comprise ; voir `measure::do_maat`.
         let len = measure::do_maat(actual, nominal);
         let mut measure = std::mem::replace(&mut self.current, MeasureData::new());
+        measure.breath = self.pending_breath;
+        self.pending_breath = false;
         measure.len = len;
         measure.nominal_len = nominal;
         measure.end_bar = end_bar;

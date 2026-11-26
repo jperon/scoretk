@@ -264,6 +264,21 @@ impl Parser<'_> {
                 return;
             }
         }
+        // ABC 2.1 §4.14 : `!shortphrase!` et `!mediumphrase!` sont des
+        // marques de phrase. Le projet grégorien les place sur les barres de
+        // séparation (gabctk `Barre.abc`) : elles portent la respiration et le
+        // style de la barre qui suit (`docs/agents/gabc.md` §9.1).
+        let phrase_bar = match name.as_str() {
+            "shortphrase" => Some(BarLineType::Tick),
+            "mediumphrase" => Some(BarLineType::Short),
+            _ => None,
+        };
+        if let Some(bar) = phrase_bar {
+            let voice = self.voice();
+            voice.pending_end_bar = Some(bar);
+            voice.pending_breath = true;
+            return;
+        }
         let Some(decoration) = decorations::parse_decoration(&name) else {
             self.warn(format!("décoration « {name} » inconnue, ignorée"));
             return;
@@ -1491,6 +1506,8 @@ impl Parser<'_> {
             }
             _ => {}
         }
+        // La phrase avant la barre (`!shortphrase![|]`, `!mediumphrase![|]`)
+        // porte le style de cette barre quand le jeton `[|]` ne le porte pas.
         // Norme 2.1 § 4.9 : `|1` et `:|2` abrègent `|[1` et `:[2`.
         let volta = self.read_volta_numbers();
         self.finish_bar(end, start_repeat, volta)
@@ -1503,6 +1520,16 @@ impl Parser<'_> {
         start_repeat: bool,
         volta: Option<Vec<u8>>,
     ) -> Result<()> {
+        // Une phrase ABC 2.1 §4.14 placée juste avant la barre porte son style
+        // (`!shortphrase![|]` → Tick, `!mediumphrase![|]` → Short, gabctk
+        // `Barre.abc`). `[|]` arrive par `parse_bracket`, donc la résolution
+        // doit être ici pour couvrir tous les chemins.
+        let end = if end == BarLineType::Normal {
+            self.voice().pending_end_bar.take().unwrap_or(end)
+        } else {
+            self.voice().pending_end_bar = None;
+            end
+        };
         // Port de `abc2xml.py::mergePartMeasure` (ligne 951) : toutes les voix
         // superposées se ferment sur la même barre que leur voix racine.
         let root = self

@@ -1364,7 +1364,20 @@ fn render_chord(
         token.push(']');
     }
 
-    let length = duration::chord_rest_length(chord_rest);
+    // Vue moderne dérivée du chant : les retenues et l'épisème sont des
+    // durées d'exécution, pas des figures ABC. ABC 2.1 §4.3 n'a qu'une
+    // longueur de note écrite ; garder la figure évite de transformer un
+    // tenuto en point de prolongation et de décaler la grille d'attaques.
+    let chant_grid = matches!(
+        &score.extensions.format,
+        Some(scoretk_core::model::Extension::Gregorian(gregorian))
+            if gregorian.derived_modern_view
+    );
+    let length = if chant_grid {
+        chord_rest.duration.ticks()
+    } else {
+        duration::chord_rest_length(chord_rest)
+    };
     token.push_str(&duration::multiplier(length, duration::unit()));
 
     if single_tie {

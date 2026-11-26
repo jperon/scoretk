@@ -69,7 +69,7 @@ const KINDS: &[&str] = &[
 ];
 
 /// Timeline used by a destination's event model.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Timeline {
     /// Written figure grid (`format-ref/lilypond.md` §Durations,
     /// `format-ref/abc.md` §4.3): note lengths advance the cursor.
@@ -95,19 +95,37 @@ enum DurationCarrier {
 struct View {
     timeline: Timeline,
     duration: DurationCarrier,
+    /// Le rendu SMF insère une pause pour chaque barre de séparation
+    /// (`SegmentItem::Breath::pause_ms`, `docs/agents/timemap.md`) : la
+    /// projection de référence doit la cumuler pour retrouver les onsets.
+    pauses: bool,
+    /// Le SMF n'a pas de tick écrit : comparez les faits sans ancrage.
+    no_ticks: bool,
+    /// RP-017 porte une syllabe par méta-évènement, sans marqueur
+    /// begin/middle/end : seul le texte est comparable.
+    lyric_text_only: bool,
 }
 
 const WRITTEN: View = View {
     timeline: Timeline::Written,
     duration: DurationCarrier::Written,
+    pauses: false,
+    no_ticks: false,
+    lyric_text_only: false,
 };
 const PLAYED: View = View {
     timeline: Timeline::Played,
     duration: DurationCarrier::Both,
+    pauses: false,
+    no_ticks: false,
+    lyric_text_only: false,
 };
 const MIDI_VIEW: View = View {
     timeline: Timeline::Played,
     duration: DurationCarrier::Played,
+    pauses: false,
+    no_ticks: true,
+    lyric_text_only: true,
 };
 
 /// One destination, the kinds its **specification** can carry, and the view
@@ -210,12 +228,21 @@ fn duration_value(
 /// reduced to the ten facts a format may carry.
 fn chant_inventory(score: &Score, view: View) -> Inventory {
     let mut inventory = Inventory::new();
+    let mut pause_offset = Fraction::ZERO;
     for measure in &score.measures {
-        let mut cursor = measure.start_tick;
+        let mut cursor = if view.timeline == Timeline::Played {
+            measure.start_tick + pause_offset
+        } else {
+            measure.start_tick
+        };
         for segment in &measure.segments {
-            let tick = match view.timeline {
-                Timeline::Written | Timeline::AsIs => Some(segment.tick),
-                Timeline::Played => Some(cursor),
+            let tick = if view.no_ticks {
+                None
+            } else {
+                match view.timeline {
+                    Timeline::Written | Timeline::AsIs => Some(segment.tick),
+                    Timeline::Played => Some(cursor),
+                }
             };
             for (_, element) in segment.iter_elements() {
                 match element {
@@ -289,7 +316,11 @@ fn chant_inventory(score: &Score, view: View) -> Inventory {
                                     &mut inventory,
                                     "lyric",
                                     tick,
-                                    format!("{:?}:{}", lyric.syllabic, lyric.text),
+                                    if view.lyric_text_only {
+                                        lyric.text.clone()
+                                    } else {
+                                        format!("{:?}:{}", lyric.syllabic, lyric.text)
+                                    },
                                 );
                             }
                         }
@@ -301,10 +332,29 @@ fn chant_inventory(score: &Score, view: View) -> Inventory {
                 }
             }
         }
+        if view.pauses {
+            for segment in &measure.segments {
+                if let Some(scoretk::model::SegmentItem::Breath(breath)) = segment.element(
+                    scoretk::model::Track::new(scoretk::model::StaffId::from_index(0), 0),
+                ) {
+                    if let Some(milliseconds) = breath.pause_ms {
+                        // 120 BPM : une noire vaut 500 ms (`format-ref/midi.md`
+                        // §Meta-event types, `FF 51` = 500000 µs).
+                        let pause = Fraction::new(i64::from(milliseconds), 2000);
+                        cursor += pause;
+                        pause_offset += pause;
+                    }
+                }
+            }
+        }
         if measure.end_bar_line != scoretk::model::BarLineType::Normal {
-            let tick = match view.timeline {
-                Timeline::Written | Timeline::AsIs => Some(measure.end_tick()),
-                Timeline::Played => Some(cursor),
+            let tick = if view.no_ticks {
+                None
+            } else {
+                match view.timeline {
+                    Timeline::Written | Timeline::AsIs => Some(measure.end_tick()),
+                    Timeline::Played => Some(cursor),
+                }
             };
             push(
                 &mut inventory,
@@ -476,7 +526,13 @@ struct Row {
     files: usize,
 }
 
-fn measure_row(destination: &Destination, sources: &[PathBuf], standard_xml: bool) -> Row {
+fn measure_row(
+    destination: &Destination,
+    sources: &[PathBuf],
+    standard_xml: bool,
+    options: &Options,
+    read_smf_text: bool,
+) -> Row {
     let mut row = Row {
         essential: Counts::default(),
         full: Counts::default(),
@@ -487,7 +543,7 @@ fn measure_row(destination: &Destination, sources: &[PathBuf], standard_xml: boo
         let bytes = fs::read(path).expect("read GABC example");
         let score = read(&bytes, Format::Gabc).expect("GABC import");
         let reference = chant_inventory(&score, destination.view);
-        let Ok(written) = write(&score, destination.format, &Options::default()) else {
+        let Ok(written) = write(&score, destination.format, options) else {
             row.skipped += 1;
             continue;
         };
@@ -496,7 +552,18 @@ fn measure_row(destination: &Destination, sources: &[PathBuf], standard_xml: boo
         } else {
             written
         };
-        let Ok(imported) = read(&written, destination.format) else {
+        let imported = if read_smf_text {
+            scoretk::read_midi_with(
+                &written,
+                &scoretk::MidiImportOptions {
+                    smf_text: true,
+                    ..Default::default()
+                },
+            )
+        } else {
+            read(&written, destination.format)
+        };
+        let Ok(imported) = imported else {
             row.skipped += 1;
             continue;
         };
@@ -571,7 +638,7 @@ fn gabc_to_formats_table() {
         } else {
             destination.name.to_owned()
         };
-        let row = measure_row(destination, &sources, true);
+        let row = measure_row(destination, &sources, true, &Options::default(), false);
         print_row(
             &name,
             &row,
@@ -585,14 +652,35 @@ fn gabc_to_formats_table() {
             view: View {
                 timeline: Timeline::Written,
                 duration: DurationCarrier::Both,
+                pauses: false,
+                no_ticks: false,
+                lyric_text_only: false,
             },
             ..*destination
         };
-        let row = measure_row(&private, &sources, false);
+        let row = measure_row(&private, &sources, false, &Options::default(), false);
         print_row(
             "musicxml (private)",
             &row,
             "same files, scoretk-private gabc: fields restored (L6 → derived view)",
+        );
+    }
+    // Additive : `FF 03` est un meta standard ; l'option `smf_text` ne change
+    // que l'écriture de textes, pas les notes (`format-ref/midi.md` §Meta-event
+    // types). Elle est opt-in pour ne pas modifier la sortie MIDI par défaut.
+    for destination in DESTINATIONS.iter().filter(|d| d.name == "midi") {
+        let options = Options {
+            midi: scoretk::MidiOptions {
+                smf_text: true,
+                ..Default::default()
+            },
+            ..Options::default()
+        };
+        let row = measure_row(destination, &sources, false, &options, true);
+        print_row(
+            "midi (smf_text)",
+            &row,
+            "same files, FF 03/FF 06 text metas enabled",
         );
     }
     println!();
@@ -611,9 +699,10 @@ fn gabc_to_formats_loss_diagnostic() {
         "\n=== GABC → X → model: first losses of {} ===",
         path.file_name().unwrap().to_string_lossy()
     );
+    let options = &Options::default();
     for destination in DESTINATIONS {
         let reference = chant_inventory(&score, destination.view);
-        let Ok(written) = write(&score, destination.format, &Options::default()) else {
+        let Ok(written) = write(&score, destination.format, options) else {
             println!("{}: write failed", destination.name);
             continue;
         };
@@ -688,4 +777,63 @@ fn gabc_to_formats_reference_is_the_derived_view() {
     assert!(inventory.keys().any(|(kind, _, _)| *kind == "bar"));
     assert!(inventory.keys().any(|(kind, _, _)| *kind == "lyric"));
     assert!(inventory.keys().any(|(kind, _, _)| *kind == "duration"));
+}
+
+/// Port SMuFL optionnel des neumes (XSD 4.0 `other-notation/@smufl`).
+///
+/// Mesure : un glyph `chant*` par lettre chantée, sans champ privé supplémentaire.
+/// L'option est additive : la sortie par défaut ne change pas.
+#[test]
+fn musicxml_smufl_neume_carrier_is_opt_in() {
+    let options = Options {
+        gabc_neume_smufl: true,
+        ..Options::default()
+    };
+    println!("\n=== MusicXML SMuFL neume carrier (opt-in) ===");
+    println!(
+        "{:<32} {:>7} {:>7} {:>8}",
+        "source", "notes", "glyphs", "distinct"
+    );
+    let mut total_notes = 0;
+    let mut total_glyphs = 0;
+    for path in corpus() {
+        let bytes = fs::read(&path).expect("gabc");
+        let score = read(&bytes, Format::Gabc).expect("import");
+        let default = String::from_utf8(
+            write(&score, Format::MusicXml, &Options::default()).expect("default XML"),
+        )
+        .expect("UTF-8");
+        assert!(
+            !default.contains("smufl=\"chant"),
+            "the default output must stay unchanged"
+        );
+        let xml = String::from_utf8(write(&score, Format::MusicXml, &options).expect("SMuFL XML"))
+            .expect("UTF-8");
+        let glyphs: Vec<&str> = xml
+            .match_indices("smufl=\"")
+            .filter_map(|(at, _)| {
+                let rest = &xml[at + 7..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .filter(|name| name.starts_with("chant"))
+            .collect();
+        let notes = score.notes.len();
+        total_notes += notes;
+        total_glyphs += glyphs.len();
+        let mut distinct = glyphs.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        println!(
+            "{:<32} {:>7} {:>7} {:>8}",
+            path.file_name().unwrap().to_string_lossy(),
+            notes,
+            glyphs.len(),
+            distinct.len()
+        );
+        assert_eq!(glyphs.len(), notes, "one SMuFL glyph per sung letter");
+        assert!(xml.contains("chantPunctum"), "plain puncta must be carried");
+    }
+    assert!(total_notes > 0);
+    assert_eq!(total_notes, total_glyphs);
+    println!("total: {total_glyphs}/{total_notes} glyphs\n");
 }

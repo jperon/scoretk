@@ -69,6 +69,9 @@ pub struct Options {
     /// Additif : `false` par défaut, donc les octets MEI restent conformes
     /// aux références `*.ref.mei` ; voir `docs/agents/mei.md` §10.
     pub mei_full_support: bool,
+    /// Carrier SMuFL optionnel des neumes grégoriens (MusicXML). Additif,
+    /// `false` par défaut : voir `docs/agents/gabc.md` §13.
+    pub gabc_neume_smufl: bool,
 }
 
 impl Default for Options {
@@ -91,6 +94,7 @@ impl Default for Options {
             midi: MidiOptions::default(),
             gabc_modern_clef: false,
             mei_full_support: false,
+            gabc_neume_smufl: false,
         }
     }
 }
@@ -108,6 +112,7 @@ impl Options {
             // `write_playback` force `stable_ids`.
             stable_ids: false,
             gabc_modern_clef: self.gabc_modern_clef,
+            gabc_neume_smufl: self.gabc_neume_smufl,
         }
     }
 }

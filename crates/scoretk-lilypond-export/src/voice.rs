@@ -683,10 +683,16 @@ pub(crate) fn render_body(
         // tick de fin incohérent.
         close_tuplets_until(&[], &mut tuplets, &mut emitter);
 
+        let chant_breath = matches!(
+            &score.extensions.format,
+            Some(scoretk_core::model::Extension::Gregorian(gregorian))
+                if gregorian.derived_modern_view && matches!(measure.end_bar_line, scoretk_core::model::BarLineType::Tick | scoretk_core::model::BarLineType::Short)
+        );
         emitter.token(&bar_line_token(
             measure,
             measure_index + 1 == score.measures.len(),
             bar_check,
+            chant_breath,
         ));
         emitter.flush_line();
         if voice == 0 && measure.line_break {
@@ -797,7 +803,7 @@ fn fill_rest(start: Tick, end: Tick, _measure: &Measure) -> String {
 /// des indications locales de MuseScore, où une portée en 3/4 partage une
 /// mesure de 9/8 avec les autres. LilyPond signalerait alors un échec de
 /// contrôle à chaque barre sans que la musique soit fausse.
-fn bar_line_token(measure: &Measure, last: bool, bar_check: bool) -> String {
+fn bar_line_token(measure: &Measure, last: bool, bar_check: bool, breath: bool) -> String {
     let explicit = match measure.end_bar_line {
         BarLineType::End => Some("\\bar \"|.\""),
         BarLineType::Double => Some("\\bar \"||\""),
@@ -806,6 +812,14 @@ fn bar_line_token(measure: &Measure, last: bool, bar_check: bool) -> String {
     };
     if let Some(token) = explicit {
         return token.to_owned();
+    }
+    if breath {
+        // Notation Reference §3.2 : `\breathe` pose une virgule sur la
+        // barre. Une divisio minima/minor grégorienne appelle une respiration
+        // (`Gabc.tex:812-820`, gabctk `Barre.abc`), pas une barre métrique.
+        return format!("\\breathe {}", if bar_check { "|" } else { "" })
+            .trim_end()
+            .to_owned();
     }
     if last {
         return "\\bar \"|.\"".to_owned();

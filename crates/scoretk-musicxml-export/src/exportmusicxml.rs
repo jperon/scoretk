@@ -112,6 +112,10 @@ pub struct ExportOptions {
     /// clef de sol (avec `8vb` si le registre est bas) et portée à 5 lignes.
     /// Sans l'option, la clé d'ut et les 4 lignes du `.gabc` sont conservées.
     pub gabc_modern_clef: bool,
+    /// Carrier SMuFL optionnel des neumes grégoriens (`<other-notation
+    /// smufl="chantQuilisma">`, XSD 4.0 `attributeGroup smufl`). Additif :
+    /// `false` par défaut, car il change la sortie XML standard.
+    pub gabc_neume_smufl: bool,
 }
 
 impl Default for ExportOptions {
@@ -122,6 +126,7 @@ impl Default for ExportOptions {
             concert_pitch: None,
             stable_ids: false,
             gabc_modern_clef: false,
+            gabc_neume_smufl: false,
         }
     }
 }
@@ -2113,6 +2118,7 @@ impl Context<'_> {
                             gregorian_note,
                             source.gregorian_syllable,
                             breath,
+                            self.options.gabc_neume_smufl,
                         );
                         // Un neume est le groupe parenthesé source
                         // (`Gabc.tex:36-58`) : une liure par syllabe chantée,

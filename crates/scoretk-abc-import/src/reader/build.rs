@@ -28,10 +28,11 @@
 //! [`Spanner`].
 
 use scoretk_core::model::{
-    Annotation, BarLine, BarLineType, Clef, ClefType, Credit, CreditStyle, Dynamic, Fraction,
-    Harmony, Jump, KeySig, Marker, MarkerType, Measure, Part, Placement, RepeatMark, RichText,
-    Score, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Staff, StaffId, TboxText, TimeSig, Track, Transpose, Tuplet, TupletId, VoltaInfo,
+    Annotation, BarLine, BarLineType, Breath, BreathType, Clef, ClefType, Credit, CreditStyle,
+    Dynamic, Fraction, Harmony, Jump, KeySig, Marker, MarkerType, Measure, Part, Placement,
+    RepeatMark, RichText, Score, Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor,
+    SpannerNotation, SpannerType, Staff, StaffId, TboxText, TimeSig, Track, Transpose, Tuplet,
+    TupletId, VoltaInfo,
 };
 
 use crate::reader::{AnnotationSpec, Position, Reader, Voice};
@@ -260,6 +261,28 @@ pub(crate) fn build(reader: &mut Reader) -> Result<Score> {
                     // ici faisait perdre `End`, `Double` et `Dashed` à
                     // l'aller-retour ABC (ABC 2.1 §4.8).
                     segment.set_element(track, SegmentItem::BarLine(BarLine::new(end_bar_line)));
+                }
+            }
+        }
+        // Une marque de phrase ABC (`!shortphrase!`, §4.14) devient une
+        // respiration sur la dernière note de la mesure, comme dans le
+        // projet grégorien (`docs/agents/gabc.md` §9.1).
+        if voices
+            .iter()
+            .any(|voice| voice.measures.get(index).is_some_and(|data| data.breath))
+        {
+            let segment = segment_at(&mut measure, SegmentType::Breath, end, staff_count);
+            for staff in 0..staff_count_read {
+                let track = Track::new(StaffId::from_index(staff), 0);
+                if segment.element(track).is_none() {
+                    segment.set_element(
+                        track,
+                        SegmentItem::Breath(Breath {
+                            kind: BreathType::Comma,
+                            placement: Placement::Above,
+                            pause_ms: None,
+                        }),
+                    );
                 }
             }
         }

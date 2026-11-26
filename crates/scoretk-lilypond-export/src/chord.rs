@@ -41,6 +41,22 @@ use crate::duration::{duration_token, length_token, with_multiplier};
 use crate::pitch;
 use crate::text;
 
+/// Vue moderne dérivée d'un payload grégorien (`docs/agents/gabc.md` §7).
+///
+/// Les retenues avant quilisma et l'épisème y sont des durées d'exécution
+/// (`ChordRest::ticks`) et non des figures écrites. LilyPond les encode avec
+/// un multiplicateur `*n/d`, que d'autres outils et notre propre lecteur ne
+/// restituent pas de façon stable. Le chant est donc écrit avec ses figures
+/// notées : le trait d'épisème reste `--` et la durée jouée n'est pas
+/// transportée par la notation standard (déclaré perte propre au format).
+fn written_chant_grid(score: &Score) -> bool {
+    matches!(
+        &score.extensions.format,
+        Some(scoretk_core::model::Extension::Gregorian(gregorian))
+            if gregorian.derived_modern_view
+    )
+}
+
 /// Rend un accord ou un silence en jeton LilyPond.
 ///
 /// `measure_len` est la longueur réelle de la mesure (un silence de mesure
@@ -75,6 +91,7 @@ pub(crate) fn render_inner(
     duration_override: Option<Fraction>,
     bare_measure_rest: bool,
 ) -> String {
+    let written_grid = written_chant_grid(score);
     if let Some(rest) = chord_rest.rest_ref() {
         // Silence « gap » de `Measure::fillGap` : il ne s'exporte pas, il ne
         // sert qu'à faire avancer le curseur d'export. `s` le représente
@@ -83,7 +100,7 @@ pub(crate) fn render_inner(
             // Un `<Rest>` de comblement est tout de même un `Rest` du modèle :
             // l'écrire `r` le rend à la relecture. Les trous réels d'une voix,
             // eux, restent écrits `s` par `fill_rest`.
-            return format!("r{}", rest_duration(chord_rest));
+            return format!("r{}", rest_duration(chord_rest, written_grid));
         }
         if chord_rest.is_full_measure_rest() {
             // Un silence de mesure entière s'écrit `R` suivi de la durée réelle
@@ -113,10 +130,10 @@ pub(crate) fn render_inner(
             // lecture reconnaît (`Rest::visible`).
             return format!(
                 "\\once \\override Rest.transparent = ##t r{}",
-                rest_duration(chord_rest)
+                rest_duration(chord_rest, written_grid)
             );
         }
-        return format!("r{}", rest_duration(chord_rest));
+        return format!("r{}", rest_duration(chord_rest, written_grid));
     }
 
     let Some(chord) = chord_rest.chord_ref() else {
@@ -186,9 +203,13 @@ pub(crate) fn render_inner(
 }
 
 /// Durée d'un silence, multiplicateur compris.
-fn rest_duration(chord_rest: &ChordRest) -> String {
+fn rest_duration(chord_rest: &ChordRest, written_grid: bool) -> String {
     let notated = chord_rest.duration.ticks();
-    let actual = chord_rest.ticks.unwrap_or(notated);
+    let actual = if written_grid {
+        notated
+    } else {
+        chord_rest.ticks.unwrap_or(notated)
+    };
     with_multiplier(duration_token(chord_rest.duration), actual, notated)
 }
 
@@ -232,6 +253,7 @@ fn chord_token(
     suppress_tremolo: bool,
     duration_override: Option<Fraction>,
 ) -> String {
+    let written_grid = written_chant_grid(score);
     // MuseScore joue les notes `<visible>0</visible>` (seule la tête de note
     // est masquée : `exportmusicxml.cpp::writeNotehead`). Les supprimer
     // change la musique relue : écrire toutes les notes du accord.
@@ -268,7 +290,11 @@ fn chord_token(
     }
 
     let notated = chord_rest.duration.ticks();
-    let actual = chord_rest.ticks.unwrap_or(notated);
+    let actual = if written_grid {
+        notated
+    } else {
+        chord_rest.ticks.unwrap_or(notated)
+    };
     let duration = match duration_override {
         Some(body) => length_token(body),
         None if chord_rest.tuplet.is_some() => duration_token(chord_rest.duration),
