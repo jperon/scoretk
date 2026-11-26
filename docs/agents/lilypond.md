@@ -10795,3 +10795,172 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 62. Restored `ra` sources and the manifest with spaces (2026-11-26)
+
+### 62.1 Protocol
+
+Same frozen manifests (apart from the two corrected `ra` rows below), the
+same `ly95lect-refs-54` reference tree, the unchanged §52.5 exactness rule,
+the same Q16 grid, exclusions and comparator, and `--refs-only --python-ly ''
+--music21 ''` for every lot. One lot at a time, one cargo command at a time,
+a worktree-local `CARGO_TARGET_DIR`, and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`.
+The binary was rebuilt from current `master` (`3fa60e5c`) and frozen at
+`ly62-scoretk` before measuring. No reference was regenerated, no failure was
+excluded and no comparison was relaxed. Downloaded `.ly` data was only
+inspected with `python3 -I`; LilyPond was not run outside the scripts' bwrap
+sandbox (it was not needed: every required MIDI was already cached).
+
+### 62.2 The 66 missing sources and their includes
+
+The 66 `ra` failures of §56–§61 were `../lyluatex/tmp-ly/<hash>.ly` files
+deleted by lyluatex. Each was restored at its original path from the
+byte-identical `src.ly` kept in `ly95lect-refs-54/out3ra/<hash>_<name>/`;
+the copies in `ly95lect-refs-fresh` are identical too. All 66 were verified
+byte for byte against the reference tree (`cmp`), and all 66 already have
+their `ly.midi` there, so no reference generation was necessary.
+
+One of them, `3bb9deb58dc021a6c02594e1937e0783.ly`, has four `\include`
+directives (`head.ly`, `mymark.ly`, `head.ly`, `foot.ly`). The three included
+files were also missing from `tmp-ly/`. They exist in the reference tree as
+`ed3972ef_head/src.ly` (`a b c`), `cc42d57e_mymark/src.ly` (`\mark \default`)
+and `3aa8f42a_foot/src.ly` (`g a' b`); the hashes are those of
+`…/lyluatex/tmp-ly/<name>.ly`. They were restored the same way, byte for
+byte. They are not manifest rows, so they do not change any denominator.
+
+### 62.3 The manifest generator and the two cut rows
+
+`lots.sh` built the manifests with `awk '{print $6}'`, which truncates a path
+at its first space. Commit `9f4c34e1` had already replaced that with
+`substr($0, index($0, $6))`, but the frozen `ra.txt` predates that fix and
+still had two identical rows `…/lyluatex/ly/Ave`, cut from:
+
+- `…/lyluatex/ly/Ave Maria De Lourdes/Ave Maria De Lourdes.ly`;
+- `…/lyluatex/ly/Ave Maria De Lourdes/Ave Maria.ly` (which `\include`s the
+  first one).
+
+`lots.sh` now extracts the whole remainder after the first five fields with
+`match($0, /^([^[:space:]]+[[:space:]]+){5}/)`, which preserves consecutive
+spaces verbatim and no longer depends on where `$6` first occurs in the line.
+Its selftest uses those two real paths, and a guard rejects any generated
+line that is not an absolute path. Rows 1673–1674 were corrected in the
+frozen manifest and in its `ly-import-lots` copy; the 1726 physical lines
+were kept. Both files exist on disk and their `src.ly` in the reference tree
+is byte-identical (`b48d427d_Ave_Maria_De_Lourdes` and `c5517f2a_Ave_Maria`),
+with a cached `ly.midi` for each: no reference generation was needed.
+
+The two rows had been excluded in §56–§61 (the same cut path was counted
+once), which is why that table reported a 1724-row denominator. With the
+correct paths they are measurable, so `ra` now has **1726** measured rows:
+no row was removed and no failure was excluded, the two former exclusions
+simply entered both numerator and denominator. `mut` (1316) and `rw` (1365)
+are unchanged.
+
+### 62.4 Results
+
+| Lot | Rows before → after | Exact before (§61) | Exact after §62 | N1 % before → after | N2 % before → after | Exclusions after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 → 1726 | 1638 (95.0 %) | **1706 (98.8 %)** | 98.70 → 98.74 | 96.62 → 96.66 | 0 |
+| `mut` | 1316 → 1316 | 1254 (95.3 %) | **1254 (95.3 %)** | 99.54 → 99.54 | 97.65 → 97.65 | 61 |
+| `rw` | 1365 → 1365 | 1299 (95.2 %) | **1299 (95.2 %)** | 99.54 → 99.54 | 97.63 → 97.63 | 83 |
+
+All 68 repaired sources are exact (same note count, N1 = N2 = 100 %, no
+flag): the +68 exactly explains `ra` 1638 → 1706. `mut` and `rw` are
+unchanged from §61: their manifests and sources were not touched, and no
+file gained or lost an exact status on either lot.
+
+The arithmetic ceiling imposed by the deleted `ra` sources was
+1658/1724 = 96.2 % with a perfect reader (§61.2). With the sources restored
+and both paths corrected there is no such ceiling left: the new ceiling is
+**1726/1726 = 100 %**, and the measured 1706/1726 = **98.84 %** clears the
+98 % target on `ra` for the first time.
+
+### 62.5 Status of the 66 + 2 files
+
+Nothing is left inexact among the repaired files, so there is no first cause
+category to report for them. The status below comes from the raw
+`ly62-ra/ra.jsonl` (manifest order; the two `Ave` files last):
+
+| Restored source (basename) | Status / first cause |
+| --- | --- |
+| 4ab45dc7d40de4efbc65d04c5bcd4e58.ly | exact |
+| 28cd0e1fff0e579d5b66aa124ded678b.ly | exact |
+| 5f24d74428eae4922e04373008ae0c4a.ly | exact |
+| 6d257c556b379d63ea78487783be6550.ly | exact |
+| f2a378d04fc3fb97e5a73d0563b4cbdd.ly | exact |
+| b583d62c12bfbd5e8016c661cafe5f4a.ly | exact |
+| cead279b2b0af1970d5e563866013702.ly | exact |
+| c2b517dd9ef72b0bc0a914781b2ba22a.ly | exact |
+| f27c27ac37af8dbce111f90e296bc881.ly | exact |
+| e7689f640f8d1c76b8cbbdcb15a29d9c.ly | exact |
+| 0daa1b33f69679f19a4d30fbf2332878.ly | exact |
+| 0fc5daf78218151c4156594648714e6b.ly | exact |
+| 618197366e7e4fe3b560e4655f26034d.ly | exact |
+| 4b469adb47024442b832ccff860a59e1.ly | exact |
+| 9fdc3a6ddafdbc8e552fd38643727441.ly | exact |
+| 5580b0997527758852daf56d9a7a2b5d.ly | exact |
+| 260b120134f71ac75cf89128ff83796f.ly | exact |
+| 35aff57ba728d36096044cc0d57d20dd.ly | exact |
+| 437d1051c13b619b065f8de391c54652.ly | exact |
+| 65d7ba4cd556a73cd4c937f4d4d685bb.ly | exact |
+| cc28eae8561df63e31bbb9b90047d529.ly | exact |
+| d4348e7ae0e387b688ba616340a2c65e.ly | exact |
+| d404b5b652c60c96a7ed52ca8730c753.ly | exact |
+| 98ffbb45c988a7a1047cfbace2169c7b.ly | exact |
+| e6098a72c067a7e5c6b8c9d91a8ad116.ly | exact |
+| e7f62893ee7acec149de7aa66d1b673f.ly | exact |
+| 09c57d6f4834dc4661812ce0fb31d495.ly | exact |
+| 204a56ef44d439a87b6e56f1949f6a35.ly | exact |
+| 233f6ebb00b0ad60c3457d3214de9a30.ly | exact |
+| f7cd2082aeeb7550008b1feabd0118ee.ly | exact |
+| f0bb061fb540eedd090c88f1260363b8.ly | exact |
+| a97703a8b82b865dceabf27a31db3daf.ly | exact |
+| e1ce3a36f6fc495d0f3abd5f562b26eb.ly | exact |
+| 8b66b1a893264c307e8f88323c570bcc.ly | exact |
+| ced3bd5ae4fdcb86f9ea7b9a66a612d0.ly | exact |
+| 5a1ba73226afc01f2619285c4ad7f6f5.ly | exact |
+| 1b2aa7887fb0f94294c8ad12250627a4.ly | exact |
+| 3bb9deb58dc021a6c02594e1937e0783.ly | exact |
+| 603690e7987eca2af118fb9a18b7e686.ly | exact |
+| ac95a2a12124fdb7cefe12807b679815.ly | exact |
+| 62c4b446307ed8829dcd7e79d40038de.ly | exact |
+| e20f2189ff23f5576ca601bda46d90da.ly | exact |
+| 54f193a5b01a3c978a76f3aebb0136e0.ly | exact |
+| c7df2373a6c0626b1b8c6f5f9349a580.ly | exact |
+| 892d8ceb93794dc4bd68ce8f31148e22.ly | exact |
+| 87c9dcebfb8c6e2cdd28dd74e852691a.ly | exact |
+| 1f5cc59b9c732590eb56f54477d2461b.ly | exact |
+| 7de5e7ed47944da0369e1354cd185241.ly | exact |
+| c7c07c7f2262ec1315efdf94a06b7273.ly | exact |
+| f8bf397bf0104fcce0260e47fe756413.ly | exact |
+| 8d39d89930cfb93af7dee4ee476ffec5.ly | exact |
+| b65e4040f837fae81612cab768a5e3fb.ly | exact |
+| 78fbf8786e8ecb1d7f118e49b31635ba.ly | exact |
+| 21d7de634e68078a8f426650af7a4811.ly | exact |
+| 34974475860cef28330e84fcec3a2804.ly | exact |
+| 0f6336a580b20072c72ed5eaccf62353.ly | exact |
+| d97777540f33f9f1f5e5f7812234cdd6.ly | exact |
+| e9912b163720e5543c41c3cca063ef30.ly | exact |
+| 0236c9f594d454209ed7078bc6c26a66.ly | exact |
+| 5b205087dda2041ab51587d3cb7c40cf.ly | exact |
+| 8c56384c8d0b79e838b23c2b3bd29a19.ly | exact |
+| ad448994aa30469786d5cace04481ef8.ly | exact |
+| d2689480454216bcc8a113004c23d19a.ly | exact |
+| f1365dd22409c29c98186c0e5cdee4c8.ly | exact |
+| 9a83169bf8907ce6bace1a38cac29d45.ly | exact |
+| 252de594d642f708b3ebde0e87798980.ly | exact |
+| Ave Maria De Lourdes.ly | exact |
+| Ave Maria.ly | exact |
+
+### 62.6 Verification
+
+All script self-tests pass (`lots.sh` with `LOTS_SELFTEST=1`,
+`ly_notes.py selftest`, `mesure.py --selftest`, `references.py --selftest`,
+`ecriture.py --selftest`, `lots-externes.py --causes-selftest`). One cargo
+command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
