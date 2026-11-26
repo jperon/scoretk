@@ -6058,6 +6058,16 @@ impl<'a> Parser<'a> {
                 self.position += 1;
                 vec![PostEvent::HairpinStop]
             }
+            Kind::Command if token.text == "repeatTie" => {
+                // `repeatTie = #(make-music 'RepeatTieEvent)`
+                // (`ly/declarations-init.ly:104`) : un post-événement
+                // sans argument qui prolonge une liaison déjà ouverte,
+                // généralement depuis le corps d'un `\repeat volta` vers
+                // son `\alternative` (`entertainer.ly`). Le consommer comme
+                // une commande inconnue laissait l'accord suivant réattaqué.
+                self.position += 1;
+                vec![PostEvent::RepeatTie]
+            }
             Kind::Command => {
                 // `lily/parser.yy` : `post_event_nofinger: direction_less_event`
                 // est un événement isolé (`\fermata`, `\p`, `\trill`, …) : il ne
@@ -8564,6 +8574,7 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "("
                 || token.text == ")"
                 || token.text == "rest"
+                || token.text == "repeatTie"
                 || token.text == "bendAfter"
                 || token.text == "single"
                 // `\5` : numéro de corde, post-événement sans argument

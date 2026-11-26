@@ -59,6 +59,10 @@ pub(crate) enum PostEvent {
     Rest,
     /// Liaison de prolongation (`~`).
     Tie,
+    /// `\repeatTie` : prolongation d'une liaison ouverte avant une reprise,
+    /// donc une **tête de fin** sans nouvelle attaque
+    /// (`ly/declarations-init.ly:104`, `lily/tie-performer.cc`).
+    RepeatTie,
     /// Début de liaison d'expression (`(`, `\=N(`) avec son numéro.
     SlurStart(u8),
     /// Fin de liaison d'expression (`)`, `\=N)`).

@@ -10134,6 +10134,40 @@ fn tweak_partiel_devant_une_liaison_garde_la_liaison() {
     );
 }
 
+/// `\repeatTie` (`ly/declarations-init.ly:104`) ne ferme une liaison que si
+/// celle-ci est encore pendante (`lily/tie-performer.cc`). Sans elle,
+/// LilyPond réattaque la note (`repeat-tie.ly`) ; avec une liaison ouverte
+/// dans une autre voix du `\repeat volta`, la tête de l'alternative est une
+/// fin de liaison et disparaît des attaques (`entertainer.ly`).
+#[test]
+fn repeat_tie_ferme_seulement_une_liaison_pendante() {
+    let prelude = "\\version \"2.26.0\"\n\\language \"english\"\n\
+        \\score { \\new Staff { \\fixed c' { ";
+    // Sans liaison pendante, `\repeatTie` reste une attaque.
+    let seul = format!(
+        "{prelude} c'2 | \\repeat volta 2 {{ g'2 a'2 }} \
+         \\alternative {{ {{ b'2 }} {{ c'4\\repeatTie r4 }} }} }} }}\n"
+    );
+    let score = read_lilypond(&seul).expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), hauteurs(&score));
+    // Une liaison `~` restée sans but dans sa voix peut être fermée par
+    // `\repeatTie`, même depuis une autre voix de l'alternative.
+    let pendante = format!(
+        "{prelude} << {{ c'2 ~ }} \\\\ {{ e'2 }} >> r2 | \
+         \\repeat volta 2 {{ g'2 a'2 }} \
+         \\alternative {{ {{ b'2 }} {{ c'4\\repeatTie r4 }} }} }} }}\n"
+    );
+    let score = read_lilypond(&pendante).expect("lecture");
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.pitch == 72 && note.tie_back.is_some())
+            .count(),
+        1 // seule la tête du `\repeatTie` est une fin de liaison
+    );
+}
+
 /// `accidental-glyphs-test.ily` définit `\test` comme une fonction Scheme qui
 /// `add-score` un `\score` avec sept notes de portée et une de `ChordNames`
 /// (vérifié avec LilyPond 2.27 sur `alteration-glyphs.ly`). L'altération est

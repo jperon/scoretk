@@ -194,6 +194,9 @@ pub(crate) struct NoteEvent {
     pub tpc_transposed: i8,
     /// Vrai si la note commence une liaison de prolongation.
     pub tie: bool,
+    /// Vrai pour `\repeatTie` : la note est la fin d'une liaison ouverte
+    /// avant une reprise, sans attaque propre.
+    pub repeat_tie: bool,
     /// Vrai pour une altération de courtoisie.
     pub cautionary: bool,
     /// Groupe de tête.
@@ -1774,6 +1777,13 @@ impl<'a> Interpreter<'a> {
             .posts
             .iter()
             .any(|post| matches!(post, PostEvent::Tie));
+        // `\repeatTie` porté par l'accord s'applique à chacune de ses têtes,
+        // comme `RepeatTieEvent` de `lily/tie-performer.cc` le fait pour
+        // toutes les notes d'un `EventChord`.
+        let chord_repeat_tie = chord
+            .posts
+            .iter()
+            .any(|post| matches!(post, PostEvent::RepeatTie));
         // Un silence de mesure entière couvre toute la mesure : le
         // constructeur le reconnaîtra d'après le silence multi-mesures. La
         // figure explicite est conservée pour distinguer `R4.` (silence daté)
@@ -1878,6 +1888,7 @@ impl<'a> Interpreter<'a> {
         if let ChordContent::Notes(notes) = &mut content {
             for note in notes {
                 note.tie |= chord_tie;
+                note.repeat_tie |= chord_repeat_tie;
             }
         }
         if self.skip_event_emission {
@@ -2044,7 +2055,7 @@ impl<'a> Interpreter<'a> {
         fingerings: &mut Vec<String>,
     ) {
         match post {
-            PostEvent::Rest | PostEvent::Tie => {}
+            PostEvent::Rest | PostEvent::Tie | PostEvent::RepeatTie => {}
             PostEvent::SlurStart(number) => {
                 self.event(EventKind::SlurStart(*number));
             }
@@ -2183,6 +2194,10 @@ impl<'a> Interpreter<'a> {
                 tpc,
                 tpc_transposed: tpc,
                 tie: note.posts.iter().any(|post| matches!(post, PostEvent::Tie)),
+                repeat_tie: note
+                    .posts
+                    .iter()
+                    .any(|post| matches!(post, PostEvent::RepeatTie)),
                 cautionary: note.pitch.cautionary,
                 head_group: note_head_group(note),
                 small: self.cue,
@@ -2237,6 +2252,10 @@ impl<'a> Interpreter<'a> {
             tpc,
             tpc_transposed: tpc,
             tie,
+            repeat_tie: note
+                .posts
+                .iter()
+                .any(|post| matches!(post, PostEvent::RepeatTie)),
             cautionary: note.pitch.cautionary,
             head_group: note_head_group(note),
             small: self.cue,

@@ -3754,7 +3754,7 @@ fn key_alter(fifths: i8, step: u8) -> i8 {
 
 /// (attaque, fin écrite, fin MIDI, id, liaison, tête d'un `<< … >>`,
 /// contexte `Voice`).
-type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool, u32);
+type TieEvent = (Fraction, Fraction, Fraction, NoteId, bool, bool, u32, bool);
 
 /// Relie les notes de prolongation.
 fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
@@ -3779,6 +3779,10 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
             }
         }
     }
+    // Notes datées de toute la partition et têtes de `\repeatTie` : la
+    // prolongation peut traverser une alternative et donc changer de voix.
+    let mut toutes_notes: Vec<(Fraction, NoteId, u8, bool)> = Vec::new();
+    let mut repeat_ties: Vec<(Fraction, NoteId)> = Vec::new();
     for staff in staves {
         // Première passe : construire les suites datées de chaque voix. Elles
         // servent ensuite à la fois aux liaisons propres à la voix et aux
@@ -3874,10 +3878,15 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                         note.tie,
                         chord.sim_chord,
                         chord.voice_context,
+                        note.repeat_tie,
                     ));
+                    toutes_notes.push((event.tick, id, note.pitch, note.tie));
+                    if note.repeat_tie {
+                        repeat_ties.push((event.tick, id));
+                    }
                 }
             }
-            sequence.sort_by_key(|(tick, end, _, _, _, _, _)| (*tick, *end));
+            sequence.sort_by_key(|(tick, end, _, _, _, _, _, _)| (*tick, *end));
             sequences.push(sequence);
             tie_waits.push(tie_wait);
         }
@@ -3894,7 +3903,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     .is_some_and(|(_, on)| *on)
             };
             let mut instants: BTreeSet<Fraction> = segments_by_tick.keys().copied().collect();
-            instants.extend(sequence.iter().map(|(tick, _, _, _, _, _, _)| *tick));
+            instants.extend(sequence.iter().map(|(tick, _, _, _, _, _, _, _)| *tick));
             // Une file par hauteur : un accord peut contenir deux têtes de
             // même hauteur (`<bis' bis>`, `tie-chord-broken-extremal.ly`),
             // qu'une simple entrée par hauteur écrasait ; chaque tête lie
@@ -3915,7 +3924,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                     fin += 1;
                 }
                 let wait = wait_for_note(now);
-                for &(_, _, _, id, _, _, context) in &sequence[debut..fin] {
+                for &(_, _, _, id, _, _, context, _) in &sequence[debut..fin] {
                     let pitch = score.note(id).pitch;
                     // Sans `tieWaitForNote`, seule la note liée qui se termine
                     // exactement ici peut être fermée. Avec, LilyPond cherche
@@ -3944,7 +3953,7 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                         !queue.is_empty()
                     });
                 }
-                for &(_, end, end_midi, id, tie, _, context) in &sequence[debut..fin] {
+                for &(_, end, end_midi, id, tie, _, context, _) in &sequence[debut..fin] {
                     if tie {
                         open.entry(score.note(id).pitch)
                             .or_default()
@@ -3963,13 +3972,13 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
         // touche qu'une liaison encore pendante après le traitement normal, et
         // exige la même hauteur au tick exact de sa fin.
         for sequence in &sequences {
-            for &(_, end, _, id, tie, sim_chord, context) in sequence {
+            for &(_, end, _, id, tie, sim_chord, context, _) in sequence {
                 if !tie || !sim_chord || deja_lies.contains(&id) {
                     continue;
                 }
                 let pitch = score.note(id).pitch;
                 let cible = sequences.iter().flat_map(|seq| seq.iter()).find_map(
-                    |&(tick, _, _, other, _, _, other_context)| {
+                    |&(tick, _, _, other, _, _, other_context, _)| {
                         (tick == end
                             && other_context == context
                             && !deja_lies.contains(&other)
@@ -3985,5 +3994,38 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 }
             }
         }
+    }
+
+    // `\repeatTie` (`ly/declarations-init.ly:104`) ne supprime une attaque
+    // que s'il existe une liaison encore pendante à fermer : sans elle,
+    // LilyPond rejoue la note (`repeat-tie.ly`, `vshape.ly`). On ne relie
+    // donc qu'à une tête de `~` restée sans but dans `link_ties`, toutes
+    // voix et portées confondues puisque l'alternative peut changer de
+    // voix (`entertainer.ly`). L'écriture MusicXML produit alors
+    // `<tie type="stop"/>`, que l'oracle ne compte pas comme une attaque.
+    let mut deja_relies: HashSet<NoteId> = HashSet::new();
+    for (tick, id) in &repeat_ties {
+        if score.note(*id).tie_back.is_some() {
+            continue;
+        }
+        let pitch = score.note(*id).pitch;
+        let Some((_, previous, _, _)) = toutes_notes
+            .iter()
+            .filter(|(t, other, p, pending)| {
+                *t < *tick
+                    && *p == pitch
+                    && *pending
+                    && *other != *id
+                    && !deja_relies.contains(other)
+                    && score.note(*other).tie_forward.is_none()
+            })
+            .max_by_key(|(t, _, _, _)| *t)
+        else {
+            continue;
+        };
+        score.note_mut(*previous).tie_forward = Some(*id);
+        score.note_mut(*id).tie_back = Some(*previous);
+        deja_relies.insert(*previous);
+        deja_relies.insert(*id);
     }
 }
