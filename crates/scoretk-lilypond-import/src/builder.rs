@@ -3018,6 +3018,9 @@ fn place_meta(
         return;
     };
     match meta {
+        // Liaison de silence : seul `link_ties` l'utilise, elle n'ajoute
+        // aucun élément au modèle.
+        MetaEvent::RestTie(_) => {}
         MetaEvent::Clef(clef) => {
             // MuseScore place la clef d'en-tête dans `HeaderClef` et une
             // éventuelle seconde clef au même tick dans `Clef` (v3/clef-1).
@@ -3787,6 +3790,16 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
     // prolongation peut traverser une alternative et donc changer de voix.
     let mut toutes_notes: Vec<(Fraction, NoteId, u8, bool)> = Vec::new();
     let mut repeat_ties: Vec<(Fraction, NoteId)> = Vec::new();
+    let mut rest_ties: Vec<(Fraction, Fraction)> = Vec::new();
+    for staff in staves {
+        for voice in &staff.voices {
+            for event in &voice.interpreted.events {
+                if let EventKind::Meta(MetaEvent::RestTie(duree)) = &event.kind {
+                    rest_ties.push((event.tick, event.tick + *duree));
+                }
+            }
+        }
+    }
     for staff in staves {
         // Première passe : construire les suites datées de chaque voix. Elles
         // servent ensuite à la fois aux liaisons propres à la voix et aux
@@ -3998,6 +4011,25 @@ fn link_ties(score: &mut Score, staves: &[StaffBuild]) {
                 }
             }
         }
+    }
+
+    // Une liaison portée par un silence ne crée pas d'attaque : elle relie
+    // les notes de même hauteur aux deux bouts dans les autres branches du
+    // même contexte (`volta-spec-tie.ly`).
+    for (debut, fin) in &rest_ties {
+        let Some((_, source, pitch, _)) = toutes_notes
+            .iter()
+            .find(|(tick, id, _, _)| *tick == *debut && score.note(*id).tie_forward.is_none())
+        else {
+            continue;
+        };
+        let Some((_, cible, _, _)) = toutes_notes.iter().find(|(tick, id, p, _)| {
+            *tick == *fin && *p == *pitch && *id != *source && score.note(*id).tie_back.is_none()
+        }) else {
+            continue;
+        };
+        score.note_mut(*source).tie_forward = Some(*cible);
+        score.note_mut(*cible).tie_back = Some(*source);
     }
 
     // `\repeatTie` (`ly/declarations-init.ly:104`) ne supprime une attaque

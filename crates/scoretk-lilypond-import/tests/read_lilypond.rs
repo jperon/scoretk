@@ -9799,6 +9799,27 @@ fn portee_apres_skip_dans_un_groupe_de_portees() {
 }
 
 #[test]
+fn tilde_sur_un_silence_de_volta_relie_les_notes_du_corps() {
+    // `\context Voice \repeat volta 2 << { a2. 4 } \volta 2 { s2.~ s4 } >>`
+    // ne joue qu'une attaque de quatre temps : le `Tie_performer` reçoit la
+    // liaison du silence de la seconde alternative au même instant que le
+    // corps (`volta-spec-tie.ly`, vérifié avec le MIDI de LilyPond 2.26).
+    let source = "\\version \"2.23.0\"\n\
+        music = \\context Voice \\fixed c' \\repeat volta 2 { \
+          << { a2. 4 } \\volta 2 { s2.~ s4 } >> \
+        }\n\
+        \\score { \\music }\n";
+    let score = read_lilypond(source).expect("lecture");
+    let tied: Vec<_> = score
+        .notes
+        .iter()
+        .filter(|note| note.tie_forward.is_some())
+        .map(|note| (note.pitch, score.note(note.tie_forward.unwrap()).pitch))
+        .collect();
+    assert_eq!(tied, vec![(69, 69)]);
+}
+
+#[test]
 fn voices_prolonge_la_voix_nommee() {
     // `voices-command.ly` : `\voices 1,"sop" << e''2 \\ { a'2~ } >>` dans
     // `\new Voice = "sop"` — la branche affectée à « sop » prolonge la voix

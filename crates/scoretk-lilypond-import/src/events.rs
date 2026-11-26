@@ -108,6 +108,10 @@ pub(crate) enum MetaEvent {
     MeasurePosition(Fraction),
     /// `\set tieWaitForNote = ##t/#f`.
     TieWaitForNote(bool),
+    /// Liaison portée par un silence d'une alternative non jouée : le
+    /// `Tie_performer` du contexte `Voice` la reporte sur les notes des
+    /// autres branches (`volta-spec-tie.ly`).
+    RestTie(Fraction),
     /// `\transposition` : hauteur jouée par un do écrit, datée.
     Transposition(PitchSpec),
     /// `\cadenzaOn` (`true`) / `\cadenzaOff` (`false`) : fin des barres
@@ -435,6 +439,9 @@ pub(crate) struct Interpreter<'a> {
     /// `lily/alternative-sequence-iterator.cc`). `None` hors dépliage : la
     /// musique `\volta` reste alors dans le modèle pour la gravure.
     repeat_pass: Option<u32>,
+    /// Début du corps d'un `\repeat volta` non déplié : les `\volta` qu'il
+    /// contient sont joués au même instant que ce corps pour le performer.
+    repeat_start: Option<Fraction>,
     /// Vrai sous un `NullVoice` : les notes restent datées mais invisibles.
     invisible_notes: bool,
     /// Vrai dans une musique dont les notes ne sont pas jouées (clusters).
@@ -531,6 +538,7 @@ impl<'a> Interpreter<'a> {
             cursor: start,
             cue: false,
             repeat_pass: None,
+            repeat_start: None,
             invisible_notes: false,
             silent_notes: false,
             skip_event_emission: false,
@@ -949,6 +957,7 @@ impl<'a> Interpreter<'a> {
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
+            repeat_start: self.repeat_start,
             invisible_notes: self.invisible_notes,
             silent_notes: self.silent_notes,
             skip_event_emission: self.skip_event_emission,
@@ -1361,6 +1370,10 @@ impl<'a> Interpreter<'a> {
             // `lily/alternative-sequence-iterator.cc`). Hors dépliage, la
             // musique reste dans le modèle (gravure) : `repeat_pass` est `None`.
             Context::Volta { numbers, music } => {
+                // Les événements de liaison d'une alternative sont vus par le
+                // `Tie_performer` à l'instant du corps, même quand le MIDI ne
+                // joue que la première alternative.
+                self.scan_rest_ties(music, self.repeat_start.unwrap_or(self.cursor));
                 let jouer = self
                     .repeat_pass
                     .is_none_or(|passage| numbers.is_empty() || numbers.contains(&passage));
@@ -1600,8 +1613,10 @@ impl<'a> Interpreter<'a> {
                     // de cette reprise non dépliée
                     // (`volta-spec-volta-in-unfold`).
                     let passage_sauve = self.repeat_pass.take();
+                    let debut_sauve = self.repeat_start.replace(self.cursor);
                     let start = self.cursor;
                     self.walk(body);
+                    self.repeat_start = debut_sauve;
                     let body_end = self.cursor;
                     let body_octave = self.octave;
                     let mut sections = Vec::new();
@@ -1613,6 +1628,8 @@ impl<'a> Interpreter<'a> {
                     // les surnuméraires ne sont ni gravées ni jouées.
                     let gardees = alternatives.len().min(count.max(1) as usize);
                     for (index, alternative) in alternatives.iter().take(gardees).enumerate() {
+                        // Le `Tie_performer` reçoit les liaisons des endings
+                        // au même instant que le corps, même sans dépliage.
                         let alt_start = self.cursor;
                         self.octave = alt_octave;
                         self.walk(alternative);
@@ -2306,6 +2323,63 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Émet un événement au curseur courant.
+    /// Relève les `~` portés par un silence dans une musique non jouée.
+    fn scan_rest_ties(&mut self, music: &Music, tick: Fraction) {
+        match music {
+            Music::Chord(chord)
+                if !matches!(chord.kind, ChordKind::Notes(_))
+                    && chord
+                        .posts
+                        .iter()
+                        .any(|post| matches!(post, PostEvent::Tie)) =>
+            {
+                let ecrit = chord.duration.unwrap_or(Duration::quarter());
+                let duree = ecrit.ticks() * chord.multiplier.unwrap_or(Fraction::ONE);
+                self.voice.events.push(VoiceEvent {
+                    tick,
+                    order: self.order,
+                    kind: EventKind::Meta(MetaEvent::RestTie(duree)),
+                });
+                self.order += 1;
+            }
+            Music::Chord(_) | Music::Empty => {}
+            Music::Seq(items) | Music::Sim(items) | Music::SimVoices(items) => {
+                for item in items {
+                    self.scan_rest_ties(item, tick);
+                }
+            }
+            Music::Context(context) => match context {
+                Context::Tuplet { music, .. }
+                | Context::Grace { music, .. }
+                | Context::Fixed { music, .. }
+                | Context::Relative { music, .. }
+                | Context::NonRelative { music }
+                | Context::Transpose { music, .. }
+                | Context::Volta { music, .. }
+                | Context::UnfoldRepeats { music }
+                | Context::Invisible { music }
+                | Context::Silent { music }
+                | Context::Skipped { music }
+                | Context::Cue { music, .. }
+                | Context::Harmonic { music, .. } => self.scan_rest_ties(music, tick),
+                Context::AfterGrace { main, grace, .. } => {
+                    self.scan_rest_ties(main, tick);
+                    self.scan_rest_ties(grace, tick);
+                }
+                Context::Repeat {
+                    body, alternatives, ..
+                } => {
+                    self.scan_rest_ties(body, tick);
+                    for alternative in alternatives {
+                        self.scan_rest_ties(alternative, tick);
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
     fn event(&mut self, kind: EventKind) {
         if !self.tags_pass_filters() {
             return;
@@ -2404,6 +2478,7 @@ impl<'a> Interpreter<'a> {
             cursor: start,
             cue: self.cue,
             repeat_pass: self.repeat_pass,
+            repeat_start: self.repeat_start,
             invisible_notes: self.invisible_notes,
             silent_notes: self.silent_notes,
             skip_event_emission: self.skip_event_emission,
