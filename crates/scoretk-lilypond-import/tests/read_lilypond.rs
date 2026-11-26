@@ -10432,3 +10432,36 @@ fn new_staff_imbrique_ouvre_une_portee_et_une_piste_distinctes() {
         "les deux unissons sonnent sur deux pistes"
     );
 }
+
+/// `\sustainOn`/`\sustainOff` sont des `PedalEvent` du `post_events` de
+/// `lily/parser.yy` : les lire comme des commandes isolées coupait la suite
+/// des post-événements, si bien qu'une liaison écrite juste après
+/// (`<c e>2 \sustainOn ~ q8` de `two-jews.ly`) devenait une réattaque.
+/// Le pédalier doit quand même rester noté.
+#[test]
+fn sustain_avant_une_liaison_garde_la_liaison() {
+    let source = r#"\version "2.26.0"
+\language "english"
+\score {
+  \new Staff {
+    \fixed c' {
+      <c' e'>2 \sustainOn ~ q8 r2
+      <c' e'>2 ~ \sustainOff q8 r2
+    }
+  }
+}"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![72, 76, 72, 76]);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.tie_back.is_some())
+            .count(),
+        4
+    );
+    // Une commande isolée en tête de voix reste acceptée.
+    let seul = "\\version \"2.26.0\"\n\\language \"english\"\n\
+        \\score { \\new Staff { \\sustainOn \\fixed c' { c'4 d'4 } } }\n";
+    assert_eq!(hauteurs(&read_lilypond(seul).expect("lecture")), vec![72, 74]);
+}

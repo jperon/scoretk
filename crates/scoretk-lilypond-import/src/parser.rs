@@ -6120,6 +6120,19 @@ impl<'a> Parser<'a> {
                     Vec::new()
                 }
             }
+            // `\sustainOn`/`\sustainOff` sont des `PedalEvent` du
+            // `post_events` de `lily/parser.yy`, pas des commandes isolées :
+            // les lire comme telles coupait la suite des post-événements et
+            // faisait perdre une liaison écrite juste après
+            // (`<c e>2 \sustainOn ~ q8` de `two-jews.ly`).
+            Kind::Command if token.text == "sustainOn" => {
+                self.position += 1;
+                vec![PostEvent::Sustain(true)]
+            }
+            Kind::Command if token.text == "sustainOff" => {
+                self.position += 1;
+                vec![PostEvent::Sustain(false)]
+            }
             // `\rest` s'applique à la note elle-même, pas au jeton suivant :
             // il ne doit pas passer par `parse_direction_event` (réservé à
             // `^`, `_`, `-` et aux commandes d'articulation qui les suivent).
@@ -8706,6 +8719,8 @@ fn starts_post_event(token: &Token) -> bool {
                 || token.text == "("
                 || token.text == ")"
                 || token.text == "rest"
+                || token.text == "sustainOn"
+                || token.text == "sustainOff"
                 || token.text == "repeatTie"
                 || token.text == "bendAfter"
                 || token.text == "single"

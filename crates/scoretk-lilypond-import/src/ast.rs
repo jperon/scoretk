@@ -91,6 +91,9 @@ pub(crate) enum PostEvent {
     TrillStart,
     /// Fin de trille (`\stopTrillSpan`).
     TrillStop,
+    /// Pédale (`\sustainOn`, `\sustainOff`) : un post-événement
+    /// (`ly/declarations-init.ly`), pas une commande de contexte isolée.
+    Sustain(bool),
     /// Glissando (`\glissando`).
     Glissando,
     /// Arpège (`\arpeggio`).

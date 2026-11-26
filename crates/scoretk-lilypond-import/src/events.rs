@@ -2204,6 +2204,7 @@ impl<'a> Interpreter<'a> {
                 }))
             }
             PostEvent::HairpinStop => self.event(EventKind::HairpinStop),
+            PostEvent::Sustain(on) => self.event(EventKind::Pedal(*on)),
             PostEvent::TrillStart => self.event(EventKind::TrillStart),
             PostEvent::TrillStop => self.event(EventKind::TrillStop),
             PostEvent::Glissando => self.event(EventKind::Glissando),
