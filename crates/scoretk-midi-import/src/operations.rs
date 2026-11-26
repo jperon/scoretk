@@ -137,6 +137,10 @@ pub struct ImportOptions {
     /// `FF 06` comme un repère de répétition, au lieu de la lecture 4.7.4 qui
     /// traite tout `FF 01` comme une parole. Faux par défaut.
     pub smf_text: bool,
+    /// Porteurs SMF standard uniquement (pas de préfixe `@…`) : ticks exacts,
+    /// `FF 01` texte de portée, `FF 07` texte système, `FF 06` repère et
+    /// balises RP-026 `{#…=…}` pour les métadonnées. Faux par défaut.
+    pub full_support: bool,
 }
 
 impl Default for ImportOptions {
@@ -163,6 +167,7 @@ impl Default for ImportOptions {
             search_pickup_measure: true,
             smf_exact_ticks: false,
             smf_text: false,
+            full_support: false,
         }
     }
 }

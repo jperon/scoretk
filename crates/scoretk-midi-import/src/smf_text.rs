@@ -42,6 +42,7 @@ pub(crate) fn process_text_meta(
     score: &mut scoretk_core::model::Score,
     tracks: &mut [MTrack],
     midi: &MidiFile,
+    full_support: bool,
 ) {
     // `FF 03` est le nom de séquence de la première piste (`[SMF §Meta-Events]`) :
     // l'écrivain `smf_text` y place le titre avant le nom de partie. Le lecteur
@@ -92,6 +93,14 @@ pub(crate) fn process_text_meta(
                         set_metadata(score, name, value);
                         continue;
                     }
+                    if full_support {
+                        if let Some((name, value)) = rp026_tag(&text) {
+                            // `[RP-026]` `{#NAME=value}` : porteur standard
+                            // des métadonnées (contrairement à `@TK:`).
+                            set_metadata(score, &name, value);
+                            continue;
+                        }
+                    }
                     let annotation = if let Some(value) = text.strip_prefix(STAFF_PREFIX) {
                         Annotation::StaffText(StaffText::new(value))
                     } else if let Some(value) = text.strip_prefix(SYSTEM_PREFIX) {
@@ -101,7 +110,7 @@ pub(crate) fn process_text_meta(
                     };
                     add_annotation(score, staff, tick, annotation);
                 }
-                meta::MARKER | 0x07 => {
+                meta::MARKER => {
                     add_annotation(
                         score,
                         staff,
@@ -109,10 +118,37 @@ pub(crate) fn process_text_meta(
                         Annotation::RehearsalMark(RehearsalMark::new(text)),
                     );
                 }
+                // `[SMF §Meta-Events]` : `FF 07` est un cue point, porteur
+                // standard d'un texte système dans le mode `full_support`.
+                // Le mode `smf_text` historique le traite comme un repère.
+                meta::CUE_POINT if full_support => add_annotation(
+                    score,
+                    staff,
+                    tick,
+                    Annotation::SystemText(SystemText::new(text)),
+                ),
+                meta::CUE_POINT => add_annotation(
+                    score,
+                    staff,
+                    tick,
+                    Annotation::RehearsalMark(RehearsalMark::new(text)),
+                ),
                 _ => {}
             }
         }
     }
+}
+
+/// Décode `{#NOM=valeur}` (MMA RP-026, forme générique `{#}`). Le nom est
+/// ramené en minuscules : l'écrivain standard émet `WORK_TITLE`, `COMPOSER`,
+/// `LYRICS`, etc., et `set_metadata` attend les noms du modèle pivot.
+fn rp026_tag(text: &str) -> Option<(String, &str)> {
+    let inner = text.strip_prefix("{#")?.strip_suffix('}')?;
+    let (name, value) = inner.split_once('=')?;
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some((name.to_ascii_lowercase(), value))
 }
 
 /// Écrit une métadonnée connue, sans toucher aux champs inconnus.

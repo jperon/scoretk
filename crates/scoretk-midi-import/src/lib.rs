@@ -104,7 +104,19 @@ pub fn read_midi_with(bytes: &[u8], options: &ImportOptions) -> Result<Score, Er
     let mut midi = MidiFile::read(bytes).map_err(Error::MidiParse)?;
     load_midi_data(&mut midi);
     let mut score = Score::new();
-    convert_midi(&mut score, &midi, options)?;
+    // `full_support` is one option grouping the standard SMF carriers: it
+    // implies the exact-tick grid and the text/meta interpretation, but it
+    // never touches the 4.7.4 path (both flags stay false by default).
+    // The exact path is the port of `Quantize::quantForLen`
+    // (`importmidi_quant.cpp:155-190`) with `basicQuant = 1/1920` of a whole
+    // note and `ReducedFraction::fromTicks` (`importmidi_fraction.cpp`), so a
+    // SMF that carries source ticks keeps them instead of snapping to Q16.
+    let mut effective = options.clone();
+    if options.full_support {
+        effective.smf_exact_ticks = true;
+        effective.smf_text = true;
+    }
+    convert_midi(&mut score, &midi, &effective)?;
     Ok(score)
 }
 
@@ -250,7 +262,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     let last_tick = create_measures(score, &sigmap, first_tick, measure_end);
     process_non_lyric_meta(score, &mut track_list, midi, &sigmap);
     if options.smf_text {
-        smf_text::process_text_meta(score, &mut track_list, midi);
+        smf_text::process_text_meta(score, &mut track_list, midi, options.full_support);
     }
     set_track_info(score, &mut track_list);
     create_keys(score, &mut track_list);

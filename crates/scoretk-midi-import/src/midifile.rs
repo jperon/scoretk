@@ -51,6 +51,9 @@ pub mod meta {
     pub const LYRIC: u8 = 0x05;
     /// Repère (`META_MARKER`).
     pub const MARKER: u8 = 0x06;
+    /// Cue point (`FF 07`, `[SMF §Meta-Events]`). Porteur standard d'un texte
+    /// système en mode `full_support`.
+    pub const CUE_POINT: u8 = 0x07;
     /// Titre (extension MuseScore, `META_TITLE`).
     pub const TITLE: u8 = 0x10;
     /// Sous-titre (extension MuseScore).
@@ -322,6 +325,7 @@ impl MidiFile {
                             midly::MetaMessage::Copyright(data) => (meta::COPYRIGHT, data.to_vec()),
                             midly::MetaMessage::Lyric(data) => (meta::LYRIC, data.to_vec()),
                             midly::MetaMessage::Marker(data) => (meta::MARKER, data.to_vec()),
+                            midly::MetaMessage::CuePoint(data) => (meta::CUE_POINT, data.to_vec()),
                             midly::MetaMessage::Tempo(tempo) => {
                                 let value = tempo.as_int();
                                 (
