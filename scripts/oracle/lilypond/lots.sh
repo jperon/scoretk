@@ -25,15 +25,28 @@
 
 set -euo pipefail
 
-# Vérification réduite de la règle d'extraction : un chemin contenant des
-# espaces doit être conservé entier, contrairement à `print $6`.
+# Règle d'extraction : sauter exactement les cinq premiers champs et imprimer
+# le reste de la ligne tel quel. `print $6` tronque au premier espace du chemin.
+# `index($0, $6)` n'est pas sûr non plus : le sixième champ peut apparaître
+# plus tôt dans la ligne. `match` sur les cinq champs initiaux conserve les
+# espaces consécutifs et ne dépend pas du contenu du chemin.
+EXTRACTION='match($0, /^([^[:space:]]+[[:space:]]+){5}/) { print substr($0, RLENGTH + 1) }'
+
+# Vérification réduite de la règle, avec les deux chemins réels du lot `ra`
+# qui avaient été coupés avant la correction (Ave Maria De Lourdes).
 if [[ ${LOTS_SELFTEST:-0} == 1 ]]; then
-  ligne='id123 258 341 258 0 /tmp/Jean Baptiste/ Sonis (copie 1).ly'
-  extrait=$(printf '%s\n' "$ligne" | awk 'NF >= 6 { print substr($0, index($0, $6)) }')
-  [[ $extrait == '/tmp/Jean Baptiste/ Sonis (copie 1).ly' ]] || {
-    echo "selftest lots.sh : chemin avec espaces tronqué : $extrait" >&2
-    exit 1
-  }
+  while IFS='|' read -r ligne attendu; do
+    extrait=$(printf '%s\n' "$ligne" | awk "$EXTRACTION")
+    [[ $extrait == "$attendu" ]] || {
+      echo "selftest lots.sh : chemin avec espaces tronqué : $extrait (attendu $attendu)" >&2
+      exit 1
+    }
+  done <<'CAS'
+id123 258 341 258 0 /tmp/Jean Baptiste/ Sonis (copie 1).ly|/tmp/Jean Baptiste/ Sonis (copie 1).ly
+id456 1 2 3 0 .../lyluatex/ly/Ave Maria De Lourdes/Ave Maria De Lourdes.ly|.../lyluatex/ly/Ave Maria De Lourdes/Ave Maria De Lourdes.ly
+id789 1 2 3 0 .../lyluatex/ly/Ave Maria De Lourdes/Ave Maria.ly|.../lyluatex/ly/Ave Maria De Lourdes/Ave Maria.ly
+id000 1 2 3 0 /tmp/entre_ le_ boeuf.ly|/tmp/entre_ le_ boeuf.ly
+CAS
   echo 'lots.sh selftest OK'
   exit 0
 fi
@@ -49,9 +62,13 @@ for lot in mus ra mut; do
   fi
   # Les cinq premiers champs sont séparés par des espaces ; le sixième est un
   # chemin qui peut lui-même contenir des espaces (`Veni, Creator …`, `entre_
-  # le_ boeuf`). `$6` seul tronque ces chemins : on imprime donc tout le reste
-  # de la ligne à partir du sixième champ (`lots.sh` historique, corrigé).
-  awk 'NF >= 6 { print substr($0, index($0, $6)) }' "$source" > "$OUT/manifestes/$lot.txt"
+  # le_ boeuf`, `Ave Maria De Lourdes/Ave Maria.ly`). On imprime tout le reste
+  # de la ligne à partir du sixième champ, sans normaliser les espaces.
+  awk "$EXTRACTION" "$source" > "$OUT/manifestes/$lot.txt"
+  # Garde-fou : une ligne de manifeste est un chemin absolu, jamais une entrée
+  # vide ni un reste de champ tronqué par un ancien générateur.
+  awk 'NF == 0 || $0 !~ /^\// { print FILENAME ":" FNR ": chemin invalide : " $0 > "/dev/stderr"; e = 1 } END { exit e }' \
+    "$OUT/manifestes/$lot.txt"
 done
 for f in "$OUT"/manifestes/*.txt; do
   printf '%-8s %6d\n' "$(basename "$f")" "$(wc -l < "$f")"
