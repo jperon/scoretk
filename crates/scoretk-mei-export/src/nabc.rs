@@ -20,8 +20,9 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Seconde portée adiastématique : une `<staff>` parallèle, sans `lines`,
-//! où chaque snippet NABC devient un ou plusieurs `<neume>` structurés.
+//! Seconde portée adiastématique : une `<staff>` parallèle, déclarée sur
+//! place par un `<staffDef>` enfant sans `@lines`, où chaque snippet NABC
+//! devient un ou plusieurs `<neume>` structurés.
 //!
 //! Le texte exact du snippet reste dans un `<signifLet type="gabc-nabc">`
 //! (`Guidelines` §6.4.1/§6.4.9 ; RNG `mei_signifLet` accepte du texte libre) :
@@ -65,9 +66,15 @@ pub(super) fn link(index: usize, staff: u8) -> Vec<(String, String)> {
     ]
 }
 
-/// `<scoreDef>` à deux portées. La portée 2 n'a **aucun `@lines`** : le RNG
-/// exige un entier positif et `lines="0"` serait invalide ; l'absence est la
-/// convention validée par le MWE (documentée dans `mei.md` §12.3.1).
+/// `<scoreDef>` de la portée carrée seulement. La portée manuscrite est
+/// déclarée dans son propre `<staff>` (voir `write_staff`) : `mei_staff` accepte
+/// `<staffDef>` comme enfant (RNG :28007) et la contrainte Schematron
+/// `mei-staff-checkStaff_n` (:28025–28031) reconnaît explicitement ce
+/// « staffDef child element ». Les Guidelines §4.2.2 permettent `staffDef` dans une
+/// portée avec le MEI All schema (déconseillé seulement pour le CMN), et le
+/// RNG définit `<staff>` comme couvrant « diastematic and non-diastematic
+/// signs ». Aucun `@lines` n'est donc inventé pour le manuscrit adiastématique
+/// (`lines="0"` serait invalide, `positiveInteger`) ; voir `mei.md` §12.3.1.
 pub(super) fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initial_clefs: usize) {
     xml.start_element("scoreDef", &[]);
     xml.start_element("staffGrp", &[]);
@@ -92,7 +99,21 @@ pub(super) fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initia
         }
     }
     xml.end_element();
-    xml.start_element(
+    xml.end_element();
+    xml.end_element();
+}
+
+/// Écrit la portée manuscrite complète : un `<syllable>` par syllabe du
+/// chant, pour garder l'alignement avec la portée carrée via `@corresp`.
+///
+/// Le `<staffDef>` est un enfant de la portée (Guidelines §4.2.2, MEI All) :
+/// il porte `notationtype`/`label` sans `@lines`, ce qui satisfait à la fois
+/// la RNG et la contrainte Schematron `staffDef-Check_staffDefn`
+/// (`mei.md` §12.3.1). Les lecteurs tiers et le MWE historique sans ce
+/// `<staffDef>` restent acceptés par le lecteur de ce port.
+pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
+    xml.start_element("staff", &[("n", "2")]);
+    xml.tag_empty(
         "staffDef",
         &[
             ("n", "2"),
@@ -100,15 +121,6 @@ pub(super) fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initia
             ("label", "manuscript"),
         ],
     );
-    xml.end_element();
-    xml.end_element();
-    xml.end_element();
-}
-
-/// Écrit la portée manuscrite complète : un `<syllable>` par syllabe du
-/// chant, pour garder l'alignement avec la portée carrée via `@corresp`.
-pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
-    xml.start_element("staff", &[("n", "2")]);
     xml.start_element("layer", &[("n", "1")]);
     for (index, syllable) in gregorian.syllables.iter().enumerate() {
         let links = link(index, 2);

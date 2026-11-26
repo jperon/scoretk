@@ -124,7 +124,12 @@ Sources, read before writing this table (2026-11-26):
   reducible to one notation and shows adiastematic encodings with unpitched
   `<nc>` plus `@intm` (Listings 244–247, 253); §6.4.1 lists `<signifLet>`
   among the neume elements and shows `<signifLet place="above-right">c</signifLet>`
-  inside `<nc>` (Listing 282); §6.4.2 defines `@pname`, `@oct`, `@intm`,
+  inside `<nc>` (Listing 282); §6.4.10 states that staff information is omitted
+  from the skeleton "for brevity", so those Listings are fragments, not
+  Schematron-valid documents; §4.2.2 "Re-definition of Score Parameters"
+  (<https://music-encoding.org/guidelines/v5/content/cmn.html#cmnReDef>)
+  sanctions `staffDef` inside a staff under MEI All (not recommended for CMN);
+  §6.4.2 defines `@pname`, `@oct`, `@intm`,
   `@con`, `@curve`, `@tilt`; §6.4.4 `<episema @form @place>`; §6.4.5
   `<liquescent @curve @looped>`; §6.4.7 `<quilisma @waves>`; §6.4.8
   `@place` on `<signifLet>`; §6.4.9 allows `glyph.auth/@name/@num/@uri`
@@ -136,7 +141,11 @@ Sources, read before writing this table (2026-11-26):
   `mei_neume` (:19398), `mei_signifLet` (:19449, free text),
   `mei_att.linking.attribute.corresp` (:21213, URI list + Schematron
   warning that each value should resolve to an `xml:id`),
-  `mei_att.signifLet.vis.attribute.place` (:31029).
+  `mei_att.signifLet.vis.attribute.place` (:31029),
+  `mei_staff` (:28007, accepts `staffDef` and covers non-diastematic signs),
+  Schematron `mei-all-staff-checkStaff_n` (:28025–28031),
+  `mei_att.staffDef.log.attribute.lines` (:22738, `positiveInteger`),
+  `mei_att.staffDef.vis.attribute.lines.visible` (:31111–31117).
 - **Gregorio NABC reference**
   `~/programmes/musique/specs/gabc/gregorio/doc/GregorioNabcRef.tex`
   (GPL-3.0-or-later, commit `b63f074`): basic glyph table (:207–240),
@@ -164,18 +173,21 @@ Sources, read before writing this table (2026-11-26):
 
 Staff 1 keeps the square notation, with `notationtype="neume"` and pitched
 `<nc @pname @oct>`. Staff 2 is a **parallel, unpitched** manuscript
-transcription: `notationtype="neume"`, **no `@lines`**, one `<neume>` per
+transcription: `notationtype="neume"`, **no `@lines`**, declared by a
+`<staffDef>` child of its `<staff>` (Guidelines §4.2.2, MEI All;
+`mei_staff` :28007, Schematron :28025–28031) rather than by a `<scoreDef>`
+`<staffDef>` that would violate Schematron; one `<neume>` per
 NABC complex glyph descriptor, `<nc>` children without `@pname`/`@oct`
 (their number is the glyph's note count), `@intm` for the melodic direction
 between successive pitch descriptors, modifier elements where MEI has one,
 and `<signifLet type="gabc-nabc">` carrying the exact NABC snippet text.
 The two `<syllable>`s of a pair carry `xml:id` and `@corresp` to each other
-(MWE validated with `jing`; `mei.md` §13.5).
+(validated with `jing` and the embedded Schematron; `mei.md` §12.3.1, §13.3).
 
 | NABC fact (Gregorio reference) | MEI 5.1 carrier | Structural / text | Citation |
 | --- | --- | --- | --- |
 | `nabc-lines: n` header (`:129`; grammar `:870–907`) | kept in `Gregorian::headers` → `meiHead` as before; no staff geometry follows from it | text | `Gabc.tex:129`; Guidelines ch. 3 |
-| Second manuscript line | `<staffDef n="2" notationtype="neume" label="…"/>` (no `lines`) and `<staff n="2"><layer n="1">` | structural | RNG `mei_data.NOTATIONTYPE` :7504, `mei_staffDef`; Guidelines §6.1, §6.4.10 |
+| Second manuscript line | `<staff n="2"><staffDef n="2" notationtype="neume" label="…"/><layer n="1">` (no `lines`) | structural | RNG `mei_data.NOTATIONTYPE` :7504, `mei_staff` :28007 + Schematron :28025–28031; Guidelines §4.2.2 (`#cmnReDef`), §6.1, §6.4.10; `mei.md` §12.3.1 |
 | Link square ↔ manuscript syllable | `<syllable xml:id="sNa" corresp="#sNb">` on both staves | structural | RNG `mei_att.linking.attribute.corresp` :21213 |
 | Basic glyph `vi` virga | `<neume type="virga"><nc/></neume>` | structural | `GregorioNabcRef.tex:209`; Guidelines §6.1.1, §6.4.2 |
 | `pu` punctum, `ta` tractulus, `gr` gravis, `st` stropha, `or` oriscus, `ni` nihil | `<neume type="punctum\|tractulus\|gravis\|stropha\|oriscus\|nihil"><nc/></neume>` | structural | `GregorioNabcRef.tex:210–212,216,233–234,240`; RNG `att.neumeType/@type` (NMTOKEN allowed) |

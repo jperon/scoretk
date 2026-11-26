@@ -89,12 +89,24 @@ fn nabc_output_is_a_second_unpitched_staff_linked_by_corresp() {
             assert_eq!(mei.matches("<staff ").count(), 1, "{}", path.display());
             continue;
         }
-        assert!(mei.contains("<staffDef n=\"2\" notationtype=\"neume\" label=\"manuscript\">"));
+        // Guidelines §4.2.2 (MEI All): staffDef may live inside its staff;
+        // Schematron's `staffDef-Check_staffDefn` then no longer requires an
+        // invented `@lines` for the adiastematic manuscript staff.
+        let manuscript_staff = mei.find("<staff n=\"2\">").expect("manuscript staff");
+        let after_staff = &mei[manuscript_staff..];
+        let definition = after_staff
+            .lines()
+            .nth(1)
+            .expect("staffDef child of the manuscript staff");
+        assert!(
+            definition.trim_start().starts_with("<staffDef n=\"2\""),
+            "{definition}"
+        );
         assert!(mei
             .lines()
             .any(|line| line.trim_start().starts_with("<staffDef n=\"2\"")
                 && !line.contains("lines=")));
-        assert!(mei.contains("<staff n=\"2\">"));
+        assert!(!mei.contains("<staffDef n=\"2\" notationtype=\"neume\" label=\"manuscript\">"));
         assert!(mei.contains("type=\"gabc-nabc\""));
         assert!(mei.contains("corresp=\"#s1b\""));
         assert!(mei.contains("<neume type=\""));

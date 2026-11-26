@@ -867,17 +867,58 @@ them from the local RNG, generates a self-contained XSLT 3.0 checker
 levels; warnings are advisory and errors fail the oracle. `--selftest`
 checks the extraction without Java.
 
-The MWE of §13 passes the RNG with `jing` but raises exactly **one**
-Schematron error on staff 2: *"Either @lines must be present or a preceding
-staffDef with the same value for @n and @lines must exist"* (rule
-`mei:staffDef[not(ancestor::mei:staff)]`). This is a genuine tension between
-the Schematron rule and the adiastematic convention: the RNG types `@lines`
-as `positiveInteger` (`mei_att.staffDef.log.attribute.lines`), so `lines="0"`
-is invalid, while omitting it (the validated MWE) violates Schematron.
-Setting `lines="1"` satisfies both but falsely asserts a one-line staff.
-The port keeps the MWE convention (no `@lines`) and reports the one error
-rather than misrepresenting the manuscript staff; the 56 CMN exports are
-unaffected. This is a measured, declared exception, not a hidden failure.
+The first NABC MWE of §13 declared staff 2 as a `<staffDef>` directly under
+`<scoreDef>` with no `@lines`. It passed `jing` but raised exactly **one**
+Schematron error: *"Either @lines must be present or a preceding staffDef with
+the same value for @n and @lines must exist"* (rule
+`mei:staffDef[not(ancestor::mei:staff)]`, RNG :28068–28077). The tension is
+real: the RNG types `@lines` as `positiveInteger`
+(`mei_att.staffDef.log.attribute.lines`, :22738), so `lines="0"` is invalid;
+the *Guidelines* define `@lines` as "Indicates the number of staff lines" and
+`@lines.visible` as "Records whether all staff lines are visible"
+(<https://music-encoding.org/guidelines/v5/elements/staffDef.html>). Three
+valid carriers were investigated on the three NABC outputs:
+
+1. **`lines="1" lines.visible="false"`** on the `<scoreDef>` `<staffDef>`
+   (`mei_att.staffDef.vis.attribute.lines.visible`, :31111–31117) passes both
+   validators (3/3 RNG, 0 errors, 0 warnings), but declares a notional
+   one-line staff and then hides its line. The *Guidelines* treat `@lines` as
+   a count, not a placeholder, so this invents a geometry that the
+   adiastematic manuscript does not have.
+2. **Declare the manuscript staff in place**: `<staff n="2"><staffDef n="2"
+   notationtype="neume" label="manuscript"/><layer …>`. RNG `mei_staff`
+   (:28007) documents a `<staff>` as covering "both diastematic and
+   non-diastematic signs" and admits `mei_model.staffDefLike` as a child;
+   Schematron `mei-all-staff-checkStaff_n` (:28025–28031) explicitly lists
+   "a staffDef child element" as an acceptable staff declaration, and rule
+   169 (:28084) only requires the child's `@n` to match its `<staff>`. The
+   *Guidelines* §4.2.2 "Re-definition of Score Parameters" lists the usual
+   `<staffGrp>` location and adds: "It is also possible to include `scoreDef`
+   and `staffDef` in staves and layers when the MEI All schema is in use;
+   however, this practice is not recommended for the CMN repertoire"
+   (<https://music-encoding.org/guidelines/v5/content/cmn.html#cmnReDef>).
+   A St. Gall/Laon manuscript layer is precisely not CMN, so this sanctioned
+   MEI All carrier applies; no `@lines` and no notional geometry.
+3. **The Guidelines' own examples** cannot supply a full-document carrier:
+   the adiastematic/St. Gall examples of §6.3 Listings 244–247 and 253
+   (<https://music-encoding.org/guidelines/v5/content/neumes.html#neumesNotation>)
+   are `<neume>/<nc>` fragments with unpitched `<nc>` and `@intm`, but no
+   `<staff>` or `<staffDef>` at all, so there is no staff declaration for a
+   Schematron rule to check. §6.4.10 even says of its "basic MEI skeleton"
+   that "Information about the staff has been omitted for brevity"
+   (same page, `#neumesExamples`). They justify the unpitched `<nc>` used
+   here, not an invalid document.
+
+Carrier 2 is adopted: the writer emits the staff-level `<staffDef>` and no
+`@lines`. It measures **3/3 RNG valid, 0 Schematron errors, 0 warnings**;
+the 56 CMN full-support exports remain at 56/56 RNG and 0 Schematron errors.
+The reader never consults `@lines` for NABC, so it stays tolerant of the old
+MWE form (no `@lines`), of third-party `lines="1" lines.visible="false"`
+staves and of other declared line counts; unit tests cover all three. There
+is no longer a declared exception: **0 RNG + 0 Schematron errors on all 59
+`mei-all` outputs** (3 NABC + 56 CMN full-support). The default mode remains
+byte-identical to `master` and keeps its 56 declared `mei-basic` violations
+(reported below), which are outside this fix.
 
 The default result is reported, not hidden: it is unchanged from `master`'s
 output and is measured with `master`'s binary too. Its 56 failures are
@@ -920,23 +961,28 @@ unpitched `<staff n="2">` as validated against `mei-all-5.1.rng` with `jing`:
 ```xml
 <scoreDef><staffGrp>
   <staffDef n="1" lines="4" notationtype="neume" label="square"><clef shape="C" line="3"/></staffDef>
-  <staffDef n="2" notationtype="neume" label="manuscript"/>
 </staffGrp></scoreDef>
 <section>
   <staff n="1"><layer n="1"><syllable xml:id="s1a" corresp="#s1b">
     <syl>FAc</syl><neume type="punctum"><nc pname="g" oct="3"/></neume>
   </syllable></layer></staff>
-  <staff n="2"><layer n="1"><syllable xml:id="s1b" corresp="#s1a">
-    <syl>FAc</syl><neume type="tractulus"><nc/></neume>
-    <signifLet type="gabc-nabc" n="1">talsi8</signifLet>
-  </syllable></layer></staff>
+  <staff n="2">
+    <staffDef n="2" notationtype="neume" label="manuscript"/>
+    <layer n="1"><syllable xml:id="s1b" corresp="#s1a">
+      <syl>FAc</syl><neume type="tractulus"><nc/></neume>
+      <signifLet type="gabc-nabc" n="1">talsi8</signifLet>
+    </syllable></layer>
+  </staff>
 </section>
 ```
 
-Staff 2 has **no `@lines`** (the RNG types it as `positiveInteger`, so
-`lines="0"` is invalid) and its `<nc>` have no `@pname`/`@oct`: this is the
-MEI 5.1 adiastematic convention of Guidelines §6.3 Listings 244–247 and 253
-(unpitched `<nc>` with `@tilt`/`@intm`). Complex NABC glyph descriptors
+Staff 2 is declared **inside its `<staff>`** (Guidelines §4.2.2, MEI All) with
+**no `@lines`**: the RNG types `@lines` as `positiveInteger` (so `lines="0"`
+is invalid) and Schematron requires a `staffDef` for the staff, which the
+in-place declaration supplies without inventing a line count (§12.3.1). Its
+`<nc>` have no `@pname`/`@oct`: this is the MEI 5.1 adiastematic convention
+of Guidelines §6.3 Listings 244–247 and 253 (unpitched `<nc>` with
+`@tilt`/`@intm`). Complex NABC glyph descriptors
 become `<neume type="virga|punctum|tractulus|...">` with the glyph's note
 count of `<nc>`; modifiers `-`, `>` and `~` become `<episema>`, `<liquescent>`
 and `@intm` carries the direction between successive `hX` pitch descriptors;
@@ -983,12 +1029,53 @@ pitches (that is the defect being fixed, not a layout change).
 | NABC snippets crossing MEI byte-for-byte | same | **144/144** |
 | GABC → MEI → GABC vs today's direct bytes | same (`assert_eq!(gabc, baseline)`) | **3/3 identical** |
 | MEI 5.1 RelaxNG validity of the 2-staff outputs | `scripts/check-mei-nabc.sh` (`jing`) | **3/3** |
-| Embedded Schematron on those outputs | `scripts/oracle/mei/schematron.py` | 3 errors, all the same declared `@lines` conflict of §12.3.1 |
+| Embedded Schematron on those outputs | `scripts/oracle/mei/schematron.py` | **0 errors, 0 warnings** on 3/3 files (§12.3.1) |
 | Default MEI bytes vs `master`, 56 `.mscx` | CLI + `cmp` | **0/56 diffs** |
 | Structural share (descriptor with a `<neume>`) | `nabc_structural_vs_textual_coverage_is_measured` | **178/193 = 92.23 %** |
 | Text-only share (no MEI equivalent) | same | 15/193 = 7.77 % |
 | Modifiers with a dedicated element | same | 53 episemata, 22 liquescences |
 | Significant letters with `@place` | same | 48/50 (2 Laon "inside", no MEI value) |
+
+#### GABC → GABC against the source file (master binary → branch binary)
+
+The CLI was run with `--from gabc --to gabc` on each versioned source;
+"before" is commit `master` (`87fd3b85`), "after" is this branch. Comments,
+blank lines and the single-line body layout are the writer's normalisation,
+so the byte comparison is made on the source body after removing comments and
+joining lines; the semantic comparison converts both outputs back to
+MusicXML with a fixed `--encoding-date` and normalises the source offsets
+(`o=…|e=…`) in the private `gabc:note:` carriers.
+
+| Source file | Source bytes | Before / After bytes | Body exact after | Semantic vs source (before → after) | MusicXML `<note>` (before → after) |
+| --- | ---: | ---: | --- | --- | ---: |
+| `gregorio_FactusEst.gabc` | 1 297 | 963 / 1 110 | yes | no → **yes** | 281 → 116 |
+| `gregorio_omnes.gabc` | 606 | 562 / 606 | yes | no → **yes** | 158 → 61 |
+| `gregorio_veni.gabc` | 1 206 | 1 076 / 1 206 | no¹ | no → **yes** | 312 → 176 |
+
+¹ One `,` bar sign inside a square run between two manuscript cuts is not
+re-emitted. This pre-existing writer limitation is present in `master` too,
+is not a regression from the reader fix, and affects layout only; all 144
+NABC snippet texts and all sung notes are preserved byte for byte.
+
+#### GABC → MusicXML / MIDI / LilyPond / ABC / MEI, before vs after
+
+Direct conversion of each source, with the same CLI options and a fixed
+encoding date. All 15 before/after outputs differ: `master` sang the NABC
+glyph letters as square notes. To isolate the fix, the same three sources
+were also converted with every `|…|` manuscript snippet removed: on those
+square-only inputs the two binaries are **byte-identical in all 15 cases**
+(3 files × 5 formats), and the branch's output from the full source equals
+its output from the square-only source (MusicXML modulo the source offsets
+above, the other four formats byte for byte, 15/15). Hence the only change
+in each direction is the removal of notes that were never sung.
+
+| Direction | Full-source outputs differing (3 files) | Square-only: master vs branch bytes | Square-only vs full source, branch | `<note>` reduction, Factus / omnes / veni |
+| --- | ---: | --- | --- | --- |
+| MusicXML | 3/3 | **3/3 identical** | 3/3 equal after offset normalisation | 281→116, 158→61, 312→176 |
+| MIDI | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
+| LilyPond | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
+| ABC | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
+| MEI (default) | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
 
 Limits: the `S`/`G`/`M` variant digits and horizontal spacing have no MEI
 element (RNG/Guidelines §6.4.9), the two Laon "inside" letters have no

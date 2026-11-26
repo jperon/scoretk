@@ -26,7 +26,7 @@
 """Run the ISO Schematron assertions embedded in MEI 5.1's RelaxNG schema.
 
 ``jing`` validates the RelaxNG grammar only. The normative
-``mei-all-5.1.rng`` also contains 274 embedded ISO Schematron assertions
+``mei-all-5.1.rng`` also contains 249 embedded ISO Schematron assertions
 (``sch:pattern``/``sch:rule`` between ``sch:assert`` and ``sch:report``
 elements). This script extracts them from the local RNG, compiles them into
 one XSLT 3.0 stylesheet (no downloaded stylesheet is executed), and applies
@@ -196,9 +196,8 @@ def main() -> None:
     if not args.mei:
         parser.error("at least one --mei file is required")
     failures = run(args.rng, args.jar, args.mei)
-    print(f"Schematron: {len(args.mei)} file(s), "
-          + ", ".join(f"{role}={count}" for role, count in sorted(failures.items()))
-          or "Schematron: 0 failures")
+    counts = ", ".join(f"{role}={count}" for role, count in sorted(failures.items()))
+    print(f"Schematron: {len(args.mei)} file(s), {counts or '0 errors, 0 warnings'}")
     # Warnings are advisory (notably unresolved @corresp targets in
     # third-party encodings); only hard errors fail the oracle.
     sys.exit(1 if failures.get("error", 0) or failures.get("saxon-failure", 0) else 0)

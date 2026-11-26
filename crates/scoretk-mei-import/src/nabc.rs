@@ -200,4 +200,70 @@ mod tests {
         let syllable = find_syllables(staff).next().expect("syllable");
         assert_eq!(from_neumes(syllable), "talsi8");
     }
+
+    /// Add a `<staffDef>` inside the manuscript staff (the form written by
+    /// this port since the Schematron fix) or in the initial `<scoreDef>`.
+    fn with_definition(mei: &str, inside_staff: &str, in_score_def: &str) -> String {
+        let mei = mei.replace("<staff n=\"2\">", &format!("<staff n=\"2\">{inside_staff}"));
+        mei.replace(
+            "<section>",
+            &format!(
+                "<scoreDef><staffGrp><staffDef n=\"1\" lines=\"4\"/>{in_score_def}</staffGrp></scoreDef><section>"
+            ),
+        )
+    }
+
+    fn carrier(mei: &str) -> String {
+        let root = parse(mei.as_bytes()).expect("MEI");
+        let mut gregorian = Gregorian::default();
+        gregorian.syllables.push(Default::default());
+        read_into(&root, &mut gregorian);
+        gregorian.syllables[0]
+            .nabc
+            .first()
+            .map(|snippet| snippet.text.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn reader_accepts_embedded_staff_def_without_lines() {
+        let mei = with_definition(
+            MEI,
+            "<staffDef n=\"2\" notationtype=\"neume\" label=\"manuscript\"/>",
+            "",
+        );
+        assert_eq!(carrier(&mei), "talsi8");
+    }
+
+    #[test]
+    fn reader_accepts_the_mwe_form_without_lines() {
+        // The historical MWE and third-party adiastematic files declare staff
+        // 2 in the scoreDef without @lines; the reader must stay tolerant of
+        // that form even though the writer no longer emits it.
+        let mei = with_definition(
+            MEI,
+            "",
+            "<staffDef n=\"2\" notationtype=\"neume\" label=\"manuscript\"/>",
+        );
+        assert_eq!(carrier(&mei), "talsi8");
+    }
+
+    #[test]
+    fn reader_accepts_third_party_hidden_lines_forms() {
+        // A third party may encode an invisible staff as @lines="1" plus
+        // @lines.visible="false"; the carrier is the same, whatever the
+        // declared line count, and the reader never invent pitches from it.
+        let mei = with_definition(
+            MEI,
+            "",
+            "<staffDef n=\"2\" lines=\"1\" lines.visible=\"false\" notationtype=\"neume\"/>",
+        );
+        assert_eq!(carrier(&mei), "talsi8");
+        let mei = with_definition(
+            MEI,
+            "",
+            "<staffDef n=\"2\" lines=\"4\" notationtype=\"neume\"/>",
+        );
+        assert_eq!(carrier(&mei), "talsi8");
+    }
 }

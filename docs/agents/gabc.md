@@ -752,8 +752,20 @@ manuscript snippets instead of singing their glyph letters as square notes.
 --test gabc_nabc`, `scripts/check-mei-nabc.sh`): 144/144 snippets cross MEI
 byte-for-byte; GABC → MEI → GABC equals today's direct GABC → model →
 GABC bytes on all 3 files; 3/3 MEI outputs are valid against
-`mei-all-5.1.rng`; 178/193 (92.23 %) descriptors are structural neumes and
+`mei-all-5.1.rng` and pass its embedded Schematron with **0 errors and 0
+warnings**; 178/193 (92.23 %) descriptors are structural neumes and
 15/193 (7.77 %) are text-only (modifier variants and spacing with no MEI
-equivalent). The non-NABC corpus outputs are untouched. Schematron's single
-`@lines` conflict on an adiastematic staff is documented in `mei.md`
-§12.3.1; it is not hidden.
+equivalent). The non-NABC corpus outputs are untouched.
+
+The fix was measured against `master` (`87fd3b85`) with both CLI binaries.
+GABC → GABC now reproduces the source body exactly on 2/3 files and loses
+only one pre-existing layout bar (`veni`, a `,` between two cuts) on the
+third; semantically all 3/3 round trips match the source after source-offset
+normalisation (before: 0/3). The sung-note count drops from 281→116,
+158→61 and 312→176 in MusicXML, i.e. exactly the NABC glyph letters that
+`master` sang. With the manuscript snippets removed from the input, the two
+binaries give byte-identical output in all 15 direct conversions (3 files ×
+MusicXML/MIDI/LilyPond/ABC/MEI), and the branch's full-source output equals
+its square-only output in all 15 (MusicXML modulo source offsets). No
+direction regressed. Per-file numbers and the MEI staff declaration are in
+[`mei.md`](mei.md) §13.3 and §12.3.1.
