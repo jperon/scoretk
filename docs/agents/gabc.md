@@ -1123,3 +1123,125 @@ structured `header_items` entry.
 
 The growth is the code for the header/token layout fields and their MEI
 codec; the wasm contract of invariant 5 is unchanged.
+
+## 21. Full-support figure over the 261-file lot (2026-11-26)
+
+### 21.1 Instrument and definitions
+
+`scripts/oracle/gabc/full_support.py` measures the 261 sources (nine versioned
+Gregorio examples and 252 private GregoBase files) for GABC and each of the
+five other destinations. The reference is the *canonical GABC* written by
+scoretk from each source (all 261 full files are byte-identical, §20.4); the
+same fact reader is applied to the GABC obtained from
+`source → destination → GABC`. Facts are multisets of `(kind, value)`; the
+kinds and their Gregorio citations are in `KIND_SOURCE` in the script:
+`header`, `title`, `text`, `rubric`, `letter` (staff position), `pitch`
+(derived concert pitch, `src/struct.c:1273-1288`), `glyph`, `mora`, `ictus`,
+`episema`, `quilisma`, `shape`, `bar`, `clef`, `custos`, `nabc`, `attribute` and
+`layout`. L0/L1 facts are counted through their source tokens, once per fact.
+
+Private carriers are **removed before the return conversion**: every MusicXML
+element containing `gabc:`, MEI `<annot type="gabc-*">` and `gabc:layout:` /
+`layout:` `@label` values. The MEI row uses the additive standard NEUMES
+carrier of §13 via `--mei-full-support`; it adds no private annotation. No
+private carrier is counted in any headline.
+
+A loss is *inherent* only when the destination's specification has no carrier
+and a citation is recorded (`INHERENT` / `INHERENT_VALUES` in the script). A
+loss with no citation is a **defect** and stays in the denominator:
+`main = carried / (total − inherent)`. Every inherent loss is printed with its
+citation, so an uncited exclusion is impossible. The script never executes a
+downloaded program.
+
+### 21.2 GABC → GABC
+
+`roundtrip_bytes.py` was corrected to cut the header at the **last** `%%` line
+(`Gabc.tex:51,58`; grammar `score: all_definitions syllables`,
+`all_definitions: definitions END_OF_DEFINITIONS`,
+`gabc-score-determination.y:737-749`). This fixes all **19** "different"
+header-less bodies of §20.4: they were GregoBase files with a second header
+block after the first marker, not converter differences.
+
+The reader now also accepts an empty `( )` group at the start of a header-less
+body (`notes: | notes note`, `gabc-score-determination.y:854-855`; Gregorio
+accepts `( ) a(a) …` when a header and `%%` are prepended). This fixes the
+**eight** rejected variants (four pitch-diagram files, versioned and in the
+private lot). The ninth rejection, `gb_006036`, is **invalid GABC even with a
+header**: Gregorio `b63f074` reports *"clef change is not supported on the
+first syllable"* for `() (c4) …`. It is excluded from the denominator with
+that citation and printed separately as `excluded_invalid`. The reader refuses
+it deliberately in the body tolerance.
+
+| GABC → GABC | Before §21 | After §21 |
+| --- | ---: | ---: |
+| Full files, header included | 261/261 | **261/261 = 100 %** |
+| Header-less variants | 233/261 (19 different, 9 rejected) | **260/260 = 100 %** (0 different, 0 failed, 1 excluded with citation) |
+| Header-less variants with NABC | 6/6 | **6/6** |
+
+### 21.3 GABC → every destination
+
+Measured on all 261 sources, 114 057 facts per destination, 0 conversion
+failures. "Raw" is `carried / total`; "main" is the figure defined above.
+
+| Destination | Carried / total (raw) | Inherent (cited) | Defects (uncited) | Main figure |
+| --- | ---: | ---: | ---: | ---: |
+| MusicXML 4.0, standard carriers only | 95 880 / 114 057 (84.06 %) | 18 087 | 90 | **99.91 %** (95 880 / 95 970) |
+| MIDI SMF, default output | 79 729 / 114 057 (69.90 %) | 32 959 | 1 369 | **98.31 %** (79 729 / 81 098) |
+| LilyPond | 83 182 / 114 057 (72.93 %) | 30 604 | 271 | **99.68 %** (83 182 / 83 453) |
+| ABC 2.1 | 83 187 / 114 057 (72.93 %) | 30 601 | 269 | **99.68 %** (83 187 / 83 456) |
+| MEI 5.1, NEUMES module | 111 964 / 114 057 (98.16 %) | 1 579 | 514 | **99.54 %** (111 964 / 112 478) |
+
+The raw column is intentionally much lower: most GABC facts are chant
+engraving (glyph spellings, NABC manuscripts, punctum-mora placement digits,
+`<sp>` rubrics, exact whitespace) for which no modern format has an object.
+Examples of cited clauses: XSD 4.0 `work`/`identification` define a closed
+header vocabulary; XSD 4.0 `notehead-value` has no punctum inclinatum;
+XSD 4.0 `notations` has no NABC object; SMF `MTrk` has no bar/measure/staff
+fields (`format-ref/midi.md` §Container layout) and RP-017 carries syllable
+text but not markup; ABC 2.1 §4.14 has a fixed decoration vocabulary;
+MEI 5.1 has no element for TeX tuning attributes (`format-ref/mei.md` §13).
+The complete per-kind citations are printed by the script and stored in
+`full_support.json`.
+
+### 21.4 Fixes made from the measurement, in decreasing count
+
+1. **Instrument (19 + 8 cases).** Last-`%%` split and empty-group body
+   tolerance (§21.2). The first is an oracle defect, the second a reader gap
+   for valid Gregorio syntax.
+2. **MEI NABC (288 facts).** The facade CLI had no way to request the standard
+   NEUMES/second-staff carrier of §13. `--mei-full-support` is additive and
+   leaves every default (and every non-Gregorian) output byte-identical; the
+   instrument uses it for MEI. NABC snippets now cross to MEI and back.
+3. **Parser normalisations in the instrument** (not writer changes): NABC
+   state alternation, alteration scope, nested-header layout, markup-only
+   syllables, sign placement variants and Dominican bar digits. Each was
+   checked against the structured source and the Gregorio rules before being
+   counted as inherent; none was used to hide a missing note.
+
+**Remaining defects, reported and not excluded:** MIDI pitch 1 369 (the SMF
+writer emits 314 Note Ons on `gb_018653` but MuseScore's quantising importer
+reconstructs 241 — the notes are in the file, the loss is in the importer);
+MusicXML pitch 53 and LilyPond/ABC pitch 56 (alteration scopes on three
+chants); LilyPond/ABC clef 183 (the original C/F clef is re-guessed after
+`\fixed`/ABC export); MusicXML/LilyPond/ABC text 29/32/30 (elided syllables);
+MEI pitch 385, glyph 83, shape 23, custos 22. No spec clause was invoked for
+these, so they remain in the denominator.
+
+### 21.5 Non-regression and size
+
+`cargo test -p scoretk --test e2e_corpus` 8/8, `mei_conformity` 7/7 (56/56
+MEI references byte-identical to MuseScore 4.7.4), `parite` 9/9 and
+`layer_coverage` 26/26 still pass: no default output of the non-GABC corpus
+changed, and the default MusicXML export of non-Gregorian sources stays
+byte-identical to the 4.7.4 references. Wasm size before/after this campaign:
+2 887 139 raw / 1 127 694 gzip (§21.6), i.e. +241 raw / +351 gzip; the wasm contract of invariant 5 is unchanged.
+
+### 21.6 Wasm size
+
+Measured with `nix build .#wasm`, `result/SIZE` and `gzip -9`:
+
+| | Raw `scoretk_wasm_bg.wasm` | Gzip |
+| --- | ---: | ---: |
+| Before this campaign | 2 886 898 | 1 127 343 |
+| After this campaign | 2 887 139 | 1 127 694 |
+| Delta | +241 (+0.01 %) | +351 (+0.03 %) |

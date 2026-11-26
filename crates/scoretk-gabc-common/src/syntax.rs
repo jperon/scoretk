@@ -263,8 +263,14 @@ pub fn split_sections(text: &str) -> Option<(String, String)> {
 /// After leading whitespace and `%` comment lines, the text must begin either
 /// with a clef-only group (`(c4)`, `(f3)`, `(cb3)`, `(c1@c4)`, …) or with a
 /// syllable immediately followed by a parenthesised note group
-/// (`Ky(f)ri(g)e`). A header line (`name:`, `mode:`, …) does not match, so a
-/// malformed file that has a header but no separator stays an error.
+/// (`Ky(f)ri(g)e`). Empty groups (`( )`) are skipped: the grammar allows
+/// `notes: | notes note` (`gabc-score-determination.y:854-855`) and an empty
+/// group before the first syllable is accepted by Gregorio when a header and
+/// `%%` are prepended. A **clef** after such an empty group is not accepted:
+/// Gregorio rejects it with "clef change is not supported on the first
+/// syllable" (verified with its parser at commit `b63f074`). A header line
+/// (`name:`, `mode:`, …) does not match, so a malformed file that has a header
+/// but no separator stays an error.
 ///
 /// Gregorio itself **rejects** such a file: `%%+(\n|\r)+` alone switches its
 /// lexer from `INITIAL` to the `score` state
@@ -276,10 +282,19 @@ pub fn looks_like_gabc_body(text: &str) -> bool {
     while let Some(next) = strip_body_comment(rest) {
         rest = next;
     }
-    if let Some(after_clef) = rest.strip_prefix('(') {
-        return after_clef
-            .find(')')
-            .is_some_and(|end| is_clef_group(&after_clef[..end]));
+    let mut skipped_empty = false;
+    while let Some(after_group) = rest.strip_prefix('(') {
+        let Some(end) = after_group.find(')') else {
+            return false;
+        };
+        if !after_group[..end].trim().is_empty() {
+            if skipped_empty && is_clef_group(&after_group[..end]) {
+                return false;
+            }
+            return is_clef_group(&after_group[..end]);
+        }
+        skipped_empty = true;
+        rest = after_group[end + 1..].trim_start();
     }
     let Some(open) = rest.find('(') else {
         return false;
@@ -482,6 +497,9 @@ mod tests {
             "(cb3) A(g) (::)\n",
             "(c1@c4) A(g) (::)\n",
             "\n  % a raw export\n  Ky(f)ri(g)e(h) (::)\n",
+            // Empty groups are legal `notes` (gabc-score-determination.y:854-855).
+            "( ) a(a) b(b) c(c) ( )\n",
+            "() a(a) b(b) ( )\n",
         ] {
             assert!(looks_like_gabc_body(body), "{body:?}");
             assert!(split_sections(body).is_none(), "{body:?}");
@@ -492,6 +510,8 @@ mod tests {
             "\\version \"2.24.0\"\n{ c'4 }\n",
             "<?xml version=\"1.0\"?><score-partwise/>\n",
             "(hello) world\n",
+            // Gregorio: "clef change is not supported on the first syllable".
+            "() (c4) Vim(dh) (::)\n",
             "{ c'4 }\n",
         ] {
             assert!(!looks_like_gabc_body(other), "{other:?}");

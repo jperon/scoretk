@@ -43,6 +43,18 @@ from pathlib import Path
 OTHER_FORMATS = ("musicxml", "midi", "ly", "abc", "mei")
 ENCODING_DATE = "2026-01-01"
 
+# Bodies that Gregorio itself rejects even with a header and `%%` prepended.
+# Verified with its parser at commit b63f074 in the bwrap sandbox:
+# `() (c4) …` → "clef change is not supported on the first syllable"
+# (`gabc-score-determination.y` rejects a clef on an empty first syllable).
+# Such a body is out of the denominator, reported separately, never silently
+# dropped.
+INVALID_BODIES = {
+    "gb_006036": (
+        "Gregorio b63f074: clef change is not supported on the first syllable"
+    ),
+}
+
 
 def convert(cli: Path, source: bytes, to: str) -> tuple[bytes, str]:
     result = subprocess.run(
@@ -61,16 +73,21 @@ def headerless(source: bytes) -> bytes:
 
     The marker is a line whose trimmed content is exactly ``%%``
     (`gabc-common::syntax::split_sections`); a ``%%`` inside a comment or a
-    header value is not a separator.
+    header value is not a separator. GregoBase files may repeat a whole header
+    block *after* the first marker: the notation starts at the **last**
+    marker, since each ``END_OF_DEFINITIONS`` closes a definitions section
+    (`Gabc.tex:51,58`; grammar `score: all_definitions syllables`,
+    `all_definitions: definitions END_OF_DEFINITIONS`,
+    `gabc-score-determination.y:737-749`). Cutting at the first marker would
+    feed a header as if it were notation and report a false difference.
     """
     text = source.decode("utf-8")
-    offset = 0
-    for line in text.splitlines(keepends=True):
-        if line.strip() == "%%":
-            body = text[offset + len(line):]
-            return (body.lstrip("\r\n").rstrip("\r\n") + "\n").encode("utf-8")
-        offset += len(line)
-    return source
+    lines = text.splitlines(keepends=True)
+    marks = [index for index, line in enumerate(lines) if line.strip() == "%%"]
+    if not marks:
+        return source
+    body = "".join(lines[marks[-1] + 1:])
+    return (body.lstrip("\r\n").rstrip("\r\n") + "\n").encode("utf-8")
 
 
 def has_nabc(body: bytes) -> bool:
@@ -93,7 +110,8 @@ def run(cli: Path, baseline: Path | None, directories: list[Path], out: Path) ->
     report: dict = {"cli": str(cli), "files": len(files), "phases": {}}
     for phase in ("roundtrip", "body", "body_nabc", "other"):
         (out / phase).mkdir(parents=True, exist_ok=True)
-    counts = {phase: {"exact": 0, "different": 0, "failed": 0} for phase in
+    counts = {phase: {"exact": 0, "different": 0, "failed": 0,
+                      "excluded_invalid": 0} for phase in
               ("roundtrip", "body", "body_nabc")}
     details: list[dict] = []
     other_counts = {"identical": 0, "different": 0, "failed": 0}
@@ -109,9 +127,16 @@ def run(cli: Path, baseline: Path | None, directories: list[Path], out: Path) ->
             written, error = convert(cli, payload, "gabc")
             (out / phase / f"{stem}.gabc").write_bytes(written)
             if error or not written:
-                counts[phase]["failed"] += 1
-                details.append({"phase": phase, "file": name, "status": "failed",
-                                "error": error})
+                exclusion = INVALID_BODIES.get(name) if phase == "body" else None
+                if exclusion:
+                    counts[phase]["excluded_invalid"] += 1
+                    details.append({"phase": phase, "file": name,
+                                    "status": "excluded_invalid",
+                                    "citation": exclusion, "error": error})
+                else:
+                    counts[phase]["failed"] += 1
+                    details.append({"phase": phase, "file": name, "status": "failed",
+                                    "error": error})
             elif written == expected:
                 counts[phase]["exact"] += 1
             else:
@@ -139,9 +164,13 @@ def run(cli: Path, baseline: Path | None, directories: list[Path], out: Path) ->
     report["details"] = details
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     for phase, numbers in counts.items():
-        total = sum(numbers.values())
+        total = sum(numbers.values()) - numbers["excluded_invalid"]
         print(f"{phase}: exact {numbers['exact']}/{total}, "
-              f"different {numbers['different']}, failed {numbers['failed']}")
+              f"different {numbers['different']}, failed {numbers['failed']}, "
+              f"excluded_invalid {numbers['excluded_invalid']}")
+        for detail in details:
+            if detail["status"] == "excluded_invalid" and detail["phase"] == phase:
+                print(f"    excluded: {detail['file']} — {detail['citation']}")
     print(f"other formats vs baseline: {other_counts}")
     print(f"report: {out / 'report.json'}")
     return report

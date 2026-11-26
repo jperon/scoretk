@@ -98,6 +98,13 @@ struct Cli {
     #[arg(long)]
     xml_full_support: bool,
 
+    /// Export MEI : porteurs 5.1 au-delà de l'export 4.7.4 (module NEUMES,
+    /// seconde portée NABC, valeurs dynamiques). Additif : le défaut reste
+    /// octet pour octet conforme à MuseScore 4.7.4 pour les sources non
+    /// grégoriennes.
+    #[arg(long)]
+    mei_full_support: bool,
+
     /// Ne pas dérouler les reprises dans la sortie MIDI
     #[arg(long)]
     no_expand_repeats: bool,
@@ -277,6 +284,7 @@ fn main() -> ExitCode {
             smf_text: cli.midi_text,
         },
         midi_full_support: cli.midi_full_support,
+        mei_full_support: cli.mei_full_support,
         xml_full_support: cli.xml_full_support,
         ..Options::default()
     };

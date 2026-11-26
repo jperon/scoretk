@@ -58,6 +58,22 @@ fn a_body_only_gabc_is_detected_and_converted_to_musicxml() {
 }
 
 #[test]
+fn a_headerless_pitch_diagram_with_empty_groups_round_trips() {
+    // Gregorio accepts `( )` as an empty `notes` production
+    // (`gabc-score-determination.y:854-855`); with a header and `%%` prepended
+    // its parser accepts the whole body. The tolerance must therefore accept
+    // this raw GregoBase-style export and keep the empty groups verbatim.
+    const BODY: &str = "( ) a(a) b(b) c(c) d(d) e(e) ( )\n";
+    assert_eq!(Format::detect(BODY.as_bytes()), Some(Format::Gabc));
+    let score = read(BODY.as_bytes(), Format::Gabc).expect("pitch-diagram body");
+    assert_eq!(score.notes.len(), 5);
+    let written =
+        String::from_utf8(write(&score, Format::Gabc, &Options::default()).expect("GABC export"))
+            .expect("UTF-8 GABC");
+    assert_eq!(written, BODY);
+}
+
+#[test]
 fn a_headerless_gregobase_group_keeps_its_alternating_cuts() {
     // GregoBase 18205 (private SQL dump, no header): with one inferred line
     // every second segment is square notation and must be sung, while the
