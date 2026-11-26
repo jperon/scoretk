@@ -23,18 +23,77 @@
 
 """Génère la table partagée des instruments dans `scoretk-core`.
 
-Usage : gen-instruments-table.py <instruments.xml> <importmidi_instrument.cpp> <dst.rs>
+Usage : gen-instruments-table.py <instruments.xml> <instruments-4.7.4.xml> \
+        <importmidi_instrument.cpp> <dst.rs>
 
 La table sert à la lecture MuseScore (reconnaissance des instruments) et à
-l'import MIDI (choix du gabarit et transposition) : c'est une donnée de
-modèle, sans logique de format, donc elle vit dans `scoretk-core`.
+l'import MIDI (choix du gabarit, transposition, clefs de concert) : c'est une
+donnée de modèle, sans logique de format, donc elle vit dans `scoretk-core`.
+
+Le second fichier XML est celui de **MuseScore 4.7.4**, la version qui produit
+les références : seules les clefs en sont extraites (4 bits par portée dans un
+`u16`, voir `CLEF_CODES`), car la copie 5.0 en diffère pour 13 instruments
+exotiques. Les clefs codées sont jointes aux gabarits du premier XML par
+identifiant, sans dépendre de l'ordre des instruments.
 """
 import re
 import sys
 import xml.etree.ElementTree as ET
 
-src_xml, src_cpp, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+src_xml, ref_xml, src_cpp, dst = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 root = ET.parse(src_xml).getroot()
+
+# `TConv::fromXml(..., ClefType::G)` et `InstrumentTemplate::read` :
+# une clef inconnue ou absente reste `G`. Quatre bits suffisent pour les
+# quinze valeurs présentes dans `instruments.xml` (4 portées maximum).
+CLEF_CODES = {
+    'G': 0, 'F': 1, 'G8vb': 2, 'G8va': 3, 'G15mb': 4, 'G15ma': 5,
+    'C1': 6, 'C2': 7, 'C3': 8, 'C4': 9, 'C5': 10,
+    'F8vb': 11, 'F8va': 12, 'F15mb': 13, 'F15ma': 14, 'PERC': 15,
+}
+
+
+def read_clefs(instr, by_id, seen):
+    """Clefs de concert par portée, `init` résolu comme dans le C++."""
+    values = {0: 0}           # défaut : G sur la première portée
+    for child in instr:
+        tag = child.tag
+        if tag == 'init' and child.text and child.text not in seen:
+            parent = by_id.get(child.text.strip())
+            if parent is not None:
+                values.update(read_clefs(parent, by_id, seen | {child.text}))
+        elif tag == 'staves':
+            try:
+                count = max(1, min(4, int((child.text or '1').strip())))
+            except ValueError:
+                count = 1
+            for index in range(count):
+                values.setdefault(index, 0)
+        elif tag in ('clef', 'concertClef'):
+            try:
+                index = max(0, min(3, int(child.get('staff', '1')) - 1))
+            except ValueError:
+                index = 0
+            values[index] = CLEF_CODES.get((child.text or 'G').strip(), 0)
+    return values
+
+
+ref_root = ET.parse(ref_xml).getroot()
+ref_by_id = {
+    instr.get('id'): instr
+    for group in ref_root.iter('InstrumentGroup')
+    for instr in group.findall('Instrument')
+}
+ref_clefs = {
+    instr_id: sum(code << (4 * index)
+                  for index, code in read_clefs(instr, ref_by_id, {instr_id}).items())
+    for instr_id, instr in ref_by_id.items()
+}
+# `InstrumentTemplate::staffCount` : défaut 1, lui aussi de la version 4.7.4.
+ref_staves = {
+    instr_id: max(1, min(4, int(instr.findtext('staves', '1') or '1')))
+    for instr_id, instr in ref_by_id.items()
+}
 
 
 def _pitch_range(text, upper=False):
@@ -84,7 +143,8 @@ for group in root.iter('InstrumentGroup'):
             'channel_programs': programs,
             'transpose_diatonic': int(instr.findtext('transposeDiatonic', '0') or 0),
             'transpose_chromatic': int(instr.findtext('transposeChromatic', '0') or 0),
-            'clef': instr.findtext('clef', ''),
+            'clef_codes': ref_clefs.get(instr.get('id', ''), 0),
+            'staves': ref_staves.get(instr.get('id', ''), 1),
             'staff_group': instr.findtext('staffGroup', ''),
             'use_drumset': int(instr.findtext('drumset', '0') or 0) != 0,
             'has_drumset': bool(instr.findall('Drum'))
@@ -132,10 +192,10 @@ out.append('''// SPDX-License-Identifier: GPL-3.0-only
 //! Catalogue des instruments de MuseScore (données partagées).
 //!
 //! Fichier **généré** par `scripts/gen-instruments-table.py` à partir de
-//! `share/instruments/instruments.xml` et de `GM1_SOUND_DATA` de
-//! `importmidi_instrument.cpp`. Ne pas éditer à la main. Utilisé par la
-//! lecture MuseScore (reconnaissance) et par l'import MIDI (gabarit,
-//! transposition, clefs).''')
+//! `share/instruments/instruments.xml`, des **clefs de la version 4.7.4** et de
+//! `GM1_SOUND_DATA` de `importmidi_instrument.cpp`. Ne pas éditer à la main.
+//! Utilisé par la lecture MuseScore (reconnaissance) et par l'import MIDI
+//! (gabarit, transposition, clefs de concert).''')
 out.append('')
 out.append('''/// Gabarit d'instrument de MuseScore (`InstrumentTemplate`).
 #[derive(Clone, Copy, Debug)]
@@ -162,6 +222,11 @@ pub struct Template {
     pub transpose_diatonic: i32,
     /// Transposition chromatique (`transposeChromatic`).
     pub transpose_chromatic: i32,
+    /// Clefs de concert, 4 bits par portée (`TConv::fromXml`), de la version
+    /// 4.7.4 : le codage est décrit dans `gen-instruments-table.py`.
+    pub clef_codes: u16,
+    /// Nombre de portées (`InstrumentTemplate::staffCount`, défaut 1).
+    pub staves: u8,
     /// Groupe de portée (`staffGroup`), `"TAB"` pour les tablatures.
     pub staff_group: &'static str,
     /// Vrai si le gabarit utilise un jeu de percussion (`<drumset>`).
@@ -205,6 +270,8 @@ for row in rows:
         out.append("        genres: &[],")
     out.append(f"        transpose_diatonic: {row['transpose_diatonic']},")
     out.append(f"        transpose_chromatic: {row['transpose_chromatic']},")
+    out.append(f"        clef_codes: 0x{row['clef_codes']:04x},")
+    out.append(f"        staves: {row['staves']},")
     out.append(f"        staff_group: \"{esc(row['staff_group'])}\",")
     out.append(f"        use_drumset: {str(row['use_drumset']).lower()},")
     out.append(f"        has_drumset: {str(row['has_drumset']).lower()},")
