@@ -111,6 +111,94 @@ ces lignes. Le flux source est le payload L6 `Gregorian`
 | `<custos>` | — | missing | L6 | MEI 5.1 le définit (§6.4.3) mais le payload GABC ne porte pas de custos (`gabc.md` §10) : aucun champ à alimenter. |
 | `<accid>` sur `<nc>` | `NeumeSign::Alteration` | missing | L6 | Le module neumes ne définit pas `<accid>` enfant de `<nc>` ; `x`/`X`/`#`/`y` sont encodés comme `<signifLet type="Alteration" n="flat|sharp|natural…">` (§6.4.9), pas comme des notes chantées (`Gabc.tex:512-540`). |
 
+## NABC (manuscript neumes) ↔ MEI 5.1, second unpitched staff
+
+Sources, read before writing this table (2026-11-26):
+
+- **MEI 5.1 *Guidelines*, chapter 6 "Repertoire: Neume Notation"**, read at
+  <https://music-encoding.org/guidelines/v5/content/neumes.html> (the local
+  copy under `~/programmes/musique/specs/mei/` holds only the index, the
+  introduction and the CMN chapter). §6.1 defines `<syllable>` as the basic
+  unit, §6.1.1 the four elements `<syllable>/<syl>/<neume>/<nc>`; §6.3 notes
+  that regional styles (St. Gall, Old Hispanic, Aquitanian) are *not*
+  reducible to one notation and shows adiastematic encodings with unpitched
+  `<nc>` plus `@intm` (Listings 244–247, 253); §6.4.1 lists `<signifLet>`
+  among the neume elements and shows `<signifLet place="above-right">c</signifLet>`
+  inside `<nc>` (Listing 282); §6.4.2 defines `@pname`, `@oct`, `@intm`,
+  `@con`, `@curve`, `@tilt`; §6.4.4 `<episema @form @place>`; §6.4.5
+  `<liquescent @curve @looped>`; §6.4.7 `<quilisma @waves>`; §6.4.8
+  `@place` on `<signifLet>`; §6.4.9 allows `glyph.auth/@name/@num/@uri`
+  for marks without a dedicated element; §6.4.10 gives the basic skeleton.
+- **Normative schema** `~/programmes/musique/specs/mei/mei-all-5.1.rng`
+  (ECL-2.0): `mei_data.NOTATIONTYPE` (:7495, includes `neume`),
+  `mei_att.notationType.attribute.notationtype` (:8402),
+  `mei_att.intervalMelodic.attribute.intm` (:8612), `mei_nc` (:19350),
+  `mei_neume` (:19398), `mei_signifLet` (:19449, free text),
+  `mei_att.linking.attribute.corresp` (:21213, URI list + Schematron
+  warning that each value should resolve to an `xml:id`),
+  `mei_att.signifLet.vis.attribute.place` (:31029).
+- **Gregorio NABC reference**
+  `~/programmes/musique/specs/gabc/gregorio/doc/GregorioNabcRef.tex`
+  (GPL-3.0-or-later, commit `b63f074`): basic glyph table (:207–240),
+  glyph modifiers (:241–257), pitch descriptors (:258–269), subpunctis /
+  prepunctis (:270–291), significant letters and positions (:293–372),
+  Laon table (:402–437), Tironian notes (:481–495); grammar
+  `src/gabc/gabc-score-determination.y:870–907` (the `|` cut),
+  `doc/Gabc.tex:129` (`nabc-lines`), `:913–914` (`[cn:…]`).
+- **Existing encoded manuscripts.** The official
+  `music-encoding/sample-encodings` repository (commit
+  `f3f1baba02e32279b25dad660b82c834bac034b4`, ECL-2.0) has **no** neume
+  file in its `MEI_5.1` folder (checked against its recursive GitHub tree):
+  its 167 encodings are CMN only, as already recorded in `mei.md` §9.2.
+  The published conventions for adiastematic notation therefore come from
+  the *Guidelines* chapter 6 examples above (Tübingen/Hildegard project,
+  §6.2) and from the Neume Notation Interest Group's samples they are
+  distilled from. They use unpitched `<nc>` with `@tilt`/`@intm` and
+  `<signifLet>` for significative letters — the convention adopted here.
+  No published encoding puts a St. Gall/Laon NABC line in a second
+  `<staff>`; this two-staff layout is an application of the general MEI
+  `@corresp` mechanism (RNG :21213) to juxtapose square and manuscript
+  notation, validated against `mei-all-5.1.rng` (see `mei.md` §13).
+
+### Encoding rule
+
+Staff 1 keeps the square notation, with `notationtype="neume"` and pitched
+`<nc @pname @oct>`. Staff 2 is a **parallel, unpitched** manuscript
+transcription: `notationtype="neume"`, **no `@lines`**, one `<neume>` per
+NABC complex glyph descriptor, `<nc>` children without `@pname`/`@oct`
+(their number is the glyph's note count), `@intm` for the melodic direction
+between successive pitch descriptors, modifier elements where MEI has one,
+and `<signifLet type="gabc-nabc">` carrying the exact NABC snippet text.
+The two `<syllable>`s of a pair carry `xml:id` and `@corresp` to each other
+(MWE validated with `jing`; `mei.md` §13.5).
+
+| NABC fact (Gregorio reference) | MEI 5.1 carrier | Structural / text | Citation |
+| --- | --- | --- | --- |
+| `nabc-lines: n` header (`:129`; grammar `:870–907`) | kept in `Gregorian::headers` → `meiHead` as before; no staff geometry follows from it | text | `Gabc.tex:129`; Guidelines ch. 3 |
+| Second manuscript line | `<staffDef n="2" notationtype="neume" label="…"/>` (no `lines`) and `<staff n="2"><layer n="1">` | structural | RNG `mei_data.NOTATIONTYPE` :7504, `mei_staffDef`; Guidelines §6.1, §6.4.10 |
+| Link square ↔ manuscript syllable | `<syllable xml:id="sNa" corresp="#sNb">` on both staves | structural | RNG `mei_att.linking.attribute.corresp` :21213 |
+| Basic glyph `vi` virga | `<neume type="virga"><nc/></neume>` | structural | `GregorioNabcRef.tex:209`; Guidelines §6.1.1, §6.4.2 |
+| `pu` punctum, `ta` tractulus, `gr` gravis, `st` stropha, `or` oriscus, `ni` nihil | `<neume type="punctum\|tractulus\|gravis\|stropha\|oriscus\|nihil"><nc/></neume>` | structural | `GregorioNabcRef.tex:210–212,216,233–234,240`; RNG `att.neumeType/@type` (NMTOKEN allowed) |
+| `cl` clivis, `pe` pes, `bv` bivirga, `ds` distropha, `pq` pes quassus, `pt` pes stratus | `<neume type="clivis\|pes\|bivirga\|distropha\|pes-quassus\|pes-stratus">` with **two** `<nc/>` | structural | `GregorioNabcRef.tex:213–214,227,229,238–239`; Guidelines §6.1.1 |
+| `po` porrectus, `to` torculus, `ci` climacus, `sc`/`sa` scandicus/salicus, `tg` trigonus, `ts` tristropha, `tv` trivirga, `pr`/`pi` pressus, `ql`/`qi` quilisma | `<neume type="…">` with **three** `<nc/>`, except `ql`/`qi` (one `<nc>` + `<quilisma waves="2|3"/>`) | structural | `GregorioNabcRef.tex:215,217–226,231–232,235–237`; Guidelines §6.4.7, Listing 281 |
+| `pf` porrectus flexus, `sf` scandicus flexus, `tr` torculus resupinus | `<neume type="…">` with **four** `<nc/>` | structural | `GregorioNabcRef.tex:223–225` |
+| Laon `un` uncinus, `oc` oriscus-clivis | `<neume type="uncinus\|oriscus-clivis">` with 1 / 2 `<nc/>` | structural | `GregorioNabcRef.tex:402–410` |
+| Modifier `-` (episema) | `<episema form="h" place="above"/>` in the last `<nc>` | structural | `GregorioNabcRef.tex:245`; Guidelines §6.4.4 |
+| Modifier `>` / `~` (augmentive / diminutive liquescence) | `<liquescent curve="c\|a"/>` in the last `<nc>` | structural | `GregorioNabcRef.tex:246–247`; Guidelines §6.4.5 |
+| Modifier `S`, `G`, `M` and variant digit | **no MEI equivalent**: kept as text in the `<signifLet type="gabc-nabc">` carrier | text-only | `GregorioNabcRef.tex:242–257` |
+| Pitch descriptor `h` + `a`…`n`,`p` (default `hf`) | `@intm="u\|d\|s"` on the `<nc>` following the previous pitch (direction only); exact letter kept as text | structural + text | `GregorioNabcRef.tex:258–269`; RNG `mei_att.intervalMelodic.attribute.intm` :8612; Guidelines §6.4.2 |
+| Subpunctis / prepunctis `su\|pp [tuvwxy] n` (St. Gall), `su\|pp [nqzx] n` (Laon) | one extra `<nc intm="d\|u"/>` per repetition; kind and count kept as text | structural + text | `GregorioNabcRef.tex:270–291,437–448`; Guidelines §6.4.2 |
+| Significant letter shorthands `ls…` (St. Gall), `lseq-`, `lt…` (Tironian) | `<signifLet place="…">c</signifLet>`; position digits 1–9 mapped to `above-left`, `above`, `above-right`, `left`, `inside`, `right`, `below-left`, `below`, `below-right`; the shorthand itself is the element text | structural | `GregorioNabcRef.tex:293–372,449–495`; Guidelines §6.4.8, Listing 282; RNG `mei_att.signifLet.vis.attribute.place` :31029 |
+| Horizontal spacing `` ` `` `/` `//` `` `` ``` `` | **no MEI equivalent**: kept as text in the `<signifLet type="gabc-nabc">` carrier | text-only | `GregorioNabcRef.tex:177–185,376–377` |
+| Exact NABC snippet (all of the above, in source order) | `<signifLet type="gabc-nabc" n="snippet-index">` text | text-only | Guidelines §6.4.1/§6.4.9 (free-text `<signifLet>`); RNG `mei_signifLet` :19449 |
+| Choral NABC sign `[cn:…]` | `Gregorian::Syllable::text` (unchanged), no neume carrier | text-only | `Gabc.tex:913–914` |
+
+No row above claims a universal semantic equivalence: Guidelines §6.3 warns
+that regional signs with a similar shape can carry different meanings. The
+mapping is a *documented transcription convention* between GABC NABC and
+MEI neumes, and the exact NABC text is always retained so the conversion is
+reversible independently of that interpretation.
+
 ## Gaps in the model, ranked
 
 1. **L1 gestural/perform time.** `ChordRest` has one `duration`+`ticks`
