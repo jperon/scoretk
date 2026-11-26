@@ -815,8 +815,9 @@ comment or verbatim markup can therefore never invent a NABC voice.
 **Real case.** GregoBase chant 18205 (`g00499`, "Deus tu convertens") has, in
 the private SQL dump and with no header:
 `nos,(hg|cl|h|st|jj|ds-hi|jvHG|ci|hh|ds-|/giHG|pesu2|hf/fe|cl!pi)`. With one
-declared line the cut alternates state 0/1 (`gabc-score-determination.y:879,
-906`), so the even segments are square — `hg`, `h`, `jj`, `jvHG`, `hh`,
+declared line the cut alternates state 0/1 (state cycles modulo
+`nabc_lines+1`, `gabc-score-determination.y:879,906`), so the even segments
+are square — `hg`, `h`, `jj`, `jvHG`, `hh`,
 `/giHG`, `hf/fe`, 18 sung letters (uppercase `H`/`G` are pitches, `v` and `/`
 are glyphs) — and the odd segments are the seven NABC snippets `cl`, `st`,
 `ds-hi`, `ci`, `ds-`, `pesu2`, `cl!pi`. Reading that body without a header is
