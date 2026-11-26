@@ -854,6 +854,31 @@ fails.
 | Default, byte-identical to `master`, against `mei-basic-5.1.rng` | **0/56 valid** (56 invalid) |
 | `mei_full_support`, against `mei-all-5.1.rng` | **56/56 valid** (0 invalid) |
 
+### 12.3.1 Schematron (the assertions embedded in the RNG)
+
+`jing` checks only the RelaxNG grammar. The normative
+`mei-all-5.1.rng` also embeds **249 ISO Schematron assertions**
+(184 rule contexts, 248 `sch:assert` and one `sch:report`) which it does
+not evaluate. They can be run: `scripts/oracle/mei/schematron.py` extracts
+them from the local RNG, generates a self-contained XSLT 3.0 checker
+(**no downloaded stylesheet is executed**), and applies it with Saxon HE 11
+(`nixpkgs#saxon_11-he`, a jar, plus `nixpkgs#jre`). Add `--schematron` to
+`scripts/oracle/mei/valide-corpus.sh` (which supplies `--out`) to run both
+levels; warnings are advisory and errors fail the oracle. `--selftest`
+checks the extraction without Java.
+
+The MWE of §13 passes the RNG with `jing` but raises exactly **one**
+Schematron error on staff 2: *"Either @lines must be present or a preceding
+staffDef with the same value for @n and @lines must exist"* (rule
+`mei:staffDef[not(ancestor::mei:staff)]`). This is a genuine tension between
+the Schematron rule and the adiastematic convention: the RNG types `@lines`
+as `positiveInteger` (`mei_att.staffDef.log.attribute.lines`), so `lines="0"`
+is invalid, while omitting it (the validated MWE) violates Schematron.
+Setting `lines="1"` satisfies both but falsely asserts a one-line staff.
+The port keeps the MWE convention (no `@lines`) and reports the one error
+rather than misrepresenting the manuscript staff; the 56 CMN exports are
+unaffected. This is a measured, declared exception, not a hidden failure.
+
 The default result is reported, not hidden: it is unchanged from `master`'s
 output and is measured with `master`'s binary too. Its 56 failures are
 4.7.4-faithful attributes outside `mei-basic` (`page.*`/`@vu.height` on the
