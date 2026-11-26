@@ -700,7 +700,8 @@ the reader and facade `detect` call it, so recognition cannot diverge. The
 body is parsed with an empty header: four staff lines (the default,
 `Gabc.tex:128,434`), no metadata and note source offsets counted from the
 first character of the body (no synthetic `%%` is prepended). Since §17, a
-`|` cut in such a body also implies `nabc-lines` when no header declares it.
+`|` cut in such a body also implies the single `nabc-lines: 1;` voice that
+GregoBase declares when no header says otherwise.
 
 This is a **tolerance beyond Gregorio**, chosen for raw GregoBase data; it
 does not change the GABC grammar, the oracle or any file that contains a `%%`
@@ -789,14 +790,20 @@ when it is still 0, with "You used character \"|\" in gabc without setting
 \"nabc-lines\" parameter. Please set it in your gabc header."
 (`gabc-score-determination.y:870-907`). When the header is present, each cut
 advances the state modulo `nabc_lines+1` (`:879,906`): state 0 is square
-notation, states 1…n are the parallel manuscript snippets. A group with more
-cuts than the declared count would wrap back to square notation and sing its
-manuscript glyphs, so the inferred value must cover every group.
+notation, states 1…n are the parallel manuscript snippets. With the **one**
+line that GregoBase declares, the state simply alternates square/manuscript
+at every cut: segments 0, 2, 4, … are square, segments 1, 3, 5, … are NABC.
+Inferring a count from the number of cuts in a group would be wrong: with
+seven declared voices consecutive cuts stay in NABC state and the square
+run between them would be lost.
 
-**Detection.** `scoretk-gabc-import/src/nabc.rs` returns the **maximum number
-of `|` in a single parenthesised notation group**, or 0 when there is none.
-It is called from `read::parse_parts` only when no `nabc-lines` header is
-present; an explicit header always wins, including `nabc-lines: 0;`. The
+**Detection.** `scoretk-gabc-import/src/nabc.rs` returns **1 if a `|` cut
+occurs in a parenthesised notation group, 0 otherwise**. The count of cuts
+does not matter: GregoBase prepends exactly `nabc-lines: 1;` before rendering
+(`chant_img.php:48`), so a headerless export is read with that one voice and
+the alternating pattern above. It is called from `read::parse_parts` only
+when no `nabc-lines` header is present; an explicit header always wins,
+including `nabc-lines: 0;` and `nabc-lines: 7;`. The
 walk follows the Gregorio lexer instead of counting raw characters:
 `|` is a cut only in the `notes` state between an opening `(` and the closing
 `)` (`gabc-score-determination.l:385-396`), `%` starts a comment only outside
@@ -805,29 +812,46 @@ that state (`:313-320`), `\$.` is one escaped token in both states
 not notation (`:328-332`, `Gabc.tex:297-309`). A pipe in lyrics, a header, a
 comment or verbatim markup can therefore never invent a NABC voice.
 
+**Real case.** GregoBase chant 18205 (`g00499`, "Deus tu convertens") has, in
+the private SQL dump and with no header:
+`nos,(hg|cl|h|st|jj|ds-hi|jvHG|ci|hh|ds-|/giHG|pesu2|hf/fe|cl!pi)`. With one
+declared line the cut alternates state 0/1 (`gabc-score-determination.y:879,
+906`), so the even segments are square — `hg`, `h`, `jj`, `jvHG`, `hh`,
+`/giHG`, `hf/fe`, 18 sung letters (uppercase `H`/`G` are pitches, `v` and `/`
+are glyphs) — and the odd segments are the seven NABC snippets `cl`, `st`,
+`ds-hi`, `ci`, `ds-`, `pesu2`, `cl!pi`. Reading that body without a header is
+identical to reading it with `nabc-lines: 1;` prepended.
+
 **Writer.** A payload with no headers comes from a raw body; the GABC writer
 (`scoretk-gabc-export/src/lib.rs`) emits neither `name: ;` nor `%%` for it, so
 a headerless body does not acquire a header on a round trip. Other whitespace
 is still rebuilt from structured fields (§8); this changes the previous §15
 statement that every output gained `%%`. Files with headers are emitted
-exactly as before. The writer also no longer inserts a cut-back `|` between
-two manuscript snippets when no square notes separate them: with more than
-one declared voice, successive cuts advance to the next NABC voice, so the
-old cut-back produced a doubled `||` and lost the voice index. This is a
-latent bug that the inferred multi-cut bodies expose; the nine versioned
-examples (`nabc-lines: 1`) are unaffected.
+exactly as before. The cut-back `|` is emitted only when square notes really
+separate two manuscript snippets (commit `ab63078c`): with more than one
+declared voice, successive cuts advance to the next NABC voice, so an
+unconditional cut-back produced `||` and lost the voice index. With the
+inferred single line the segments alternate, so each snippet after the first
+is preceded by square notes and the cut-back is restored: the headerless
+seven-cut body and the 18205 group keep every cut and gain no header. On the
+latter the only textual change is a pre-existing glyph normalisation — a
+slash opening the `/giHG` square segment is attached by the reader to the
+preceding note, so the writer emits `hh/|ds-|giHG`.
 
-Tests: `crates/scoretk-gabc-import/tests/nabc_autodetect.rs` (1-cut body equal
-to `nabc-lines: 1`, multi-cut body equal to `nabc-lines: 7`, explicit `0`
-respected, pipes in lyrics/comments/verbatim ignored), the unit tests in
+Tests: `crates/scoretk-gabc-import/tests/nabc_autodetect.rs` (1-cut and 7-cut
+and 13-cut headerless bodies equal to `nabc-lines: 1`, explicit `7` and `0`
+still win, pipes in lyrics/comments/verbatim ignored), the unit tests in
 `nabc.rs`, two writer unit tests (headerless output and consecutive voices)
 and `crates/scoretk/tests/gabc_body.rs`.
 
-**Measured (2026-11-26).** Comparing the CLI built at `ffbfb47a` (before the
-change) with the branch CLI on **261 GABC files** (9 versioned Gregorio
-examples + 252 private GregoBase lot files), GABC → GABC is **261/261
-byte-identical**, 0 differences and 0 conversion failures. On a raw body with
-seven cuts in one group, the old reader sang 13 notes because it cycled the
-state modulo 2; the new reader sings only the 2 square notes before the first
-cut and writes back the seven manuscript snippets with one `|` each, without
-adding a header.
+**Measured (2026-11-26).** Comparing the CLI built at `ffbfb47a` (before §17)
+with the branch CLI on **261 GABC files** (9 versioned Gregorio examples +
+252 private GregoBase lot files), GABC → GABC was **261/261 byte-identical**,
+0 differences and 0 conversion failures. After correcting the inferred count
+to one line, the same 261 files were compared again with `master` (`a0bc611e`,
+before the correction): **261/261 byte-identical**, 0 differences and 0
+conversion failures. On the seven-cut body, inferring 7 sang only the 2 square
+notes before the first cut; inferring 1 alternates and sings the 13 square
+notes, writing back all four snippets and every cut without adding a header.
+On GregoBase 18205's 13-cut group it sings 18 square notes and keeps all seven
+manuscript snippets.
