@@ -699,17 +699,18 @@ shared `looks_like_gabc_body` helper in `scoretk-gabc-common::syntax`: both
 the reader and facade `detect` call it, so recognition cannot diverge. The
 body is parsed with an empty header: four staff lines (the default,
 `Gabc.tex:128,434`), no metadata and note source offsets counted from the
-first character of the body (no synthetic `%%` is prepended).
+first character of the body (no synthetic `%%` is prepended). Since §17, a
+`|` cut in such a body also implies `nabc-lines` when no header declares it.
 
 This is a **tolerance beyond Gregorio**, chosen for raw GregoBase data; it
 does not change the GABC grammar, the oracle or any file that contains a `%%`
-line, which takes the original path unchanged. No existing test, snapshot or
-measurement in §9 or §14 moves. The writer always emits a header and the `%%`
-marker, so writing a body-only score back to GABC **adds `%%`**: the tolerance
-is on reading only. Other formats keep their stronger signatures and are
-tested before the body rule in `Format::detect` (`\version` → LilyPond,
-`%abc`/`X:` → ABC, XML namespaces → MusicXML/MEI); a header without `%%` is
-still neither detected nor readable.
+line, which takes the original path unchanged. The structured writer keeps a
+headerless payload headerless: it emits neither `name: ;` nor a `%%` marker
+(§17), so a body-only round trip does not gain a header. Other layout
+whitespace is still normalised from structured fields (§8). Other formats
+keep their stronger signatures and are tested before the body rule in
+`Format::detect` (`\version` → LilyPond, `%abc`/`X:` → ABC, XML namespaces →
+MusicXML/MEI); a header without `%%` is still neither detected nor readable.
 
 Tests: `crates/scoretk-gabc-import/tests/body.rs`,
 `crates/scoretk/tests/gabc_body.rs`, and the negative cases in
@@ -769,3 +770,49 @@ MusicXML/MIDI/LilyPond/ABC/MEI), and the branch's full-source output equals
 its square-only output in all 15 (MusicXML modulo source offsets). No
 direction regressed. Per-file numbers and the MEI staff declaration are in
 [`mei.md`](mei.md) §13.3 and §12.3.1.
+
+## 17. Implicit `nabc-lines` in headerless bodies (2026-11-26, branch `nabcauto`)
+
+Raw GregoBase exports have **no header at all** (§15), but their notation
+still contains the `|` cuts of the manuscript voice. GregoBase itself
+prepends `nabc-lines: 1;\n%%\n` to the body before invoking `gregorio`
+(`specs/gabc/gregobase/chant_img.php:48`, function `gregorio()`), and the GABC
+reference documents the alternating square/manuscript snippets and the
+`nabc-lines: x;` declaration that authorises them
+(`specs/gabc/gregorio/doc/GregorioNabcRef.tex:153-170`). scoretk therefore
+infers the missing declaration from the body itself.
+
+**What Gregorio does with `|` at zero lines.** `nabc_lines` starts at 0
+(`gabc-score-determination.y:649`); both grammar rules containing `NABC_CUT`,
+`NOTES NABC_CUT` and `NABC_CUT`, call `gregorio_message(... VERBOSITY_FATAL)`
+when it is still 0, with "You used character \"|\" in gabc without setting
+\"nabc-lines\" parameter. Please set it in your gabc header."
+(`gabc-score-determination.y:870-907`). When the header is present, each cut
+advances the state modulo `nabc_lines+1` (`:879,906`): state 0 is square
+notation, states 1…n are the parallel manuscript snippets. A group with more
+cuts than the declared count would wrap back to square notation and sing its
+manuscript glyphs, so the inferred value must cover every group.
+
+**Detection.** `scoretk-gabc-import/src/nabc.rs` returns the **maximum number
+of `|` in a single parenthesised notation group**, or 0 when there is none.
+It is called from `read::parse_parts` only when no `nabc-lines` header is
+present; an explicit header always wins, including `nabc-lines: 0;`. The
+walk follows the Gregorio lexer instead of counting raw characters:
+`|` is a cut only in the `notes` state between an opening `(` and the closing
+`)` (`gabc-score-determination.l:385-396`), `%` starts a comment only outside
+that state (`:313-320`), `\$.` is one escaped token in both states
+(`:240`, `Gabc.tex:247-250`), and `<v>…</v>` is verbatim TeX whose pipes are
+not notation (`:328-332`, `Gabc.tex:297-309`). A pipe in lyrics, a header, a
+comment or verbatim markup can therefore never invent a NABC voice.
+
+**Writer.** A payload with no headers comes from a raw body; the GABC writer
+(`scoretk-gabc-export/src/lib.rs`) emits neither `name: ;` nor `%%` for it, so
+a headerless body does not acquire a header on a round trip. Other whitespace
+is still rebuilt from structured fields (§8); this changes the previous §15
+statement that every output gained `%%`. Files with headers are emitted
+exactly as before.
+
+Tests: `crates/scoretk-gabc-import/tests/nabc_autodetect.rs` (1-cut body equal
+to `nabc-lines: 1`, multi-cut body equal to `nabc-lines: 7`, explicit `0`
+respected, pipes in lyrics/comments/verbatim ignored), the unit tests in
+`nabc.rs`, a writer unit test and `crates/scoretk/tests/gabc_body.rs`.
