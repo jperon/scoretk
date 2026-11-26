@@ -260,9 +260,8 @@ mod tests {
         let mut xml = XmlWriter::new();
         write_staff(&mut xml, &chant_with_resume("/"));
         let output = xml.finish();
-        assert!(
-            output.contains("type=\"gabc-nabc\" n=\"1\" label=\"layout:resume:U002F\">ds-</signifLet>")
-        );
+        assert!(output
+            .contains("type=\"gabc-nabc\" n=\"1\" label=\"layout:resume:U002F\">ds-</signifLet>"));
         assert!(!output.contains("<annot"));
 
         let mut xml = XmlWriter::new();
