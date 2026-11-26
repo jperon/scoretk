@@ -692,6 +692,14 @@ impl<'a> Context<'a> {
                 &metadata.subtitle,
             );
         }
+        // XSD 4.0 `miscellaneous-field/@name` accepte tout nom : en mode
+        // `full_support` les en-têtes du payload grégorien y sont portés sans
+        // préfixe privé, donc lisibles par n'importe quel consommateur.
+        if self.options.full_support {
+            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
+                chant::write_miscellaneous_headers(out, gregorian);
+            }
+        }
         out.xml.end_element();
         out.xml.end_element();
     }
@@ -2218,6 +2226,7 @@ impl Context<'_> {
                             source.gregorian_syllable,
                             breath,
                             self.options.gabc_neume_smufl,
+                            self.options.full_support,
                         );
                         // Un neume est le groupe parenthesé source
                         // (`Gabc.tex:36-58`) : une liure par syllabe chantée,

@@ -102,6 +102,20 @@ pub(crate) fn write_header_directions(out: &mut Out, gregorian: &Gregorian) {
     }
 }
 
+/// Porteurs standard des en-têtes grégoriens (`xsd:miscellaneous-field/@name`,
+/// XSD 4.0 `:4327-4348`). Additif au mode `full_support` : les champs privés
+/// `gabc:` restent le porteur exact par défaut, mais un lecteur conforme peut
+/// relire chaque nom/valeur sans les connaître.
+pub(crate) fn write_miscellaneous_headers(out: &mut Out, gregorian: &Gregorian) {
+    for header in &gregorian.headers {
+        out.xml.tag_with(
+            "miscellaneous-field",
+            &[("name", &header.name)],
+            &header.value,
+        );
+    }
+}
+
 /// Écrit le payload L6 complet des syllabes dans la première mesure.
 ///
 /// Une mesure dérivée se termine sur une barre réelle, pas sur une syllabe :
@@ -310,6 +324,7 @@ pub(crate) fn write_note_signs(
     syllable_index: usize,
     breath: bool,
     smufl: bool,
+    standard_attributes: bool,
 ) {
     if smufl {
         // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
@@ -321,6 +336,17 @@ pub(crate) fn write_note_signs(
             &[("type", "single"), ("smufl", smufl_neume(note))],
             "",
         );
+        out.xml.end_element();
+    }
+    if standard_attributes && !note.attributes.is_empty() {
+        // XSD 4.0 `other-technical` (`other-placement-text`, xs:string) :
+        // porteur standard d'un texte d'extension, lisible par un tiers.
+        out.xml.start_element("notations", &[("print-object", "no")]);
+        out.xml.start_element("technical", &[]);
+        for attribute in &note.attributes {
+            out.xml.tag_with("other-technical", &[("print-object", "no")], &attribute.text);
+        }
+        out.xml.end_element();
         out.xml.end_element();
     }
     if note.signs.is_empty() && !breath {

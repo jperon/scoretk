@@ -94,6 +94,8 @@ pub(crate) fn restore(root: &Element, score: &mut Score) {
         }
     }
     if !collected.found {
+        // Aucun champ privé : les porteurs SMuFL standard suffisent-ils ?
+        super::chant_smufl::restore(root, score);
         return;
     }
     let gregorian = build_payload(collected);

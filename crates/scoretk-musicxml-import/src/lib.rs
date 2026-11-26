@@ -69,6 +69,7 @@
 mod barline;
 pub mod capabilities;
 mod chant;
+mod chant_smufl;
 mod container;
 
 pub use capabilities::CAPABILITIES;

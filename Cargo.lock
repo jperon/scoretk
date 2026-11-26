@@ -698,6 +698,7 @@ name = "scoretk-lilypond-export"
 version = "0.1.0"
 dependencies = [
  "scoretk-core",
+ "scoretk-gabc-common",
  "scoretk-lilypond-common",
  "scoretk-musescore-import",
  "thiserror",
@@ -710,6 +711,7 @@ dependencies = [
  "midly",
  "quick-xml",
  "scoretk-core",
+ "scoretk-gabc-common",
  "scoretk-lilypond-common",
  "scoretk-midi-export",
  "scoretk-musescore-import",
