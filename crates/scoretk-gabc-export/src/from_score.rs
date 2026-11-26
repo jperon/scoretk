@@ -191,6 +191,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
         syllables,
         opening_separator: None,
         derived_modern_view: false,
+        ..Gregorian::default()
     }
 }
 

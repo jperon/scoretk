@@ -51,7 +51,8 @@ pub(super) fn parse_body(body: &str) -> Result<Gregorian, Error> {
 }
 
 fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian, Error> {
-    let headers = syntax::parse_headers(header_source);
+    let (headers, header_items, header_double_semicolons) =
+        syntax::parse_header_layout(header_source);
     let staff_lines = headers
         .iter()
         .find(|header| header.name == "staff-lines")
@@ -77,13 +78,17 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
             .map_or(0, |digit| (digit - b'0') as usize),
         None => crate::nabc::detect_nabc_lines(body),
     };
-    let (syllables, clefs, opening_separator) = parse_notation(body, base, nabc_lines);
+    let (syllables, clefs, opening_separator, notation_prefix) =
+        parse_notation(body, base, nabc_lines);
     Ok(Gregorian {
         headers,
         staff_lines,
         clefs,
         syllables,
         opening_separator,
+        header_items,
+        header_double_semicolons,
+        notation_prefix,
         derived_modern_view: false,
     })
 }
@@ -117,7 +122,12 @@ fn parse_notation(
     body: &str,
     base: usize,
     nabc_lines: usize,
-) -> (Vec<Syllable>, Vec<String>, Option<String>) {
+) -> (
+    Vec<Syllable>,
+    Vec<String>,
+    Option<String>,
+    Option<String>,
+) {
     let chars: Vec<char> = body.chars().collect();
     // `offsets[i]` est la position UTF-16 du caractère `chars[i]` dans le
     // fichier entier ; le dernier élément est la fin du corps.
@@ -131,6 +141,15 @@ fn parse_notation(
     let mut syllables: Vec<Syllable> = Vec::new();
     let mut clefs: Vec<String> = Vec::new();
     let mut text = String::new();
+    // Verbatim text between the previous `)` and the next `(`: whitespace
+    // and whole-line `%` comments (`Gabc.tex:60-64`). The GABC writer emits
+    // it back; the derived view keeps using `space_after`, so no other
+    // direction is affected by the exact spelling.
+    let mut separator = String::new();
+    // Whitespace outside a comment: a `%` suppresses the end-of-line space
+    // (`Gabc.tex:63-64`), so comment text must not set `space_after`.
+    let mut separator_space = false;
+    let mut notation_prefix: Option<String> = None;
     let mut code = String::new();
     let mut code_start = 0usize;
     let mut in_notes = false;
@@ -186,23 +205,31 @@ fn parse_notation(
             text.push(char);
             escaped = true;
         } else if char == '(' {
-            // The text accumulated before `(` is this group's syllable. A
-            // space before it ends the previous word, even when the syllable
-            // itself is trimmed (`Gabc.tex:60-61,241-245`).
-            let raw = std::mem::take(&mut text);
-            let separator = leading_whitespace(&raw);
+            // The text accumulated before `(` is this group's syllable. The
+            // text between groups is kept verbatim for the GABC writer, while
+            // `space_after` still records only the *fact* of a word break for
+            // the derived view (`Gabc.tex:60-61,241-245`).
+            // `space_after` keeps the historical rule (`text_has_space` on
+            // everything accumulated since the previous group), so the
+            // derived view and the five other destinations are unchanged.
+            // Only the exact spelling is newly stored in `separator_after`.
+            let space_after = separator_space || text.chars().any(char::is_whitespace);
+            let pending = take_text(&mut text);
+            let raw_separator = std::mem::take(&mut separator);
             if let Some(previous) = syllables.last_mut() {
-                previous.space_after = text_has_space(&raw);
-                previous.separator_after = Some(separator.to_owned());
+                previous.space_after = space_after;
+                previous.separator_after = Some(raw_separator);
             } else if opening_clef_seen && opening_separator.is_none() {
-                opening_separator = Some(separator.to_owned());
+                opening_separator = Some(raw_separator);
+            } else if notation_prefix.is_none() {
+                // Everything before the first group, including a nested
+                // header block or a `%` comment, is source layout.
+                notation_prefix = Some(raw_separator);
             }
-            let pending = raw.trim().to_owned();
+            separator_space = false;
             code.clear();
             code_start = index + 1;
             in_notes = true;
-            // Kept until `)` closes the group; a single buffer handles
-            // comments and escapes uniformly.
             text = pending;
         } else if char == '<' && chars[index..].iter().collect::<String>().starts_with("<v>") {
             // Verbatim TeX `<v>…</v>` is typography, not a note group: a
@@ -219,12 +246,23 @@ fn parse_notation(
             text.push(char);
         } else if char == '%' {
             // A comment runs to end of line and suppresses the end-of-line
-            // space (`Gabc.tex:63-64`).
+            // space (`Gabc.tex:63-64`). Its exact characters are layout, so
+            // they are kept in the inter-group separator, never in the
+            // syllable text (and therefore never in a derived lyric).
+            let start = index;
             while index < chars.len() && chars[index] != '\n' {
                 index += 1;
             }
-            index += 1;
+            if index < chars.len() {
+                index += 1;
+            }
+            // Whole-line comments occur between groups in the corpus; they
+            // belong to the exact separator, never to a derived lyric.
+            separator.extend(&chars[start..index]);
             continue;
+        } else if char.is_whitespace() && text.is_empty() {
+            separator.push(char);
+            separator_space = true;
         } else {
             text.push(char);
         }
@@ -234,22 +272,13 @@ fn parse_notation(
     // raw GregoBase body ends with a newline that a byte-exact writer must
     // reproduce (`Gabc.tex:60-61,241-245`).
     if let Some(last) = syllables.last_mut() {
-        last.separator_after = Some(leading_whitespace(&text).to_owned());
+        last.separator_after = Some(std::mem::take(&mut separator));
     }
-    (syllables, clefs, opening_separator)
+    (syllables, clefs, opening_separator, notation_prefix)
 }
 
 fn take_text(text: &mut String) -> String {
     std::mem::take(text).trim().to_owned()
-}
-
-/// Exact whitespace prefix of `text` (`Gabc.tex:60-61,241-245`).
-fn leading_whitespace(text: &str) -> &str {
-    &text[..text.len() - text.trim_start().len()]
-}
-
-fn text_has_space(text: &str) -> bool {
-    text.chars().any(char::is_whitespace)
 }
 
 /// Extracts `<sp>…</sp>` / `<alt>…</alt>` markup (`Gabc.tex:297-309`).

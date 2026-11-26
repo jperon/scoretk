@@ -40,6 +40,10 @@ use scoretk_xml_common::Element;
 /// Lit un document MEI 5.1 dont la partition contient des neumes.
 pub(super) fn read(root: &Element) -> Result<Score, Error> {
     let mut gregorian = Gregorian::default();
+    // Le layout GABC (commentaires, lignes vides, `;;`, préfixe) traverse MEI
+    // par `@label` sur `<meiHead>`, comme les séparateurs exacts en §19.
+    let head_label = find_first(root, "meiHead").and_then(|head| head.attribute("label"));
+    scoretk_mei_common::gabc_layout::read_header_label(head_label, &mut gregorian);
     read_headers(root, &mut gregorian);
     read_staff_lines(root, &mut gregorian);
 

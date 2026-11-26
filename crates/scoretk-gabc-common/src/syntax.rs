@@ -27,7 +27,7 @@
 //! (`src/struct.c:1273-1288`). A letter is a typographical position, **not**
 //! a pitch name (`doc/Gabc.tex:410-413`).
 
-use scoretk_core::model::{GregorianHeader, NeumeSign, SignKind};
+use scoretk_core::model::{GregorianHeader, GregorianHeaderItem, NeumeSign, SignKind};
 
 /// True for a GABC pitch letter: `a`–`n` and `p`, with `o` reserved for the
 /// oriscus (`Gabc.tex:410-413,469`; `src/dump/dump.c:78-88`).
@@ -334,11 +334,38 @@ fn is_group_start(c: char) -> bool {
 /// A name is ASCII letters/digits with dashes; a value ends at `;` or `;;`,
 /// and a multi-line value omits the first `;` before continuing.
 pub fn parse_headers(header: &str) -> Vec<GregorianHeader> {
+    parse_header_lines(header).0
+}
+
+/// Parses the header section into its fields **and** its exact layout.
+///
+/// A `%` comment and an empty line are header items in their own right
+/// (`Gabc.tex:51,63-64`; lexer `INITIAL` → `inicomments` at
+/// `gabc-score-determination.l:129-133`); `;;` is the terminator of a
+/// multi-line value (`:69-74`) and is kept even when no continuation follows.
+/// The returned field indices refer to the first element.
+pub fn parse_header_layout(
+    header: &str,
+) -> (Vec<GregorianHeader>, Vec<GregorianHeaderItem>, Vec<usize>) {
+    parse_header_lines(header)
+}
+
+fn parse_header_lines(
+    header: &str,
+) -> (Vec<GregorianHeader>, Vec<GregorianHeaderItem>, Vec<usize>) {
     let mut result: Vec<GregorianHeader> = Vec::new();
+    let mut items: Vec<GregorianHeaderItem> = Vec::new();
+    let mut doubles: Vec<usize> = Vec::new();
     let mut pending: Option<GregorianHeader> = None;
+    let mut pending_double = false;
     for line in header.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('%') {
+        if trimmed.is_empty() {
+            items.push(GregorianHeaderItem::Blank);
+            continue;
+        }
+        if trimmed.starts_with('%') {
+            items.push(GregorianHeaderItem::Comment(line.to_owned()));
             continue;
         }
         if let Some((name, value)) = trimmed.split_once(':') {
@@ -352,31 +379,48 @@ pub fn parse_headers(header: &str) -> Vec<GregorianHeader> {
                 name: name.to_owned(),
                 value: value.trim().to_owned(),
             };
-            if finish_header(&mut header) {
-                result.push(header);
-            } else {
-                pending = Some(header);
+            match finish_header(&mut header) {
+                Some(is_double) => {
+                    let index = result.len();
+                    if is_double {
+                        doubles.push(index);
+                    }
+                    result.push(header);
+                    items.push(GregorianHeaderItem::Field(index));
+                    pending = None;
+                }
+                None => {
+                    let index = result.len();
+                    items.push(GregorianHeaderItem::Field(index));
+                    pending = Some(header);
+                    pending_double = false;
+                }
             }
         } else if let Some(header) = pending.as_mut() {
             header.value.push('\n');
             header.value.push_str(trimmed);
-            if finish_header(header) {
+            if let Some(is_double) = finish_header(header) {
+                pending_double |= is_double;
+                if pending_double {
+                    doubles.push(result.len());
+                }
                 result.push(pending.take().expect("pending header"));
             }
         }
     }
-    result
+    (result, items, doubles)
 }
 
-fn finish_header(header: &mut GregorianHeader) -> bool {
+/// Removes the terminating `;` / `;;` and reports whether it was a double one.
+fn finish_header(header: &mut GregorianHeader) -> Option<bool> {
     if header.value.ends_with(";;") {
         header.value.truncate(header.value.len() - 2);
-        true
+        Some(true)
     } else if header.value.ends_with(';') {
         header.value.pop();
-        true
+        Some(false)
     } else {
-        false
+        None
     }
 }
 

@@ -114,7 +114,8 @@ pub use figured_bass::{FiguredBass, FiguredBassContLine, FiguredBassItem, Figure
 pub use fraction::{Fraction, Tick};
 pub use fret_diagram::{FretBarre, FretDiagram, FretDot, FretDotType, FretMarker, FretMarkerType};
 pub use gregorian::{
-    BarKind, Gregorian, GregorianHeader, GregorianNote, NabcSnippet, NeumeSign, SignKind, Syllable,
+    BarKind, Gregorian, GregorianHeader, GregorianHeaderItem, GregorianNote, NabcSnippet, NeumeSign,
+    SignKind, Syllable,
 };
 pub use hairpin::Hairpin;
 pub use ids::{MeasureId, NoteId, PartId, SpannerId, StaffId, Track, TupletId, VOICES};

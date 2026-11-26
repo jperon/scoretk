@@ -33,7 +33,9 @@ mod from_score;
 
 use std::borrow::Cow;
 
-use scoretk_core::model::{Capabilities, Extension, Gregorian, Layers, Score};
+use scoretk_core::model::{
+    Capabilities, Extension, Gregorian, GregorianHeaderItem, Layers, Score,
+};
 use scoretk_gabc_common::Result;
 
 /// Layers GABC carries (`Gabc.tex:228-343,408-443,452-870`; plan §7.1).
@@ -75,40 +77,53 @@ pub fn write_gabc(score: &Score) -> Result<String> {
 /// entirely from parsed fields can be tested without any source text.
 fn emit(gregorian: &Gregorian) -> String {
     let mut out = String::with_capacity(256);
-    if gregorian.headers.is_empty() {
-        // A raw GregoBase body has no header and no `%%` marker. Keep that
-        // shape on write instead of inventing `name: ;` and a separator the
-        // source never had (read tolerance and docs/agents/gabc.md §15, §17).
-    } else {
+    // Comments, empty lines and field order are header items in their own
+    // right (`Gabc.tex:51,63-64`; lexer `inicomments`,
+    // `gabc-score-determination.l:129-133`). A payload assembled without a
+    // source header falls back to the plain ordered field list.
+    if gregorian.header_items.is_empty() && !gregorian.headers.is_empty() {
         if !gregorian.headers.iter().any(|header| header.name == "name") {
             // `name:` is mandatory (`Gabc.tex:79-82`); a payload assembled by
             // another direction may not have one.
             out.push_str("name: ;\n");
         }
         for header in &gregorian.headers {
-            out.push_str(&header.name);
-            out.push_str(": ");
-            let mut lines = header.value.split('\n');
-            let first = lines.next().unwrap_or("");
-            out.push_str(first);
-            let rest: Vec<&str> = lines.collect();
-            if rest.is_empty() {
-                out.push_str(";\n");
-            } else {
-                // Multi-line values omit the first `;` and end in `;;`
-                // (`Gabc.tex:69-74`).
-                out.push('\n');
-                for (index, line) in rest.iter().enumerate() {
-                    out.push_str(line);
-                    out.push_str(if index + 1 == rest.len() {
-                        ";;\n"
-                    } else {
-                        "\n"
-                    });
+            write_header_field(&mut out, header, false);
+        }
+    } else {
+        for item in &gregorian.header_items {
+            match item {
+                GregorianHeaderItem::Comment(text) => {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+                GregorianHeaderItem::Blank => out.push('\n'),
+                GregorianHeaderItem::Field(index) => {
+                    if let Some(header) = gregorian.headers.get(*index) {
+                        let double = gregorian.header_double_semicolons.contains(index);
+                        write_header_field(&mut out, header, double);
+                    }
                 }
             }
         }
-        out.push_str("%%\n\n");
+    }
+    if !gregorian.headers.is_empty() || !gregorian.header_items.is_empty() {
+        out.push_str("%%\n");
+        // Exact text between the marker and the first group; a file with a
+        // header historically has one blank line there, a raw body none.
+        if let Some(prefix) = &gregorian.notation_prefix {
+            out.push_str(prefix);
+        } else if !gregorian.headers.is_empty() {
+            out.push('\n');
+        }
+    }
+
+    if gregorian.headers.is_empty() && gregorian.header_items.is_empty() {
+        // Raw GregoBase body: no header, no `%%` marker, but any leading
+        // layout text (comments, indentation) is still source data.
+        if let Some(prefix) = &gregorian.notation_prefix {
+            out.push_str(prefix);
+        }
     }
 
     // A leading group holding only the initial clef is not a syllable
@@ -210,6 +225,36 @@ fn emit(gregorian: &Gregorian) -> String {
         }
     }
     out
+}
+
+/// Serialises one header field. `double` keeps a `;;` terminator even when
+/// the value has no continuation line (`Gabc.tex:69-74`).
+fn write_header_field(
+    out: &mut String,
+    header: &scoretk_core::model::GregorianHeader,
+    double: bool,
+) {
+    out.push_str(&header.name);
+    out.push_str(": ");
+    let mut lines = header.value.split('\n');
+    let first = lines.next().unwrap_or("");
+    out.push_str(first);
+    let rest: Vec<&str> = lines.collect();
+    if rest.is_empty() {
+        out.push_str(if double { ";;\n" } else { ";\n" });
+    } else {
+        // Multi-line values omit the first `;` and end in `;;`
+        // (`Gabc.tex:69-74`).
+        out.push('\n');
+        for (index, line) in rest.iter().enumerate() {
+            out.push_str(line);
+            out.push_str(if index + 1 == rest.len() {
+                ";;\n"
+            } else {
+                "\n"
+            });
+        }
+    }
 }
 
 /// Barres de séparation et signes de groupe, émis en état carré.
@@ -325,6 +370,7 @@ mod tests {
                 },
             ],
             derived_modern_view: false,
+            ..Gregorian::default()
         };
         let mut score = Score::new();
         score.extensions.format = Some(Extension::Gregorian(gregorian));

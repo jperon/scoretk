@@ -142,7 +142,18 @@ pub(super) fn write(
 /// `mei-all-5.1.rng`). `@n` garde l'ordre des champs GABC pour la lecture
 /// inverse ; aucun `<annot type="gabc-header">` n'est nécessaire.
 fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str, private: bool) {
-    xml.start_element("meiHead", &[]);
+    // `@label` est un attribut MEI standard (`att.labelled`, `data.string`) :
+    // il transporte les commentaires, lignes vides, terminateurs `;;` et le
+    // préfixe de notation sans ajouter d'annotation privée au document.
+    let mut head_attributes = Vec::new();
+    if let Some(label) = scoretk_mei_common::gabc_layout::header_label(gregorian) {
+        head_attributes.push(("label".to_owned(), label));
+    }
+    let head_refs: Vec<(&str, &str)> = head_attributes
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    xml.start_element("meiHead", &head_refs);
     xml.start_element("fileDesc", &[]);
     xml.start_element("titleStmt", &[]);
     for (index, header) in gregorian.headers.iter().enumerate() {
@@ -634,6 +645,7 @@ mod tests {
             }],
             opening_separator: None,
             derived_modern_view: false,
+            ..Gregorian::default()
         }
     }
 

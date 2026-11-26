@@ -50,6 +50,23 @@ pub struct GregorianHeader {
     pub value: String,
 }
 
+/// One item of the GABC header section in source order (`Gabc.tex:36-74`).
+///
+/// `%` comments are legal in both sections and a comment suppresses the
+/// end-of-line space (`Gabc.tex:63-64`; lexer states `INITIAL`/`inicomments`
+/// at `gabc-score-determination.l:129-133`). An empty line is also part of
+/// the file's layout (`Gabc.tex:51`). Keeping these as ordered header items
+/// lets the writer rebuild the header without ever copying the source text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GregorianHeaderItem {
+    /// A parsed header field: index into [`Gregorian::headers`].
+    Field(usize),
+    /// A whole-line comment, `%` included, line ending excluded.
+    Comment(String),
+    /// An empty line between header fields.
+    Blank,
+}
+
 /// A separation bar between sections (`Gabc.tex:801-821`).
 ///
 /// `::` is the divisio finalis, not two divisio maiores (`:815-817`,
@@ -339,6 +356,20 @@ pub struct Gregorian {
     /// `None` when no source body was parsed (e.g. from MusicXML), in which
     /// case the GABC writer uses its default newline.
     pub opening_separator: Option<String>,
+    /// Header-section items in source order: fields, `%` comments and blank
+    /// lines (`Gabc.tex:36-74`). Empty when the payload was built without a
+    /// source header (e.g. from MusicXML or a raw GregoBase body), in which
+    /// case the writer falls back to [`Self::headers`].
+    pub header_items: Vec<GregorianHeaderItem>,
+    /// Indices into [`Self::headers`] whose source terminator was `;;`
+    /// rather than `;` (`Gabc.tex:69-74`). A value with no continuation line
+    /// still keeps its exact terminator this way.
+    pub header_double_semicolons: Vec<usize>,
+    /// Exact text between the `%%` line and the first parenthesis group
+    /// (`Gabc.tex:51,58,63-64`), or before the first group of a headerless
+    /// body. `None` when no source notation was parsed: the writer then uses
+    /// its historical default (`\n\n` with a header, nothing without).
+    pub notation_prefix: Option<String>,
     /// True when the L0/L1 event spine was generated from this payload.
     ///
     /// GABC carries neither metrical measures nor fixed durations

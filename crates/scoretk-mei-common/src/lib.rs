@@ -28,6 +28,7 @@
 
 pub mod convert;
 pub mod error;
+pub mod gabc_layout;
 pub mod ids;
 pub mod nabc;
 pub mod neumes;

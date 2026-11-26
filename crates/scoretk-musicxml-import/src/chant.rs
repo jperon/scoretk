@@ -286,6 +286,7 @@ fn build_payload(collected: Collected) -> Gregorian {
         syllables,
         opening_separator: None,
         derived_modern_view: true,
+        ..Gregorian::default()
     }
 }
 
