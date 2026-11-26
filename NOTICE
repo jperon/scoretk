@@ -111,9 +111,10 @@ example `../lilypond-ref/`, like `ref-musescore/`) and never distributed:
 | Rust file | LilyPond source |
 | --- | --- |
 | `read/lexer.rs` | `lily/lexer.ll` (states `notes`, `lyrics`, `markup`, comments) |
-| `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`) |
-| `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`) and `scm/define-note-names.scm` (name tables by language) |
+| `read/parser.rs` | `lily/parser.yy` (`music_list`, `event_chord`, `chord_body`, `post_events`, `duration`, `repeated_music`, `context_change`, `\score`), `scm/music-functions.scm` (`music-map`), `input/regression/accidental-glyphs-test.ily` (`\test` score generator) |
+| `read/pitch.rs` | `lily/pitch.cc` (`Pitch::to_relative_octave`, `steps`, `up_to`/`down_to`), `scm/define-note-names.scm` (name tables by language), `ly/makam.ly` (`makamPitchNames`), `scm/lily-library.scm` (alteration constants) |
 | `builder/articulate.rs` | `ly/articulate.ly` (`ac:trill`, `ac:articulate-chord`, actions `prall`, `mordent`, `turn`), file under GPL-3.0-only |
+| `include.rs` | `ly/arabic.ly:20` (`\language "italiano"`), `ly/satb.ly`, `ly/ssaattbb.ly` (injected score templates) |
 | `modes.rs` | `ly/drumpitch-init.ly` (`drumPitchNames`, `midiDrumPitches`) and `scm/chord-entry.scm` (`construct-chord-elements`): MIDI pitch tables for `\drummode` and `\chordmode` |
 | `midi_instruments.rs` | `scm/midi.scm` (`instrument-names-alist`, `midi-program`, `percussion?`) and `lily/staff-performer.cc` (`new_instrument_string`): `midiInstrument` → GM program and channel 9 |
 
