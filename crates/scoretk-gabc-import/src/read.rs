@@ -662,7 +662,13 @@ mod tests {
         assert_eq!(snippets.len(), 7);
         assert_eq!(snippets[4].text, "ds-");
         assert_eq!(snippets[4].resume, "/");
-        assert_eq!(snippets.iter().filter(|snippet| !snippet.resume.is_empty()).count(), 1);
+        assert_eq!(
+            snippets
+                .iter()
+                .filter(|snippet| !snippet.resume.is_empty())
+                .count(),
+            1
+        );
         // The second `h` of `hh` must not swallow the slash: its glyph is
         // empty and the slash is emitted with the cut-back on write.
         assert_eq!(payload.syllables[0].notes[9].glyph, "");
