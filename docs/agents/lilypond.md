@@ -10584,3 +10584,115 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 60. Reading campaign, seventh phase (2026-11-26)
+
+### 60.1 Protocol
+
+The frozen manifests, exclusions, exactness rule and refreshed reference tree
+`ly95lect-refs-54` of §57–§59 are unchanged; `--refs-only --python-ly '' --music21
+''` was used for every lot, one lot at a time, with a worktree-local
+`CARGO_TARGET_DIR`, one cargo command at a time and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`. Each
+candidate binary was frozen to a stable path before measuring (`ly60-fix1-scoretk`).
+No reference was regenerated, no denominator changed, no comparison was relaxed
+and no file was excluded. LilyPond 2.26 was used only to reason about small,
+self-written snippets outside the repository; third-party `.ly` sources were
+not executed, and downloaded data was analysed with Python scripts that only
+read the frozen JSONL, MIDI and MusicXML files.
+
+### 60.2 Results
+
+| Lot | Rows | Exact after §59 | Exact after §60 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1638 (95.0 %) | **1638 (95.0 %)** | 98.70 | 96.62 | 1 + 66 |
+| `mut` | 1316 | 1251 (95.1 %) | **1252 (95.1 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1296 (94.9 %) | **1297 (95.0 %)** | 99.54 | 97.63 | 83 |
+
+The strict 95 % threshold is now reached on **all three lots**. The only file
+whose status changed is `promenade-6.ly`, which becomes exact on `mut` and `rw`;
+no file was lost and no other measurement field changed (`ra` is unchanged at
+the measured level). The 66 deleted `ra` sources still cap that lot at 96.2 %
+with a perfect reader, so the 98 % target is arithmetically out of reach there
+without changing the denominator, which the protocol forbids.
+
+### 60.3 Cause — a nested `\new Staff` is a new track, not a new voice
+
+The structural cause proposed at the end of §59 was the one-track/several-tracks
+mismatch: LilyPond creates one MIDI track per `Audio_staff`
+(`lily/performance.cc:69-110`, `Performance::output` writes one track per
+`audio_staffs_[i]`), and `lily/staff-performer.cc:128-153` (`new_audio_staff`)
+allocates a fresh `Audio_staff` whenever a `Staff_performer` sees a new voice
+that is not mapped onto an existing one (`get_audio_staff`, lines 164-182).
+`lily/parser.yy` (`NEWCONTEXT` / `context_prefix`) and `lily/context.cc`
+(`find_create_context`) make `\new Staff` **create** a `Staff` context, whereas
+`\context Staff = "name"` **finds** an existing one. `lily/midi-walker.cc:95-115`
+(`do_start_note`) then merges two attacks of the same pitch at the same tick
+only inside one `Audio_staff`, never between two.
+
+`promenade-6.ly` embeds
+
+```lilypond
+<<
+  \new Staff \with { alignAboveContext = "up" } { \repeat tremolo 24 { fs'32 fs, } … }
+  \\
+  { … normal music … }
+>>
+```
+
+inside the `up` staff. LilyPond therefore plays the tremolo on a third track,
+while the reader opened it as a fourth *voice* of the `up` staff. The oracle
+(`scripts/oracle/lilypond/ly_notes.py:433`, `_fusionner_unissons`) then merged
+nine F♯5 attacks at ticks 63, 69, …, 111 with the chords written by the normal
+voice of the same staff: `n1 = n2 = 1198/1207`, flagged `octave` and
+`notes_manquantes`.
+
+`SpawnedVoice` (`events.rs`) now carries `separate_staff`: `nested_context`
+sets it for the voices produced by a `\new Staff` (and clears their `temporary`
+flag), but not for `\context Staff`, which still continues in the current
+voice. `PendingVoice` carries the flag to `build_voices` (`builder.rs`), which
+partitions those voices out before temporary-voice and unison merging and gives
+each its own `StaffId` **and its own `audio_staff`**, instead of the sister
+staves used for a fifth simultaneous voice. The MusicXML writer then emits a
+distinct `(part, staff)` group, so the oracle keeps the nine attacks. Measured:
+`mut` 1251 → **1252**, `rw` 1296 → **1297**, `ra` unchanged, no loss anywhere
+(`473848e5`). Reduced test
+`new_staff_imbrique_ouvre_une_portee_et_une_piste_distinctes` (fails on the
+preceding binary: one staff with two unisons instead of two staves); the earlier
+`new_staff_imbrique_garde_sa_propre_voix` (an `\incipit` context, which is a
+typesetting-only picture) still passes.
+
+### 60.4 Why the wider voice-per-track split was rejected
+
+Two diagnostics were run on the frozen measurements, without changing the
+reader or the comparator:
+
+* Rewriting the candidate XML so that **every** MusicXML voice gets its own
+  `<staff>` number improves `n1`/`n2` on 14 non-exact `rw` files but produces
+  **no new exact file**: `bwv869b.ly` ends one note too many and
+  `promenade-6.ly` two, because voices that LilyPond keeps on one `Audio_staff`
+  must stay merged. The general rule would therefore trade a better percentage
+  for wrong engraving and was not retained.
+* `bwv869b.ly` is the inverse idiom: its MIDI `\context { \Staff \remove
+  "Staff_performer" }` plus `\context { \Voice \consists "Staff_performer" }`
+  makes `get_audio_staff` allocate one track per Voice (`midiChannelMapping`
+  then differs from `#'staff`). Its reference has five tracks against two
+  model staves, and a faithful per-Voice split recovers all 1809 attacks but
+  leaves one spurious attack at tick 90. A global per-Voice split was not
+  committed without a measured exact gain.
+
+The remaining non-exact files keep the causes of §58.6 and §59.3: per-Voice
+unisons and re-articulated ties (`BWV533`, `BWV-830-4/6`, `ToccataFugue`,
+`two-jews`), constant shifts of obsolete `\autochange` sources, grace note
+counts on old sources, and Scheme-generated music. None of them was changed
+without a full-lot measurement showing a gain and no loss; 98 % would additionally
+require recovering the 66 deleted `ra` sources.
+
+### 60.5 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
