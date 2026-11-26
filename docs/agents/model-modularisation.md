@@ -1376,8 +1376,9 @@ with `@grace/@dur`, `<dir type="mscore-tbox-*|mscore-text-line">`,
 | MEI import of `*.ref.mei` | L0–L5 | 87.53 % (was 87.16 %) | same (reference-bound); 96.08 % excluding the 628 items MuseScore never writes | — |
 
 Updated by the branch `mei3` campaign (`mei.md` §12): full-support round trip
-**100.00 %** (0/5 879), default round trip unchanged at 95.63 %, import
-87.67 % / 96.23 %. No carrier was removed from the declaration.
+**100.00 %** (0/5 879), default round trip 96.34 % (identical exported bytes,
+reader fixes only), import 87.67 % / 96.23 %. No carrier was removed from the
+declaration.
 
 **No layer or kind was removed from MEI's declaration.** The 55 residual
 corpus items are current port/model limitations, not MEI 5.1 impossibilities:

@@ -775,7 +775,7 @@ or attribute, cited below.
 
 | Measurement | Before this pass | After this pass |
 | --- | ---: | ---: |
-| Round trip, default export (56 scores, 5 879 items) | 95.63 % | **95.63 %** (unchanged, byte-faithful) |
+| Round trip, default export (56 scores, 5 879 items) | 95.63 % | **96.34 %** (bytes unchanged; reader fixes only) |
 | Round trip, `mei_full_support` | 99.51 % (29 missing) | **100.00 %** (0/5 879) |
 | Import of MuseScore `*.ref.mei` (main figure) | 87.58 % | **87.67 %** |
 | Import, carriers MuseScore never writes excluded | 96.13 % | **96.23 %** |
