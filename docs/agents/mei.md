@@ -58,6 +58,8 @@ Two comparisons are versioned:
   `mei_core_loss_diagnostic` (per file/tick/staff), `mei_full_loss_table`
   (per kind) and `mei_import_figure_without_absent_carriers` (the second,
   additive import figure of §8.3).
+- `scripts/oracle/mei/valide-corpus.sh` — no-argument `jing` validation of
+  both 56-score exports (see §12.3).
 - `crates/scoretk/tests/mei_conformity.rs` — a MusicXML-style normalised
   comparison of scoretk's export with the 4.7.4 reference: element name plus
   a stable set of musical attributes, folding `@accid` from a child element
@@ -766,19 +768,34 @@ of +182 169 raw / +61 743 gzip.
 ### 12.1 Method and headline figures
 
 `Options::mei_full_support` / `MeiOptions::full_support` stays opt-in and
-**false** by default: the bytes written with the default options remain
-4.7.4-faithful (`mei_conformity` unchanged, no parity test relaxed). Every step
-below was one commit with its measured gain, followed by the full verification
-suite. No kind was removed from the declaration, no denominator was reduced and
-no private `<annot>` was introduced; each carrier is a standard MEI 5.1 element
-or attribute, cited below.
+**false** by default. The headline is measured on MEI 5.1-valid output only:
+after the rebase on `master` and the consolidation below, the 56 additive
+exports validate **56/56** against `mei-all-5.1.rng` with `jing`, and the full
+support round trip remains **100.00 %** (0/5 879 missing). A coverage figure
+obtained from schema-invalid MEI does not count.
 
-| Measurement | Before this pass | After this pass |
-| --- | ---: | ---: |
-| Round trip, default export (56 scores, 5 879 items) | 95.63 % | **96.34 %** (bytes unchanged; reader fixes only) |
-| Round trip, `mei_full_support` | 99.51 % (29 missing) | **100.00 %** (0/5 879) |
-| Import of MuseScore `*.ref.mei` (main figure) | 87.58 % | **87.67 %** |
-| Import, carriers MuseScore never writes excluded | 96.13 % | **96.23 %** |
+The default path was brought back to **byte identity with `master`**: two
+carriers of this campaign (the `<fb><f>` figure and the tremolo-bar `<dir>`)
+had leaked into the default writer and made `v3/layout_elements` differ from
+`master`. They are now behind `full_support`, as they were meant to be. The
+default round trip consequently reads **96.26 %** (not 96.34 % — the old figure
+relied on those extra bytes). The default bytes are unchanged from `master`,
+verified by exporting all 56 scores with both binaries and diffing.
+
+| Measurement | Before this pass | After this pass | MEI 5.1 validity |
+| --- | ---: | ---: | --- |
+| Round trip, default export (56 scores, 5 879 items) | 95.63 % | **96.26 %** (bytes identical to `master`) | 0/56 against its declared `mei-basic` (all inherited from `master`, see §12.3) |
+| Round trip, `mei_full_support` | 99.51 % (29 missing) | **100.00 %** (0/5 879) | **56/56** against `mei-all-5.1.rng` |
+| Import of MuseScore `*.ref.mei` (main figure) | 87.58 % | **87.80 %** | references, not measured here |
+| Import, carriers MuseScore never writes excluded | 96.13 % | **96.38 %** | references, not measured here |
+
+The reader fixes (grace duration on the child note, `@wordpos="m"`,
+`@startid`-free `<artic>`, exact control-event anchoring, `<staffGrp>` around
+mid-score `<staffDef>`, `<dir>`-anchored two-chord tremolos) also apply to
+`master`-style references and raise both import figures slightly. No kind was
+removed from the declaration, no denominator was reduced and no private
+`<annot>` was introduced; each carrier is a standard MEI 5.1 element or
+attribute, cited in §12.3.
 
 ### 12.2 Per-kind residual, before → after (`mei_full_support`)
 
@@ -802,34 +819,60 @@ MuseScore extensions of *standard* attributes/elements, not a private binary
 payload; all numeric data uses standard attributes (`@val`, `@n`, `@staff`,
 `@midi.*`, `@fontsize`, `@tstamp`, `@form`).
 
-### 12.3 RelaxNG validation of the 56 additive exports
+The default residual after restoring `master`'s bytes is 220 missing items out
+of 5 879. `dynamic-velocity` 43 is a full-support-only carrier; the remaining
+default figure is dominated by `note` 25, `credit-position` 18, `credit` 15,
+`tbox-text` 15, `instrument` 15, `tbox-position` 15, `grace`/`grace-note` 8+8,
+`multi-measure-rest` 6, `clef` 5, `arpeggio` 5, `program` 5, `ornament` 4,
+`figured-bass` 4 and `instrument-change` 3 (plus small singletons). These are
+the fidelity limits of the 4.7.4 path, printed by `mei_full_loss_table`; none
+of them is hidden by changing a declaration.
 
-The 56 files are produced with `SCORETK_MEI_DUMP_DIR=<dir> cargo test -p
-scoretk --test mei_full_support_dump dump_mei_full_support_corpus`, then
-validated exactly as `scripts/check-mei-neumes.sh` validates the neume module:
+### 12.3 Reproducible RelaxNG validation (both modes)
+
+From the repository root, with no arguments:
 
 ```sh
-SCHEMA=$SCORETK_SPECS_DIR/mei/mei-all-5.1.rng
-for f in "$DUMP"/*.mei; do jing "$SCHEMA" "$f"; done
-# 44 of 56 files are strictly valid against mei-all-5.1.rng
+scripts/oracle/mei/valide-corpus.sh
 ```
 
-Result: **44/56 valid**, **12 invalid**. The 12 files are
-`v3/layout_elements`, `v3/moonlight`, `v3/testMultiInstrumentPart3`,
-`v3/testWedge4`, `v3/timesig-05`, `v3/voices`, `v4/changevisibility`,
-`v4/copypaste_parts`, `v4/linked-ties`, `v4/tenuto_accent`,
-`v4/testExcludeInvisibleElements`, `v4/timesig-09`. None of the violations come
-from a carrier added in this pass (the `<barLine>`, `<harm><fb><f>` and
-measure-level `<dir>` were moved into their RNG-allowed positions). They are
-strict-RNG residuals of the 4.7.4 CMN style and of the earlier §10 carriers:
-`@dur` on `<graceGrp>` (RNG `mei_graceGrp` has only `att.graceGrp`; the duration
-belongs to the child `<note>`), `@startid` on `<artic>` (`mei_artic` has no
-`att.startEndId`), `@visible` on `<note>`/`<rest>` (not in `att.common`),
-`<arpeg>`/`<ornam>` written inside `<note>`/`<chord>` instead of as control
-events (`mei_arpeg`, `mei_ornam`), `<fTrem>` with a single note (RNG requires at
-least two children), `<pedal>` without required `@dir` (`att.pedal`),
-`<syl con="m">` (RNG `data.SYLLABIC` has no `m`, even though 4.7.4 writes it),
-and `<staffDef @trans.diat/@trans.semi>` outside `<staffGrp>` plus `@trans.*`
-on `<dir>` (those attributes belong to `att.staffDef.transposition`). These
-are reported, not hidden: fixing them changes earlier §10 carriers or
-4.7.4-authored attributes and is outside the coverage target of this pass.
+The wrapper supplies `jing` (`nix shell nixpkgs#jing`), builds the CLI if
+needed, exports the 56 `.mscx` scores in both modes, and calls
+`scripts/oracle/mei/valide-corpus.py`. The schemas are the local MEI 5.1 RNG
+copies in `$SCORETK_SPECS_DIR/mei/` (default
+`/home/jacques/programmes/musique/specs`): `mei-basic-5.1.rng` for the default
+mode, which declares `meiversion="5.1+basic"`, and `mei-all-5.1.rng` for
+`mei_full_support`, which declares `meiversion="5.1"`. Neither schema is
+vendored. The wrapper exits non-zero only when the headline mode fails.
+
+| Mode | Result |
+| --- | ---: |
+| Default, byte-identical to `master`, against `mei-basic-5.1.rng` | **0/56 valid** (56 invalid) |
+| `mei_full_support`, against `mei-all-5.1.rng` | **56/56 valid** (0 invalid) |
+
+The default result is reported, not hidden: it is unchanged from `master`'s
+output and is measured with `master`'s binary too. Its 56 failures are
+4.7.4-faithful attributes outside `mei-basic` (`page.*`/`@vu.height` on the
+mid-score `<scoreDef>`, `@tstamp` on `<note>`/`<chord>` children of `<tuplet>`,
+`head.shape` on `<note>` inside a chord, `<fTrem>` with one child, `<pedal>`
+without `@dir`); the byte-identity requirement forbids repairing them here.
+The earlier figure of "44/56 valid" in the additive mode is superseded: 12
+files were invalid, all now fixed while keeping information on a valid carrier.
+
+| File (previously invalid) | jing error and RNG citation | Fix in the additive path |
+| --- | --- | --- |
+| `v3/layout_elements`, `v4/changevisibility`, `v4/copypaste_parts`, `v4/linked-ties` | `@dur` on `<graceGrp>`: RNG `mei_graceGrp` admits only `att.graceGrp`, not `att.duration.musical` | `@dur`/`@dots` written on the child `<note>`; `read_grace_group` falls back to the first note's duration |
+| `v3/moonlight`, `v3/testWedge4` | `@visible="false"` on `<rest>`: RNG `mei_rest` has no `att.visibility` | `<space>` (`mei_space`, Guidelines "Rest"), read back as an invisible rest; default keeps `@visible` |
+| `v3/layout_elements`, `v4/testExcludeInvisibleElements` | `<syl con="m">`: RNG `data.SYLLABIC` = `s d u t c v i b` (no `m`) | `@wordpos="m"` (RNG `att.syl.log/@wordpos`, medial syllable); the reader maps it to `LyricsSyllabic::Middle` |
+| `v3/layout_elements`, `v4/copypaste_parts`, `v4/testExcludeInvisibleElements` | `<arpeg>`/`<ornam>` inside `<note>`/`<chord>`: `mei_arpeg`/`mei_ornam` are `model.controlEventLike`, not children of an event | measure-level control events with `att.startId`/`att.startEndId`; the reader anchors them exactly on the note id |
+| `v3/timesig-05`, `v3/voices`, `v4/changevisibility`, `v4/copypaste_parts`, `v4/tenuto_accent`, `v4/testExcludeInvisibleElements` | `@startid` on `<artic>`: RNG `mei_artic` has no `att.startEndId` | the parent event's `xml:id` (or the first note of a `<chord>`) anchors the articulation |
+| `v3/layout_elements`, `v4/copypaste_parts`, `v4/testExcludeInvisibleElements` | `<pedal>` without `@dir`: RNG `att.pedal.log/@dir` is required (`down`/`up`/`half`/`bounce`) | `<pedal dir="down" … endid="…">` in the additive mode |
+| `v3/testMultiInstrumentPart3` | `<staffDef>` directly under `<scoreDef>`: RNG `mei_scoreDef` only admits `<staffGrp>`; `@trans.*` on `<dir>` belongs to `att.staffDef.transposition` | `<scoreDef><staffGrp><staffDef @trans.diat/@trans.semi>` before the measure; the `<dir>` keeps text, `@type` and `@label` |
+| `v4/copypaste_parts`, `v4/timesig-09` | `<fTrem>` with one child: RNG `mei_fTrem` requires two `chord`/`note` children | `<dir type="mscore-tremolo-two-chord-Start\|Stop" @startid>` control event; the reader restores `TremoloKind` and `tremolo_two_chord` |
+
+Every one of those 12 files now validates, and the full-support round trip is
+still 100.00 % on that valid output: no coverage item was sacrificed to gain
+validity. The `mscore-*` values remain documented MuseScore extensions of
+standard elements/attributes, not private payloads. `nix build .#wasm` after
+the consolidation gives **2 825 964 raw bytes / 1 103 570 gzip** (§11's figure
+predates the full-support campaigns).
