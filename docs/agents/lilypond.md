@@ -10696,3 +10696,102 @@ One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## 61. Reading campaign, eighth phase (2026-11-26)
+
+### 61.1 Protocol
+
+The frozen manifests, exclusions, exactness rule and refreshed reference tree
+`ly95lect-refs-54` of §57–§60 are unchanged; `--refs-only --python-ly '' --music21
+''` was used for every lot, one lot at a time, with a worktree-local
+`CARGO_TARGET_DIR`, one cargo command at a time and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`. Each
+candidate binary was frozen to a stable path before measuring (`ly61-base-scoretk`,
+`ly61-fix1-scoretk`, `ly61-fix3c-scoretk`). No reference was regenerated, no
+denominator changed, no comparison was relaxed and no file was excluded.
+Third-party `.ly` sources were only compiled inside the
+`bwrap --unshare-all --die-with-parent` sandbox when a construction had to be
+checked against LilyPond; downloaded data was analysed with Python scripts that
+only read the frozen JSONL, MIDI and MusicXML files.
+
+### 61.2 Results
+
+| Lot | Rows | Exact after §60 | Exact after §61 | N1 % | N2 % (no repeat) | Exclusions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1724 | 1638 (95.0 %) | **1638 (95.0 %)** | 98.70 | 96.62 | 1 + 66 |
+| `mut` | 1316 | 1252 (95.1 %) | **1254 (95.3 %)** | 99.54 | 97.65 | 61 |
+| `rw` | 1365 | 1297 (95.0 %) | **1299 (95.2 %)** | 99.54 | 97.63 | 83 |
+
+The only status changes are `two-jews.ly` and `bwv869b.ly`, which become exact
+on `mut` and `rw`; no file is lost on any lot and no other measurement field
+changes. The 66 deleted `ra` sources still cap that lot at 1 658/1 724 =
+96.2 % with a perfect reader, so the 98 % target remains arithmetically out
+of reach without changing the denominator, which the protocol forbids.
+
+### 61.3 `\sustainOn` is a post-event, not a standalone command
+
+In `lily/parser.yy`, `\sustainOn`/`\sustainOff` are `PedalEvent`s of the
+`post_events` of a note (`ly/declarations-init.ly`). The reader parsed them as
+isolated `Music::Context` commands, which ended the note's post-event stream:
+in `two-jews.ly`
+
+```lilypond
+<ff af>4 <df ff>2 \sustainOn ~ q8 \tag #'layout { r }
+```
+
+the `~` after the pedal was left out of the chord, so the tie was never
+recorded. The reference MIDI plays one F♯ of 2.5 quarters, while the reader
+wrote two attacks of 2 and 0.5 quarters. `PostEvent::Sustain(bool)` now carries
+the pedal at the note's tick, and `starts_post_event` accepts both commands; the
+standalone form at the head of a voice is still read as a context command.
+Reduced test `sustain_avant_une_liaison_garde_la_liaison` checks the tie, the
+note count and the standalone form. Measured: `mut` 1252 → **1253** and `rw`
+1297 → **1298**, no loss (`c4296ecf`).
+
+### 61.4 One MIDI track per `Voice`, and ties across voices
+
+`lily/staff-performer.cc:138-182` (`get_audio_staff`) allocates a fresh
+`Audio_staff` when a `Staff` loses `Staff_performer` and a `Voice` gains it in
+the score's `\midi` block (`bwv869b.ly`, LSR item 438). The parser now detects
+that exact pair **inside an inline `\midi` block** and marks the score's staves
+so `build_voices` gives each sounding voice its own staff and
+`audio_staff`, instead of merging their unisons on the engraved staff. The
+detection requires `\remove "Staff_performer"` in a `\Staff` context and
+`\consists "Staff_performer"` in a `\Voice` context: it deliberately ignores
+`chopin_prelude_op45.ly` (the performer is on `PianoStaff`) and
+`Nunc-dimittis.ly` (the `\midi` is a variable inserted in the score), both of
+which stay unchanged.
+
+Once voices are split, a tie opened in one of them can be closed by a note of
+the same pitch and the same `Voice` context identifier in another one: the
+bookkeeping queue of `link_ties` is per voice, while LilyPond keeps one
+`Tie_performer` per `Voice` context (`lily/tie-performer.cc:41-48`). The global
+search is **gated on the per-voice-track flag**; without that gate it closed a
+tie that an intervening time step in another staff must release
+(`staccato_relache_la_liaison_si_un_autre_pas_de_temps_intervient`) and lost
+four exact files (`Fuge_Opus137`, `QuartetOpus18_No4_2`, `Romanze_Opus40`,
+`liszt-consolation-no3`). Reduced test
+`midi_une_piste_par_voix_sans_fusion_d_unissons` checks the staff count and the
+`PianoStaff` control. Measured: `mut` 1253 → **1254** and `rw` 1298 → **1299**,
+no loss (`b5888ce5`).
+
+### 61.5 Remaining causes
+
+Eight `rw`/`mut` files still have N1 = N2 = 100 % and only a few extra notes
+(`BWV533`, `ToccataFugue`, `BWV-830-4/6`, `BWV857_Praeludium12`, `bwv910`,
+`rach-prelude23-05`, `schumann-op68-26-sans-titre`). Their remaining attacks
+come from ties and unisons that the frozen oracle counts differently; the
+per-voice XML split of §60.4 still improves N1/N2 on 14 `rw` files but yields
+no exact file, and a global unison merge was already rejected in §59.3.
+The `ra` long tail is unchanged: Scheme-generated music, old-source grace
+counts, microtonal key signatures, quotations and per-Voice tracks. No further
+rule was committed without a full-lot measurement showing a gain and no loss.
+
+### 61.6 Verification
+
+One cargo command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
