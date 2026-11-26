@@ -231,3 +231,22 @@ fn tstamp_uses_the_reduced_numerator_in_both_directions() {
     assert_eq!(hairpin.start.tick, scoretk::model::Fraction::new(1, 1));
     assert_eq!(hairpin.end.tick, scoretk::model::Fraction::new(2, 1));
 }
+
+/// `multiRest/@n` et `mRpt/@n` (MEI 5.1 `att.numbered`) portent le nombre de
+/// mesures couvertes et le nombre de reprises, sans recourir à un `@n` de
+/// mesure truqué ni à une annotation privée.
+#[test]
+fn mei_numbered_rest_carriers_are_read() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+        <section>
+          <measure n="1"><staff n="1"><layer n="1"><multiRest n="3"/></layer></staff></measure>
+          <measure n="2"><staff n="1"><layer n="1"><mRpt n="2"/></layer></staff></measure>
+        </section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    assert_eq!(score.measures[0].multi_measure_rest, Some(3));
+    let repeat = score.measures[1].measure_repeat.expect("measure repeat");
+    assert_eq!(repeat.count, 2);
+}

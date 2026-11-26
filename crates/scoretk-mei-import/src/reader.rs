@@ -378,7 +378,12 @@ impl<'a> Reader<'a> {
         // absentes. La plus large restaure le plus de mesures sans décaler
         // les suivantes (v4/mmrest, v3/testTboxWords1).
         let hidden = gap.max(jump).max(1) as usize;
-        if (node.attribute("metcon") == Some("false") || jump > 1) && hidden > 1 {
+        let explicit_rest = self.score.measures[index].multi_measure_rest;
+        if let Some(count) = explicit_rest {
+            // Un `<multiRest @n>` écrit par scoretk : la mesure ne saute pas
+            // son `@n`, mais porte explicitement le nombre de mesures couvertes.
+            self.score.measures[index].len = nominal;
+        } else if (node.attribute("metcon") == Some("false") || jump > 1) && hidden > 1 {
             // `Convert::measureToMEI` (meiconverter.cpp:2254) writes a single
             // `<measure>` for a whole multi-measure rest, and `writeScore`
             // (meiexporter.cpp:292) iterates layout measures: the covered
@@ -554,6 +559,7 @@ impl<'a> Reader<'a> {
                 "rest" => self.read_rest(node, measure, track, ticks),
                 "space" => self.read_space(node, measure, track, ticks),
                 "mRest" => self.read_m_rest(node, measure, track, ticks),
+                "multiRest" => self.read_multi_rest(node, measure, track, ticks),
                 "mRpt" => self.read_m_rpt(node, measure, track, ticks),
                 "tuplet" => self.read_tuplet(node, measure, track, ticks),
                 "clef" => self.read_clef_element(node, measure, track, ticks),
@@ -815,14 +821,37 @@ impl<'a> Reader<'a> {
         *ticks += nominal;
     }
 
+    /// `<multiRest @n>` (MEI 5.1 `att.numbered`, `mei_multiRest`) porte le
+    /// nombre de mesures couvertes, sans décaler la numérotation `@n`.
+    fn read_multi_rest(
+        &mut self,
+        node: &Element,
+        measure: usize,
+        track: Track,
+        ticks: &mut Fraction,
+    ) {
+        let count = node
+            .attribute("n")
+            .and_then(|value| value.parse::<u16>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or(1);
+        self.score.measures[measure].multi_measure_rest = Some(count);
+        self.read_m_rest(node, measure, track, ticks);
+    }
+
     /// `MeiImporter::readMRpt` (`meiimporter.cpp:2010`).
     fn read_m_rpt(&mut self, node: &Element, measure: usize, track: Track, ticks: &mut Fraction) {
         let nominal = self.score.measures[measure].nominal_len;
         self.add_chord_rest(node, measure, track, *ticks, Duration::whole(), true);
+        let count = node
+            .attribute("n")
+            .and_then(|value| value.parse::<u16>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or(1);
         self.score.measures[measure].measure_repeat =
             Some(scoretk_core::model::MeasureRepeatMark {
                 staff: StaffId::from_index(track.staff().raw() as usize),
-                count: 1_u16,
+                count,
             });
         *ticks += nominal;
     }

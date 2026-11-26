@@ -266,7 +266,7 @@ fn event_ids(score: &Score, full_support: bool) -> BTreeMap<(Fraction, u32), Str
                             chord.notes.first().map(|note| format!("n{}", note.index()))
                         }
                         ChordRestKind::Rest(rest) if rest.full_measure => {
-                            full_support.then(|| format!("mr{measure_index}"))
+                            full_support.then(|| format!("mr{measure_index}s{}", track.raw()))
                         }
                         ChordRestKind::Rest(_) => full_support
                             .then(|| format!("r{measure_index}s{}i{position}", track.raw())),
@@ -387,7 +387,11 @@ fn write_measure(
                 .iter()
                 .any(|segment| segment.element(track).is_some())
         });
-        if !has_content {
+        let has_measure_repeat = options.full_support
+            && measure
+                .measure_repeat
+                .is_some_and(|mark| mark.staff.raw() as usize == staff_idx);
+        if !has_content && !has_measure_repeat {
             continue;
         }
         xml.start_element(
@@ -633,6 +637,20 @@ fn write_layer(
             xml.tag_empty("clef", &attrs);
         }
     }
+    // `<mRpt @n>` (MEI 5.1 `att.numbered`) est le porteur d'un symbole de
+    // reprise de mesure. MuseScore 4.7.4 ne l'écrit pas ; une mesure qui ne
+    // contient que ce symbole n'a aucun `<layer>` sans ce porteur additionnel.
+    if options.full_support && events.is_empty() && voice == 0 {
+        if let Some(mark) = measure.measure_repeat {
+            if mark.staff.raw() as usize == track.staff().raw() as usize {
+                let count = mark.count.to_string();
+                let id = format!("m{}s{}r", measure_index, track.raw());
+                xml.tag_empty("mRpt", &[("xml:id", &id), ("n", &count)]);
+                xml.end_element();
+                return;
+            }
+        }
+    }
     let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
     for (position, (tick, cr)) in events.iter().enumerate() {
@@ -750,7 +768,27 @@ fn write_layer(
         }
         match &cr.kind {
             ChordRestKind::Rest(rest) if rest.full_measure => {
-                xml.tag_empty("mRest", &[("xml:id", &format!("mr{measure_index}"))]);
+                // `multiRest/@n` est le porteur MEI 5.1 d'un multi-repos
+                // (`att.numbered`, `mei_multiRest`) ; l'identifiant est
+                // unique par piste pour rester un `xml:id` valide.
+                let rest_id = if options.full_support {
+                    format!("mr{measure_index}s{}", track.raw())
+                } else {
+                    format!("mr{measure_index}")
+                };
+                if options.full_support {
+                    if let Some(count) = measure.multi_measure_rest {
+                        let count = count.to_string();
+                        xml.tag_empty(
+                            "multiRest",
+                            &[("xml:id", rest_id.as_str()), ("n", count.as_str())],
+                        );
+                    } else {
+                        xml.tag_empty("mRest", &[("xml:id", rest_id.as_str())]);
+                    }
+                } else {
+                    xml.tag_empty("mRest", &[("xml:id", rest_id.as_str())]);
+                }
             }
             ChordRestKind::Rest(rest) => {
                 let rest_id = options
