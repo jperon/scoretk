@@ -1356,3 +1356,13 @@ singletons are anchoring/serialisation gaps with existing MEI carriers.
 No GABC/MEI-specific `L7` or `ExternalRef`/`GesturalTime` layer was added:
 `inventory.rs`, `layers.rs` and the stable wasm contract are unchanged, so
 the parallel GABC work stays easy to rebase (§7.2, §10).
+
+### 11.13 GABC to every destination (2026-11-26)
+
+`gabc_cross_formats.rs` extends the §11.7 measurement to the seven
+destinations (MusicXML, mxl, mscx, mscz, LilyPond, ABC, MIDI) with the same
+`essential`/`full support` definition, applied to the derived modern view and
+projected onto each format's timeline. The carriers and citations, the
+before/after table and the residual of every destination are documented in
+`docs/agents/gabc.md` §14. No kind was removed from a declaration to raise a
+figure.

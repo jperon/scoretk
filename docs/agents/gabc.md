@@ -561,3 +561,98 @@ altération non chantée, chiffres de placement — passent par `<signifLet>`
 (`Guidelines` §6.4.8–§6.4.9) ; les barres dominicaines par un NMTOKEN de
 `<divLine @form>` (RNG `att.divLine.log/@form`) ; la clé basse `cbN` par
 `@type="clef-flat"` ; l'espace de mot et l'élision par `<syl @wordpos @con>`.
+
+## 14. GABC → tous les formats : mesure et porteurs (2026-11-26)
+
+### 14.1 Instrument et définitions
+
+`crates/scoretk/tests/gabc_cross_formats.rs` convertit les neuf exemples
+Gregorio vers chaque destination puis relit le fichier écrit. La référence est
+la **vue moderne dérivée** du score GABC (§7), réduite aux dix faits que le
+task compare : `pitch`, `duration`, `lyric`, `bar`, `clef`, `accidental`,
+`breath`, `episema`, `quilisma`, `title`. Un fait est une clé
+`(genre, tick, valeur)` comparée comme multi-ensemble.
+
+- **essential** = `pitch` + `bar` (analogue de `note` + `measure` en §11) ;
+- **full support** = les genres que la **spécification de destination** peut
+  porter ; la déclaration et sa citation sont dans `DESTINATIONS` du test ;
+- les tick sont projetés sur la timeline du destinataire : `<duration>`/`<type>`
+  MusicXML, `actualTicks()` MuseScore et les delta times SMF avancent en temps
+  **joué**, alors que les figures LilyPond/ABC avancent en temps **écrit**. Les
+  respirations sont comparées par genre et non par ancrage : MusicXML pose la
+  virgule sur une note (XSD `note`), MuseScore sur un segment dédié ;
+- `duration` ne contient que les composantes transportables : figure écrite,
+  durée jouée, ou les deux. Les césures d'exécution insérées par la projection
+  aux barres `:`/`::` ne sont pas des respirations notées (`has_breath`,
+  `Gabc.tex:812-820`) et ne comptent pas comme fait `breath`.
+
+Le test n'échoue jamais sur un pourcentage : il imprime le tableau et ne panique
+que sur un corpus ou une lecture cassée.
+
+### 14.2 Résultats par destination
+
+« Avant » = première mesure de la campagne (instrument en place, avant les
+correctifs ci-dessous). La définition de `breath` a été affinée en cours de
+campagne (exclusion des césures d'exécution) : les totaux de référence passent
+de 2 524 à 2 489 items, mais les deux colonnes sont des mesures honnêtes du
+même corpus.
+
+| Destination | Essential avant | Full avant | Essential après | Full après |
+| --- | ---: | ---: | ---: | ---: |
+| musicxml (standard) | 30.49 % | 40.17 % | **100.00 %** | **100.00 %** |
+| mxl (standard) | 30.49 % | 40.17 % | **100.00 %** | **100.00 %** |
+| mscx | 65.66 % | 68.46 % | **100.00 %** | **100.00 %** |
+| mscz | 65.66 % | 68.46 % | **100.00 %** | **100.00 %** |
+| lilypond | 23.88 % | 30.39 % | **95.59 %** | **90.72 %** |
+| abc | 23.60 % | 30.86 % | **100.00 %** | **99.96 %** |
+| midi | 17.45 % | 28.03 % | **94.40 %** | **95.53 %** |
+| musicxml (champs privés `gabc:`) | — | — | 100.00 % | 100.00 % |
+| midi (`smf_text`) | — | — | 94.40 % | 96.30 % |
+
+Les deux dernières lignes sont **additives** : la première montre ce que les
+champs privés restaurent (L6 → vue dérivée), la seconde active les méta-textes
+SMF standard `FF 03`/`FF 06`. Aucune n'est la mesure par défaut.
+
+### 14.3 Chaque résidu : porteur ou perte propre au format
+
+| Destination | Genre résiduel | Porteur dans la spec | Décision |
+| --- | --- | --- | --- |
+| musicxml / mxl | aucun | `<type>`/`<duration>` (`format-ref/musicxml.md` §Units and time encoding), `<accidental>`, `<syllabic>`, `<bar-style>`, `<breath-mark>`, `<tenuto>`, `<inverted-mordent>`, `<clef>`, `<work>` (§Document shape, §Pitch accidentals, §Notes, §Repeats directions lyrics) | corrigé : le lecteur garde `<duration>` dans `ticks` quand il diffère de `<type>` ; l'écrivain avance son curseur de la figure notée, sans décaler les attaques ; `<breath-mark>` est enveloppé dans `<articulations>` (XSD `group:articulation`) |
+| mscx / mscz | aucun | `<durationType>`/`<dots>`/`<duration>`, `<Breath>`, `<Articulation>`, `<Ornament>`, `<Lyrics>`, `<Clef>`, `metaTag` (`format-ref/musescore.md` §Section index ; `mscx-format.md` §3, §5, §7, §10, §13, §18) | corrigé : `fillGap` ne remplace jamais un accord existant ; respirations, tenuti et ornements écrits et relus |
+| lilypond | `lyric` 182 | `--`/`_` et `\lyricsto` (`format-ref/lilypond.md` §Repeats and lyrics ; Notation §9.1.2–9.1.8) | **perte propre au format** : ces jetons encodent hyphenation/mélisme, pas les valeurs `begin`/`middle`/`end` de la projection ; le texte et l'alignement des syllabes sont conservés |
+| lilypond | `bar` 48 | `\bar` et l'ensemble fixe de barres (`format-ref/lilypond.md` §Durations, ticks, bars ; Notation §2.5.1–2.5.5) | **perte propre au format** : `tick` et `short` (gabctk `Barre.abc`) n'ont pas de glyphe standard ; `\defineBarLine` (Notation §5) casserait les lecteurs tiers. `End`, `Double`, `Dotted` sont portés et corrigés |
+| lilypond | `accidental` 1 | altérations pilotées par l'état (Notation §1.3.5) | **perte propre au format** : un signe déjà actif dans la mesure n'est pas réécrit ; la hauteur sonore reste exacte |
+| abc | `accidental` 1 | `_`/`=`/`^` et état par mesure (`format-ref/abc.md` §4.2) | **perte propre au format**, même cause |
+| abc | aucun autre | `L:`/`A3`, `!shortphrase!`, `!mediumphrase!`, `!tenuto!`, `P` (`format-ref/abc.md` §4.3, §4.14, §5) | corrigé : figures écrites, marques de phrase → `Tick`/`Short` et respiration, lecture des barres `[|]` |
+| midi | `clef`, `bar`, `accidental`, `breath`, `episema`, `quilisma` | aucun objet SMF (`format-ref/midi.md` §Container layout, §Meta-event types, §Instruments parts repeats) | **perte propre au format**, exclue de la déclaration : ni barre, ni clé, ni signe noté, ni ornement dans un `MTrk` |
+| midi | `pitch`, `lyric` (tick) | aucun tick **écrit** : seuls des delta times de rendu (§Container layout, §Events and time) | comparaison sans ancrage : les hauteurs et les syllabes sont portées (Note On/Off, `FF 05` RP-017), mais pas à la position écrite |
+| midi | `lyric` 1 | RP-017 : une syllabe par méta, espace final = fin de mot (`format-ref/midi.md` §Lyrics) | **perte propre au format** : pas de marqueur `begin`/`middle`/`end`, seul le texte est comparable |
+| midi | `duration` 86 | Note On/Off + `FF 51` (§Events and time, §Meta-event types) et quantification de l'importeur (`docs/agents/midi.md` §Measured limits) | **perte propre au format** pour le comparateur : la porte `NoteOff = NoteOn + durée - 1` et la quantification au 1/16 arrondissent 1,5 noire sur quelques attaques |
+| midi | `title` 18 | `FF 03` nom de séquence, `FF 01` textes (§Meta-event types) | porté, mais **opt-in** : `MidiOptions::smf_text` (`false` par défaut) ; la ligne `midi (smf_text)` mesure 96.30 % au lieu de 95.53 % |
+
+Aucun pourcentage n'a été relevé en excluant un genre déclaré : seuls les genres
+que la spec ne porte pas sont hors déclaration, et chacun est cité ci-dessus.
+
+### 14.4 Porteurs de neumes : proposition et mesure
+
+| Destination | Porteur possible | Mesure / décision |
+| --- | --- | --- |
+| MusicXML 4.0 | `<other-notation type="single" smufl="chant…"/>` : XSD 4.0 `complexType other-notation` — l'attribut `smufl` « permet l'interopérabilité applicative » ; noms du registre SMuFL officiel (`chantPunctum`, `chantQuilisma`, `chantEpisema`, `chantIctusAbove`, `chantOriscusAscending`, `chantPunctumVirga`, `chantDeminutumLower`, `chantPunctumInclinatum`) | **implémenté, opt-in** (`Options::gabc_neume_smufl`). `musicxml_smufl_neume_carrier_is_opt_in` mesure **1028/1028 glyphes**, 1 à 8 familles distinctes par chant, aucun champ `gabc:` ajouté, sortie par défaut inchangée |
+| MuseScore `.mscx` | aucun emplacement documenté pour des données arbitraires : le format est une grammaire fermée (`format-ref/musescore.md` « routing layer », `mscx-format.md` §2, §17) | **non implémenté** : insérer un élément inconnu dans `<Chord>` n'est pas un contrat et peut être perdu par MuseScore. Les faits non musicaux restent dans les champs privés MusicXML quand le consommateur est scoretk |
+| LilyPond | `GregorianTranscriptionStaff`, `\germ`, vaticana (`format-ref/lilypond.md` §Durations… ; Notation Reference §17.4 « Typesetting Gregorian chant ») | **proposé, non implémenté** : ce serait une sortie optionnelle et un dialecte que les lecteurs standards ne reconstruisent pas ; le chant reste noté en `\fixed` avec `--`, `\prall`, `\breathe` (porteurs standard) |
+
+### 14.5 Ce qui a été corrigé dans les écrivains et lecteurs
+
+- MusicXML lecture : `<duration>` distinct de `<type>` conservé dans
+  `ChordRest::ticks` (XSD 4.0 permet le désaccord des deux) ;
+- MusicXML écriture : curseur du fichier avancé de la figure notée, pour que les
+  `<backup>` calculés contre un lecteur qui suit `<type>` ne décalent pas les
+  attaques ; `<breath-mark>` dans `<articulations>` ;
+- noyau `gap_rests::fill` : `add_gap_rest` ne remplace jamais un accord déjà
+  présent (une durée jouée plus longue que la figure faisait croire à un
+  chevauchement et écrasait les notes suivantes) ;
+- LilyPond écriture : figures notées pour le chant (pas de `*n/d` par défaut),
+  `\breathe` aux divisio minima/minor ; lecture : `\bar` → `end_bar_line` ;
+- ABC écriture : figures `L:` notées ; lecture : `!shortphrase!` /
+  `!mediumphrase!` → barre `Tick`/`Short` et respiration, y compris sur `[|]` ;
+- MIDI : mesure sans tick (SMF n'en a pas) et ligne `smf_text` additive.
