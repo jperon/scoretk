@@ -1257,15 +1257,18 @@ test before each fix and a C++/spec citation in the code.
 | Direction | Declared | Before (§11.6) | After | Missing |
 | --- | --- | ---: | ---: | ---: |
 | mscx / mscz | L0–L6 | 99.51 % | **100.00 %** | 0 / 6 310 |
-| musicxml / mxl (round trip) | L0–L5 | 95.44 % | **98.81 %** | 70 / 5 879 |
-| musicxml / mxl (import `*.ref.musicxml`) | L0–L5 | 95.44 % | **98.81 %** | 70 / 5 879 |
+| musicxml / mxl (round trip, (a) default export = 4.7.4 parity) | L0–L5 | 95.44 % | **99.01 %** (2026-11-26) | 58 / 5 879 |
+| musicxml / mxl (round trip, (b) `xml_full_support`, **HEADLINE**, XSD only) | L0–L5 | 95.44 % | **99.90 %** (2026-11-26) | 6 / 5 879 |
+| musicxml / mxl (round trip, (c) `xml_lossless_round_trip`, SECONDARY) | L0–L5 | — | **99.83 %** (2026-11-26) | 10 / 5 879 |
+| musicxml / mxl (import `*.ref.musicxml`) | L0–L5 | 95.44 % | **99.01 %** (2026-11-26) | 58 / 5 879 |
 
 The `XML_OUT_OF_REACH` table and the carrier-limited row have been removed:
 a table that excludes exactly the current failures is not a measurement.
 Every item remains in the denominator. The kind-by-kind audit against the
-MusicXML 4.0 XSD is in `docs/agents/musicxml-export.md` §53; only
-`text-line` and `tremolo-bar` have no element in the specification, and they
-were **not** removed from the figure. The 63 v3 title-frame style values are
+MusicXML 4.0 XSD is in `docs/agents/musicxml-export.md` §53; the earlier
+claim that `text-line` and `tremolo-bar` have no element was wrong — see
+§55 for their standard carriers. No kind was removed from the figure.
+The 63 v3 title-frame style values are
 now recovered from the `<defaults>` page margins (an additive reader fix, no
 reference file changed), the nested tuplets from `<tuplet-actual>`, the
 harmony text from `<root>`/`<kind>`/`<bass>`, and the frame text line breaks
@@ -1279,6 +1282,32 @@ by either format; §11.8 remains the honest with/without figure for ABC and
 LilyPond, unchanged by this campaign. `cargo test --workspace`, clippy
 `-D warnings`, `fmt --check`, `e2e_corpus` 8/8 and the `scoretk-wasm` build
 were green after each commit.
+
+**Update (2026-11-26, corrected).** The 100 % claim in §54 relied on
+`scoretk-*` attributes and elements **outside** the MusicXML 4.0 XSD; such a
+fact is a loss in the headline. A first correction moved those carriers into
+the default export and re-baselined the parity tests: that broke the 4.7.4
+byte-fidelity invariant and was reverted. The current state has three
+clearly labelled lines (see `docs/agents/musicxml-export.md` §55):
+
+- **(a) default export** — unchanged MuseScore 4.7.4 bytes, 99.01 %;
+- **(b) `xml_full_support`** — standard XSD carriers only, no private
+  attribute or element; **99.90 % is the figure we report**;
+- **(c) `xml_lossless_round_trip`** — private, secondary, 99.83 %.
+
+Lines (a) and (b) were both validated on all 56 corpus files with
+`xmllint --schema` against `musicxml-4.0.xsd`: **56/56 valid each**. The
+`text-line` and `tremolo-bar` kinds are back in `XML_ITEM_KINDS` (standard
+carriers `xsd:dashes` / `xsd:bracket` + `xsd:words`, and `xsd:bend` /
+`xsd:with-bar`). Seventeen of the 23 original losses of line (b) were
+recovered with standard carriers; six remain, declared kind by kind with an
+XSD citation in §55: one hairpin whose start tick has no chord in its voice,
+labelled user marks/jumps (4) and two concert keys in one part (1) have no
+generic carrier. No kind was
+removed from the denominator, no comparison key was relaxed and every parity
+test passes against the unchanged 4.7.4 expectations (`e2e_corpus` 8/8). The
+`*.ref.musicxml` import row stays at **99.01 %** because MuseScore 4.7.4
+omits those facts from its own references.
 
 ### 11.11 Honest interoperability after the ABC/LilyPond standard-carrier campaigns (2026-11-25)
 

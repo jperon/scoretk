@@ -1744,11 +1744,166 @@ peut alors être déclaré hors de la couverture du format, sans table de fichie
 | `tremolo-bar` | 1 | 1 | aucun élément de barre de trémolo de guitare (`xsd:tremolo` est le trémolo mesuré) | **hors format** |
 | `ottava`, `pedal`, `trill`, `tempo`, `title`, `barline-end` | 1 chacun | 1 chacun | `xsd:octave-shift`, `xsd:pedal`, `xsd:trill-mark`, `xsd:sound@tempo`, `xsd:work-number`, `xsd:bar-style` | porté |
 
-Deux kinds seulement (`text-line`, `tremolo-bar`, soit 4 items) n'ont aucun
-carrier dans la XSD 4.0. Les 66 autres restent dans le dénominateur : la
-mesure de 98.81 % n'exclut aucun item, aucun fichier et aucune catégorie.
-Atteindre 99,9 % sur cette ligne demanderait de corriger 65 pertes supplémentaires
-(essentiellement des valeurs de layout recalculées par MuseScore et des
-directions invisibles que la référence 4.7.4 n'écrit pas), ou de changer
-l'oracle — ce qui n'a pas été fait ici.
+Deux kinds seulement (`text-line`, `tremolo-bar`) n'ont aucun carrier dans la
+XSD 4.0. Les 66 autres restaient dans le dénominateur : la mesure de 98,81 %
+n'excluait aucun item, aucun fichier et aucune catégorie.
 
+## 54. Campagne 99,9 % (2026-11-26) — extension additive et couverture complète
+
+> **Superseded by §55.** The 100 % figure below uses non-XSD `scoretk-*`
+> carriers and excludes two kinds; it is not the headline. Section 55 keeps
+> the default export byte-faithful to 4.7.4, reports the standard-XSD figure
+> under `xml_full_support`, and lists the residual losses.
+
+Une option **additive** `ExportOptions::lossless_round_trip` (facade
+`Options::xml_lossless_round_trip`) est ajoutée. Elle vaut `false` par défaut :
+les octets produits restent ceux de MuseScore 4.7.4, vérifiés par `e2e_corpus`
+8/8 et les tests de parité. Quand elle vaut `true`, l'export n'écrit que les
+valeurs réellement portées par le modèle au lieu de valeurs de mise en page
+déduites ; les faits sans carrier XSD sont transportés par des attributs ou
+éléments privés (`scoretk-vbox-height`, `scoretk-no-trim`, `scoretk-end`,
+`scoretk-concert-fifths`, `scoretk-marker-*`, `scoretk-jump-*`). Le lecteur les
+reconnaît sans changer son API. C'est une extension 4.7.4+, pas une
+modification de la référence.
+
+Les tests de couverture de `crates/scoretk/tests/layer_coverage.rs` mesurent la
+ligne MusicXML avec cette option activée (`xml_measurement_options`), tandis
+que la ligne d'import lit les `*.ref.musicxml` 4.7.4 tels quels.
+
+| Ligne | Avant | Après | Items manquants |
+| --- | ---: | ---: | ---: |
+| Aller-retour `model → MusicXML → model` | 98,81 % | **100,00 %** | 0 / 5 871 |
+| Import `*.ref.musicxml` | 98,81 % | **99,01 %** | 58 / 5 871 |
+
+Le dénominateur passe de 5 879 à 5 871 : seuls les deux kinds sans carrier
+sont sortis de la déclaration (`XML_ITEM_KINDS` dans `scoretk-xml-common`),
+soit 7 items `text-line` et 1 `tremolo-bar`. Aucun fichier, aucune catégorie
+ayant un carrier et aucune clé de comparaison n'a été exclu ; le test
+`xml_declaration_ne_retire_que_les_kinds_sans_carrier` le vérifie.
+
+Corrections par ordre d'importance (toutes avec test réduit écrit avant le
+correctif et citation C++/XSD dans le code) :
+
+| Cause | Items | Correctif |
+| --- | ---: | --- |
+| Barres `dashed`/`short` et barres par portée | 4 | lecture `barline.rs` (alias C++ `DASHED = BROKEN`, `createBarline`) |
+| Crédits (taille de police et hauteur de cadre déduites) | 10 | option additive + `scoretk-vbox-height` |
+| Hampes calculées ≠ direction stockée | 8 | écriture de la valeur du modèle en mode complet |
+| N-olets 1:1 sans base | 6 | `<tuplet-actual>/<tuplet-normal>` même pour un n-olet simple |
+| Chiffrages vides / harmonies sur la seconde portée | 4 | `<figure>` vide et `<staff>` XSD |
+| Rupture sur la dernière mesure | 3 | `<print new-system scoretk-own>` |
+| Textes multi-lignes et entités (`credit`, `title`, `staff-text`) | 5 | marqueurs privés et concaténation des `<words>` |
+| Soufflets et trilles à durée tronquée | 3 | `scoretk-end` sur `<wedge>`/`<wavy-line>` |
+| Armures concert, marqueurs `User`, doubles portées | 8 | attributs privés sur `<key>`/`<sound>` |
+| ToCoda : cible de coda prise pour l'étiquette | 2 | lecture de l'étiquette depuis le texte (`getMarkerId`) |
+
+La ligne d'import plafonne à 99,01 % **sans aucune exclusion** : les 58 items
+restants sont des faits que MuseScore 4.7.4 n'écrit pas dans ses propres
+références (directions invisibles, hauteur de cadre, hampes calculées, armure
+concert), ou les 7+1 items sans carrier. L'extension additive ne peut pas les
+récupérer d'un fichier qui ne les contient pas ; seul l'aller-retour peut être
+mené à 100 %.
+
+
+## 55. Three labelled export modes and the standard-XSD headline (2026-11-26)
+
+Invariant 2 requires the **default** MusicXML export to stay byte-faithful to
+the `*.ref.musicxml` references produced by MuseScore 4.7.4. Every new carrier
+that changes bytes is therefore opt-in. There is exactly one switch for the
+standard carriers: `ExportOptions::full_support` (facade
+`Options::xml_full_support`, CLI `--xml-full-support`), default `false`.
+The older `ExportOptions::lossless_round_trip` (facade
+`Options::xml_lossless_round_trip`) remains a separate, secondary, private
+extension. An earlier revision of this section had re-baselined the parity
+tests (`texts_corpus.rs`, `credits_corpus.rs`, `noyau_corpus.rs`,
+`lecture.rs`, `aller_retour.rs`, `e2e_corpus.rs`) to make those byte changes
+pass; all of those edits were reverted and the tests now pass against the
+unchanged 4.7.4 expectations. **No parity expectation was relaxed.**
+
+`layer_coverage.rs` prints three clearly labelled lines for `musicxml` and
+`mxl`:
+
+| Line | Option | Meaning | Round trip |
+| --- | --- | --- | ---: |
+| (a) `parity` | `Options::default()` | Bytes identical to MuseScore 4.7.4; no carrier beyond its export | 99.01 % (58 / 5 879) |
+| (b) `HEADLINE` | `xml_full_support` | **Standard MusicXML 4.0 XSD carriers only**; no `scoretk-*` attribute or element | **99.90 % (6 / 5 879)** |
+| (c) `SECONDARY` | `xml_lossless_round_trip` | Private extensions, reported for information only | 99.83 % (10 / 5 879) |
+
+The reported coverage figure is line **(b)**; it improved from 99.61 % to
+**99.90 %** by writing invisible directions with their standard carriers,
+keeping hairpin lines as `xsd:wedge`, and anchoring a trill's
+`<wavy-line type="stop">` at its end tick — all without changing a single
+default byte. The
+`*.ref.musicxml` import line stays at 99.01 % (58 / 5 879): those facts are
+absent from MuseScore's own reference files and cannot be recovered by any
+writer. Essential (notes + measures) is 99.83 % on both round-trip lines.
+No kind was removed from the denominator (`XML_ITEM_KINDS` keeps `text-line`
+and `tremolo-bar`) and no comparison key was changed.
+
+### XSD 4.0 validation of both exported modes
+
+`scripts/oracle/musicxml/valide-corpus.sh --cli target/debug/scoretk` exports
+all 56 `.mscx` files twice and validates each set with `xmllint --schema`
+against the normative `musicxml-4.0.xsd` through the local XML catalog:
+
+```
+(a) default export, MuseScore 4.7.4 parity: 56/56 valid, 0 invalid, 0 export failures
+(b) xml_full_support, standard XSD only: 56/56 valid, 0 invalid, 0 export failures
+```
+
+### Standard carriers enabled by `full_support`
+
+| Fact | MusicXML 4.0 carrier |
+| --- | --- |
+| Text line and its end, including invisible lines | `xsd:direction-type/xsd:dashes`, `xsd:bracket`, `xsd:words`, `xsd:offset` |
+| Tremolo / whammy bar | `xsd:notations/xsd:technical/xsd:bend`, `xsd:bend-alter`, `xsd:with-bar` |
+| Marks and jumps | `xsd:sound@segno`, `@coda`, `@fine`, `@tocoda`, `@dalsegno`, `@dacapo`, `xsd:segno`, `xsd:coda`, `xsd:words` |
+| Credit text, line breaks, literal entities, inherited size | `xsd:credit-words` raw text, `xml:space="preserve"`, XML escaping, optional `font-size` |
+| Vertical frame height | repeated `xsd:credit-type` (free `xs:string`), `vbox-height=…` |
+| Stem direction held by the model | optional `xsd:stem` (absence means `Auto`) |
+| 1:1 tuplet base length | `xsd:tuplet-actual` / `xsd:tuplet-normal` |
+| Empty figured bass | `xsd:figured-bass/xsd:figure`, empty `<figure/>` |
+| Harmony on a secondary staff | `xsd:harmony/xsd:staff` (`xs:positiveInteger`) |
+| Line break on the last measure | `xsd:print@new-system="yes"` |
+| Invisible note | `xsd:note@print-object="no"` |
+| Multi-line work number | `xsd:work-number` (`xs:string`) |
+
+Line (a) keeps MuseScore's derived credit font sizes, the computed stem, the
+negative spanner-stop offset, and omits the empty `<figure/>`, the secondary
+`<harmony><staff>`, the last-measure `<print>` and `print-object="no"` on
+invisible notes. The secondary private mode keeps the `scoretk-vbox-height`,
+`scoretk-no-trim`, `scoretk-own`, `scoretk-concert-fifths`, `scoretk-marker-*`
+and `scoretk-jump-*` carriers; it is not used for the headline.
+
+### Residual losses in line (b), kind by kind
+
+Seventeen of the original 23 items were recovered with standard carriers:
+invisible `dynamic` (3), `dynamic-velocity` (3), `staff-text` (1) and `tempo`
+(1) are written as ordinary `xsd:direction`s because `full_support` makes the
+model's hidden annotations writable; the four `note` items and the `ottava`
+(1) and `pedal` (1) items are recovered by the corrected spanner stops; the
+two `hairpin` items in `testHairpinDynamics` are recovered by writing hairpin
+lines as `xsd:wedge` rather than `<dashes>`; and the `trill` (1) now puts its
+`<wavy-line type="stop">` on the chord at the end tick (the reader matches
+start and stop by number). An earlier intermediate figure of 99.91 % used
+`scoretk-end` on `<wedge>` in `full_support`; the XSD check rejected it, so
+that private attribute is no longer emitted outside the secondary mode.
+
+Six items remain:
+
+- **hairpin (1)** — `v3/testWedge4` has a hairpin in a voice whose start tick
+  (7/4) has no chord: the writer reaches that voice only at the next segment
+  (2/1), where the stop is emitted, so neither `<wedge type="start">` nor a
+  standard `<offset>` can anchor the model's exact span. `xsd:wedge@type`
+  exists, but the port's per-voice position cannot carry it yet. This is the
+  one remaining item where the XSD has a carrier and the writer is the limit.
+- **marker (2), jump (2)** — `v3/repeat20` uses `MarkerType::User` /
+  `JumpType::User` with a label; `xsd:sound` defines only `segno`, `coda`,
+  `fine`, `tocoda`, `dalsegno` and `dacapo`. `v4/repeat69` links marks on
+  another part's staff; `xsd:direction/xsd:staff` is part-local. No generic
+  standard carrier for these four items.
+- **key-sig (1)** — `v4/part-textlines` has two differently transposed staves
+  in one part; `xsd:transpose` has no `number` attribute, so one part cannot
+  carry two concert keys. No standard carrier for this item.
+
+Nothing was removed from the denominator to obtain these figures.
