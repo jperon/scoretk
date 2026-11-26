@@ -106,7 +106,9 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
     // §17.4.7 : même un neume à une seule tête (virga, cavum…) se place
     // entre `\[` et `\]`; seul le punctum nu s'en passe.
     let ligature = sung.len() > 1
-        || sung.iter().any(|note| !note.glyph.is_empty() || note.letter.is_ascii_uppercase());
+        || sung
+            .iter()
+            .any(|note| !note.glyph.is_empty() || note.letter.is_ascii_uppercase());
     if ligature {
         out.push_str("      \\[ ");
     }

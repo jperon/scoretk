@@ -20,7 +20,8 @@
 
 use scoretk::{read, write, Format, Options};
 
-const GABC: &str = "name: Veni Sancte Spiritus;\nlanguage: latin;\nmode: 2;\n%%\n(c3)\nVE(g.)ni(h') (,)\n";
+const GABC: &str =
+    "name: Veni Sancte Spiritus;\nlanguage: latin;\nmode: 2;\n%%\n(c3)\nVE(g.)ni(h') (,)\n";
 
 /// A standard MusicXML document: no `gabc:` element at all. The SMuFL chant
 /// glyph, the clef and a `miscellaneous-field` are the only carriers.
@@ -49,8 +50,14 @@ fn smufl_chant_glyph_is_a_standard_musicxml_carrier() {
     let gabc = write(&score, Format::Gabc, &Options::default()).expect("GABC export");
     let text = String::from_utf8(gabc).expect("UTF-8");
     assert!(text.contains("w"), "quilisma lost: {text}");
-    assert!(text.contains("office-part: Communio"), "header lost: {text}");
-    assert!(text.contains(" :: ") || text.contains("(::)"), "final bar lost: {text}");
+    assert!(
+        text.contains("office-part: Communio"),
+        "header lost: {text}"
+    );
+    assert!(
+        text.contains(" :: ") || text.contains("(::)"),
+        "final bar lost: {text}"
+    );
     assert!(!text.contains("gabc:"), "private field invented: {text}");
 }
 

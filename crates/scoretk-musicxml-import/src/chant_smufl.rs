@@ -254,7 +254,9 @@ impl Reader {
 /// les formes composées restent donc hors de portée de ce seul attribut.
 fn glyph_from_smufl(name: &str) -> Option<(&'static str, bool)> {
     match name {
-        "chantQuilisma" | "chantQuilismaAscending" | "chantQuilismaDescending" => Some(("w", false)),
+        "chantQuilisma" | "chantQuilismaAscending" | "chantQuilismaDescending" => {
+            Some(("w", false))
+        }
         "chantIctusAbove" | "chantIctusBelow" => Some(("'", false)),
         "chantEpisema" => Some(("_", false)),
         "chantPunctumVirga" | "chantVirga" => Some(("v", false)),

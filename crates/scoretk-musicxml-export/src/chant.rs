@@ -341,10 +341,15 @@ pub(crate) fn write_note_signs(
     if standard_attributes && !note.attributes.is_empty() {
         // XSD 4.0 `other-technical` (`other-placement-text`, xs:string) :
         // porteur standard d'un texte d'extension, lisible par un tiers.
-        out.xml.start_element("notations", &[("print-object", "no")]);
+        out.xml
+            .start_element("notations", &[("print-object", "no")]);
         out.xml.start_element("technical", &[]);
         for attribute in &note.attributes {
-            out.xml.tag_with("other-technical", &[("print-object", "no")], &attribute.text);
+            out.xml.tag_with(
+                "other-technical",
+                &[("print-object", "no")],
+                &attribute.text,
+            );
         }
         out.xml.end_element();
         out.xml.end_element();
