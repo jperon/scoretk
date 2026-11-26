@@ -34,9 +34,12 @@
 //! when `nabc_lines == 0`, with the message "You used character \"|\" in gabc
 //! without setting \"nabc-lines\" parameter" (`gabc-score-determination.y:870-907`).
 //! The cut cycles the state modulo `nabc_lines+1`
-//! (`gabc-score-determination.y:879,906`), so the declared count must be at
-//! least the greatest number of cuts in one group for the square snippets to
-//! be read as notes again after the manuscript ones.
+//! (`gabc-score-determination.y:879,906`): with `nabc-lines: 1` it therefore
+//! alternates square and manuscript snippets inside one group. GregoBase
+//! prepends exactly that declaration before rendering, so a headerless export
+//! is read with one line whatever the number of cuts in a group; inferring a
+//! larger count from a run of cuts would keep the state in NABC and sing the
+//! manuscript glyphs as square notes.
 //!
 //! The lexer emits `NABC_CUT` only in its `notes` state, between an opening
 //! `(` and the closing `)` (`gabc-score-determination.l:385-396`). A `|` in
@@ -46,12 +49,16 @@
 //! region (`:328-332`, `Gabc.tex:297-309`), so a pipe in those contexts cannot
 //! invent a NABC voice.
 
-/// Maximum number of unescaped `|` cuts in one parenthesised notation group,
-/// or 0 when the body has none.
+/// 1 when the body has at least one unescaped `|` cut inside a parenthesised
+/// notation group, 0 otherwise.
 ///
-/// Called only when the source has no `nabc-lines` header: an explicit header
-/// always wins, even `nabc-lines: 0;` (which Gregorio would reject on a cut,
-/// but which scoretk keeps as the author's declaration).
+/// GregoBase renders these bodies after prepending `nabc-lines: 1;`, so the
+/// cut alternates square and manuscript snippets
+/// (`gabc-score-determination.y:879,906`); the number of cuts in a group does
+/// not change the declaration. Called only when the source has no
+/// `nabc-lines` header: an explicit header always wins, even `nabc-lines: 0;`
+/// (which Gregorio would reject on a cut, but which scoretk keeps as the
+/// author's declaration).
 pub(super) fn detect_nabc_lines(body: &str) -> usize {
     // All the tokens tested below (`(`, `)`, `|`, `%`, `$`, newlines and the
     // `<v>`/`</v>` delimiters) are ASCII. Scanning bytes is therefore UTF-8
@@ -63,8 +70,6 @@ pub(super) fn detect_nabc_lines(body: &str) -> usize {
     let mut in_notes = false;
     let mut in_comment = false;
     let mut in_verbatim = false;
-    let mut current = 0;
-    let mut maximum = 0;
     while index < bytes.len() {
         let byte = bytes[index];
         if in_comment {
@@ -103,16 +108,16 @@ pub(super) fn detect_nabc_lines(body: &str) -> usize {
         }
         if byte == b'(' {
             in_notes = true;
-            current = 0;
         } else if in_notes && byte == b')' {
-            maximum = maximum.max(current);
             in_notes = false;
         } else if in_notes && byte == b'|' {
-            current += 1;
+            // One cut is enough: GregoBase declares one manuscript voice,
+            // and the state alternates at each further cut.
+            return 1;
         }
         index += 1;
     }
-    maximum
+    0
 }
 
 #[cfg(test)]
@@ -120,9 +125,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_maximum_of_one_group_wins() {
-        assert_eq!(detect_nabc_lines("(e|ta)f(gh|pi|to)"), 2);
+    fn any_cut_implies_the_single_voice_gregobase_declares() {
+        assert_eq!(detect_nabc_lines("(e|ta)f(gh|pi|to)"), 1);
         assert_eq!(detect_nabc_lines("(e|ta) f(gh|pi)"), 1);
+        // Seven cuts still alternate square and NABC with one declared line.
+        assert_eq!(
+            detect_nabc_lines("(ii//|bv-|gh!ivHG//|vi-hhppu2su1sut1|fhg/|to|eef.|pt)"),
+            1
+        );
         assert_eq!(detect_nabc_lines("(efgh)"), 0);
         assert_eq!(detect_nabc_lines(""), 0);
     }
@@ -143,7 +153,7 @@ mod tests {
     #[test]
     fn multibyte_text_and_escapes_keep_the_byte_scan_aligned() {
         let source = "岩(e|f) (g|h|i) é<v>x|y</v> $(j|k) $|(l|m)";
-        assert_eq!(detect_nabc_lines(source), 2);
+        assert_eq!(detect_nabc_lines(source), 1);
     }
 
     #[test]

@@ -66,8 +66,9 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
     // (`specs/gabc/gregobase/chant_img.php:48`) and Gregorio documents the
     // pattern in `doc/GregorioNabcRef.tex:153-170`. Gregorio rejects `|` when
     // the count is 0 (`gabc-score-determination.y:870-907`, VERBOSITY_FATAL),
-    // so infer the smallest safe value from the notation. An explicit header
-    // always wins, including `nabc-lines: 0;`.
+    // so infer that single voice when a cut is present, whatever the number
+    // of cuts in one group. An explicit header always wins, including
+    // `nabc-lines: 0;`.
     let nabc_lines = match headers.iter().find(|header| header.name == "nabc-lines") {
         Some(header) => header
             .value
