@@ -143,6 +143,9 @@ pub(crate) struct Parser<'a> {
     /// de ce forme : `music-map` applique la fonction à chaque événement et
     /// la musique résultante ne joue plus ses notes.
     skip_map_functions: BTreeSet<String>,
+    /// `accidental-glyphs-test.ily` a été inclus : son `\test` génère un
+    /// score (`add-score`) qu'il faut reproduire au niveau supérieur.
+    glyph_test_helper: bool,
     /// Identifiants de durée définis par `#(ly:make-duration …)` :
     /// durée de base et facteur de compression (`lily/duration-scheme.cc`).
     duration_identifiers: BTreeMap<String, (Duration, Fraction)>,
@@ -413,6 +416,7 @@ pub(crate) fn parse(
         tag_groups: default_tag_groups(),
         scheme_variables: BTreeMap::new(),
         skip_map_functions: BTreeSet::new(),
+        glyph_test_helper: false,
         duration_identifiers: BTreeMap::new(),
         numbers: BTreeMap::new(),
         quotes: BTreeMap::new(),
@@ -716,6 +720,16 @@ impl<'a> Parser<'a> {
             Kind::Command if token.text == "parallelMusic" => {
                 self.position += 1;
                 self.parse_parallel_music();
+            }
+            // Marqueur injecté par l'expansion de
+            // `accidental-glyphs-test.ily` (`lily/music-functions-init.ly`
+            // `define-scheme-function` + `add-score` dans ce fichier).
+            Kind::Command if token.text == "glyphTestHelper" => {
+                self.position += 1;
+                self.glyph_test_helper = true;
+            }
+            Kind::Command if token.text == "test" && self.glyph_test_helper => {
+                self.parse_glyph_test();
             }
             Kind::Word => {
                 // Assignation `nom = musique`, y compris les noms pointés
@@ -2759,6 +2773,58 @@ impl<'a> Parser<'a> {
         let music = self.parse_music();
         self.music_functions.remove(&name);
         self.variables.insert(name, music);
+    }
+
+    /// Score généré par `\test` de `accidental-glyphs-test.ily`.
+    ///
+    /// Le fichier inclus définit `test` par un `define-scheme-function` :
+    /// `add-score` y construit un `\score` avec sept notes dans une portée et
+    /// une dans `ChordNames` (le `NoteNames` n'a pas de performer MIDI). La
+    /// fonction reçoit `(string? exact-rational? boolean?)` : seule
+    /// l'altération change la hauteur. LilyPond la donne à `ly:make-pitch` en
+    /// tons entiers et `ly:pitch->midi` arrondit au demi-ton le plus proche,
+    /// les demis allant au pair (`-1/4` joue donc do, `1/2` do dièse).
+    fn parse_glyph_test(&mut self) {
+        self.position += 1; // `\test`
+        let Some(glyph) = self.bump() else {
+            return;
+        };
+        if glyph.kind != Kind::Str {
+            return;
+        }
+        let Some(datum) = self.bump() else {
+            return;
+        };
+        if !datum.is_scheme() {
+            return;
+        }
+        let Some(alteration) = scheme_rational(&datum.text) else {
+            return;
+        };
+        if !self.peek().is_some_and(Token::is_scheme) {
+            return;
+        }
+        self.position += 1; // `##t` / `##f` : valeur de markup seulement
+        let semitones = (alteration * 2.0).round_ties_even() as i32;
+        let name = match semitones {
+            -2 => "cff",
+            -1 => "cf",
+            0 => "c",
+            1 => "cs",
+            2 => "css",
+            _ => return,
+        };
+        // `\fixed c` place `c'` à do central (MIDI 60) : la basse écrite est
+        // `c'` et la haute `c''`, comme dans le score généré par `add-score`.
+        let low = format!("{name}'");
+        let high = format!("{name}''");
+        let source = format!(
+            "\\language \"english\"\n\\score {{ << \\new Staff {{ \\fixed c {{ {low}4 {high}4 \
+             r4 {high}4 r4 {high}4 r4 r4 {high}2 {high}2 {high}2 }} }} \
+             \\new ChordNames {{ \\fixed c {{ {high}2 }} }} >> }}\n"
+        );
+        self.tokens
+            .splice(self.position..self.position, crate::lexer::tokenize(&source));
     }
 
     /// `\parallelMusic voix… { musique }` : découpe la musique aux contrôles de
@@ -7086,6 +7152,25 @@ fn scheme_music_definition(datum: &str) -> Option<(String, String)> {
     Some((name, body))
 }
 
+/// Nombre rationnel Scheme (`#1/2`, `#-1/4`, `#8/9`) lu comme `f64`.
+///
+/// Le lexeur retire le `#` initial des jetons `Kind::Scheme`.
+fn scheme_rational(datum: &str) -> Option<f64> {
+    let text = datum
+        .trim()
+        .trim_start_matches('#')
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim();
+    if let Some((numerator, denominator)) = text.split_once('/') {
+        let numerator: f64 = numerator.parse().ok()?;
+        let denominator: f64 = denominator.parse().ok()?;
+        (denominator != 0.0).then_some(numerator / denominator)
+    } else {
+        text.parse().ok()
+    }
+}
+
 /// Nom d'une fonction Scheme qui transforme un événement en `SkipEvent`.
 ///
 /// `music-map.ly` définit `#(define (notes-to-skip m) … (make-music 'SkipEvent
@@ -9094,6 +9179,7 @@ mod tests {
             tag_groups: default_tag_groups(),
             scheme_variables: BTreeMap::new(),
         skip_map_functions: BTreeSet::new(),
+        glyph_test_helper: false,
             duration_identifiers: BTreeMap::new(),
             numbers: BTreeMap::new(),
             quotes: BTreeMap::new(),
@@ -9154,6 +9240,7 @@ mod tests {
                 tag_groups: default_tag_groups(),
                 scheme_variables: BTreeMap::new(),
         skip_map_functions: BTreeSet::new(),
+        glyph_test_helper: false,
                 duration_identifiers: BTreeMap::new(),
                 numbers: BTreeMap::new(),
                 quotes: BTreeMap::new(),

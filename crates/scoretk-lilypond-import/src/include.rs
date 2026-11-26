@@ -64,6 +64,7 @@ const FICHIERS_LILYPOND: &[&str] = &[
     "scale-definitions-init.ly",
     "script-init.ly",
     "string-tunings-init.ly",
+    "accidental-glyphs-test.ily",
     // Gammes et modes hors du sous-ensemble (makam, maqam, percussions).
     "arabic.ly",
     "bagpipe.ly",
@@ -233,6 +234,19 @@ impl Expander<'_> {
                     // `ssaattbb-template-with-all-staves`).
                     if text == "satb.ly" || text == "ssaattbb.ly" {
                         injecter_score_gabarit(&mut self.tokens, line, column);
+                    } else if text == "accidental-glyphs-test.ily" {
+                        // `accidental-glyphs-test.ily` définit `test` par un
+                        // `define-scheme-function` qui **ajoute un score**
+                        // (`add-score`) avec sept notes de portée et une de
+                        // `ChordNames` (vérifié sur LilyPond 2.27). Le lecteur
+                        // ne marque pas ce fichier comme « musique ignorée » :
+                        // il mémorise l'appel pour produire ce score.
+                        self.tokens.push(Token {
+                            kind: Kind::Command,
+                            text: "glyphTestHelper".to_owned(),
+                            line,
+                            column,
+                        });
                     } else {
                         self.warnings.mark_music_ignored();
                     }

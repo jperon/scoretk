@@ -10088,3 +10088,26 @@ fn music_map_vers_skip_ne_joue_pas_les_notes() {
     let score = read_lilypond(source).expect("lecture");
     assert_eq!(hauteurs(&score), vec![72, 77]);
 }
+
+/// `accidental-glyphs-test.ily` définit `\test` comme une fonction Scheme qui
+/// `add-score` un `\score` avec sept notes de portée et une de `ChordNames`
+/// (vérifié avec LilyPond 2.27 sur `alteration-glyphs.ly`). L'altération est
+/// en tons, arrondie au demi-ton par `ly:pitch->midi`.
+#[test]
+fn test_des_glyphes_genere_le_score_de_reference() {
+    let source = "\\version \"2.24.0\"\n\
+        \\include \"accidental-glyphs-test.ily\"\n\
+        \\test \"accidentals.sharp\" #1/2 ##f\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(
+        hauteurs(&score),
+        vec![61, 73, 73, 73, 73, 73, 73, 73]
+    );
+    let quart = "\\version \"2.24.0\"\n\
+        \\include \"accidental-glyphs-test.ily\"\n\
+        \\test \"accidentals.flat\" #-1/4 ##t\n";
+    assert_eq!(
+        hauteurs(&read_lilypond(quart).expect("lecture")),
+        vec![60, 72, 72, 72, 72, 72, 72, 72]
+    );
+}
