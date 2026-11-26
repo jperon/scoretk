@@ -1907,3 +1907,25 @@ Six items remain:
   carry two concert keys. No standard carrier for this item.
 
 Nothing was removed from the denominator to obtain these figures.
+
+## 56. GABC default export regression restored (2026-11-26)
+
+The default MusicXML bytes written for the nine Gregorio examples are
+**identical on master and on this branch**: the regression was introduced by
+the reader, in commit `f129046a` (`barline.rs`, `barline_type`). Mapping every
+`<bar-style>tick|short</bar-style>` to a normal barline with an extension
+follows MuseScore's `createBarline`, but it erased the `Tick`/`Short` subtypes
+that `Gregorian::build_derived_score` puts on chant separation bars. The
+`gabc_to_formats_loss_diagnostic` test showed 17 lost `bar` items on the first
+example, and `gabc_to_formats_table` fell to 95.59 % / 98.07 % on both
+`musicxml (standard)` and `mxl (standard)`.
+
+The reader now keeps the new metrical mapping (`Normal` + span on every staff,
+and `dashed` → `Dashed`), but restores master's `Tick`/`Short` mapping when
+`xsd:time/xsd:senza-misura` is in effect — the standard XSD carrier that marks
+a score without metric measure. The nine examples are back to **100.00 % /
+100.00 %** on both lines, with no change to the writer, the measurement keys or
+the `xml_full_support` gains. `scripts/oracle/musicxml/valide-corpus.sh`
+without arguments now defaults to the workspace-built `target/debug/scoretk`
+(or `$CARGO_TARGET_DIR/debug/scoretk`), and prints usage with a non-zero exit
+when the binary is missing instead of failing inside Python.

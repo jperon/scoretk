@@ -142,6 +142,48 @@ fn barre_short_est_normale_avec_portee_courte() {
     assert_eq!((found.span_from, found.span_to), (2, -2));
 }
 
+/// Le chant grégorien (vue dérivée du GABC) range `tick` et `short` dans les
+/// subtypes `Tick`/`Short` du modèle. Le porteur XSD `senza-misura`, posé sur
+/// la première mesure, reste en vigueur sur les suivantes et distingue ces
+/// barres des barres courtes métriques (qui restent `Normal` avec une portée).
+#[test]
+fn barres_tick_et_short_du_chant_sont_des_subtypes() {
+    let document = br#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time print-object="no"><senza-misura/></time>
+        <clef><sign>C</sign><line>3</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+      <barline location="right"><bar-style>tick</bar-style></barline>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+      <barline location="right"><bar-style>short</bar-style></barline>
+    </measure>
+  </part>
+</score-partwise>"#;
+    let score = read_musicxml(document).expect("lecture");
+    assert_eq!(score.measures.len(), 2);
+    assert_eq!(score.measures[0].end_bar_line, BarLineType::Tick);
+    assert_eq!(score.measures[1].end_bar_line, BarLineType::Short);
+    let found: Vec<_> = score.measures[1]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .filter_map(|(_, item)| match item {
+            SegmentItem::BarLine(bar) => Some(*bar),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "une barre de fin sur le segment");
+    assert_eq!(found[0].kind, BarLineType::Short);
+    assert_eq!((found[0].span_from, found[0].span_to), (0, 0));
+}
+
 /// Extension additive : une rupture marquée sur la mesure elle-même
 /// (`scoretk-own`) n'est pas déplacée sur la mesure précédente.
 #[test]

@@ -39,6 +39,7 @@ pub(crate) fn read_barline(
     part_index: usize,
     measure_index: usize,
     element: &Element,
+    senza_misura: bool,
 ) {
     let location = element.attribute("location").unwrap_or("right");
     let Some(first_staff) = score.parts[part_index].staves.first().copied() else {
@@ -48,7 +49,7 @@ pub(crate) fn read_barline(
     let measure_end = score.measures[measure_index].end_tick();
 
     if let Some(style) = element.child_text("bar-style") {
-        let (kind, span) = barline_type(style);
+        let (kind, span) = barline_type(style, senza_misura);
         if location == "left" {
             let current = score.measures[measure_index].start_bar_line;
             if !current.is_repeat_start() {
@@ -128,8 +129,13 @@ pub(crate) fn read_barline(
 /// produit pour `<subtype>dashed</subtype>` afin que les deux lectures
 /// coïncident. `short`/`tick` ne sont pas des subtypes mais des barres
 /// **normales** dont `createBarline` (`importmusicxmlpass2.cpp:2055-2061`)
-/// règle l'extension.
-fn barline_type(style: &str) -> (BarLineType, Option<(i8, i8)>) {
+/// règle l'extension — sauf dans le chant grégorien : la vue dérivée construite
+/// par `Gregorian::build_derived_score` (`model/gregorian.rs`) y range ces
+/// barres dans les subtypes `Tick`/`Short`, que le porteur XSD `senza-misura`
+/// (`xsd:time`) distingue d'une métrique ordinaire. L'aller-retour GABC doit
+/// retrouver ces subtypes (régression corrigée en 2026-11-26), sans perdre le
+/// gain de lecture des barres courtes métriques.
+fn barline_type(style: &str, senza_misura: bool) -> (BarLineType, Option<(i8, i8)>) {
     match style {
         "light-light" => (BarLineType::Double, None),
         "light-heavy" => (BarLineType::End, None),
@@ -137,6 +143,8 @@ fn barline_type(style: &str) -> (BarLineType, Option<(i8, i8)>) {
         "heavy-heavy" => (BarLineType::End, None),
         "dashed" => (BarLineType::Dashed, None),
         "dotted" => (BarLineType::Dotted, None),
+        "tick" if senza_misura => (BarLineType::Tick, None),
+        "short" if senza_misura => (BarLineType::Short, None),
         "tick" => (BarLineType::Normal, Some((-1, -7))),
         "short" => (BarLineType::Normal, Some((2, -2))),
         _ => (BarLineType::Normal, None),

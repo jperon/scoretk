@@ -337,9 +337,20 @@ fn read_part(
     ties: &mut TieMap,
     directions: &mut direction::DirectionState,
 ) {
+    // Le chant grégorien n'a pas de métrique : `xsd:time/xsd:senza-misura`
+    // porte cette absence dans les `<attributes>` de la première mesure, puis
+    // reste en vigueur pour les suivantes. Il distingue les barres `tick` et
+    // `short` des barres métriques courtes (`barline::barline_type`).
+    let mut senza_misura = false;
     for (measure_index, measure) in element.children_named("measure").enumerate() {
         if measure_index >= score.measures.len() {
             break;
+        }
+        for time in measure
+            .children_named("attributes")
+            .flat_map(|attributes| attributes.children_named("time"))
+        {
+            senza_misura = time.child("senza-misura").is_some();
         }
         read_measure(
             score,
@@ -349,6 +360,7 @@ fn read_part(
             measure,
             ties,
             directions,
+            senza_misura,
         );
     }
 }
@@ -359,6 +371,7 @@ struct VoiceState {
     tuplets: Vec<OpenTuplet>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_measure(
     score: &mut Score,
     analysis: &Analysis,
@@ -367,6 +380,7 @@ fn read_measure(
     element: &Element,
     ties: &mut TieMap,
     directions: &mut direction::DirectionState,
+    senza_misura: bool,
 ) {
     let measure_start = score.measures[measure_index].start_tick;
     let measure_len = score.measures[measure_index].len;
@@ -508,7 +522,9 @@ fn read_measure(
                     }
                 }
             }
-            "barline" => crate::barline::read_barline(score, part_index, measure_index, child),
+            "barline" => {
+                crate::barline::read_barline(score, part_index, measure_index, child, senza_misura)
+            }
             "harmony" => harmony::read_harmony(
                 score,
                 part_index,
