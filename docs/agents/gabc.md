@@ -1108,7 +1108,10 @@ and `layer_coverage` 26/26 with the standard MEI row at 100 % / 100 %
 nine outputs differ from their source: six of them are now byte-identical
 thanks to the structured carriers, so the assertion checks a non-empty
 inventory instead, while the no-raw-source guarantee stays a compile-time
-test in the writer crate.
+test in the writer crate. `gabc.rs::gabc_round_trip_serialises_the_payload`
+was likewise updated: it used to require that the leading `%` comment *not*
+come back; it now asserts the exact source bytes, because that comment is a
+structured `header_items` entry.
 
 **Wasm.** `nix build .#wasm`, `result/SIZE` and `gzip -9`:
 
