@@ -134,7 +134,17 @@ impl Reader {
             let mut glyph = String::new();
             let mut inclinatum = false;
             let mut attributes = Vec::new();
+            let mut mora = false;
+            let mut episema = false;
+            for duration_type in note.children_named("type") {
+                // XSD 4.0 `note/type` : une figure doublée est un punctum mora
+                // projection `Gabc.tex:742-755`.
+                mora |= duration_type.text_trimmed() == "half";
+            }
             for notations in note.children_named("notations") {
+                for articulations in notations.children_named("articulations") {
+                    episema |= articulations.children_named("tenuto").next().is_some();
+                }
                 for other in notations.children_named("other-notation") {
                     if let Some(name) = other.attribute("smufl") {
                         if let Some((g, upper)) = glyph_from_smufl(name) {
@@ -157,6 +167,14 @@ impl Reader {
                     }
                 }
             }
+            if glyph.is_empty() {
+                if mora {
+                    glyph.push('.');
+                }
+                if episema {
+                    glyph.push('_');
+                }
+            }
             let pitch = note.children_named("pitch").next();
             let step = pitch
                 .and_then(|pitch| pitch.children_named("step").next())
@@ -171,13 +189,12 @@ impl Reader {
             if inclinatum {
                 letter = letter.to_ascii_uppercase();
             }
-            let syllable_index = self
-                .syllables
-                .len()
-                .saturating_sub(usize::from(self.syllables.last().is_some_and(|s| s.notes.is_empty())));
-            if self.syllables.is_empty() {
+            if self.syllables.is_empty()
+                || self.syllables.last().is_some_and(|s| !s.notes.is_empty())
+            {
                 self.syllables.push(Syllable::default());
             }
+            let syllable_index = self.syllables.len() - 1;
             let mut ends_syllable = false;
             {
                 let syllable = &mut self.syllables[syllable_index];

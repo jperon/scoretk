@@ -76,7 +76,7 @@ FULL_SUPPORT_EXTRA: dict[str, tuple[str, ...]] = {
     "musicxml": ("--xml-full-support",),
     "midi": ("--midi-full-support",),
     "mei": ("--mei-full-support",),
-    "ly": (),
+    "ly": ("--ly-gregorian",),
     "abc": (),
 }
 
