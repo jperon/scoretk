@@ -1302,7 +1302,24 @@ impl<'a> Interpreter<'a> {
                 let fin = debut + *duration;
                 let saved = self.cue;
                 self.cue = true;
+                // `lily/quote-iterator.cc:229-271` : la citation transpose
+                // ses événements de `pitch_interval (cible, source)`. La
+                // transposition cible sera appliquée par le constructeur à
+                // toute la portée ; n'ajouter ici que l'écart source − cible.
+                let cible = self.voice.events.iter().rev().find_map(|event| match &event.kind {
+                    EventKind::Meta(MetaEvent::Transposition(pitch)) => Some(pitch),
+                    _ => None,
+                });
+                let ecart = crate::quote::quote_delta(music, cible);
+                let transpose_avant = self.transpose;
+                // Les événements cités viennent de la propre partition de la
+                // source : un `\transpose` enveloppant la *cible* ne les
+                // affecte pas (`quote-transposition.ly` : les hauteurs citées
+                // restent celles de la source). On remplace donc, et non
+                // additionne, la transposition écrite ambiante.
+                self.transpose = ecart;
                 let _ = self.spawn_at(Fraction::ZERO, None, music, Vec::new(), false, false, None);
+                self.transpose = transpose_avant;
                 self.cue = saved;
                 if let Some(enfant) = self.voice.spawned.pop() {
                     let child = enfant.interpreted;

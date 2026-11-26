@@ -8151,6 +8151,31 @@ fn quote_during_joue_la_citation() {
         .all(|n| n.small));
 }
 
+/// `lily/quote-iterator.cc:229-271` : la citation transpose ses événements
+/// de `pitch_interval (instrumentTransposition cible, transposition source)`.
+/// Ici `d` écrit (62) avec une source en si bémol (−2) sonne 60, que la
+/// cible soit en fa (−7) ou sans transposition : la transposition cible est
+/// déjà portée par la portée entière.
+#[test]
+fn citation_suit_la_transposition_source_et_cible() {
+    let src = "\\version \"2.24.0\"\n\
+         \\addQuote q { \\transposition bes \\fixed c' { r4 d4 } }\n\
+         \\new Staff \\fixed c' { \\transposition f c4 \\quoteDuring \"q\" { r4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|note| note.pitch).collect::<Vec<_>>(),
+        vec![53, 60] // c4 en fa sonne 53 ; la citation sonne 60
+    );
+    let src = "\\version \"2.24.0\"\n\
+         \\addQuote q { \\transposition bes \\fixed c' { r4 d4 } }\n\
+         \\new Staff \\fixed c' { c4 \\quoteDuring \"q\" { r4 } }\n";
+    let score = read_lilypond(src).expect("lecture");
+    assert_eq!(
+        score.notes.iter().map(|note| note.pitch).collect::<Vec<_>>(),
+        vec![60, 60]
+    );
+}
+
 #[test]
 fn with_suivi_d_un_identifiant_de_contexte() {
     // `ly/context-mods-init.ly:52` et `lily/parser.yy:1625` : `\with` accepte
