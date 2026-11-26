@@ -1426,6 +1426,7 @@ mod tests {
             bars: vec![BarKind::DivisioFinalis],
             nabc: Vec::new(),
             space_after: true,
+            separator_after: None,
         });
         assert_eq!(gregorian.headers[0].value, "Veni Sancte Spiritus");
         assert_eq!(gregorian.syllables[0].notes[0].letter, 'g');

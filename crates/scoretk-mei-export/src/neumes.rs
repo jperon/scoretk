@@ -609,6 +609,7 @@ mod tests {
                 space_after: true,
                 ..Syllable::default()
             }],
+            opening_separator: None,
             derived_modern_view: false,
         }
     }
