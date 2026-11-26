@@ -93,6 +93,12 @@ pub const TEMPO_INFER_FROM_TEXT: &str = "mscore-infer-from-text";
 /// `@type` prefix for a MuseScore tremolo bar written as a `<dir>`.
 pub const TREMOLO_BAR_TYPE: &str = "mscore-tremolo-bar-";
 
+/// `@type` prefix for a two-chord tremolo written as a `<dir>` control event.
+/// RNG `mei_fTrem` requires two note/chord children, while MuseScore 4.7.4
+/// writes a one-child `<fTrem>` for each end of the tremolo (invalid strict
+/// MEI). The additive path uses the standard `<dir>` carrier instead.
+pub const TREMOLO_TWO_CHORD_TYPE: &str = "mscore-tremolo-two-chord-";
+
 /// `@type` identifying the lossless `<fb><f>` figure encoding on a control
 /// event (`mei_fb`/`mei_f`, Guidelines §10).
 pub const FIGURED_BASS_TYPE: &str = "mscore-figured-bass";

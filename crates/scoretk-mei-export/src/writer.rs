@@ -381,7 +381,11 @@ fn write_transposition_change(xml: &mut XmlWriter, score: &Score, measure_index:
         // Le nombre diatonique n'est pas modifié par un changement d'armure
         // d'instrument dans les fichiers de référence ; conserver celui de la
         // partie suffit pour que la relecture reconstruise le concert pitch.
+        // RNG `mei_scoreDef` : un `<staffDef>` n'est admissible que dans
+        // un `<staffGrp>` (le lecteur retrouve les attributs par
+        // `descendants_named`, comme pour le `scoreDef` initial).
         xml.start_element("scoreDef", &[]);
+        xml.start_element("staffGrp", &[]);
         let n = (staff_idx + 1).to_string();
         let diatonic = diatonic.to_string();
         let chromatic = current.to_string();
@@ -393,6 +397,7 @@ fn write_transposition_change(xml: &mut XmlWriter, score: &Score, measure_index:
                 ("trans.semi", &chromatic),
             ],
         );
+        xml.end_element();
         xml.end_element();
     }
 }
@@ -689,10 +694,16 @@ fn write_graces(
                 convert::grace_standard(grace_type).to_owned(),
             ),
             ("type".to_owned(), grace_name),
-            ("dur".to_owned(), duration),
         ];
-        if grace.duration.dots > 0 {
-            attrs.push(("dots".to_owned(), dots));
+        // RNG `mei_graceGrp` : `att.graceGrp` n'inclut pas `att.duration`,
+        // mais `mei_note` porte `att.duration.musical`. La durée écrite va
+        // donc sur la (ou les) `<note>` enfant(s) en mode additif ; le
+        // chemin 4.7.4 garde `@dur`/`@dots` sur `<graceGrp>`.
+        if !full_support {
+            attrs.push(("dur".to_owned(), duration.clone()));
+            if grace.duration.dots > 0 {
+                attrs.push(("dots".to_owned(), dots.clone()));
+            }
         }
         let refs: Vec<(&str, &str)> = attrs
             .iter()
@@ -713,14 +724,24 @@ fn write_graces(
             };
             let oct = oct.to_string();
             let mut note_attrs = vec![
-                ("pname", pname.as_str()),
-                ("oct", oct.as_str()),
-                ("xml:id", uid.as_str()),
+                ("pname".to_owned(), pname.to_string()),
+                ("oct".to_owned(), oct.clone()),
+                ("xml:id".to_owned(), uid.clone()),
             ];
-            if let Some(accid) = accid {
-                note_attrs.push(("accid", accid));
+            if full_support {
+                note_attrs.push(("dur".to_owned(), duration.clone()));
+                if grace.duration.dots > 0 {
+                    note_attrs.push(("dots".to_owned(), dots.clone()));
+                }
             }
-            xml.tag_empty("note", &note_attrs);
+            if let Some(accid) = accid {
+                note_attrs.push(("accid".to_owned(), accid.to_owned()));
+            }
+            let note_refs: Vec<(&str, &str)> = note_attrs
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect();
+            xml.tag_empty("note", &note_refs);
         }
         xml.end_element();
     }
@@ -975,7 +996,15 @@ fn write_layer(
             ChordRestKind::Chord(chord) => chord.tremolo_two_chord,
             _ => false,
         };
-        let open_tremolo = tremolo.is_some() || two_chord;
+        // `mei_fTrem` exige deux enfants ; MuseScore écrit un `<fTrem>` à
+        // un seul enfant à chaque extrémité. Le mode additif remplace ces
+        // deux conteneurs invalides par un `<dir>` ancré (voir
+        // `write_control_events`) ; le mode 4.7.4 est inchangé.
+        let open_tremolo = if options.full_support && two_chord {
+            false
+        } else {
+            tremolo.is_some() || two_chord
+        };
         if open_tremolo {
             if two_chord {
                 xml.start_element("fTrem", &[("unitdur", "32")]);
@@ -1012,14 +1041,24 @@ fn write_layer(
                     .full_support
                     .then(|| format!("r{measure_index}s{}i{position}", track.raw()));
                 let mut rest_attrs = refs.clone();
-                if !rest.visible {
+                // RNG `mei_rest` n'admet pas `att.visibility/@visible` :
+                // l'élément standard d'un silence invisible est `<space>`
+                // (`mei_space`, Guidelines "Rest"; le lecteur le relit en
+                // `Rest { visible: false, gap: true }`). Le chemin 4.7.4
+                // conserve `@visible="false"` sur `<rest>`, octets inchangés.
+                let invisible = !rest.visible && options.full_support;
+                if !rest.visible && !invisible {
                     rest_attrs.push(("visible", "false"));
                 }
                 if let Some(id) = &rest_id {
                     rest_attrs.push(("xml:id", id.as_str()));
                 }
-                xml.start_element("rest", &rest_attrs);
-                write_verses(xml, cr);
+                let name = if invisible { "space" } else { "rest" };
+                xml.start_element(name, &rest_attrs);
+                if !invisible {
+                    // `mei_space` est un élément vide : pas de `<verse>`.
+                    write_verses(xml, cr, options.full_support);
+                }
                 xml.end_element();
             }
             ChordRestKind::Chord(chord) => {
@@ -1039,7 +1078,7 @@ fn write_layer(
                     // `MeiExporter::writeVerse` (meiexporter.cpp:1594) attache
                     // `<verse>` à l'élément `<note>` ouvert : MEI 5.1 définit
                     // `verse` comme enfant de `note`/`chord`, pas comme frère.
-                    write_verses(xml, cr);
+                    write_verses(xml, cr, options.full_support);
                     xml.end_element();
                 } else {
                     xml.start_element("chord", &refs);
@@ -1059,7 +1098,7 @@ fn write_layer(
                         xml.end_element();
                     }
                     write_artics(xml, chord, options.full_support);
-                    write_verses(xml, cr);
+                    write_verses(xml, cr, options.full_support);
                     xml.end_element();
                 }
             }
@@ -1128,26 +1167,16 @@ fn tuplet_chain(
 /// `MeiExporter::writeArtics` (`meiexporter.cpp:1036`): articulations are
 /// children of the note/chord event they belong to.
 fn write_artics(xml: &mut XmlWriter, chord: &scoretk_core::model::Chord, full_support: bool) {
-    let startid = chord.notes.first().map(|id| format!("#n{}", id.index()));
-    if full_support {
-        if chord.arpeggio.is_some() {
-            xml.tag_empty("arpeg", &[]);
-        }
-        for ornament in &chord.ornaments {
-            let type_name = format!("{}{:?}", ids::ORNAMENT_TYPE, ornament.kind);
-            xml.tag_empty("ornam", &[("type", &type_name)]);
-        }
-    }
+    // `<arpeg>`/`<ornam>` sont des événements de contrôle (`mei_arpeg`,
+    // `mei_ornam`) : la RNG ne les admet pas comme enfants d'un `<note>` ou
+    // d'un `<chord>`. Ils sont écrits après les `<staff>` de la mesure dans
+    // `write_control_events`, ancrés par `@startid`. `mei_artic` n'a pas
+    // `att.startEndId` : l'ancrage vient de l'élément parent (`xml:id` de la
+    // note, ou première note d'un `<chord>`), que le lecteur utilise.
     for articulation in &chord.articulations {
         if full_support {
             let name = convert::artic_to_mei_full(&articulation.kind);
-            let mut attrs = vec![("artic", name.as_str())];
-            if let Some(startid) = &startid {
-                // Ancrage exact : un `<chord>` écrit n'a pas d'`xml:id`, donc
-                // le lecteur ne peut retrouver la portée que par une note.
-                attrs.push(("startid", startid.as_str()));
-            }
-            xml.tag_empty("artic", &attrs);
+            xml.tag_empty("artic", &[("artic", name.as_str())]);
         } else if let Some(name) = convert::artic_to_mei(&articulation.kind) {
             xml.tag_empty("artic", &[("artic", name)]);
         }
@@ -1217,16 +1246,27 @@ fn write_note(
 }
 
 /// `MeiExporter::writeVerses`/`writeSyl` (`meiexporter.cpp:1579`, `:1529`).
-fn write_verses(xml: &mut XmlWriter, cr: &ChordRest) {
+fn write_verses(xml: &mut XmlWriter, cr: &ChordRest, full_support: bool) {
     for lyric in &cr.lyrics {
         xml.start_element("verse", &[("n", &(lyric.verse + 1).to_string())]);
-        let con = match lyric.syllabic {
-            scoretk_core::model::LyricsSyllabic::Begin => Some("u"),
-            scoretk_core::model::LyricsSyllabic::Middle => Some("m"),
-            scoretk_core::model::LyricsSyllabic::End => Some("t"),
-            scoretk_core::model::LyricsSyllabic::Single => None,
+        let (con, wordpos) = match lyric.syllabic {
+            scoretk_core::model::LyricsSyllabic::Begin => (Some("u"), None),
+            // RNG `att.syl.log/@con` : `data.SYLLABIC` n'a pas de valeur
+            // `m` (MuseScore 4.7.4 l'écrit pourtant). `@wordpos="m"` est la
+            // valeur standard pour une syllabe médiane (`att.syl.log`,
+            // Guidelines "Lyrics"). Le chemin 4.7.4 garde `@con="m"`.
+            scoretk_core::model::LyricsSyllabic::Middle if full_support => (None, Some("m")),
+            scoretk_core::model::LyricsSyllabic::Middle => (Some("m"), None),
+            scoretk_core::model::LyricsSyllabic::End => (Some("t"), None),
+            scoretk_core::model::LyricsSyllabic::Single => (None, None),
         };
-        let attrs = con.map(|value| vec![("con", value)]).unwrap_or_default();
+        let mut attrs = Vec::new();
+        if let Some(con) = con {
+            attrs.push(("con", con));
+        }
+        if let Some(wordpos) = wordpos {
+            attrs.push(("wordpos", wordpos));
+        }
         xml.tag_with("syl", &attrs, &lyric.text);
         xml.end_element();
     }
@@ -1385,21 +1425,16 @@ fn write_control_events(
                     let mut change_attrs = refs.clone();
                     change_attrs.push(("type", ids::INSTRUMENT_CHANGE_TYPE));
                     change_attrs.push(("label", label.as_str()));
-                    let transpose = change
-                        .instrument
-                        .as_ref()
-                        .and_then(|instrument| instrument.transpose);
-                    let diatonic = transpose.map(|value| value.diatonic.to_string());
-                    let chromatic = transpose.map(|value| value.chromatic.to_string());
-                    if let Some(diatonic) = &diatonic {
-                        change_attrs.push(("trans.diat", diatonic.as_str()));
-                    }
-                    if let Some(chromatic) = &chromatic {
-                        change_attrs.push(("trans.semi", chromatic.as_str()));
-                    }
+                    // `mei_dir` n'admet pas `att.staffDef.transposition` :
+                    // la transposition est portée par le `<scoreDef>` écrit
+                    // juste avant la mesure (`write_transposition_change`),
+                    // où le lecteur la lit dans `read_staff_defs`.
                     xml.tag_with("dir", &change_attrs, change.text.plain());
                 }
-                Annotation::FiguredBass(figure) => {
+                // Ces deux porteurs sont additionnels : le chemin 4.7.4 ne
+                // les écrit pas, afin que les octets par défaut restent
+                // identiques à ceux de `master` (vérifié sur les 56 scores).
+                Annotation::FiguredBass(figure) if options.full_support => {
                     // `<fb>`/`<f>` (`mei_fb`, `mei_f`, Guidelines §10) est le
                     // porteur standard d'une basse continue ; `@type` distingue
                     // la notation exacte du port de celle d'un encodeur externe.
@@ -1412,7 +1447,7 @@ fn write_control_events(
                     xml.end_element();
                     xml.end_element();
                 }
-                Annotation::TremoloBar(bar) => {
+                Annotation::TremoloBar(bar) if options.full_support => {
                     // `<dir>` est un événement de contrôle standard (Guidelines
                     // §10, `mei_dir`) ; `@type` porte la variante MuseScore et
                     // le texte les points `time,pitch` de la courbe.
@@ -1449,23 +1484,56 @@ fn write_control_events(
                     let ChordRestKind::Chord(chord) = &cr.kind else {
                         continue;
                     };
-                    let Some(line) = chord.chord_line else {
-                        continue;
-                    };
-                    let type_name = format!("{}{line:?}", ids::CHORD_LINE_TYPE);
                     let Some(id) = chord.notes.first().map(|id| format!("n{}", id.index())) else {
                         continue;
                     };
                     let anchor = format!("#{id}");
                     let staff = (staff_idx + 1).to_string();
-                    xml.tag_empty(
-                        "dir",
-                        &[
-                            ("type", type_name.as_str()),
-                            ("staff", staff.as_str()),
-                            ("startid", anchor.as_str()),
-                        ],
-                    );
+                    if let Some(line) = chord.chord_line {
+                        let type_name = format!("{}{line:?}", ids::CHORD_LINE_TYPE);
+                        xml.tag_empty(
+                            "dir",
+                            &[
+                                ("type", type_name.as_str()),
+                                ("staff", staff.as_str()),
+                                ("startid", anchor.as_str()),
+                            ],
+                        );
+                    }
+                    // `mei_arpeg` porte `att.startId`, `mei_ornam` porte
+                    // `att.startEndId` : tous deux sont des événements de
+                    // contrôle de mesure, jamais des enfants d'un accord.
+                    if chord.arpeggio.is_some() {
+                        xml.tag_empty(
+                            "arpeg",
+                            &[("staff", staff.as_str()), ("startid", anchor.as_str())],
+                        );
+                    }
+                    for ornament in &chord.ornaments {
+                        let type_name = format!("{}{:?}", ids::ORNAMENT_TYPE, ornament.kind);
+                        xml.tag_empty(
+                            "ornam",
+                            &[
+                                ("type", type_name.as_str()),
+                                ("staff", staff.as_str()),
+                                ("startid", anchor.as_str()),
+                            ],
+                        );
+                    }
+                    if let Some(tremolo) = chord.tremolo {
+                        if chord.tremolo_two_chord {
+                            let type_name =
+                                format!("{}{:?}", ids::TREMOLO_TWO_CHORD_TYPE, tremolo.kind);
+                            xml.tag_empty(
+                                "dir",
+                                &[
+                                    ("type", type_name.as_str()),
+                                    ("staff", staff.as_str()),
+                                    ("startid", anchor.as_str()),
+                                ],
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -1534,7 +1602,17 @@ fn write_control_events(
                 xml.tag_empty("hairpin", &hairpin_attrs);
             }
             SpannerType::Pedal => {
-                xml.tag_empty("pedal", &refs);
+                // RNG `mei_pedal` + `att.pedal.log/@dir` (obligatoire) :
+                // `<pedal dir="down" … endid="…">` est le porteur standard
+                // d'un appui maintenu jusqu'à `@endid`. Le mode 4.7.4 ne
+                // change pas (aucun `@dir` dans ses références).
+                if options.full_support {
+                    let mut pedal_attrs = refs.clone();
+                    pedal_attrs.push(("dir", "down"));
+                    xml.tag_empty("pedal", &pedal_attrs);
+                } else {
+                    xml.tag_empty("pedal", &refs);
+                }
             }
             SpannerType::Ottava(_) => {
                 xml.tag_empty("octave", &refs);
@@ -1920,5 +1998,191 @@ mod tests {
         assert!(output.contains("pname=\"d\" oct=\"4\""), "{output}");
         let read_back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
         assert_eq!(read_back.notes[0].pitch, 64);
+    }
+
+    /// Les porteurs corrigés pour la RNG `mei-all-5.1.rng` restent strictement
+    /// derrière `full_support` : les octets 4.7.4 ne changent pas.
+    #[test]
+    fn additive_carriers_stay_out_of_the_default_path() {
+        use scoretk_core::model::{
+            Arpeggio, ArpeggioType, Articulation, ArticulationType, Chord, ChordRestKind,
+            GraceChord, GraceType, Lyrics, LyricsSyllabic, Ornament, OrnamentType, Rest,
+            SpannerAnchor, Tremolo, TremoloKind,
+        };
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno"));
+        let staff = score.add_staff(part);
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        let mut chord = ChordRest::chord(Duration::quarter());
+        let note = score.add_note(Note::new(64, 16));
+        let grace_note = score.add_note(Note::new(65, 17));
+        if let ChordRestKind::Chord(c) = &mut chord.kind {
+            c.notes = vec![note];
+            c.arpeggio = Some(Arpeggio::new(ArpeggioType::Normal));
+            c.ornaments = vec![Ornament::new(OrnamentType::Turn)];
+            c.articulations = vec![Articulation::new(ArticulationType::Staccato)];
+            c.tremolo = Some(Tremolo {
+                kind: TremoloKind::Start,
+                count: 1,
+            });
+            c.tremolo_two_chord = true;
+            c.grace_chords = vec![GraceChord {
+                duration: Duration::new(scoretk_core::model::DurationType::ThirtySecond),
+                played_offset: None,
+                in_tuplet: false,
+                chord: Chord {
+                    grace: Some(GraceType::Grace32),
+                    notes: vec![grace_note],
+                    ..Default::default()
+                },
+            }];
+        }
+        chord.lyrics = vec![Lyrics::new(0, LyricsSyllabic::Middle, "Du")];
+        segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(chord));
+        measure.add_segment(segment);
+
+        let mut rest_segment = Segment::new(SegmentType::ChordRest, Fraction::new(1, 4), 1);
+        let mut rest = ChordRest::rest(Duration::quarter());
+        if let ChordRestKind::Rest(value) = &mut rest.kind {
+            *value = Rest {
+                visible: false,
+                ..Rest::default()
+            };
+        }
+        rest_segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(rest));
+        measure.add_segment(rest_segment);
+        score.add_measure(measure);
+        score.add_spanner(Spanner::new(
+            SpannerType::Pedal,
+            SpannerAnchor::new(Fraction::ZERO, Track::new(staff, 0)),
+            SpannerAnchor::new(Fraction::new(1, 2), Track::new(staff, 0)),
+        ));
+
+        let default = write(&score, &MeiOptions::default()).expect("4.7.4 export");
+        assert!(default.contains("visible=\"false\""), "{default}");
+        assert!(default.contains("<rest "), "{default}");
+        assert!(default.contains("<fTrem unitdur=\"32\">"), "{default}");
+        assert!(default.contains("<pedal "), "{default}");
+        assert!(!default.contains("dir=\"down\""), "{default}");
+        assert!(default.contains("con=\"m\">Du</syl>"), "{default}");
+
+        let full = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("additive export");
+        assert!(full.contains("<space dur=\"4\""), "{full}");
+        assert!(!full.contains("visible=\"false\""), "{full}");
+        assert!(full.contains("mscore-grace-Grace32"), "{full}");
+        assert!(!full.contains("<fTrem"), "{full}");
+        assert!(full.contains("dir=\"down\""), "{full}");
+        assert!(full.contains("<syl wordpos=\"m\">Du</syl>"), "{full}");
+        assert!(
+            full.contains("startid=\"#n0\"") && full.contains("<arpeg "),
+            "{full}"
+        );
+        assert!(
+            full.contains("<ornam type=\"mscore-ornament-Turn\""),
+            "{full}"
+        );
+        assert!(full.contains("mscore-tremolo-two-chord-Start"), "{full}");
+        let grace = full
+            .split("<graceGrp")
+            .nth(1)
+            .expect("grace group")
+            .split("</graceGrp>")
+            .next()
+            .expect("grace group end");
+        let grace_open = grace.split('>').next().expect("grace start tag");
+        assert!(!grace_open.contains("dur="), "{grace_open}");
+        assert!(grace.contains("dur=\"32\""), "{grace}");
+        let artic = full
+            .split("<artic ")
+            .nth(1)
+            .expect("artic")
+            .split("/>")
+            .next()
+            .unwrap();
+        assert!(!artic.contains("startid"), "{artic}");
+        let back = scoretk_mei_import::read_mei(full.as_bytes()).expect("read additive MEI");
+        let items = scoretk_core::model::inventory(&back);
+        for kind in [
+            "arpeggio",
+            "ornament",
+            "grace",
+            "grace-note",
+            "tremolo",
+            "lyric",
+        ] {
+            assert!(
+                items.items.iter().any(|item| item.kind == kind),
+                "missing {kind} after the additive round trip"
+            );
+        }
+    }
+
+    /// Une transposition en cours de partition est portée par un `<staffDef>`
+    /// dans un `<staffGrp>` (RNG `mei_scoreDef`), pas par `@trans.*` sur un
+    /// `<dir>` (`mei_dir` n'a pas `att.staffDef.transposition`).
+    #[test]
+    fn mid_score_transposition_is_written_inside_a_staff_group() {
+        use scoretk_core::model::{Annotation, Instrument, InstrumentChange, Transpose};
+
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Clarinet", "Cl"));
+        let staff = score.add_staff(part);
+        // Le changement doit survenir *après* la première mesure : au tick
+        // initial, `previous == current` et aucun `<scoreDef>` n'est écrit.
+        score.add_measure(Measure::new(0, Fraction::ZERO, Fraction::new(4, 4)));
+        let mut measure = Measure::new(1, Fraction::new(4, 4), Fraction::new(4, 4));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::new(4, 4), 1);
+        let mut change = InstrumentChange::new("B♭ Clarinet");
+        change.instrument = Some(Instrument {
+            id: "wind.reed.clarinet.bflat".to_owned(),
+            transpose: Some(Transpose::new(-1, -2)),
+            ..Default::default()
+        });
+        segment.add_annotation(Track::new(staff, 0), Annotation::InstrumentChange(change));
+        measure.add_segment(segment);
+        score.add_measure(measure);
+
+        let full = write(
+            &score,
+            &MeiOptions {
+                full_support: true,
+                ..Default::default()
+            },
+        )
+        .expect("additive export");
+        let group = full
+            .rfind("<staffGrp>")
+            .and_then(|start| {
+                full[start..]
+                    .split_once("</staffGrp>")
+                    .map(|(group, _)| group)
+            })
+            .expect("last staffGrp");
+        assert!(group.contains("trans.semi=\"-2\""), "{group}");
+        let dir = full
+            .split("<dir ")
+            .nth(1)
+            .expect("instrument change dir")
+            .split("/>")
+            .next()
+            .unwrap();
+        assert!(!dir.contains("trans."), "{dir}");
+        let back = scoretk_mei_import::read_mei(full.as_bytes()).expect("read additive MEI");
+        assert_eq!(
+            back.parts[0]
+                .instrument
+                .transpose
+                .map(|transpose| transpose.chromatic),
+            Some(-2)
+        );
     }
 }

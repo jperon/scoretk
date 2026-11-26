@@ -28,7 +28,8 @@ use scoretk_core::model::{
     FiguredBassItem, FiguredBassModifier, Fingering, Fraction, HairpinType, Harmony, Layers,
     Lyrics, LyricsSyllabic, Marker, MarkerType, Ornament, OrnamentType, Placement, RehearsalMark,
     Segment, SegmentItem, SegmentType, Slur, Spanner, SpannerAnchor, SpannerNotation, SpannerType,
-    StaffId, StaffText, SystemText, Tempo, Track, TremoloBar, TremoloBarPoint, TremoloBarType,
+    StaffId, StaffText, SystemText, Tempo, Track, Tremolo, TremoloBar, TremoloBarPoint,
+    TremoloBarType, TremoloKind,
 };
 use scoretk_mei_common::convert;
 use scoretk_xml_common::Element;
@@ -441,6 +442,25 @@ impl<'a> Reader<'a> {
         } else {
             crate::lines_of(node)
         };
+        // Trémolo à deux accords : `mei_fTrem` exige deux enfants, alors
+        // que MuseScore 4.7.4 en écrit un seul à chaque extrémité. Le
+        // porteur additif est un `<dir>` standard ancré sur la note.
+        if let Some(name) = typ.strip_prefix(scoretk_mei_common::ids::TREMOLO_TWO_CHORD_TYPE) {
+            let kind = match name {
+                "Start" => TremoloKind::Start,
+                "Stop" => TremoloKind::Stop,
+                "Single" => TremoloKind::Single,
+                _ => TremoloKind::Unmeasured,
+            };
+            let (tick, track) = self.anchor(node, measure);
+            if let Some(cr) = self.chord_rest_at_mut(measure, tick, track) {
+                if let ChordRestKind::Chord(chord) = &mut cr.kind {
+                    chord.tremolo = Some(Tremolo { kind, count: 1 });
+                    chord.tremolo_two_chord = true;
+                }
+            }
+            return;
+        }
         // Changement d'instrument en cours de partition : MuseScore 4.7.4 ne
         // l'écrit pas, mais `<dir>` porte le texte et `@trans.*` la nouvelle
         // transposition (porteur additionnel).
@@ -655,9 +675,19 @@ impl<'a> Reader<'a> {
         // `<artic>` enfant d'un événement : MEI 5.1 `att.articulated`
         // s'applique à cet événement, pas au dernier accord de la portée.
         // L'`xml:id` du parent (ou `@startid`) donne l'ancrage exact.
+        // `mei_artic` n'a pas `att.startEndId` (RNG) : l'ancrage vient de
+        // l'événement parent. `xml:id` est lu comme `id` par l'arbre XML
+        // (préfixe de namespace retiré) ; pour un `<chord>` sans id, la
+        // première `<note>` enfant porte l'identifiant de l'accord.
         let id = node
             .attribute("startid")
             .or_else(|| parent.attribute("id"))
+            .or_else(|| {
+                parent
+                    .children_named("note")
+                    .next()
+                    .and_then(|note| note.attribute("id"))
+            })
             .map(|id| id.trim_start_matches('#'));
         let (tick, track) = id
             .and_then(|id| self.id_events.get(id))
@@ -682,8 +712,8 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readArpeg` (`meiimporter.cpp:2431`).
     fn add_arpeggio(&mut self, node: &Element, measure: usize) {
-        let (_, track) = self.anchor(node, measure);
-        if let Some(cr) = self.last_chord_rest_mut(measure, track) {
+        let (tick, track) = self.anchor(node, measure);
+        if let Some(cr) = self.chord_rest_at_mut(measure, tick, track) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.arpeggio = Some(Arpeggio::new(ArpeggioType::Normal));
             }
@@ -797,8 +827,8 @@ impl<'a> Reader<'a> {
                 _ => None,
             })
             .unwrap_or(kind);
-        let (_, track) = self.anchor(node, measure);
-        if let Some(cr) = self.last_chord_rest_mut(measure, track) {
+        let (tick, track) = self.anchor(node, measure);
+        if let Some(cr) = self.chord_rest_at_mut(measure, tick, track) {
             if let ChordRestKind::Chord(chord) = &mut cr.kind {
                 chord.ornaments.push(Ornament::new(kind));
             }
@@ -955,10 +985,14 @@ impl<'a> Reader<'a> {
                 .unwrap_or(1);
             for syl in verse.children_named("syl") {
                 let text = crate::lines_of(syl);
-                let syllabic = match syl.attribute("con").unwrap_or("d") {
-                    "u" => LyricsSyllabic::Begin,
-                    "m" => LyricsSyllabic::Middle,
-                    "t" => LyricsSyllabic::End,
+                // `@wordpos="m"` est le porteur MEI 5.1 d'une syllabe
+                // médiane ; `@con="m"` reste accepté pour les encodages
+                // MuseScore 4.7.4 historiques.
+                let syllabic = match (syl.attribute("wordpos"), syl.attribute("con")) {
+                    (Some("m"), _) => LyricsSyllabic::Middle,
+                    (_, Some("u")) => LyricsSyllabic::Begin,
+                    (_, Some("m")) => LyricsSyllabic::Middle,
+                    (_, Some("t")) => LyricsSyllabic::End,
                     _ => LyricsSyllabic::Single,
                 };
                 if let Some(cr) = self.last_chord_rest_mut(measure, track) {

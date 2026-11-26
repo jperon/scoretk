@@ -1113,7 +1113,9 @@ impl<'a> Reader<'a> {
         use scoretk_core::model::{GraceChord, GraceType};
         // `@type="mscore-grace-*"` (porteur additionnel) garde la variante
         // exacte ; `@dur`/`@dots` portent la durée écrite, `@grace` la
-        // direction standard (`acc`/`unacc`).
+        // direction standard (`acc`/`unacc`). RNG `mei_graceGrp` : la durée
+        // ne peut être portée que par un `<note>` enfant (porteur additif) ;
+        // le repli la lit donc aussi sur la première note.
         let grace = node
             .attribute("type")
             .and_then(|value| value.strip_prefix(ids::GRACE_TYPE))
@@ -1146,8 +1148,15 @@ impl<'a> Reader<'a> {
             }
             chord.notes.push(id);
         }
+        let duration = duration_of_opt(node)
+            .or_else(|| {
+                descendants_named(node, "note")
+                    .first()
+                    .and_then(|note| duration_of_opt(note))
+            })
+            .unwrap_or_else(Duration::quarter);
         self.pending_graces.push(GraceChord {
-            duration: duration_of(node),
+            duration,
             played_offset: None,
             in_tuplet: false,
             chord,
@@ -1198,6 +1207,30 @@ impl<'a> Reader<'a> {
                     .element(track)
                     .is_some_and(|item| item.as_chord_rest().is_some())
             })?;
+        self.score.measures[measure].segments[position]
+            .element_mut(track)
+            .and_then(SegmentItem::as_chord_rest_mut)
+    }
+
+    /// Chord rest at an exact anchor (`@startid` resolved by `anchor`),
+    /// falling back to the last event of the track for external MEI that
+    /// only gives `@tstamp`. `MeiImporter::findStart`, meiimporter.cpp:620.
+    pub(crate) fn chord_rest_at_mut(
+        &mut self,
+        measure: usize,
+        tick: Fraction,
+        track: Track,
+    ) -> Option<&mut ChordRest> {
+        let segments = &self.score.measures[measure].segments;
+        let has_chord_rest = |segment: &Segment| {
+            segment
+                .element(track)
+                .is_some_and(|item| item.as_chord_rest().is_some())
+        };
+        let position = segments
+            .iter()
+            .position(|segment| segment.tick == tick && has_chord_rest(segment))
+            .or_else(|| segments.iter().rposition(has_chord_rest))?;
         self.score.measures[measure].segments[position]
             .element_mut(track)
             .and_then(SegmentItem::as_chord_rest_mut)
