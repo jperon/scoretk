@@ -9908,3 +9908,101 @@ RUST_TEST_THREADS=2 nice -n 10`): `fmt --all -- --check`, `clippy --workspace
 8/8, `build -p scoretk-wasm --target wasm32-unknown-unknown`. The 56 generated
 `.ly` also compile with LilyPond 2.27 through a `bwrap --unshare-all
 --die-with-parent` wrapper (read-only root, writable scratch): 56/56.
+
+## 53. Reading campaign on the three real lots (2026-11-26)
+
+### 53.1 Protocol
+
+Same manifests and cached MIDI tree as §52.5, measured with
+`mesure.sh --out … --refs /home/jacques/tmp/scoretk/ly95lect-refs-fresh
+--refs-only --python-ly '' --music21 ''`, one lot at a time, all commands under
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`, with a
+worktree-local `CARGO_TARGET_DIR`. No manifest entry, exclusion, comparator
+rule or reference was changed; no downloaded `.ly` was compiled outside
+`bwrap --unshare-all --die-with-parent`, and no Scheme from those files was
+executed directly. To *classify* (not to measure), the non-exact sources were
+recompiled in an out-of-repo scratch tree with
+`references.py --sandbox --inject-midi --same-score --jobs 2` and the fresh
+MIDI was compared with the cached reference and with scoretk's MusicXML.
+
+### 53.2 Before / after
+
+| Lot | Files | Exact before | Exact after | N1 before → after | N2 before → after | Exclusions |
+| --- | ---: | ---: | ---: | --- | --- | --- |
+| `ra` | 1 724 | 1 604 (93.0 %) | **1 605 (93.1 %)** | 98.42 → 98.44 | 96.01 → 96.07 | unchanged (2 rows) |
+| `mut` | 1 316 | 1 247 (94.8 %) | 1 247 (94.8 %) | 99.54 → 99.54 | 97.65 → 97.65 | unchanged (61 rows) |
+| `rw` | 1 365 | 1 290 (94.5 %) | 1 290 (94.5 %) | 99.54 → 99.54 | 97.63 → 97.63 | unchanged (83 rows) |
+
+The ≥ 95 % target is **not reached**. The exactness definition (note count,
+pitch multiset and Q16 attack multiset) and all denominators are the ones of
+§52.5.
+
+### 53.3 Causes fixed, with measured gain
+
+1. **Optional arguments of music functions** (`2df62725`). `lily/parser.yy`,
+   `function_arglist_optional` and `scm/music-functions.scm` accept
+   `(type? *unspecified*)` and `(type? #{ default #})`; the old reader
+   consumed the next token for such a predicate, so the required argument was
+   eaten and the following call swallowed. The reader now keeps one default
+   token stream per optional parameter, substitutes it when the next token
+   cannot satisfy the predicate, and consumes the argument otherwise. Two
+   reduced tests (`accidental-styles` idiom and an explicit/default pitch)
+   cover the rule. Gain: `accidental-styles.ly` exact on `ra` (+1 exact,
+   93.0 → 93.1 %); no loss on `mut`/`rw`.
+2. **Forward `\addQuote` references** (`174fb394`). Quotes are identifiers
+   resolved at playback time (`ly/music-functions-init.ly:56-60,545-574`), but
+   the reader resolved them while parsing, so a case declared before its
+   `\addQuote` became silent. An on-demand parse of the definition, guarded
+   against cycles, now recovers those notes. `quote-cyclic.ly` gains 4 notes
+   (8 → 12 of 16) but is still not exact: its first voice is stored before
+   `\B` is defined, so a full fix needs deferred cue resolution in the
+   interpreter. No exact file gained, no note or file lost.
+
+### 53.4 Classification of the remaining non-exact files
+
+Recompiling the sources under the sandbox separates three classes; the count
+below is for the 54 `ra` and 69 `mut` non-exact rows whose `.ly` still exists.
+
+| Class | `ra` | `mut` | `rw` |
+| --- | ---: | ---: | ---: |
+| Cached MIDI no longer matches the same source compiled by LilyPond 2.27 | 21 | 1 | 1 |
+| — of which scoretk already matches the fresh MIDI exactly | 18 | 1 | 1 |
+| Genuine reader discrepancies (fresh MIDI = cached MIDI) | 33 | 68 | 74 |
+| Source file deleted; the cached MIDI cannot be validated any more | 66 | 0 | 0 |
+
+The 21 stale `ra` references are, file by file:
+`breve-extent.ly`, `chord-changes-alternative.ly`, `chord-changes.ly`,
+`chordnames-nochord.ly`, `chord-names-spanbar.ly`,
+`chords-funky-ignatzek.ly`, `chord-voicings.ly`, `custos.ly`,
+`fretboard-chordchanges.ly`, `ledger-extra.ly`, `note-names-makam.ly`,
+`partial-in-mid-piece.ly`, `spacing-non-adjacent-columns3.ly`,
+`tablature-fretboard-open-string.ly`, `v3_testMultiInstrumentPart3.ly`,
+`v3_testTboxWords1.ly`, `v4_hairpin_dynamic_inside.ly`,
+`v4_hairpin_dynamic_jump.ly`, `v4_hairpin_simple.ly`, `v4_linked-ties.ly`,
+`v4_part-textlines.ly`. On 18 of them the reader's MusicXML is identical to
+the freshly compiled MIDI (note count, pitches and Q16 attacks); the old MIDI
+was generated before chord-grid playback and the `\fixed`-octave writer
+change described in §14/§13. `mut` and `rw` share `Symphony7_1.ly` (18 631
+notes in the cache against 23 374 now). These references are **not** excluded
+here: the user-visible denominator and the "unusable references" counts are
+left exactly as in §52.5, and no comparison rule was relaxed to turn them into
+gains.
+
+The genuine discrepancies are the already documented long tail: Scheme-driven
+music (`scheme-list-splicing.ly`, `tie-chord.ly`, `ledger-line-properties.ly`,
+`music-map.ly`, `modal-transforms.ly`, `textetc.ly`), microtonal language files
+(`midi-key-signature.ly`, `persian-key-signatures.ly`, `note-names-makam.ly`,
+the four `*-accidental-glyphs.ly` tests), tablature idioms, quoted voices,
+per-Voice MIDI tracks and real-time grace timing (`bwv663-*`, `ballade-4`,
+`violinoII`, `QuartetOpus18_No4_1`, …), plus one- or two-note differences in
+long Bach/Chopin scores. None is a parser regression introduced by this
+campaign: the 56 corpus round trips, the 419 hand-written reader tests and all
+other workspace tests stay green.
+
+### 53.5 Conclusion
+
+Reaching 95 % on all three lots with the cached references would require
+either regenerating those references (excluded by the protocol) or fixing the
+whole Scheme/microtonal/per-Voice tail, i.e. embedding a Scheme evaluator and
+rewriting the voice model. Only two fidelity fixes could be landed with a
+measured, non-regressive gain in this campaign; the target remains open.
