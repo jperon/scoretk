@@ -76,8 +76,8 @@ pub mod voice;
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Chord, ChordRest, Duration, Fraction, Instrument, Key, KeyMode, Measure, Note, Part, Score,
-    Segment, SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
+    Chord, ChordRest, Clef, ClefType, Duration, Fraction, Instrument, Key, KeyMode, Measure, Note,
+    Part, Score, Segment, SegmentItem, SegmentType, TimeSig, Track, Tuplet, VOICES,
 };
 
 use chord::{
@@ -250,6 +250,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         prepare_track_list(tracks)
     };
     instrument::set_grand_staff_program(&mut track_list);
+    instrument::assign_templates(&mut track_list);
     create_instruments(score, &mut track_list, options);
     drum::set_staff_bracket_for_drums(score, &track_list);
 
@@ -569,23 +570,40 @@ fn prepare_track_list(tracks: Vec<MTrack>) -> Vec<MTrack> {
 ///
 /// Une partie regroupe deux portées quand deux pistes successives forment un
 /// grand staff (`isGrandStaff` : même canal, programme de piano ou équivalent,
-/// aucune percussion).
+/// aucune percussion), et trois quand un orgue à trois portées suit
+/// (`areNext3OrganStaff`). Le gabarit retenu fournit les noms long et court,
+/// l'identifiant MusicXML, le nom de piste et les clefs de concert des portées
+/// (`Part::initFromInstrTemplate`, `Staff::setDefaultClefType`).
 fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &ImportOptions) {
     let mut index = 0;
     while index < tracks.len() {
-        let grand_staff = index + 1 < tracks.len()
+        let organ = instrument::are_next_3_organ_staff(index, tracks);
+        let grand_staff = !organ
+            && index + 1 < tracks.len()
             && instrument::is_grand_staff(&tracks[index], &tracks[index + 1]);
-        let name = instrument::track_instrument_name(&tracks[index]);
-        let long_name = instrument::concatenate_with_comma(&name, &tracks[index].name);
-        let mut part = Part::new(long_name.clone(), String::new());
-        part.name = long_name;
-        part.instrument = Instrument::new(name.clone(), name.clone(), String::new());
+        let staves = if organ {
+            3
+        } else if grand_staff {
+            2
+        } else {
+            1
+        };
+        let template = tracks[index].ms_instr;
+        let instr_name = track_instr_name(&tracks[index]);
+        let short_name = template.map_or("", |template| template.short_name);
+        let mut part = Part::new(instr_name.clone(), short_name.to_owned());
+        part.name = instr_name.clone();
+        part.instrument = Instrument::new(
+            template.map_or("", |template| template.music_xml_id),
+            template.map_or("", |template| template.long_name),
+            short_name,
+        );
         part.instrument.id =
-            scoretk_core::model::recognize_musicxml_id(&name, Some(tracks[index].program))
+            scoretk_core::model::recognize_musicxml_id(&instr_name, Some(tracks[index].program))
                 .unwrap_or("")
                 .to_owned();
-        part.instrument.track_name = name.clone();
-        if let Some(template) = instrument::template_for_track(&tracks[index]) {
+        part.instrument.track_name = template.map_or("", |template| template.track_name).to_owned();
+        if let Some(template) = template {
             part.instrument.transpose = if template.transpose_chromatic == 0 {
                 None
             } else {
@@ -616,17 +634,37 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
         let part_id = score.add_part(part);
         let first_staff = score.add_staff(part_id);
         tracks[index].staff = Some(first_staff);
-        if grand_staff {
-            // Le programme de la première piste vaut pour les deux.
-            tracks[index + 1].program = tracks[index].program;
-            let second_staff = score.add_staff(part_id);
-            tracks[index + 1].staff = Some(second_staff);
-            index += 2;
-        } else {
-            index += 1;
+        // Le programme de la première piste vaut pour toutes les portées.
+        for offset in 1..staves {
+            tracks[index + offset].program = tracks[index].program;
+            tracks[index + offset].staff = Some(score.add_staff(part_id));
         }
+        // `part->staff(i)->setDefaultClefType(instr->clefTypes[i])` : sans
+        // gabarit, la clef par défaut (sol) reste celle de `createClefs`.
+        if let Some(template) = template {
+            let clefs = instrument::concert_clefs(template);
+            for staff_index in 0..staves {
+                let clef = clefs
+                    .get(staff_index)
+                    .copied()
+                    .unwrap_or(ClefType::G);
+                if let Some(staff) = score.staves.get_mut(first_staff.index() + staff_index) {
+                    staff.default_clef = Clef::new(clef);
+                }
+            }
+        }
+        index += staves;
     }
     let _ = options;
+}
+
+/// Nom affiché de la piste : le nom long du gabarit (`msInstrName`), ou le nom
+/// General MIDI à défaut (`trackInstrName` dans `setTrackInfo`).
+fn track_instr_name(track: &MTrack) -> String {
+    match track.ms_instr {
+        Some(template) => instrument::ms_instr_name(template).to_owned(),
+        None => instrument::track_instrument_name(track),
+    }
 }
 
 /// Crée les mesures (`createMeasures`).
@@ -776,9 +814,9 @@ fn process_non_lyric_meta(
 /// `Part::setLongName(XmlWriter::xmlString(MidiInstr::concatenateWithComma(...)))`.
 fn set_track_info(score: &mut Score, tracks: &mut [MTrack]) {
     for track in tracks.iter_mut() {
-        let name = instrument::track_instrument_name(track);
+        let name = track_instr_name(track);
         if track.name.is_empty() && !name.is_empty() {
-            track.name = name;
+            track.name = name.clone();
         }
         let Some(staff) = track.staff else {
             continue;
@@ -794,14 +832,13 @@ fn set_track_info(score: &mut Score, tracks: &mut [MTrack]) {
         if !is_top {
             continue;
         }
-        let long_name = instrument::concatenate_with_comma(
-            &instrument::track_instrument_name(track),
-            &track.name,
-        );
+        let long_name = instrument::concatenate_with_comma(&name, &track.name);
         let part = &mut score.parts[part_id.index()];
         part.long_name = long_name.clone();
-        part.name = long_name;
-        part.instrument.track_name = instrument::track_instrument_name(track);
+        part.name = long_name.clone();
+        // `Part::setLongName` écrit le nom long de l'instrument ; le nom de
+        // piste (`<instrument-name>`) reste celui du gabarit.
+        part.instrument.long_name = long_name;
     }
 }
 

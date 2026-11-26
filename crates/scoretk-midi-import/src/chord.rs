@@ -29,6 +29,7 @@
 
 use std::collections::BTreeMap;
 
+use scoretk_core::instruments::Template;
 use scoretk_core::model::{Fraction, StaffId};
 
 use super::key::KeyList;
@@ -285,6 +286,9 @@ pub struct MTrack {
     pub key_list: KeyList,
     /// Portée créée dans le modèle.
     pub staff: Option<StaffId>,
+    /// Gabarit MuseScore retenu (`msInstrList[msInstrIndex]`, index 0), rempli
+    /// par `findInstrumentsForAllTracks`.
+    pub ms_instr: Option<&'static Template>,
     /// Notes créées dans l'ordre de l'import, pour les liaisons et paroles.
     pub first_note_id: Option<usize>,
 }
@@ -309,6 +313,7 @@ impl Default for MTrack {
             has_key: false,
             key_list: KeyList::new(),
             staff: None,
+            ms_instr: None,
             first_note_id: None,
         }
     }

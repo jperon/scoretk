@@ -31,6 +31,7 @@
 use scoretk_core::model::{Clef, ClefType, Score};
 
 use super::chord::MTrack;
+use super::instrument;
 use super::operations::ImportOptions;
 
 /// Hauteur médiane séparant la clef de sol de la clef de fa
@@ -66,20 +67,33 @@ fn average_pitch(track: &MTrack) -> Option<i32> {
 }
 
 /// Pose les clefs (`MidiClef::createClefs`).
+///
+/// La clef principale n'est recalculée que si le gabarit n'a pas fixé les
+/// clefs (`!hasInstrument`) ou alterne sol et fa (`hasGFclefs`) ; sinon la
+/// clef de concert du gabarit (guitare, contrebasse) est conservée, y compris
+/// son octaviation. La programmation dynamique des changements en cours de
+/// portée n'est pas portée : `changeClef` n'a donc pas d'effet observable.
 pub fn create_clefs(score: &mut Score, tracks: &[MTrack], options: &ImportOptions) {
+    let _ = options;
     for track in tracks {
         let Some(staff_id) = track.staff else {
             continue;
         };
-        let clef = if track.drum_track {
-            ClefType::Perc
-        } else if options.change_clef {
-            match average_pitch(track) {
-                Some(pitch) => clef_type_from_average_pitch(pitch),
-                None => ClefType::G,
+        let has_instrument = track.ms_instr.is_some();
+        if track.drum_track && !has_instrument {
+            if let Some(staff) = score.staves.get_mut(staff_id.index()) {
+                staff.default_clef = Clef::new(ClefType::Perc);
             }
-        } else {
-            ClefType::G
+            continue;
+        }
+        let can_change_clef = !has_instrument
+            || track.ms_instr.is_some_and(instrument::has_gf_clefs);
+        if !can_change_clef {
+            continue;
+        }
+        let clef = match average_pitch(track) {
+            Some(pitch) => clef_type_from_average_pitch(pitch),
+            None => ClefType::G,
         };
         if let Some(staff) = score.staves.get_mut(staff_id.index()) {
             staff.default_clef = Clef::new(clef);
