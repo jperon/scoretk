@@ -62,6 +62,109 @@ use scoretk_musescore_import::CAPABILITIES as MSCX_IMPORT;
 use scoretk_musicxml_export::CAPABILITIES as XML_EXPORT;
 use scoretk_musicxml_import::CAPABILITIES as XML_IMPORT;
 
+/// MusicXML 4.0 has standard carriers for every declared kind: `xsd:dashes` /
+/// `xsd:bracket` + `xsd:words` for text lines, `xsd:bend` / `xsd:with-bar` for
+/// a tremolo bar. No kind may be dropped from the denominator, including the
+/// long-standing gaps (`stem`, `credit-position`, `hairpin`, `line-break`).
+#[test]
+fn xml_declaration_keeps_every_kind_with_a_carrier() {
+    let kinds = XML_IMPORT
+        .declared_kinds()
+        .or(XML_EXPORT.declared_kinds())
+        .expect("kinds MusicXML");
+    for kind in [
+        "text-line",
+        "tremolo-bar",
+        "hairpin",
+        "trill",
+        "stem",
+        "credit-position",
+        "line-break",
+        "key-sig",
+        "marker",
+        "jump",
+        "tuplet-member",
+        "dynamic-velocity",
+    ] {
+        assert!(kinds.contains(&kind), "kind exclu à tort : {kind}");
+    }
+}
+
+/// Which of the three labelled MusicXML export modes to measure.
+#[derive(Clone, Copy)]
+enum XmlMode {
+    /// (a) Default export, MuseScore 4.7.4 byte parity.
+    Parity,
+    /// (b) Standard XSD carriers only (the reported headline).
+    FullSupport,
+    /// (c) Private, secondary additive carriers.
+    Private,
+}
+
+/// (a) Default export: byte-faithful to MuseScore 4.7.4 `*.ref.musicxml`.
+fn xml_parity_options() -> Options {
+    Options::default()
+}
+
+/// (b) Headline: standard MusicXML 4.0 XSD carriers only, no private
+/// `scoretk-*` attribute or element. This is the figure we report.
+fn xml_headline_options() -> Options {
+    Options {
+        xml_full_support: true,
+        ..Options::default()
+    }
+}
+
+/// (c) Secondary, clearly labelled measurement only: the additive option
+/// writes scoretk-private carriers outside the MusicXML 4.0 XSD.
+fn xml_private_options() -> Options {
+    Options {
+        xml_lossless_round_trip: true,
+        ..Options::default()
+    }
+}
+
+fn xml_options(mode: XmlMode) -> Options {
+    match mode {
+        XmlMode::Parity => xml_parity_options(),
+        XmlMode::FullSupport => xml_headline_options(),
+        XmlMode::Private => xml_private_options(),
+    }
+}
+
+/// Round trip of one direction over the whole corpus with explicit options.
+fn round_trip_totals(
+    scores: &[(String, PathBuf)],
+    direction: &Direction,
+    options: &Options,
+) -> Totals {
+    let mut totals = Totals::default();
+    for (_, path) in scores {
+        let reference = reference_model(path);
+        let reference_inventory = inventory(&reference);
+        let Ok(bytes) = write(&reference, direction.format, options) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let Ok(round_trip) = read(&bytes, direction.format) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let candidate = inventory(&round_trip);
+        let kinds = direction
+            .import
+            .declared_kinds()
+            .or(direction.export.declared_kinds());
+        let declared = direction
+            .import
+            .declared()
+            .union(direction.export.declared());
+        let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
+        totals.add(&coverage, essential(&reference_inventory, &candidate));
+    }
+    totals
+}
+
 /// One measured export direction (a format with both a reader and a writer).
 struct Direction {
     name: &'static str,
@@ -365,33 +468,45 @@ fn layer_coverage_table() {
         "direction", "declared", "essential", "full-support", "files", "skipped", "ref-items"
     );
 
+    println!("MusicXML is measured in three clearly labelled modes:");
+    println!("  (a) parity   = default export, byte-faithful to MuseScore 4.7.4;");
+    println!("  (b) HEADLINE = `xml_full_support`, standard MusicXML 4.0 XSD only;");
+    println!("  (c) SECONDARY = `xml_lossless_round_trip`, non-XSD scoretk-* carriers.");
     for direction in DIRECTIONS {
         let declared = direction
             .import
             .declared()
             .union(direction.export.declared());
-        let mut totals = Totals::default();
-        for (_, path) in &scores {
-            let reference = reference_model(path);
-            let reference_inventory = inventory(&reference);
-            let Ok(bytes) = write(&reference, direction.format, &Options::default()) else {
-                totals.skipped += 1;
-                continue;
-            };
-            let Ok(round_trip) = read(&bytes, direction.format) else {
-                totals.skipped += 1;
-                continue;
-            };
-            let candidate = inventory(&round_trip);
-            let kinds = direction
-                .import
-                .declared_kinds()
-                .or(direction.export.declared_kinds());
-            let coverage = compare_with_kinds(&reference_inventory, &candidate, declared, kinds);
-            totals.add(&coverage, essential(&reference_inventory, &candidate));
+        if matches!(direction.format, Format::MusicXml | Format::Mxl) {
+            let parity = round_trip_totals(&scores, direction, &xml_parity_options());
+            print_row(
+                &format!("{}+parity", direction.name),
+                declared,
+                &parity,
+                "(a) default export, MuseScore 4.7.4 parity",
+            );
+            print_details(declared, &parity);
+            let standard = round_trip_totals(&scores, direction, &xml_headline_options());
+            print_row(
+                &format!("{}+xsd", direction.name),
+                declared,
+                &standard,
+                "(b) HEADLINE: xml_full_support, MusicXML 4.0 XSD only",
+            );
+            print_details(declared, &standard);
+            let private = round_trip_totals(&scores, direction, &xml_private_options());
+            print_row(
+                &format!("{}+private", direction.name),
+                declared,
+                &private,
+                "(c) SECONDARY: additive mode, non-XSD scoretk-* carriers",
+            );
+            print_details(declared, &private);
+        } else {
+            let totals = round_trip_totals(&scores, direction, &Options::default());
+            print_row(direction.name, declared, &totals, "round trip (own writer)");
+            print_details(declared, &totals);
         }
-        print_row(direction.name, declared, &totals, "round trip (own writer)");
-        print_details(declared, &totals);
     }
 
     println!("\n=== Import alone against the same reference model ===");
@@ -1403,16 +1518,34 @@ fn mei_core_loss_diagnostic() {
 #[test]
 fn xml_full_loss_table() {
     let scores = corpus_scores();
-    let rows: &[(&str, &Direction, Option<ReferenceKind>)] = &[
-        ("mscx round trip", &DIRECTIONS[0], None),
-        ("musicxml round trip", &DIRECTIONS[2], None),
+    let rows: &[(&str, &Direction, Option<ReferenceKind>, XmlMode)] = &[
+        ("mscx round trip", &DIRECTIONS[0], None, XmlMode::Parity),
+        (
+            "musicxml round trip (a) 4.7.4 parity",
+            &DIRECTIONS[2],
+            None,
+            XmlMode::Parity,
+        ),
+        (
+            "musicxml round trip (b) HEADLINE full_support XSD",
+            &DIRECTIONS[2],
+            None,
+            XmlMode::FullSupport,
+        ),
+        (
+            "musicxml round trip (c) SECONDARY private",
+            &DIRECTIONS[2],
+            None,
+            XmlMode::Private,
+        ),
         (
             "musicxml import *.ref.musicxml",
             &DIRECTIONS[2],
             Some(ReferenceKind::MusicXml),
+            XmlMode::Parity,
         ),
     ];
-    for (label, direction, reference) in rows {
+    for (label, direction, reference, mode) in rows {
         let declared = direction
             .import
             .declared()
@@ -1422,16 +1555,18 @@ fn xml_full_loss_table() {
             .declared_kinds()
             .or(direction.export.declared_kinds());
         let mut totals = Totals::default();
+        let xml_options = xml_options(*mode);
+        let default_options = Options::default();
         for (name, path) in &scores {
             let reference_inventory = inventory(&reference_model(path));
+            let write_options = if matches!(direction.format, Format::MusicXml | Format::Mxl) {
+                &xml_options
+            } else {
+                &default_options
+            };
             let (bytes, format) = match reference {
                 None => (
-                    write(
-                        &reference_model(path),
-                        direction.format,
-                        &Options::default(),
-                    )
-                    .ok(),
+                    write(&reference_model(path), direction.format, write_options).ok(),
                     direction.format,
                 ),
                 Some(kind) => match reference_file(name, *kind) {
@@ -1499,11 +1634,30 @@ fn xml_loss_diagnostic() {
                 XML_IMPORT.declared_kinds().or(XML_EXPORT.declared_kinds()),
             )
         };
-        println!("\n=== {label}: missing items ===");
+        println!(
+            "\n=== {label}: missing items ({}) ===",
+            if reference.is_none() && format == Format::MusicXml {
+                "xml_full_support, standard XSD only"
+            } else {
+                "default export"
+            }
+        );
+        let xml_options = if reference.is_none() && format == Format::MusicXml {
+            // Diagnostic for the reported line: standard XSD carriers only.
+            xml_headline_options()
+        } else {
+            Options::default()
+        };
+        let default_options = Options::default();
         for (name, path) in &scores {
             let reference_inventory = inventory(&reference_model(path));
+            let write_options = if format == Format::MusicXml {
+                &xml_options
+            } else {
+                &default_options
+            };
             let bytes = match reference {
-                None => write(&reference_model(path), format, &Options::default()).expect("write"),
+                None => write(&reference_model(path), format, write_options).expect("write"),
                 Some(kind) => fs::read(&reference_file(name, kind).expect("reference").0)
                     .expect("read reference"),
             };

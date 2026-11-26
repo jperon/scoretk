@@ -32,13 +32,22 @@ use std::collections::BTreeMap;
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, Arpeggio, ArpeggioType, Articulation,
     ArticulationAnchor, ArticulationType, Breath, BreathType, Chord, Fermata, FermataType,
-    Fingering, Glissando, GlissandoType, LineStyle, NoteId, Ornament, OrnamentAccidental,
+    Fingering, Fraction, Glissando, GlissandoType, LineStyle, NoteId, Ornament, OrnamentAccidental,
     OrnamentType, Placement, Score, SegmentType, Spanner, SpannerAnchor, SpannerNotation,
-    SpannerType, Track, Trill, TrillType,
+    SpannerType, Track, TremoloBar, TremoloBarPoint, TremoloBarType, Trill, TrillType,
 };
 
 use crate::pass2;
 use crate::xml::Element;
+
+/// Tick de fin porté par l'export additif d'un trille (`scoretk-end`).
+fn parse_end_tick(element: &Element) -> Option<Fraction> {
+    let text = element.attribute("scoretk-end")?;
+    let (numerator, denominator) = text.split_once('/')?;
+    let numerator = numerator.parse::<i64>().ok()?;
+    let denominator = denominator.parse::<i64>().ok()?;
+    (denominator != 0).then(|| Fraction::new(numerator, denominator))
+}
 
 /// État d'appariement des spanners notés sur les accords.
 #[derive(Debug, Default)]
@@ -59,9 +68,11 @@ pub(crate) struct ParsedNotations {
     fingerings: Vec<Fingering>,
     slurs: Vec<(usize, bool, Option<Placement>, bool)>,
     glissandi: Vec<(usize, bool, Glissando)>,
-    trill: Option<(usize, Trill, bool, bool)>,
+    trill: Option<(usize, Trill, bool, bool, Option<Fraction>)>,
     trill_mark: bool,
     breath: Option<Breath>,
+    /// Barre de vibrato lue depuis `xsd:bend` / `xsd:with-bar`.
+    tremolo_bar: Option<TremoloBar>,
     visible: bool,
 }
 
@@ -101,6 +112,24 @@ pub(crate) fn parse(element: &Element) -> ParsedNotations {
                         value.visible =
                             visible && fingering.attribute("print-object") != Some("no");
                         parsed.fingerings.push(value);
+                    }
+                    // XSD 4.0 `xsd:technical/xsd:bend` + `xsd:with-bar` est le
+                    // porteur standard d'une barre de trémolo (`writeGuitarBend`
+                    // côté export). Reconstituer les points canoniques du type
+                    // permet à la relecture de retrouver la même annotation.
+                    for bend in child.children_named("bend") {
+                        let Some(with_bar) = bend.child_text("with-bar") else {
+                            continue;
+                        };
+                        let kind = tremolo_bar_type(with_bar.trim());
+                        let points = tremolo_bar_points(kind)
+                            .iter()
+                            .map(|(time, pitch)| TremoloBarPoint {
+                                time: *time,
+                                pitch: *pitch,
+                            })
+                            .collect();
+                        parsed.tremolo_bar = Some(TremoloBar::from_points(points));
                     }
                 }
                 "slur" => {
@@ -149,17 +178,34 @@ pub(crate) fn parse(element: &Element) -> ParsedNotations {
                     let number = number(child);
                     let start = child.attribute("type") == Some("start");
                     let stop = child.attribute("type") == Some("stop");
-                    if start {
+                    if start || stop {
                         let kind = TrillType::TrillLine;
                         let mut trill = Trill::new(kind);
                         trill.accidental = notations
                             .children_named("accidental-mark")
                             .next()
                             .and_then(accidental_mark);
-                        if let Some((_, _, _, existing)) = parsed.trill.as_mut() {
-                            *existing = *existing || stop;
+                        let end = parse_end_tick(child);
+                        if let Some((
+                            existing_number,
+                            _,
+                            existing_start,
+                            existing_stop,
+                            existing_end,
+                        )) = parsed.trill.as_mut()
+                        {
+                            if *existing_number == number && *existing_start {
+                                *existing_stop |= stop;
+                                if end.is_some() {
+                                    *existing_end = end;
+                                }
+                            } else if stop {
+                                // `<wavy-line type="stop">` séparé (porteur XSD
+                                // standard) : il clôt le trille ouvert.
+                                parsed.trill = Some((number, trill, false, true, None));
+                            }
                         } else {
-                            parsed.trill = Some((number, trill, true, stop));
+                            parsed.trill = Some((number, trill, start, stop, end));
                         }
                     }
                 }
@@ -173,6 +219,32 @@ pub(crate) fn parse(element: &Element) -> ParsedNotations {
             .push(Ornament::new(OrnamentType::TrillMark));
     }
     parsed
+}
+
+/// Type de barre déduit de `xsd:with-bar` (`TConv::fromXml`).
+fn tremolo_bar_type(name: &str) -> TremoloBarType {
+    match name {
+        "dive" => TremoloBarType::Dive,
+        "release (up)" => TremoloBarType::ReleaseUp,
+        "inverted dip" => TremoloBarType::InvertedDip,
+        "return" => TremoloBarType::Return,
+        "release (down)" => TremoloBarType::ReleaseDown,
+        "custom" => TremoloBarType::Custom,
+        _ => TremoloBarType::Dip,
+    }
+}
+
+/// Courbe canonique d'un type reconnu (`parseTremoloBarTypeFromCurve`).
+fn tremolo_bar_points(kind: TremoloBarType) -> &'static [(i32, i32)] {
+    match kind {
+        TremoloBarType::Dip => &[(0, 0), (30, -100), (60, 0)],
+        TremoloBarType::Dive => &[(0, 0), (60, -150)],
+        TremoloBarType::ReleaseUp => &[(0, -150), (60, 0)],
+        TremoloBarType::InvertedDip => &[(0, 0), (30, 100), (60, 0)],
+        TremoloBarType::Return => &[(0, 0), (60, 150)],
+        TremoloBarType::ReleaseDown => &[(0, 150), (60, 0)],
+        TremoloBarType::Custom => &[],
+    }
 }
 
 /// Applique les notations qui vivent sur l'accord.
@@ -252,15 +324,18 @@ pub(crate) fn apply_score(
         }
     }
 
-    if let Some((number, trill, start, stop)) = &parsed.trill {
+    if let Some((number, trill, start, stop, end)) = &parsed.trill {
         let key = *number;
         if *start {
             let anchor = SpannerAnchor::new(tick, track);
-            let mut spanner = Spanner::new(SpannerType::Trill, anchor, anchor);
+            let end_anchor = SpannerAnchor::new((*end).unwrap_or(tick), track);
+            let mut spanner = Spanner::new(SpannerType::Trill, anchor, end_anchor);
             spanner.notation = Some(SpannerNotation::Trill(trill.clone()));
             state.trills.insert(key, score.spanners.len());
             score.spanners.push(spanner);
-            if *stop {
+            // Le `stop` de MuseScore est écrit sur le même accord que le
+            // `start` ; un tick de fin explicite (export additif) l'emporte.
+            if *stop && end.is_none() {
                 state.trills.remove(&key);
             }
         } else if let Some(index) = state.trills.remove(&key) {
@@ -282,6 +357,11 @@ pub(crate) fn apply_score(
         let index = pass2::get_segment(score, measure_index, SegmentType::ChordRest, tick);
         score.measures[measure_index].segments[index]
             .add_annotation(track, Annotation::Fermata(fermata));
+    }
+    if let Some(bar) = parsed.tremolo_bar.clone() {
+        let index = pass2::get_segment(score, measure_index, SegmentType::ChordRest, tick);
+        score.measures[measure_index].segments[index]
+            .add_annotation(track, Annotation::TremoloBar(bar));
     }
 }
 
@@ -460,13 +540,23 @@ fn parse_ornaments(element: &Element, notations_visible: bool, parsed: &mut Pars
                 let number = number(child);
                 let start = child.attribute("type") == Some("start");
                 let stop = child.attribute("type") == Some("stop");
-                if start {
+                if start || stop {
                     let mut trill = Trill::new(TrillType::TrillLine);
                     trill.accidental = accidentals.first().map(|entry| entry.accidental);
-                    if let Some((_, _, _, existing)) = parsed.trill.as_mut() {
-                        *existing = *existing || stop;
+                    let end = parse_end_tick(child);
+                    if let Some((existing_number, _, existing_start, existing_stop, existing_end)) =
+                        parsed.trill.as_mut()
+                    {
+                        if *existing_number == number && *existing_start {
+                            *existing_stop |= stop;
+                            if end.is_some() {
+                                *existing_end = end;
+                            }
+                        } else if stop {
+                            parsed.trill = Some((number, trill, false, true, None));
+                        }
                     } else {
-                        parsed.trill = Some((number, trill, true, stop));
+                        parsed.trill = Some((number, trill, start, stop, end));
                     }
                 }
                 continue;

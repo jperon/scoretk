@@ -30,7 +30,7 @@
 use scoretk_core::model::{Capabilities, Layers};
 
 /// Couches lisibles depuis MusicXML.
-pub const CAPABILITIES: Capabilities = Capabilities::new(
+pub const CAPABILITIES: Capabilities = Capabilities::with_kinds(
     Layers::COMMON
         .union(Layers::METRIC)
         .union(Layers::EVENTS)
@@ -38,4 +38,5 @@ pub const CAPABILITIES: Capabilities = Capabilities::new(
         .union(Layers::PLAYBACK)
         .union(Layers::ENGRAVING),
     Layers::NONE,
+    scoretk_xml_common::XML_ITEM_KINDS,
 );

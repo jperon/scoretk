@@ -37,13 +37,21 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
             .attribute("page")
             .and_then(|page| page.parse::<u32>().ok())
             .unwrap_or(1);
-        let kind = element.child_text("credit-type").unwrap_or_default();
+        // `xsd:credit-type` est une chaîne libre et peut être répété. La
+        // hauteur du cadre vertical est portée par une valeur dédiée
+        // `vbox-height=…` (voir musicxml-export.md §55), sans attribut privé.
+        let mut vbox_height: Option<f64> = None;
+        let mut kind = "";
+        for value in element.children_named("credit-type") {
+            let value = value.text_trimmed();
+            if let Some(height) = value.strip_prefix("vbox-height=") {
+                vbox_height = height.parse::<f64>().ok();
+            } else if kind.is_empty() {
+                kind = value;
+            }
+        }
         // `MusicXmlParserPass1::addCreditWords` (`importmusicxmlpass1.cpp:
-        // 1041-1092`) applique un `TextStyleType` d'après `<credit-type>` ;
-        // `font-size` sert alors au style du texte, pas à une propriété
-        // `Pid::FONT_SIZE` explicite sur l'objet. Le modèle sépare ces deux
-        // faits : `StyleSettings` porte la taille, `Credit::font_size` ne
-        // garde qu'une taille sans type connu.
+        // 1041-1092`) applique un `TextStyleType` d'après `<credit-type>`.
         let typed = !kind.is_empty() && kind != "rights";
         let style = match kind {
             "title" => CreditStyle::Title,
@@ -59,8 +67,15 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
             continue;
         };
         {
-            let text = first.text_trimmed();
-            if text.is_empty() {
+            // XSD 4.0 `xsd:formatted-text` : le texte est conservé tel quel
+            // (les blancs et les retours à la ligne font partie du modèle).
+            // Les `<credit-words>` suivants sont les lignes suivantes d'un
+            // même cadre ; `xml:space="preserve"` est écrit par notre export.
+            let mut text = first.text.clone();
+            for extra in &words[1..] {
+                text.push_str(&extra.text);
+            }
+            if text.trim().is_empty() {
                 continue;
             }
             let format = TextFormat {
@@ -69,8 +84,11 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
                 italic: first.attribute("font-style") == Some("italic"),
                 ..TextFormat::default()
             };
-            let mut credit = Credit::new(RichText::from_markup_with(text, &format), style.clone());
+            let mut credit = Credit::new(RichText::from_markup_with(&text, &format), style.clone());
             credit.page = page;
+            if let Some(height) = vbox_height {
+                credit.vbox_height = height;
+            }
             if let Some(justify) = first
                 .attribute("justify")
                 .and_then(CreditJustify::from_name)
@@ -87,9 +105,6 @@ pub(crate) fn read_credits(root: &Element) -> Vec<Credit> {
                 if !typed {
                     credit.font_size = Some(size);
                 }
-            }
-            for extra in &words[1..] {
-                credit.extra_words.push(RichText::new(extra.text_trimmed()));
             }
             credits.push(credit);
         }

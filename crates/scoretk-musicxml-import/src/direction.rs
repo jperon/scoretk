@@ -37,7 +37,8 @@ use std::collections::BTreeMap;
 use scoretk_core::model::{
     Annotation, Dynamic, Fraction, Hairpin, HairpinType, HookType, Instrument, Jump, Marker,
     MarkerType, OttavaType, PedalInfo, Placement, RehearsalMark, RepeatMark, Score, Spanner,
-    SpannerAnchor, SpannerType, SystemText, Tempo, TextLineInfo, TextLineStyle, Track, Transpose,
+    SpannerAnchor, SpannerType, StaffId, SystemText, Tempo, TextLineInfo, TextLineStyle, Track,
+    Transpose,
 };
 
 use crate::pass1::Analysis;
@@ -176,6 +177,12 @@ pub(crate) fn read_direction(
     let mut sound_tempo: Option<f64> = None;
     let mut sound_dynamics: Option<f64> = None;
     let mut sound_coda: Option<String> = None;
+    let mut sound_marker_kind: Option<String> = None;
+    let mut sound_marker_label: Option<String> = None;
+    let mut sound_marker_staff: Option<String> = None;
+    let mut sound_jump_kind: Option<String> = None;
+    let mut sound_jump_to: Option<String> = None;
+    let mut sound_jump_staff: Option<String> = None;
     let mut sound_segno: Option<String> = None;
     let mut sound_to_coda: Option<String> = None;
     let mut sound_fine = false;
@@ -217,6 +224,7 @@ pub(crate) fn read_direction(
                                 kind,
                                 number,
                                 SpannerTag::Dashes,
+                                true,
                                 &mut starts,
                                 &mut stops,
                             ) {
@@ -228,6 +236,7 @@ pub(crate) fn read_direction(
                                 kind,
                                 number,
                                 SpannerTag::Bracket,
+                                true,
                                 &mut starts,
                                 &mut stops,
                             ) {
@@ -290,6 +299,12 @@ pub(crate) fn read_direction(
                 sound_fine = child.attribute("fine").is_some();
                 sound_da_capo = child.attribute("dacapo").is_some();
                 sound_dal_segno = child.attribute("dalsegno").map(str::to_owned);
+                sound_marker_kind = child.attribute("scoretk-marker-kind").map(str::to_owned);
+                sound_marker_label = child.attribute("scoretk-marker-label").map(str::to_owned);
+                sound_marker_staff = child.attribute("scoretk-marker-staff").map(str::to_owned);
+                sound_jump_kind = child.attribute("scoretk-jump-kind").map(str::to_owned);
+                sound_jump_to = child.attribute("scoretk-jump-to").map(str::to_owned);
+                sound_jump_staff = child.attribute("scoretk-jump-staff").map(str::to_owned);
                 if let Some(change) = child.child("instrument-change") {
                     read_instrument_change(
                         score,
@@ -354,6 +369,12 @@ pub(crate) fn read_direction(
         sound_fine,
         sound_da_capo,
         sound_dal_segno.as_deref(),
+        sound_marker_kind.as_deref(),
+        sound_marker_label.as_deref(),
+        sound_marker_staff.as_deref(),
+        sound_jump_kind.as_deref(),
+        sound_jump_to.as_deref(),
+        sound_jump_staff.as_deref(),
     );
 
     // Tempo : `<metronome>` et/ou `<sound tempo>`.
@@ -628,7 +649,10 @@ fn line_font(element: &Element) -> scoretk_core::model::LineFont {
 /// Le modèle de texte ne stocke que du balisage : on rouvre donc `<i>`,
 /// `<b>`, `<u>` et `<font>` pour que l'export réécrive les mêmes attributs.
 fn formatted_words(element: &Element) -> String {
-    let text = element.text_trimmed();
+    // Comme pour les textes de cadre (`tbox_words`), les blancs font partie du
+    // texte MuseScore : plusieurs `<words>` consécutifs se concatènent et un
+    // espace final devant le suivant ne doit pas disparaître.
+    let text = element.text.as_str();
     let mut open = String::new();
     let mut close = String::new();
     if element.attribute("font-style") == Some("italic") {
@@ -766,6 +790,16 @@ struct SpannerStart {
     text_line: Option<TextLineInfo>,
     pedal: Option<PedalInfo>,
     hairpin: Option<Hairpin>,
+    /// Tick de fin porté par l'export additif quand le `<wedge stop>` manque.
+    end_tick: Option<Fraction>,
+}
+
+/// Parse un tick au format `num/den` (`Fraction::to_string` de l'export).
+fn parse_tick_fraction(text: &str) -> Option<Fraction> {
+    let (numerator, denominator) = text.split_once('/')?;
+    let numerator = numerator.parse::<i64>().ok()?;
+    let denominator = denominator.parse::<i64>().ok()?;
+    (denominator != 0).then(|| Fraction::new(numerator, denominator))
 }
 
 /// Lit un `<wedge>`.
@@ -793,6 +827,9 @@ fn read_wedge(
                 text_line: None,
                 pedal: None,
                 hairpin: Some(hairpin),
+                end_tick: element
+                    .attribute("scoretk-end")
+                    .and_then(parse_tick_fraction),
             });
         }
         "stop" => stops.push((
@@ -843,6 +880,7 @@ fn ottava_start(number: usize, kind: OttavaType) -> SpannerStart {
         text_line: None,
         pedal: None,
         hairpin: None,
+        end_tick: None,
     }
 }
 
@@ -867,6 +905,7 @@ fn read_pedal(
                 text_line: None,
                 pedal: Some(info),
                 hairpin: None,
+                end_tick: None,
             });
         }
         "stop" => stops.push((SpannerTag::Pedal, number, true)),
@@ -876,10 +915,14 @@ fn read_pedal(
 }
 
 /// Lit un `<dashes>` ou un `<bracket>`.
+///
+/// `visible` is always true: the MusicXML 4.0 XSD has no `print-object` on
+/// `xsd:direction`, so `lineVisible=0` cannot be transported (declared loss).
 fn read_text_line(
     element: &Element,
     number: usize,
     tag: SpannerTag,
+    visible: bool,
     starts: &mut Vec<SpannerStart>,
     stops: &mut Vec<(SpannerTag, usize, bool)>,
 ) -> Option<(HookType, f64)> {
@@ -910,7 +953,7 @@ fn read_text_line(
                 .map_or(1.5, |length| length / 10.0);
             let info = TextLineInfo {
                 placement,
-                line_visible: true,
+                line_visible: visible,
                 line_style,
                 begin_hook,
                 begin_hook_height,
@@ -923,6 +966,7 @@ fn read_text_line(
                 text_line: Some(info),
                 pedal: None,
                 hairpin: None,
+                end_tick: None,
             });
         }
         "stop" => {
@@ -957,6 +1001,9 @@ fn open_spanner(
     spanner.text_line = start.text_line;
     spanner.pedal = start.pedal;
     spanner.hairpin = start.hairpin;
+    if let Some(end) = start.end_tick {
+        spanner.end = SpannerAnchor::new(end, track);
+    }
     let index = score.spanners.len();
     score.spanners.push(spanner);
     state.open.insert((start.tag, start.number), index);
@@ -1054,6 +1101,12 @@ fn read_repeats(
     fine: bool,
     da_capo: bool,
     dal_segno: Option<&str>,
+    marker_kind: Option<&str>,
+    marker_label: Option<&str>,
+    marker_staff: Option<&str>,
+    private_jump_kind: Option<&str>,
+    jump_to: Option<&str>,
+    jump_staff: Option<&str>,
 ) -> bool {
     let placement = placement.unwrap_or(Placement::Above);
     let text = if words.is_empty() {
@@ -1093,10 +1146,15 @@ fn read_repeats(
             track,
             visible: true,
         }));
-    } else if let Some(label) = to_coda {
+    } else if let Some(_target) = to_coda {
+        // `sound@tocoda` porte l'étiquette de la coda *cible*, pas celle du
+        // marqueur (`directionMarker`, exportmusicxml.cpp:6325-6329). C++ lit
+        // l'étiquette du texte (`findMarker`, importmusicxmlpass2.cpp:4790-4794)
+        // : `To Coda` → `coda`, `To Coda II` → `codaii`.
+        let label = format!("coda{}", marker_roman_id(&text));
         mark = Some(RepeatMark::Marker(Marker {
             kind: MarkerType::ToCoda,
-            label: label.to_owned(),
+            label,
             text: if text.is_empty() {
                 "To Coda".to_owned()
             } else {
@@ -1139,11 +1197,117 @@ fn read_repeats(
         jump.kind = kind;
         mark = Some(RepeatMark::Jump(jump));
     }
-    let Some(mark) = mark else {
+    let Some(mut mark) = mark else {
         return false;
     };
+    // Attributs privés de l'export « modèle complet » : type exact, libellé
+    // et portée des marqueurs/sauts que MusicXML ne distingue pas.
+    if let Some(kind) = marker_kind.and_then(marker_type_from_name) {
+        if let RepeatMark::Marker(value) = &mut mark {
+            value.kind = kind;
+            if let Some(label) = marker_label {
+                value.label = label.to_owned();
+            }
+            if let Some(staffs) = marker_staff.and_then(parse_staff_list) {
+                if let Some(first) = staffs.first() {
+                    value.track = Track::new(StaffId::from_raw(first - 1), value.track.voice());
+                }
+            }
+        }
+    }
+    if let Some(kind) = private_jump_kind.and_then(jump_type_from_name) {
+        if let RepeatMark::Jump(value) = &mut mark {
+            value.kind = kind;
+            if let Some(target) = jump_to {
+                value.jump_to = target.to_owned();
+            }
+            if let Some(staffs) = jump_staff.and_then(parse_staff_list) {
+                if let Some(first) = staffs.first() {
+                    value.track = Track::new(StaffId::from_raw(first - 1), value.track.voice());
+                }
+            }
+        }
+    }
+    let mut extra_marks = Vec::new();
+    if let Some(staffs) = marker_staff
+        .and_then(parse_staff_list)
+        .or_else(|| jump_staff.and_then(parse_staff_list))
+    {
+        for staff in staffs.iter().skip(1) {
+            let mut copy = mark.clone();
+            let voice = match &copy {
+                RepeatMark::Marker(value) => value.track.voice(),
+                RepeatMark::Jump(value) => value.track.voice(),
+            };
+            let track = Track::new(StaffId::from_raw(staff - 1), voice);
+            match &mut copy {
+                RepeatMark::Marker(value) => value.track = track,
+                RepeatMark::Jump(value) => value.track = track,
+            }
+            extra_marks.push(copy);
+        }
+    }
     score.measures[measure_index].repeat_marks.push(mark);
+    score.measures[measure_index]
+        .repeat_marks
+        .extend(extra_marks);
     true
+}
+
+fn parse_staff_list(text: &str) -> Option<Vec<u32>> {
+    let staffs: Option<Vec<u32>> = text
+        .split(',')
+        .map(|value| value.trim().parse::<u32>().ok().filter(|n| *n > 0))
+        .collect();
+    staffs.filter(|list| !list.is_empty())
+}
+
+fn marker_type_from_name(name: &str) -> Option<MarkerType> {
+    Some(match name {
+        "Segno" => MarkerType::Segno,
+        "VarSegno" => MarkerType::VarSegno,
+        "Coda" => MarkerType::Coda,
+        "VarCoda" => MarkerType::VarCoda,
+        "Codetta" => MarkerType::Codetta,
+        "Fine" => MarkerType::Fine,
+        "ToCoda" => MarkerType::ToCoda,
+        "ToCodaSym" => MarkerType::ToCodaSym,
+        "DaCoda" => MarkerType::DaCoda,
+        "DaDoubleCoda" => MarkerType::DaDoubleCoda,
+        "User" => MarkerType::User,
+        _ => return None,
+    })
+}
+
+fn jump_type_from_name(name: &str) -> Option<scoretk_core::model::JumpType> {
+    use scoretk_core::model::JumpType;
+    Some(match name {
+        "Dc" => JumpType::Dc,
+        "DcAlFine" => JumpType::DcAlFine,
+        "DcAlCoda" => JumpType::DcAlCoda,
+        "Ds" => JumpType::Ds,
+        "DsAlFine" => JumpType::DsAlFine,
+        "DsAlCoda" => JumpType::DsAlCoda,
+        "User" => JumpType::User,
+        _ => return None,
+    })
+}
+
+/// Numéro romain d'un marqueur d'après son texte (`getMarkerId`,
+/// importmusicxmlpass2.cpp:4310-4320).
+fn marker_roman_id(text: &str) -> String {
+    let lower = text.to_lowercase();
+    for index in 0..lower.len() {
+        let rest = &lower[index..];
+        if rest.starts_with("ii") || rest.starts_with("iii") {
+            let count = if rest.starts_with("iii") { 3 } else { 2 };
+            return "i".repeat(count);
+        }
+        if rest.starts_with('i') {
+            return "i".to_owned();
+        }
+    }
+    String::new()
 }
 
 /// Type de saut et cible d'arrêt d'après le texte (`matchRepeat`).
@@ -1153,14 +1317,14 @@ fn jump_kind(text: &str, da_capo: bool) -> (scoretk_core::model::JumpType, Strin
     let al_coda = lower.contains("al coda");
     if da_capo {
         if al_coda {
-            (scoretk_core::model::JumpType::DcAlCoda, "codab".to_owned())
+            (scoretk_core::model::JumpType::DcAlCoda, "coda".to_owned())
         } else if al_fine {
             (scoretk_core::model::JumpType::DcAlFine, "fine".to_owned())
         } else {
             (scoretk_core::model::JumpType::Dc, "end".to_owned())
         }
     } else if al_coda {
-        (scoretk_core::model::JumpType::DsAlCoda, "codab".to_owned())
+        (scoretk_core::model::JumpType::DsAlCoda, "coda".to_owned())
     } else if al_fine {
         (scoretk_core::model::JumpType::DsAlFine, "fine".to_owned())
     } else {

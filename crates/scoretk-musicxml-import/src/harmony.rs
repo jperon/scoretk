@@ -246,7 +246,16 @@ pub(crate) fn read_figured_bass(element: &Element, divisions: u32) -> FiguredBas
                 _ => FiguredBassContLine::None,
             };
         }
-        bass.items.push(item);
+        // XSD 4.0 `xsd:figure` peut être vide : c'est le porteur d'un
+        // chiffrage sans item (MuseScore 4.7.4 l'omet). Ne pas créer d'item
+        // factice, pour que la relecture retrouve `items.is_empty()`.
+        if item.prefix.is_some()
+            || item.digit.is_some()
+            || item.suffix.is_some()
+            || item.cont_line != FiguredBassContLine::None
+        {
+            bass.items.push(item);
+        }
     }
     if let Some(duration) = element.child_int("duration") {
         bass.ticks = Fraction::from_ticks(duration, divisions.max(1) * 4);

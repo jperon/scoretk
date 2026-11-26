@@ -41,14 +41,14 @@ pub(crate) fn read_barline(
     element: &Element,
 ) {
     let location = element.attribute("location").unwrap_or("right");
-    let Some(staff_id) = score.parts[part_index].staves.first().copied() else {
+    let Some(first_staff) = score.parts[part_index].staves.first().copied() else {
         return;
     };
-    let track = Track::new(staff_id, 0);
+    let first_track = Track::new(first_staff, 0);
     let measure_end = score.measures[measure_index].end_tick();
 
     if let Some(style) = element.child_text("bar-style") {
-        let kind = barline_type(style);
+        let (kind, span) = barline_type(style);
         if location == "left" {
             let current = score.measures[measure_index].start_bar_line;
             if !current.is_repeat_start() {
@@ -62,11 +62,21 @@ pub(crate) fn read_barline(
             // MuseScore représente aussi la barre par un élément sur le
             // segment de fin (`engraving/dom/barline.h`) ; le lecteur ne
             // conservait que le champ de mesure et perdait l'objet à un
-            // aller-retour MusicXML (85 items du corpus).
+            // aller-retour MusicXML (85 items du corpus). Le C++ ajoute la
+            // barre à la première voix de *chaque* portée de la partie
+            // (`MusicXmlParserPass2::barline`, importmusicxmlpass2.cpp:5819-5832).
             let index =
                 pass2::get_segment(score, measure_index, SegmentType::EndBarLine, measure_end);
-            score.measures[measure_index].segments[index]
-                .set_element(track, SegmentItem::BarLine(BarLine::new(kind)));
+            let staves = score.parts[part_index].staves.clone();
+            for staff_id in staves {
+                let mut bar = BarLine::new(kind);
+                if let Some((from, to)) = span {
+                    bar.span_from = from;
+                    bar.span_to = to;
+                }
+                score.measures[measure_index].segments[index]
+                    .set_element(Track::new(staff_id, 0), SegmentItem::BarLine(bar));
+            }
         }
     }
 
@@ -89,7 +99,7 @@ pub(crate) fn read_barline(
     }
 
     if let Some(ending) = element.child("ending") {
-        read_ending(score, measure_index, ending, location, track);
+        read_ending(score, measure_index, ending, location, first_track);
     }
 
     for fermata in element.children_named("fermata") {
@@ -107,22 +117,29 @@ pub(crate) fn read_barline(
             measure_end,
         );
         score.measures[measure_index].segments[index]
-            .add_annotation(track, Annotation::Fermata(value));
+            .add_annotation(first_track, Annotation::Fermata(value));
     }
 }
 
-/// Type de barre MusicXML.
-fn barline_type(style: &str) -> BarLineType {
+/// Type de barre MusicXML et portée associée.
+///
+/// `dashed`est l'alias C++ de `BROKEN` (`engraving/types/types.h:414-415`) ; le
+/// modèle pivot distingue les deux noms, on choisit celui que le lecteur `.mscx`
+/// produit pour `<subtype>dashed</subtype>` afin que les deux lectures
+/// coïncident. `short`/`tick` ne sont pas des subtypes mais des barres
+/// **normales** dont `createBarline` (`importmusicxmlpass2.cpp:2055-2061`)
+/// règle l'extension.
+fn barline_type(style: &str) -> (BarLineType, Option<(i8, i8)>) {
     match style {
-        "light-light" => BarLineType::Double,
-        "light-heavy" => BarLineType::End,
-        "heavy-light" => BarLineType::StartRepeat,
-        "heavy-heavy" => BarLineType::End,
-        "dashed" => BarLineType::Broken,
-        "dotted" => BarLineType::Dotted,
-        "tick" => BarLineType::Tick,
-        "short" => BarLineType::Short,
-        _ => BarLineType::Normal,
+        "light-light" => (BarLineType::Double, None),
+        "light-heavy" => (BarLineType::End, None),
+        "heavy-light" => (BarLineType::StartRepeat, None),
+        "heavy-heavy" => (BarLineType::End, None),
+        "dashed" => (BarLineType::Dashed, None),
+        "dotted" => (BarLineType::Dotted, None),
+        "tick" => (BarLineType::Normal, Some((-1, -7))),
+        "short" => (BarLineType::Normal, Some((2, -2))),
+        _ => (BarLineType::Normal, None),
     }
 }
 

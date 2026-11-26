@@ -78,6 +78,182 @@ fn barre_de_fin_est_un_element_du_segment() {
     assert!(found, "la barre doit aussi être un élément de segment");
 }
 
+/// Deux portées d'une même partie reçoivent la barre (`MusicXmlParserPass2::barline`,
+/// importmusicxmlpass2.cpp:5819-5832) ; `dashed` est l'alias C++ de `BROKEN`
+/// (`engraving/types/types.h:415`).
+#[test]
+fn barre_dashed_sur_toutes_les_portees() {
+    let document = br#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <staves>2</staves>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><staff>1</staff><type>whole</type></note>
+      <barline location="right"><bar-style>dashed</bar-style></barline>
+    </measure>
+  </part>
+</score-partwise>"#;
+    let score = read_musicxml(document).expect("lecture");
+    assert_eq!(
+        score.parts[0].staves.len(),
+        2,
+        "les deux portées sont créées"
+    );
+    assert_eq!(score.measures[0].end_bar_line, BarLineType::Dashed);
+    let found: Vec<_> = score.measures[0]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .filter_map(|(_, item)| match item {
+            SegmentItem::BarLine(bar) => Some(bar),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), 2, "une barre par portée de la partie");
+    assert!(found.iter().all(|bar| bar.kind == BarLineType::Dashed));
+}
+
+/// `short` et `tick` sont des barres normales avec une portée particulière
+/// (`createBarline`, importmusicxmlpass2.cpp:2055-2061), pas des subtypes.
+#[test]
+fn barre_short_est_normale_avec_portee_courte() {
+    let mut xml = partition_44();
+    let barline = br#"<barline location="right"><bar-style>short</bar-style></barline>"#;
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, barline.iter().copied());
+    let score = read_musicxml(&xml).expect("lecture");
+    assert_eq!(score.measures[0].end_bar_line, BarLineType::Normal);
+    let found = score.measures[0]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .find_map(|(_, item)| match item {
+            SegmentItem::BarLine(bar) => Some(*bar),
+            _ => None,
+        })
+        .expect("barre de fin");
+    assert_eq!(found.kind, BarLineType::Normal);
+    assert_eq!((found.span_from, found.span_to), (2, -2));
+}
+
+/// Extension additive : une rupture marquée sur la mesure elle-même
+/// (`scoretk-own`) n'est pas déplacée sur la mesure précédente.
+#[test]
+fn rupture_portee_par_la_mesure() {
+    let mut xml = partition_44();
+    let print = br#"<print new-system="yes" scoretk-own="yes"/>"#;
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, print.iter().copied());
+    let score = read_musicxml(&xml).expect("lecture");
+    assert!(score.measures[0].line_break);
+}
+
+/// Marqueur invisible de l'export additif : le saut de ligne final d'un
+/// `work-number` survit à la lecture (le XML est rogné par `text_trimmed`).
+#[test]
+fn numero_doeuvre_avec_saut_final() {
+    let xml = br#"<score-partwise version="4.0">
+  <work><work-number>Op. 1
+&#x200b;</work-number></work>
+  <part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+  </measure></part>
+</score-partwise>"#;
+    let score = read_musicxml(xml).expect("lecture");
+    assert_eq!(score.metadata.work_number, "Op. 1\n");
+}
+
+/// `sound@tocoda` nomme la coda cible, pas le marqueur `To Coda`.
+#[test]
+fn marqueur_to_coda_label_depuis_le_texte() {
+    let mut xml = partition_44();
+    let direction = br#"<direction placement="above"><direction-type><words>To Coda</words></direction-type><sound tocoda="codab"/></direction>"#;
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, direction.iter().copied());
+    let score = read_musicxml(&xml).expect("lecture");
+    let marks = &score.measures[0].repeat_marks;
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    match &marks[0] {
+        scoretk_core::model::RepeatMark::Marker(marker) => {
+            assert_eq!(marker.kind, scoretk_core::model::MarkerType::ToCoda);
+            assert_eq!(marker.label, "coda");
+        }
+        other => panic!("marqueur attendu : {other:?}"),
+    }
+}
+
+/// XSD 4.0 : `<key>` porte l'armure écrite et `<transpose>` le décalage de
+/// l'instrument ; l'armure concert se déduit de ces deux porteurs standard.
+#[test]
+fn armure_concert_depuis_transpose() {
+    let xml = partition_44();
+    let text = String::from_utf8(xml.clone())
+        .unwrap()
+        .replace("<fifths>0</fifths>", "<fifths>-3</fifths>")
+        .replace(
+            "<clef><sign>G</sign><line>2</line></clef>",
+            "<clef><sign>G</sign><line>2</line></clef>\
+             <transpose><diatonic>-2</diatonic><chromatic>-3</chromatic></transpose>",
+        );
+    let score = read_musicxml(text.as_bytes()).expect("lecture");
+    let signature = score.measures[0]
+        .segments
+        .iter()
+        .flat_map(|segment| segment.iter_elements())
+        .find_map(|(_, item)| match item {
+            scoretk_core::model::SegmentItem::KeySig(value) => Some(value.clone()),
+            _ => None,
+        })
+        .expect("armure");
+    assert_eq!(signature.concert_key.fifths(), 0);
+    assert_eq!(signature.transposed_key.fifths(), -3);
+}
+
+/// Extension additive : un marqueur `User` et sa portée sont conservés.
+#[test]
+fn marqueur_user_depuis_l_attribut_additif() {
+    let mut xml = partition_44();
+    let direction = br#"<direction><direction-type><segno/></direction-type><sound segno="segno1" scoretk-marker-kind="User" scoretk-marker-label="segno1" scoretk-marker-staff="1,2"/></direction>"#;
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, direction.iter().copied());
+    let score = read_musicxml(&xml).expect("lecture");
+    let marks = &score.measures[0].repeat_marks;
+    assert_eq!(marks.len(), 2, "{marks:?}");
+    for mark in marks {
+        match mark {
+            scoretk_core::model::RepeatMark::Marker(marker) => {
+                assert_eq!(marker.kind, scoretk_core::model::MarkerType::User);
+                assert_eq!(marker.label, "segno1");
+            }
+            other => panic!("marqueur attendu : {other:?}"),
+        }
+    }
+}
+
+/// `D.S. al Coda` joue jusqu'à `coda` et reprend à `codab` (`repeat11`).
+#[test]
+fn saut_ds_al_coda_jusqua_coda() {
+    let mut xml = partition_44();
+    let direction = br#"<direction><direction-type><words>D.S. al Coda</words></direction-type><sound dalsegno="segno"/></direction>"#;
+    let end = xml.windows(10).rposition(|w| w == b"</measure>").unwrap();
+    xml.splice(end..end, direction.iter().copied());
+    let score = read_musicxml(&xml).expect("lecture");
+    match &score.measures[0].repeat_marks[0] {
+        scoretk_core::model::RepeatMark::Jump(jump) => {
+            assert_eq!(jump.play_until, "coda");
+            assert_eq!(jump.continue_at, "codab");
+        }
+        other => panic!("saut attendu : {other:?}"),
+    }
+}
+
 #[test]
 fn reprise_et_liaison() {
     let document = br#"<score-partwise version="4.0">

@@ -145,6 +145,10 @@ pub struct MeasureData {
     /// `importmusicxmlpass1.cpp:2916-2929, 1205-1214`) : la rupture est portée
     /// par la mesure précédente dans le modèle MuseScore.
     pub line_break: bool,
+    /// Vrai si un `<print new-system="yes"/>` porte la rupture sur cette
+    /// mesure elle-même (utile sur la dernière mesure, qui n'a pas de
+    /// successeur ; porteur XSD standard `xsd:print`).
+    pub own_line_break: bool,
 }
 
 /// Partie du document, telle que relevée en première passe.
@@ -337,11 +341,15 @@ pub fn analyse(root: &Element) -> Result<Analysis> {
         let line_break = states
             .iter()
             .any(|state| state.line_breaks.get(index).copied().unwrap_or(false));
+        let own_line_break = states
+            .iter()
+            .any(|state| state.own_line_breaks.get(index).copied().unwrap_or(false));
         measures.push(MeasureData {
             len,
             time_sig_in_effect: time_sig,
             section_break,
             line_break,
+            own_line_break,
         });
     }
 
@@ -362,6 +370,7 @@ struct PartState {
     implicits: Vec<bool>,
     /// `<print new-system>` / `<print new-page>` de chaque mesure.
     line_breaks: Vec<bool>,
+    own_line_breaks: Vec<bool>,
     voices: BTreeMap<i32, VoiceDesc>,
     divisions: u32,
     max_staff: usize,
@@ -546,6 +555,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
         numbers: Vec::new(),
         implicits: Vec::new(),
         line_breaks: Vec::new(),
+        own_line_breaks: Vec::new(),
         voices: BTreeMap::new(),
         divisions: 1,
         max_staff: 0,
@@ -563,6 +573,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
         let mut measure_time = Fraction::ZERO;
         let mut duration = Fraction::ZERO;
         let mut line_break = false;
+        let mut own_line_break = false;
         let measure_start = length_start(&state.lengths);
 
         for child in &measure.children {
@@ -599,6 +610,12 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
                         || child.attribute("new-system") == Some("yes")
                     {
                         line_break = true;
+                        // Une rupture avant les notes appartient à la mesure
+                        // précédente. Une rupture *après* les notes (position
+                        // utilisée par notre exporteur sur la dernière mesure)
+                        // porte la mesure elle-même : `xsd:print` est le seul
+                        // porteur XSD et n'a pas d'attribut de position.
+                        own_line_break = measure_time > Fraction::ZERO;
                     }
                 }
                 "forward" => {
@@ -638,6 +655,7 @@ fn measure_part(part: &mut PartData, element: Option<&Element>) -> Result<PartSt
             .implicits
             .push(measure.attribute("implicit") == Some("yes"));
         state.line_breaks.push(line_break);
+        state.own_line_breaks.push(own_line_break);
 
         for voice in detector.overlapping_voices() {
             if let Some(desc) = state.voices.get_mut(&voice) {
@@ -789,7 +807,12 @@ fn read_attributes_part(
                     *max_staff = (*max_staff).max(count);
                 }
             }
-            "transpose" => part.transpose = read_transpose(child),
+            // Le premier `<transpose>` de la partie décrit l'instrument en
+            // vigueur à l'armure initiale ; un changement ultérieur ne doit
+            // pas effacer cette information pour les armures déjà lues.
+            "transpose" if part.transpose.is_none() => {
+                part.transpose = read_transpose(child);
+            }
             _ => {}
         }
     }

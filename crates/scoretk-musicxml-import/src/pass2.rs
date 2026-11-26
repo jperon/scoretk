@@ -152,6 +152,14 @@ pub fn build(root: &Element, analysis: &Analysis) -> Result<Score> {
             score.measures[index - 1].line_break = true;
         }
     }
+    // Une rupture `<print new-system="yes">` sur la dernière mesure ne peut
+    // pas être appliquée à la mesure suivante : elle porte donc la sienne.
+    // Porteur XSD standard `xsd:print`, valable dans les deux modes.
+    if let Some(index) = analysis.measures.len().checked_sub(1) {
+        if analysis.measures[index].own_line_break {
+            score.measures[index].line_break = true;
+        }
+    }
 
     let elements: BTreeMap<&str, &Element> = root
         .children_named("part")
@@ -243,10 +251,19 @@ fn read_metadata(root: &Element) -> scoretk_core::model::ScoreMetadata {
     let mut metadata = scoretk_core::model::ScoreMetadata::default();
     if let Some(work) = root.child("work") {
         metadata.work_title = work.child_text("work-title").unwrap_or_default().to_owned();
-        metadata.work_number = work
-            .child_text("work-number")
+        // XSD 4.0 `xsd:work-number` est `xs:string` : le texte brut, y compris
+        // ses retours à la ligne, est le porteur standard (`full_support`).
+        let mut work_number = work
+            .child("work-number")
+            .map(|element| element.text.as_str())
             .unwrap_or_default()
             .to_owned();
+        // Le mode secondaire marque le saut final par un U+200B que le lecteur
+        // retire ; les deux porteurs coexistent sans option de lecture (§55).
+        if let Some(without) = work_number.strip_suffix('\u{200b}') {
+            work_number = without.to_owned();
+        }
+        metadata.work_number = work_number;
     }
     metadata.movement_title = root
         .child_text("movement-title")
@@ -1007,6 +1024,16 @@ fn read_key(
         _ => KeyMode::Unknown,
     };
     let mut signature = KeySig::new(Key::new(fifths));
+    // Porteur XSD standard : `xsd:transpose/xsd:chromatic` de la partie
+    // (MuseScore `tables::transpose_key_fifths`, 4.7.4). L'armure écrite et
+    // l'armure concert ne sont pas la même donnée ; la déduire ici permet de
+    // supprimer l'attribut privé `scoretk-concert-fifths`.
+    if let Some(transpose) = analysis.parts[part_index].transpose {
+        let delta = (7 * i64::from(transpose.chromatic)).rem_euclid(12);
+        let delta = if delta > 6 { delta - 12 } else { delta };
+        let concert = (i64::from(fifths) + delta).clamp(i64::from(i8::MIN), i64::from(i8::MAX));
+        signature.concert_key = Key::new(concert as i8);
+    }
     signature.mode = mode;
     signature.visible = element.attribute("print-object") != Some("no");
 

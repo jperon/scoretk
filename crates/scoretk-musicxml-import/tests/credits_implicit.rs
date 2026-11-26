@@ -57,6 +57,33 @@ fn taille_differente_du_style_reste_une_propriete_de_style() {
     assert_eq!(score.engraving.style.title_font_size, 30.0);
 }
 
+/// XSD 4.0 `xsd:credit-type` est une chaîne libre répétable : la hauteur du
+/// cadre y est portée par `vbox-height=…`, sans attribut privé.
+#[test]
+fn hauteur_de_cadre_est_lecture() {
+    let xml = String::from_utf8(document(
+        "<credit-type>title</credit-type><credit-type>vbox-height=18.09770</credit-type>",
+        "24",
+    ))
+    .expect("UTF-8");
+    let score = read_musicxml(xml.as_bytes()).expect("lecture");
+    assert_eq!(score.engraving.credits[0].vbox_height, 18.0977);
+}
+
+/// XSD 4.0 `xsd:formatted-text` + `xml:space="preserve"` : le texte garde ses
+/// espaces finaux et ses entités littérales, sans attribut privé.
+#[test]
+fn texte_de_credit_sans_rogner() {
+    let xml = String::from_utf8(document("<credit-type>title</credit-type>", "24"))
+        .expect("UTF-8")
+        .replace(
+            "font-size=\"24\">Titre</credit-words>",
+            "font-size=\"24\" xml:space=\"preserve\">Titre &amp;amp; </credit-words>",
+        );
+    let score = read_musicxml(xml.as_bytes()).expect("lecture");
+    assert_eq!(score.engraving.credits[0].text.plain(), "Titre &amp; ");
+}
+
 #[test]
 fn taille_sans_type_credit_reste_explicite() {
     let score = read_musicxml(&document("", "18")).expect("lecture");
