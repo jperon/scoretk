@@ -10396,3 +10396,31 @@ fn test_des_glyphes_genere_le_score_de_reference() {
         vec![60, 72, 72, 72, 72, 72, 72, 72]
     );
 }
+
+/// Un `\new Staff` écrit dans une voix ouvre un contexte `Staff` distinct
+/// (`lily/parser.yy`, `NEWCONTEXT`), donc son propre `Audio_staff`
+/// (`lily/staff-performer.cc:128-153`, `new_audio_staff`) et une piste MIDI
+/// séparée (`lily/performance.cc:69-110`). Le placer comme simple voix de la
+/// portée courante ferait fusionner ses unissons avec ceux de cette portée
+/// (`lily/midi-walker.cc:95-115`). `promenade-6.ly` gagne ainsi un fichier
+/// exact sur les lots `mut` et `rw`.
+#[test]
+fn new_staff_imbrique_ouvre_une_portee_et_une_piste_distinctes() {
+    let source = r#"\version "2.24.0"
+\score {
+  \new Staff {
+    \fixed c' {
+      << { c'2 } { \new Staff { \fixed c' { c'2 } } } >>
+    }
+  }
+}"#;
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(score.staves.len(), 2, "le `\new Staff` imbriqué a sa portée");
+    let jouees: Vec<u8> = score
+        .notes
+        .iter()
+        .filter(|note| !note.playback.unperformed)
+        .map(|note| note.pitch)
+        .collect();
+    assert_eq!(jouees, vec![72, 72], "les deux unissons sonnent sur deux pistes");
+}

@@ -379,6 +379,14 @@ pub(crate) struct SpawnedVoice {
     /// dans la pièce. Faux pour un `\new Voice` hors d'un tel passage, qui
     /// reste une voix à part entière.
     pub temporary: bool,
+    /// Vrai pour un `\new Staff` rencontré dans une voix : LilyPond ouvre un
+    /// contexte `Staff` distinct (`lily/parser.yy`, `NEWCONTEXT`), donc un
+    /// `Audio_staff` distinct (`lily/staff-performer.cc:128-153`,
+    /// `new_audio_staff`) et une piste MIDI propre
+    /// (`lily/performance.cc:69-110`). La voix ne doit donc pas être placée
+    /// dans la portée courante, où ses unissons seraient fusionnés avec ceux
+    /// de cette portée (`lily/midi-walker.cc:95-115`).
+    pub separate_staff: bool,
     /// Voix interprétée, en ticks absolus.
     pub interpreted: InterpretedVoice,
 }
@@ -756,6 +764,7 @@ impl<'a> Interpreter<'a> {
         let start = self.cursor;
         let mut end = start;
         let mut last_duration = self.default_duration;
+        let debut_spawned = self.voice.spawned.len();
         for staff in &group.staves {
             let mut lyrics: Vec<LyricsBlock> = staff.lyrics.clone();
             lyrics.extend(group.lyrics.iter().cloned());
@@ -788,6 +797,18 @@ impl<'a> Interpreter<'a> {
                 self.last_event_chord_notes = child.last_event_chord_notes.clone();
                 last_duration = child.default_duration;
                 self.default_multiplier = child.default_multiplier;
+            }
+        }
+        // `\new Staff` crée un vrai contexte `Staff`, pas une voix de la
+        // portée courante : `lily/context.cc` (`NEWCONTEXT` / `find_create_context`)
+        // l'ouvre à côté de la portée en cours, `lily/staff-performer.cc`
+        // lui donne son propre `Audio_staff`, et `lily/performance.cc` écrit
+        // alors une piste MIDI distincte. `\context Staff`, lui, retrouve le
+        // contexte existant et reste dans la portée courante.
+        if group.kind == GroupKind::Staff && !group.existing {
+            for spawned in &mut self.voice.spawned[debut_spawned..] {
+                spawned.separate_staff = true;
+                spawned.temporary = false;
             }
         }
         // La musique du contexte fait partie de la séquence : elle avance la
@@ -1007,6 +1028,7 @@ impl<'a> Interpreter<'a> {
             name,
             lyrics,
             temporary,
+            separate_staff: false,
             interpreted: child.voice,
         });
         result

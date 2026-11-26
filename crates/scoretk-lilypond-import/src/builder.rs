@@ -134,6 +134,10 @@ struct PendingVoice {
     lyrics: Vec<LyricsBlock>,
     /// Branche d'un passage polyphonique temporaire (`<< … \\ … >>`).
     temporary: bool,
+    /// `\new Staff` imbriqué : place la voix sur une portée distincte, avec
+    /// son propre `Audio_staff` (`lily/staff-performer.cc:128-153`) et donc
+    /// sa piste MIDI (`lily/performance.cc:69-110`).
+    separate_staff: bool,
     /// Voix interprétée.
     interpreted: InterpretedVoice,
 }
@@ -1045,11 +1049,12 @@ fn merge_preamble(kept: Vec<PendingVoice>, target: usize) -> Vec<PendingVoice> {
 fn merge_temporary_voices(kept: Vec<PendingVoice>) -> Vec<PendingVoice> {
     let mut merged: Vec<PendingVoice> = Vec::new();
     for pending in kept {
-        let mergeable = pending.temporary && pending.name.is_none();
+        let mergeable = pending.temporary && pending.name.is_none() && !pending.separate_staff;
         if mergeable {
             if let Some(target) = merged.iter_mut().find(|target| {
                 target.temporary
                     && target.name.is_none()
+                    && !target.separate_staff
                     && !voice_ranges_overlap(&target.interpreted, &pending.interpreted)
             }) {
                 merge_voice_into(target, pending);
@@ -1139,6 +1144,7 @@ fn assign_voice_slots(
             name,
             lyrics: voice_lyrics,
             temporary,
+            separate_staff: _,
             interpreted,
         } = item;
         let start = interpreted
@@ -1156,6 +1162,7 @@ fn assign_voice_slots(
                 name,
                 lyrics: voice_lyrics,
                 temporary,
+                separate_staff: false,
                 interpreted,
             });
             continue;
@@ -1250,6 +1257,7 @@ fn build_voices(
             name: block.name.clone(),
             lyrics: Vec::new(),
             temporary: false,
+            separate_staff: false,
             interpreted,
         });
     }
@@ -1259,6 +1267,7 @@ fn build_voices(
             name,
             lyrics,
             temporary,
+            separate_staff,
             interpreted,
         } = pending;
         let InterpretedVoice {
@@ -1273,6 +1282,7 @@ fn build_voices(
                 name: voice.name,
                 lyrics: voice.lyrics,
                 temporary: voice.temporary,
+                separate_staff: voice.separate_staff,
                 interpreted: voice.interpreted,
             });
         }
@@ -1283,6 +1293,7 @@ fn build_voices(
             name,
             lyrics,
             temporary,
+            separate_staff,
             interpreted: InterpretedVoice {
                 events,
                 tuplets,
@@ -1292,6 +1303,12 @@ fn build_voices(
             },
         });
     }
+
+    // Un `\new Staff` imbriqué n'est pas une voix de la portée : le séparer
+    // avant toute fusion de voix temporaires ou d'unissons, sinon ses notes
+    // seraient mélangées à celles de la portée d'origine.
+    let (separate, kept): (Vec<_>, Vec<_>) =
+        kept.into_iter().partition(|pending| pending.separate_staff);
 
     // Les branches d'un passage polyphonique temporaire (`<< … \\ … >>`)
     // reprennent la même piste d'une occurrence à l'autre : deux passages
@@ -1353,6 +1370,29 @@ fn build_voices(
             0,
             "voix surnuméraires non placées : trop de portées simultanées".to_owned(),
         );
+    }
+    // `\new Staff` rencontré dans une voix : une portée et un `Audio_staff`
+    // propres, donc une piste MIDI distincte dans la référence
+    // (`lily/staff-performer.cc:128-153`, `lily/performance.cc:69-110`).
+    for pending in separate {
+        let extra_staff = score.add_staff_with(part, Staff::new(part));
+        let (voices, lyrics, reste) =
+            assign_voice_slots(score, extra_staff, vec![pending], vec![None; VOICES]);
+        if !voices.is_empty() {
+            built.push(BuiltVoices {
+                staff: extra_staff,
+                audio_staff: extra_staff,
+                voices,
+                lyrics,
+            });
+        }
+        if !reste.is_empty() {
+            warnings.push(
+                0,
+                0,
+                "voix d'une portée imbriquée non placée : trop de voix simultanées".to_owned(),
+            );
+        }
     }
     (built, octave)
 }
