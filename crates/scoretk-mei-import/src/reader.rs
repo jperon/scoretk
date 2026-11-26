@@ -263,7 +263,13 @@ impl<'a> Reader<'a> {
         let nominal = Fraction::try_new(numerator, denominator).unwrap_or(Fraction::new(4, 4));
         let start = self.score.end_tick();
         let mut measure = Measure::new(index, start, nominal);
-        measure.time_sig_numerator = numerator;
+        // `Measure::new` stocke le numérateur **réduit** (`4/4` → `1`), comme
+        // le lecteur `.mscx` de MuseScore. L'ancienne affectation du `@n`
+        // écrit (`4`) rendait `Convert::tstampFromFraction` et son inverse
+        // asymétriques : un `@tstamp` écrit avec le dénominateur réduit était
+        // relu avec le dénominateur non réduit (par exemple 1.750 relu comme
+        // 19/16 au lieu de 7/4 dans `v3/testWedge4`).
+        measure.time_sig_numerator = nominal.numerator();
         measure.number_offset = if info.irregular {
             0
         } else {

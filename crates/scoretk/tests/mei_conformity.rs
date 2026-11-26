@@ -206,3 +206,28 @@ fn mei_export_matches_musescore_474_references() {
         "MEI export conformity {percent:.2}% is below 90%"
     );
 }
+
+/// `@tstamp` must be read with the same denominator as the one the writer
+/// used: the reduced numerator of the measure's time signature
+/// (`Measure::time_sig_numerator`, `4/4` → `1`). Without it a hairpin written
+/// at `tstamp="2.000"` in a 4/4 measure lands at 1/4 instead of 1/1.
+#[test]
+fn tstamp_uses_the_reduced_numerator_in_both_directions() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+        <section><measure n="1">
+          <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+          <hairpin staff="1" tstamp="2.000" tstamp2="3.000" form="cres"/>
+        </measure></section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    assert_eq!(score.measures[0].time_sig_numerator, 1);
+    let hairpin = score
+        .spanners
+        .iter()
+        .find(|spanner| matches!(spanner.kind, scoretk::model::SpannerType::Hairpin(_)))
+        .expect("hairpin");
+    assert_eq!(hairpin.start.tick, scoretk::model::Fraction::new(1, 1));
+    assert_eq!(hairpin.end.tick, scoretk::model::Fraction::new(2, 1));
+}
