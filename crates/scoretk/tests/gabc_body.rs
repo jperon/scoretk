@@ -45,7 +45,9 @@ fn a_body_only_gabc_is_detected_and_converted_to_musicxml() {
             .expect("UTF-8 GABC");
     assert!(!written.contains("%%"), "{written}");
     assert!(!written.contains("name:"), "{written}");
-    assert!(written.starts_with("(c4)"), "{written}");
+    // The body's spelling (space after the clef, word spaces and the final
+    // newline) is kept, so the writer reproduces the source byte for byte.
+    assert_eq!(written, BODY);
     assert_eq!(
         read(written.as_bytes(), Format::Gabc)
             .expect("second import")
@@ -70,14 +72,10 @@ fn a_headerless_gregobase_group_keeps_its_alternating_cuts() {
             .expect("UTF-8 GABC");
     assert!(!written.contains("nabc-lines:"), "{written}");
     assert!(!written.contains("%%"), "{written}");
-    // Every cut-back is restored: the seven snippets stay at their original
-    // places. The slash starting the `/giHG` square segment is a pre-existing
-    // glyph normalisation — the reader attaches it to the preceding `h` note
-    // whatever the cut — not a lost separator.
-    assert_eq!(
-        written,
-        "(c4)\nnos,(hg|cl|h|st|jj|ds-hi|jvHG|ci|hh/|ds-|giHG|pesu2|hf/fe|cl!pi) (:)"
-    );
+    // Every cut-back is restored at its original place, including the slash
+    // that opens the `/giHG` square snippet: the payload keeps it beside the
+    // manuscript snippet it follows rather than gluing it to `hh`.
+    assert_eq!(written, BODY);
     let again = read(written.as_bytes(), Format::Gabc).expect("second import");
     assert_eq!(again.notes.len(), 18);
     let Some(scoretk::model::Extension::Gregorian(before)) = &score.extensions.format else {
@@ -109,10 +107,7 @@ fn a_headerless_body_with_seven_manuscript_voices_round_trips() {
             .expect("UTF-8 GABC");
     assert!(!written.contains("%%"), "{written}");
     assert!(!written.contains("name:"), "{written}");
-    assert_eq!(
-        written,
-        "(f3)\n(ii//|bv-|gh!ivHG//|vi-hhppu2su1sut1|fhg/|to|eef.|pt) (,)"
-    );
+    assert_eq!(written, RAW);
     let again = read(written.as_bytes(), Format::Gabc).expect("second import");
     assert_eq!(again.notes.len(), score.notes.len());
     let Some(scoretk::model::Extension::Gregorian(before)) = &score.extensions.format else {

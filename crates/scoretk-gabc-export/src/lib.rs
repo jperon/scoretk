@@ -123,7 +123,15 @@ fn emit(gregorian: &Gregorian) -> String {
         if let Some(clef) = gregorian.clefs.first() {
             out.push('(');
             out.push_str(clef);
-            out.push_str(")\n");
+            out.push(')');
+            // A raw body separates the clef group from the first syllable by
+            // a space; a file with a header uses a line break. Both spellings
+            // are part of the source layout and are kept verbatim (`§15/§17`).
+            if let Some(separator) = &gregorian.opening_separator {
+                out.push_str(separator);
+            } else {
+                out.push('\n');
+            }
         }
     }
 
@@ -155,6 +163,13 @@ fn emit(gregorian: &Gregorian) -> String {
             // the two snippets (`gabc-score-determination.y:879,906`).
             if after_snippet && note_index < snippet.notes_before.min(syllable.notes.len()) {
                 out.push('|');
+                // The cut-back closes the previous manuscript snippet: emit
+                // exactly what opened the square segment in the source (a
+                // slash spacing glyph must not stay glued to the last square
+                // note before the snippet, `docs/agents/gabc.md` §17).
+                if let Some(previous) = syllable.nabc.get(snippet_position - 1) {
+                    out.push_str(&previous.resume);
+                }
             }
             while note_index < snippet.notes_before.min(syllable.notes.len()) {
                 write_note(&mut out, &syllable.notes[note_index]);
@@ -172,6 +187,9 @@ fn emit(gregorian: &Gregorian) -> String {
         }
         if after_snippet && note_index < syllable.notes.len() {
             out.push('|');
+            if let Some(last) = syllable.nabc.last() {
+                out.push_str(&last.resume);
+            }
         }
         while note_index < syllable.notes.len() {
             write_note(&mut out, &syllable.notes[note_index]);
@@ -185,7 +203,9 @@ fn emit(gregorian: &Gregorian) -> String {
         // espace (`Gabc.tex:60-61,241-245`) : en insérer un ici changerait
         // le `<syllabic>` dérivé au prochain aller-retour. Sans marqueur de
         // fin de mot, la syllabe suivante suit immédiatement.
-        if syllable.space_after {
+        if let Some(separator) = &syllable.separator_after {
+            out.push_str(separator);
+        } else if syllable.space_after {
             out.push(' ');
         }
     }
@@ -219,7 +239,9 @@ fn write_note(out: &mut String, note: &scoretk_core::model::GregorianNote) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scoretk_core::model::{BarKind, GregorianHeader, GregorianNote, NeumeSign, SignKind};
+    use scoretk_core::model::{
+        BarKind, GregorianHeader, GregorianNote, NabcSnippet, NeumeSign, SignKind,
+    };
 
     fn header(name: &str, value: &str) -> GregorianHeader {
         GregorianHeader {
@@ -261,6 +283,7 @@ mod tests {
             ],
             staff_lines: 4,
             clefs: vec!["c3".to_owned()],
+            opening_separator: None,
             syllables: vec![
                 scoretk_core::model::Syllable {
                     text: "VE".to_owned(),
@@ -351,6 +374,7 @@ mod tests {
                 .map(|text| scoretk_core::model::NabcSnippet {
                     notes_before: 1,
                     text: (*text).to_owned(),
+                    ..NabcSnippet::default()
                 })
                 .collect(),
             ..scoretk_core::model::Syllable::default()
@@ -358,6 +382,44 @@ mod tests {
         assert_eq!(
             emit(&gregorian),
             "name: ;\nnabc-lines: 7;\n%%\n\n(f3)\n(i|bv-|gh|to)"
+        );
+    }
+
+    #[test]
+    fn a_slash_opening_a_square_snippet_follows_the_cut_back() {
+        let gregorian = Gregorian {
+            headers: vec![header("nabc-lines", "1")],
+            clefs: vec!["c4".to_owned()],
+            opening_separator: Some(" ".to_owned()),
+            syllables: vec![scoretk_core::model::Syllable {
+                text: "nos,".to_owned(),
+                notes: ['h', 'h', 'h', 'g']
+                    .into_iter()
+                    .map(|letter| GregorianNote {
+                        letter,
+                        ..GregorianNote::default()
+                    })
+                    .collect(),
+                nabc: vec![
+                    NabcSnippet {
+                        notes_before: 2,
+                        text: "cl".to_owned(),
+                        ..NabcSnippet::default()
+                    },
+                    NabcSnippet {
+                        notes_before: 3,
+                        text: "ds-".to_owned(),
+                        resume: "/".to_owned(),
+                    },
+                ],
+                separator_after: Some("\n".to_owned()),
+                ..scoretk_core::model::Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        assert_eq!(
+            emit(&gregorian),
+            "name: ;\nnabc-lines: 1;\n%%\n\n(c4) nos,(hh|cl|h|ds-|/g)\n"
         );
     }
 
