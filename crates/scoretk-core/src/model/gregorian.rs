@@ -241,6 +241,22 @@ pub struct GregorianNote {
     pub source_end: Option<usize>,
 }
 
+/// One manuscript snippet after a NABC cut `|`, with the number of square
+/// notes that precede it in the same group (`gabc-score-determination.y:
+/// 870-907`, `GregorioNabcRef.tex:178-199`).
+///
+/// The interleaving is part of the source: with `nabc-lines: 1` a group
+/// alternates square and manuscript snippets. Keeping the note count beside
+/// the exact snippet text lets the GABC writer reproduce that interleaving
+/// byte for byte without storing the whole notation group.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NabcSnippet {
+    /// Number of square notes already emitted in this group.
+    pub notes_before: usize,
+    /// Exact source characters of the manuscript snippet.
+    pub text: String,
+}
+
 /// One syllable and the neumes it carries (`Gabc.tex:228-317`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Syllable {
@@ -262,6 +278,17 @@ pub struct Syllable {
     pub signs: Vec<NeumeSign>,
     /// Separation bars found in the groups (`:801-845`).
     pub bars: Vec<BarKind>,
+    /// Manuscript neume snippets carried after a NABC cut `|`
+    /// (`gabc-score-determination.y:870-907`, `GregorioNabcRef.tex`).
+    ///
+    /// One entry per `|` separator of the group, in source order, with the
+    /// exact source characters (including spacing and significant letters)
+    /// and the position of the cut among the square notes. They are the
+    /// *manuscript* voice of this syllable, parallel to the square notes in
+    /// [`Self::notes`]; GABC with `nabc-lines: 1` alternates square and
+    /// manuscript snippets (`GregorioNabcRef.tex:178-199`). Empty by default:
+    /// a chant without NABC has no second voice.
+    pub nabc: Vec<NabcSnippet>,
     /// A space or an end of line followed the last `)` (`:60-61,241-245`).
     ///
     /// Spaces are music in GABC: this flag is part of the primary data even
@@ -1371,6 +1398,7 @@ mod tests {
             }],
             signs: Vec::new(),
             bars: vec![BarKind::DivisioFinalis],
+            nabc: Vec::new(),
             space_after: true,
         });
         assert_eq!(gregorian.headers[0].value, "Veni Sancte Spiritus");

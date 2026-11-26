@@ -60,9 +60,21 @@ fn gabc_crosses_mei_with_the_whole_structured_payload() {
         assert!(text.contains("<nc "));
         assert!(text.contains("type=\"gabc-header\""));
         let from_mei = read(&mei, Format::Mei).expect("MEI neumes read");
+        // The NABC manuscript voice is additive: `full_support` is false
+        // here, so the second staff is intentionally absent. Compare the
+        // rest of the payload, which must cross MEI unchanged.
+        let mut expected = original.extensions.format.clone();
+        let mut actual = from_mei.extensions.format.clone();
+        for payload in [&mut expected, &mut actual] {
+            if let Some(Extension::Gregorian(gregorian)) = payload {
+                for syllable in &mut gregorian.syllables {
+                    syllable.nabc.clear();
+                }
+            }
+        }
         assert_eq!(
-            from_mei.extensions.format,
-            original.extensions.format,
+            actual,
+            expected,
             "{} : the L6 payload must cross MEI unchanged",
             path.display()
         );
@@ -123,6 +135,9 @@ fn standard_mei_neumes_carry_the_payload_without_any_private_annotation() {
         let mut actual = actual.clone();
         for gregorian in [&mut expected, &mut actual] {
             for syllable in &mut gregorian.syllables {
+                // NABC needs `full_support` (second staff); default MEI is
+                // byte-identical to master and carries no second voice.
+                syllable.nabc.clear();
                 for note in &mut syllable.notes {
                     note.source_offset = None;
                     note.source_end = None;

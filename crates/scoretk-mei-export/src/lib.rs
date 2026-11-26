@@ -23,6 +23,7 @@
 
 mod capabilities;
 mod header;
+mod nabc;
 mod neumes;
 mod writer;
 

@@ -182,6 +182,12 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
 
         gregorian.syllables.push(syllable);
     }
+    // La seconde portée manuscrite (NABC) est parallèle à la portée carrée :
+    // ses snippets sont attachés aux syllabes correspondantes, d'abord par
+    // `@corresp`, sinon par position (`mei.md` §13).
+    if super::nabc::present(root) {
+        super::nabc::read_into(root, &mut gregorian);
+    }
     let mut score = gregorian.build_derived_score();
     apply_metadata(&mut score, &gregorian);
     gregorian.derived_modern_view = true;

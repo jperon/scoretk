@@ -133,23 +133,42 @@ fn emit(gregorian: &Gregorian) -> String {
             out.push_str(above);
             out.push(']');
         }
-        for note in &syllable.notes {
-            out.push(note.letter);
-            if !note.glyph.is_empty() {
-                out.push_str(&note.glyph);
-            } else {
-                // Signs stored beside the note (e.g. on a score assembled
-                // from another format) use their atomic GABC spelling.
-                for sign in &note.signs {
-                    out.push_str(&sign.raw);
-                }
+        // NABC snippets are atomic source tokens: the manuscript voice has
+        // no decomposed GABC representation (spacing, modifiers, significant
+        // letters). `@notes_before` keeps the square/manuscript
+        // interleaving of the group, so the exact notation is reproduced.
+        let mut note_index = 0;
+        let mut after_snippet = false;
+        for (snippet_position, snippet) in syllable.nabc.iter().enumerate() {
+            // After a manuscript snippet the next cut returns to square
+            // notation (state cycles modulo nabc-lines+1): the `|` before
+            // the following square run is structural, not a new snippet.
+            if after_snippet {
+                out.push('|');
             }
+            while note_index < snippet.notes_before.min(syllable.notes.len()) {
+                write_note(&mut out, &syllable.notes[note_index]);
+                note_index += 1;
+            }
+            // Separation bars and group signs must stay in square state:
+            // emitting them after the last `|` would make them part of the
+            // manuscript snippet when the GABC is read back.
+            if snippet_position + 1 == syllable.nabc.len() && note_index == syllable.notes.len() {
+                write_bars(&mut out, syllable);
+            }
+            out.push('|');
+            out.push_str(&snippet.text);
+            after_snippet = true;
         }
-        for bar in &syllable.bars {
-            out.push_str(bar.as_str());
+        if after_snippet && note_index < syllable.notes.len() {
+            out.push('|');
         }
-        for sign in &syllable.signs {
-            out.push_str(&sign.raw);
+        while note_index < syllable.notes.len() {
+            write_note(&mut out, &syllable.notes[note_index]);
+            note_index += 1;
+        }
+        if !after_snippet {
+            write_bars(&mut out, syllable);
         }
         out.push(')');
         // Un saut de ligne est un séparateur de mot au même titre qu'un
@@ -161,6 +180,30 @@ fn emit(gregorian: &Gregorian) -> String {
         }
     }
     out
+}
+
+/// Barres de séparation et signes de groupe, émis en état carré.
+fn write_bars(out: &mut String, syllable: &scoretk_core::model::Syllable) {
+    for bar in &syllable.bars {
+        out.push_str(bar.as_str());
+    }
+    for sign in &syllable.signs {
+        out.push_str(&sign.raw);
+    }
+}
+
+/// Sérialise une lettre chantée et son glyphe atomique (`gabc.md` §8).
+fn write_note(out: &mut String, note: &scoretk_core::model::GregorianNote) {
+    out.push(note.letter);
+    if !note.glyph.is_empty() {
+        out.push_str(&note.glyph);
+    } else {
+        // Signs stored beside the note (e.g. on a score assembled from
+        // another format) use their atomic GABC spelling.
+        for sign in &note.signs {
+            out.push_str(&sign.raw);
+        }
+    }
 }
 
 #[cfg(test)]

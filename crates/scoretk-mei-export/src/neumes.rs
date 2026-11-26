@@ -34,6 +34,8 @@
 
 use scoretk_core::model::{Gregorian, GregorianNote, NeumeSign, SignKind, Syllable};
 use scoretk_mei_common::{ids, neumes};
+
+use super::nabc;
 use scoretk_xml_common::XmlWriter;
 
 use crate::MeiOptions;
@@ -74,7 +76,15 @@ pub(super) fn write(
         .filter(|syllable| syllable.clef.is_some())
         .count();
     let initial = gregorian.clefs.len().saturating_sub(changes);
-    write_score_def(&mut xml, gregorian, initial);
+    // A manuscript NABC voice is written only in the additive mode, in a
+    // second, parallel, unpitched staff (Guidelines ch. 6). Without NABC, or
+    // with the default options, the output is byte-identical to master.
+    let two_staves = options.full_support && nabc::has_nabc(gregorian);
+    if two_staves {
+        nabc::write_score_def(&mut xml, gregorian, initial);
+    } else {
+        write_score_def(&mut xml, gregorian, initial);
+    }
     xml.start_element("section", &[("xml:id", "s1")]);
     xml.start_element("staff", &[("n", "1")]);
     xml.start_element("layer", &[("n", "1")]);
@@ -99,9 +109,17 @@ pub(super) fn write(
             gregorian,
             initial,
             options.gabc_tokens,
+            two_staves,
         );
     }
-    for _ in 0..8 {
+    // staff 1 : layer, staff
+    xml.end_element();
+    xml.end_element();
+    if two_staves {
+        nabc::write_staff(&mut xml, gregorian);
+    }
+    // section, score, mdiv, body, music, mei
+    for _ in 0..6 {
         xml.end_element();
     }
     Ok(xml.finish())
@@ -273,6 +291,7 @@ fn write_syllable(
     gregorian: &Gregorian,
     initial_clefs: usize,
     private: bool,
+    linked: bool,
 ) {
     let elision = syllable.text.contains('~');
     let syl_attributes = [
@@ -288,7 +307,16 @@ fn write_syllable(
             },
         ),
     ];
-    xml.start_element("syllable", &[]);
+    let links = if linked {
+        nabc::link(syllable_index, 1)
+    } else {
+        Vec::new()
+    };
+    let link_refs: Vec<(&str, &str)> = links
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    xml.start_element("syllable", &link_refs);
     if let Some(above) = &syllable.above_text {
         xml.tag_with(
             "signifLet",

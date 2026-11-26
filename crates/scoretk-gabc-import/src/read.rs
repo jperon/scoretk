@@ -26,7 +26,7 @@
 //! (`Gabc.tex:60-61,241-245`) and escaped parentheses (`$:`, `:247-250`) do
 //! not open a note group.
 
-use scoretk_core::model::{BarKind, Gregorian, GregorianNote, Score, Syllable};
+use scoretk_core::model::{BarKind, Gregorian, GregorianNote, NabcSnippet, Score, Syllable};
 use scoretk_gabc_common::syntax::{self, is_pitch};
 
 use crate::Error;
@@ -58,7 +58,15 @@ fn parse_parts(header_source: &str, body: &str, base: usize) -> Result<Gregorian
         .and_then(|header| header.value.bytes().find(|byte| byte.is_ascii_digit()))
         .map_or(4, |digit| digit - b'0')
         .clamp(2, 5);
-    let (syllables, clefs) = parse_notation(body, base);
+    // `nabc-lines` (`:129-130`) gives the number of manuscript snippets that
+    // may follow a square snippet; the `|` cut cycles the state modulo
+    // `nabc_lines + 1` (`gabc-score-determination.y:870-907`).
+    let nabc_lines = headers
+        .iter()
+        .find(|header| header.name == "nabc-lines")
+        .and_then(|header| header.value.bytes().find(|byte| byte.is_ascii_digit()))
+        .map_or(0, |digit| (digit - b'0') as usize);
+    let (syllables, clefs) = parse_notation(body, base, nabc_lines);
     Ok(Gregorian {
         headers,
         staff_lines,
@@ -93,7 +101,7 @@ pub(super) fn apply_metadata(score: &mut Score, gregorian: &Gregorian) {
 /// Returns the syllables and the clefs in source order. A group containing
 /// only a clef is not a syllable, but the clef is still primary data
 /// (`Gabc.tex:847-870`).
-fn parse_notation(body: &str, base: usize) -> (Vec<Syllable>, Vec<String>) {
+fn parse_notation(body: &str, base: usize, nabc_lines: usize) -> (Vec<Syllable>, Vec<String>) {
     let chars: Vec<char> = body.chars().collect();
     // `offsets[i]` est la position UTF-16 du caractère `chars[i]` dans le
     // fichier entier ; le dernier élément est la fin du corps.
@@ -118,7 +126,7 @@ fn parse_notation(body: &str, base: usize) -> (Vec<Syllable>, Vec<String>) {
         if in_notes {
             if char == ')' {
                 let (mut syllable, group_clefs, above_text) =
-                    parse_group(&code, &offsets[code_start..=index]);
+                    parse_group(&code, &offsets[code_start..=index], nabc_lines);
                 clefs.extend(group_clefs.iter().cloned());
                 // The clef is stored on the group that carries it: an
                 // in-score clef change must not be moved to the beginning by
@@ -225,18 +233,53 @@ fn rubric(text: &str) -> Option<String> {
 /// `offsets` gives the UTF-16 position of each character of `raw_code` (plus
 /// a final sentinel) so every note keeps its exact source location even
 /// when bracketed layout attributes are stripped.
-fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>, Option<String>) {
+fn parse_group(
+    raw_code: &str,
+    offsets: &[usize],
+    nabc_lines: usize,
+) -> (Syllable, Vec<String>, Option<String>) {
     let above_text = above_staff_text(raw_code);
     let mut syllable = Syllable {
         above_text: above_text.clone(),
         ..Syllable::default()
     };
     let (code, mapping) = strip_attributes(raw_code);
-    let chars: Vec<char> = code.chars().collect();
-    let source: Vec<usize> = mapping.iter().map(|&position| offsets[position]).collect();
-    let clefs = syntax::parse_clefs(&code);
+    // A `|` cut cycles the NABC state modulo `nabc_lines + 1`
+    // (`gabc-score-determination.y:870-907`): state 0 is square notation,
+    // states 1…n are the parallel manuscript snippets. NABC letters (`a`…`n`)
+    // are staff positions of a *different* notation and must never be parsed
+    // as square pitches or signs (`GregorioNabcRef.tex:178-199`). Square
+    // snippets after a later cut are still sung notes and are parsed too.
+    let mut chars = Vec::new();
+    let mut source = Vec::new();
+    let mut snippet = String::new();
+    let mut state = 0usize;
+    // (index in the square character stream at the cut, exact snippet text)
+    let mut cuts: Vec<(usize, String)> = Vec::new();
+    for (char, &raw_position) in code.chars().zip(mapping.iter()) {
+        if char == '|' {
+            if state != 0 {
+                cuts.push((chars.len(), std::mem::take(&mut snippet)));
+            }
+            snippet.clear();
+            state = (state + 1) % (nabc_lines.max(1) + 1);
+            continue;
+        }
+        if state == 0 {
+            chars.push(char);
+            source.push(offsets[raw_position]);
+        } else {
+            snippet.push(char);
+        }
+    }
+    if state != 0 && !snippet.is_empty() {
+        cuts.push((chars.len(), snippet));
+    }
+    let clefs = syntax::parse_clefs(&chars.iter().collect::<String>());
+    let square_len = chars.len();
+    let mut note_starts: Vec<usize> = Vec::new();
     let mut index = 0;
-    while index < chars.len() {
+    while index < square_len {
         let rest: String = chars[index..].iter().collect();
         if let Some((bar, used)) = BarKind::parse_prefix(&rest) {
             syllable.bars.push(bar);
@@ -289,6 +332,7 @@ fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>, Opt
         }
         if is_pitch(char) {
             let start = index;
+            note_starts.push(start);
             index += 1;
             while index < chars.len() {
                 let rest: String = chars[index..].iter().collect();
@@ -317,6 +361,13 @@ fn parse_group(raw_code: &str, offsets: &[usize]) -> (Syllable, Vec<String>, Opt
         }
         index += 1;
     }
+    syllable.nabc = cuts
+        .into_iter()
+        .map(|(cut, text)| NabcSnippet {
+            notes_before: note_starts.iter().filter(|&&start| start < cut).count(),
+            text,
+        })
+        .collect();
     (syllable, clefs, above_text)
 }
 
@@ -384,7 +435,7 @@ mod tests {
 
     fn group(code: &str) -> Syllable {
         let offsets: Vec<usize> = (0..=code.chars().count()).collect();
-        parse_group(code, &offsets).0
+        parse_group(code, &offsets, 0).0
     }
 
     #[test]
@@ -452,13 +503,19 @@ mod tests {
         assert!(group("z").notes.is_empty());
         assert!(group("Z-").notes.is_empty());
         assert!(group("g+").notes.is_empty());
-        assert_eq!(group("g+|h").notes.len(), 1);
+        // With the cut in force, the text after `|` is a manuscript snippet,
+        // never a square note (`gabc-score-determination.y:870-907`).
+        let offsets: Vec<usize> = (0..="g+|h".chars().count() + 1).collect();
+        let (syllable, _, _) = parse_group("g+|h", &offsets, 1);
+        assert!(syllable.notes.is_empty());
+        assert_eq!(syllable.nabc.len(), 1);
+        assert_eq!(syllable.nabc[0].text, "h");
     }
 
     #[test]
     fn clef_changes_in_bar_groups_are_recorded() {
         let offsets: Vec<usize> = (0..="(:c3)g".chars().count() + 1).collect();
-        let parsed = parse_group("(:c3)g", &offsets);
+        let parsed = parse_group("(:c3)g", &offsets, 0);
         assert_eq!(parsed.1, ["c3"]);
         assert_eq!(parsed.0.bars, [BarKind::DivisioMaior]);
         assert_eq!(parsed.0.notes.len(), 1);

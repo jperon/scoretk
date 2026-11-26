@@ -32,6 +32,7 @@ mod barlines;
 mod capabilities;
 mod controls;
 mod header;
+mod nabc;
 mod neumes;
 mod reader;
 
