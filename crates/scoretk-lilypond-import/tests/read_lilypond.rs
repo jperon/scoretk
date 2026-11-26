@@ -10089,6 +10089,25 @@ fn music_map_vers_skip_ne_joue_pas_les_notes() {
     assert_eq!(hauteurs(&score), vec![72, 77]);
 }
 
+/// `-\tag #'organ ~` marque la liaison qui suit (`lily/parser.yy`
+/// `script_dir music_function_call`) : le tag ne doit pas la faire disparaître
+/// (`wedding.ly`, mesure 6 : accord réattaqué au lieu d'être tenu).
+#[test]
+fn tag_devant_une_liaison_garde_la_liaison() {
+    let source = "\\version \"2.26.0\"\n\\language \"english\"\n\
+        \\score { \\new Staff { \\fixed c' { <g ef'>1 -\\tag #'organ ~ | <g ef'>2 -\\tag #'organ ~ <g ef'>4 r } } }\n";
+    let score = read_lilypond(source).expect("lecture");
+    assert_eq!(hauteurs_attaques(&score), vec![67, 75]);
+    assert_eq!(
+        score
+            .notes
+            .iter()
+            .filter(|note| note.pitch == 75 && note.tie_forward.is_some())
+            .count(),
+        2
+    );
+}
+
 /// `\tieShapeA = \shape #'(…) \etc` est une fonction musicale partielle :
 /// `-\tieShapeA _~` applique le tweak à la **liaison** qui suit
 /// (`lily/parser.yy`, `script_dir music_function_call`, l. 3337). La liaison

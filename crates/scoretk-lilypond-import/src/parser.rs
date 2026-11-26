@@ -6249,6 +6249,15 @@ impl<'a> Parser<'a> {
                 }
                 return vec![PostEvent::Fingering(text)];
             }
+            // `-\tag #'organ ~` (`wedding.ly`) : le tag s'applique à la
+            // **liaison** qui suit. La branche `-` rendait avant la gestion
+            // générale de `tag`, laissant le datum Scheme et le `~` dans le
+            // flux : la liaison disparaissait et l'accord était réattaqué.
+            if token.is_command("tag") {
+                self.position += 1;
+                let _ = self.parse_tag_names();
+                return self.parse_single_post_event();
+            }
             // `-\tieShapeA _~` : `tieShapeA` est une fonction partielle
             // (`\shape #'(…) \etc`) dont l'argument est le post-événement
             // suivant (`lily/parser.yy`, `script_dir music_function_call`).
