@@ -1396,6 +1396,29 @@ impl<'a> Context<'a> {
         }
     }
 
+    /// Durée dont un lecteur fait avancer son curseur après l'élément.
+    ///
+    /// `MusicXmlNoteDuration::checkTiming` conserve le `<type>` quand il
+    /// diffère de `<duration>` (`format-ref/musicxml.md` §Units and time
+    /// encoding) : le curseur du fichier suit donc la figure **notée**, même
+    /// si `<duration>` porte la durée jouée. Pour le chant dérivé, l'épisème
+    /// est précisément ce cas (noire avec tenuto jouée ×1,5). Faire avancer
+    /// `Out::tick` de la durée jouée obligerait à écrire un `<backup>` que ce
+    /// lecteur applique *en plus* de la figure, décalant toutes les attaques
+    /// suivantes. Le curseur du fichier doit donc suivre la figure notée.
+    pub(crate) fn cursor_ticks(
+        &self,
+        chord_rest: &ChordRest,
+        measure: &Measure,
+        staff_id: StaffId,
+    ) -> Fraction {
+        if self.derived_chant() {
+            self.notated_ticks(chord_rest, measure)
+        } else {
+            self.actual_ticks(chord_rest, measure, staff_id)
+        }
+    }
+
     /// Transposition chromatique de la portée, en demi-tons.
     fn transpose_chromatic(&self, staff_id: StaffId, tick: Tick) -> i32 {
         if self.concert_pitch {
@@ -1790,7 +1813,7 @@ impl Context<'_> {
         let segment_tick = out.tick;
         let global_ticks = self.global_ticks(chord_rest, measure);
         if grace.is_none() {
-            out.tick += self.actual_ticks(chord_rest, measure, track.staff());
+            out.tick += self.cursor_ticks(chord_rest, measure, track.staff());
         }
 
         let grace_duration = grace.map(|grace| grace.duration);
@@ -2196,7 +2219,7 @@ impl Context<'_> {
         }
 
         let tick_len = self.global_ticks(chord_rest, measure);
-        out.tick += self.actual_ticks(chord_rest, measure, track.staff());
+        out.tick += self.cursor_ticks(chord_rest, measure, track.staff());
         out.xml
             .tag("duration", &out.duration_in_divisions(tick_len).to_string());
 

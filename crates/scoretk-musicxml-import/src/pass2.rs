@@ -744,6 +744,19 @@ fn read_note(
     let cr_tick = measure_start + *m_time;
     let duration = chord_rest_duration(element, timing.dots, measure_len, timing.dura);
     let mut chord_rest = make_chord_rest(element, duration, timing.dura, measure_len);
+    // XSD 4.0 `group:full-note`/`group:duration` : `<type>` est la figure
+    // **affichée** et `<duration>` la durée **sonore**, elles peuvent différer.
+    // hors n-olet, garder les deux dans le modèle (`ChordRest::ticks`) : sans
+    // cela un `<duration>3</duration><type>quarter</type>` (épisème grégorien
+    // joué ×1,5) serait réécrit en noire et décalerait toutes les attaques.
+    // Les n-olets sont exclus : leur écart est déjà porté par `tuplet`.
+    if timing.time_mod.is_none()
+        && timing
+            .spec
+            .is_some_and(|spec| spec.is_positive() && spec != duration.ticks())
+    {
+        chord_rest.ticks = timing.spec;
+    }
     // Un trémolo à deux notes vaut la moitié de sa figure : la durée spécifiée
     // fait foi (`Chord::tremoloTwoChord`).
     if is_tremolo_two(element) {
