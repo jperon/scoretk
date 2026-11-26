@@ -95,6 +95,7 @@ pub(super) fn read_into(root: &Element, gregorian: &mut Gregorian) {
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(0),
                     text: child.text.clone(),
+                    ..NabcSnippet::default()
                 });
             }
         }
@@ -106,6 +107,7 @@ pub(super) fn read_into(root: &Element, gregorian: &mut Gregorian) {
                 snippets.push(NabcSnippet {
                     notes_before: 0,
                     text,
+                    ..NabcSnippet::default()
                 });
             }
         }

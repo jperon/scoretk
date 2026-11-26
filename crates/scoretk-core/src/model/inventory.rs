@@ -1309,6 +1309,7 @@ mod tests {
                     space_after: false,
                     ..Syllable::default()
                 }],
+                opening_separator: None,
                 derived_modern_view: true,
             }));
             score

@@ -189,6 +189,7 @@ pub(super) fn from_score(score: &Score) -> Gregorian {
         staff_lines,
         clefs: vec![clef.to_owned()],
         syllables,
+        opening_separator: None,
         derived_modern_view: false,
     }
 }

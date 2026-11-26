@@ -284,6 +284,7 @@ fn build_payload(collected: Collected) -> Gregorian {
         staff_lines,
         clefs: clef.into_iter().collect(),
         syllables,
+        opening_separator: None,
         derived_modern_view: true,
     }
 }

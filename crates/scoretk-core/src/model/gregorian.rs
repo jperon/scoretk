@@ -255,6 +255,15 @@ pub struct NabcSnippet {
     pub notes_before: usize,
     /// Exact source characters of the manuscript snippet.
     pub text: String,
+    /// Characters between the cut-back `|` closing this snippet and the next
+    /// square note (`Gabc.tex:684-686,870-907`).
+    ///
+    /// A slash opening the square snippet is a spacing glyph, not a shape of
+    /// the last square note before the cut: the reader used to glue it to that
+    /// note's `glyph`, which moved it across the manuscript snippet. Keeping
+    /// it here restores its source position without storing the whole group.
+    /// Empty for a snippet followed directly by a square note or another cut.
+    pub resume: String,
 }
 
 /// One syllable and the neumes it carries (`Gabc.tex:228-317`).
@@ -294,6 +303,16 @@ pub struct Syllable {
     /// Spaces are music in GABC: this flag is part of the primary data even
     /// though the derived modern view ignores it.
     pub space_after: bool,
+    /// Exact inter-word text between this group's `)` and the next group's
+    /// syllable (`:60-61,241-245`), including the trailing text after the
+    /// last group.
+    ///
+    /// `space_after` keeps the *fact* for the derived view and the other
+    /// directions; this field keeps the *spelling* used by the GABC writer.
+    /// `None` when the payload was built without a source body (e.g. from
+    /// MusicXML), in which case the writer falls back to `space_after`;
+    /// `Some("")` means the source had no separator at all.
+    pub separator_after: Option<String>,
 }
 
 /// L6 payload of a GABC score.
@@ -313,6 +332,13 @@ pub struct Gregorian {
     /// atomic GABC spelling such as a sign's `raw` or a clef token is the one
     /// deliberate exception, justified in `docs/agents/gabc.md` §8).
     pub syllables: Vec<Syllable>,
+    /// Exact text between an opening clef-only group and the first syllable
+    /// (`:60-61,241-245`; raw GregoBase bodies use a space where a file with
+    /// a header uses a line break, `docs/agents/gabc.md` §15/§17).
+    ///
+    /// `None` when no source body was parsed (e.g. from MusicXML), in which
+    /// case the GABC writer uses its default newline.
+    pub opening_separator: Option<String>,
     /// True when the L0/L1 event spine was generated from this payload.
     ///
     /// GABC carries neither metrical measures nor fixed durations
