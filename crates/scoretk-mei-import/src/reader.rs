@@ -563,6 +563,7 @@ impl<'a> Reader<'a> {
                 "mRpt" => self.read_m_rpt(node, measure, track, ticks),
                 "tuplet" => self.read_tuplet(node, measure, track, ticks),
                 "clef" => self.read_clef_element(node, measure, track, ticks),
+                "barLine" => self.read_bar_line(node, measure),
                 "meterSig" => self.read_meter_sig(node, measure, track, ticks),
                 "bTrem" | "fTrem" => self.read_tremolo(node, measure, track, ticks),
                 "graceGrp" => self.read_grace_group(node, measure, track, ticks),
@@ -842,7 +843,27 @@ impl<'a> Reader<'a> {
     /// `MeiImporter::readMRpt` (`meiimporter.cpp:2010`).
     fn read_m_rpt(&mut self, node: &Element, measure: usize, track: Track, ticks: &mut Fraction) {
         let nominal = self.score.measures[measure].nominal_len;
-        self.add_chord_rest(node, measure, track, *ticks, Duration::whole(), true);
+        // L'écriture additive place `<mRpt>` en fin de couche avec un
+        // `@tstamp` explicite (`att.timestamp`) : le symbole appartient au
+        // début de la mesure et ne doit pas hériter du curseur final.
+        let additive = node
+            .attribute("tstamp")
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|stamp| {
+                convert::tstamp_to_fraction(
+                    stamp,
+                    convert::tstamp_denominator(&self.score.measures[measure]),
+                )
+            });
+        // Sans `@tstamp`, `<mRpt>` est un événement rythmique de l'importeur
+        // 4.7.4 (`readMRpt`) : il crée un silence d'une mesure. Notre porteur
+        // additionnel ne porte que le symbole (`MeasureRepeatMark`, L1) et ne
+        // doit pas écraser un accord déjà présent au même tick.
+        if let Some(offset) = additive {
+            *ticks = offset;
+        } else {
+            self.add_chord_rest(node, measure, track, *ticks, Duration::whole(), true);
+        }
         let count = node
             .attribute("n")
             .and_then(|value| value.parse::<u16>().ok())
@@ -957,6 +978,19 @@ impl<'a> Reader<'a> {
             track.staff().raw() as usize,
             SegmentItem::TimeSig(time),
         );
+    }
+
+    /// `<barLine @form>` (MEI 5.1 `mei_barLine`, `data.BARRENDITION`) lève
+    /// l'ambiguïté de `@right="dotted"` : `Dashed` et `Tick` sont deux types
+    /// du modèle que 4.7.4 écrit tous deux comme `dotted`. L'élément explicite
+    /// utilise la valeur `dashed` de la RNG, pas l'extension `@type`.
+    fn read_bar_line(&mut self, node: &Element, measure: usize) {
+        let kind = match node.attribute("form") {
+            Some("dashed") => BarLineType::Dashed,
+            Some(form) => convert::barline_from_mei(form),
+            None => return,
+        };
+        self.score.measures[measure].end_bar_line = kind;
     }
 
     /// `MeiImporter::readClef` (`meiimporter.cpp:1879`).

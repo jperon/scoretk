@@ -679,6 +679,14 @@ impl<'a> Reader<'a> {
         let jump_suffix =
             convert::get_type_value_with_prefix(typed, scoretk_mei_common::ids::JUMP_TYPE);
         let text = crate::lines_of(node);
+        // `att.staff` (`mei_repeatMark`) est le porteur standard de la portée
+        // d'un marqueur/saut ; 4.7.4 ne l'écrit pas, nos sorties additives si.
+        let track = node
+            .attribute("staff")
+            .and_then(|value| value.parse::<u8>().ok())
+            .filter(|staff| *staff > 0)
+            .map(|staff| Track::new(StaffId::from_index(staff as usize - 1), 0))
+            .unwrap_or_else(|| Track::from_raw(0));
         let kind = match marker_suffix {
             Some(suffix) => Some(convert::marker_type_from_mei(suffix)),
             None => match func {
@@ -704,7 +712,7 @@ impl<'a> Reader<'a> {
                 label: label.clone(),
                 text: label,
                 placement: Placement::Above,
-                track: Track::from_raw(0),
+                track,
                 visible: true,
             };
             self.score.measures[measure]
@@ -734,7 +742,7 @@ impl<'a> Reader<'a> {
                 String::new(),
                 String::new(),
                 Placement::Above,
-                Track::from_raw(0),
+                track,
             );
             jump.kind = jump_kind;
             self.score.measures[measure]

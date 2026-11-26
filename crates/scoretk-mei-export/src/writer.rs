@@ -499,11 +499,29 @@ fn write_measure(
                 )
             }
         };
-        xml.tag_with(
-            "repeatMark",
-            &[("type", &type_name), ("func", func), ("tstamp", "0")],
-            &text,
-        );
+        let mut attrs = vec![
+            ("type".to_owned(), type_name),
+            ("func".to_owned(), func.to_owned()),
+            ("tstamp".to_owned(), "0".to_owned()),
+        ];
+        if options.full_support {
+            // `att.staff` on a control event (`mei_repeatMark`) distinguishes
+            // the marker/jump printed on each staff; without it both collapse
+            // onto staff 1 (v4/repeat69).
+            let staff = match mark {
+                scoretk_core::model::RepeatMark::Marker(marker) => marker.track,
+                scoretk_core::model::RepeatMark::Jump(jump) => jump.track,
+            }
+            .staff()
+            .raw()
+                + 1;
+            attrs.push(("staff".to_owned(), staff.to_string()));
+        }
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        xml.tag_with("repeatMark", &refs, &text);
     }
     xml.end_element();
 }
@@ -593,7 +611,12 @@ fn write_layer(
                 .map(|cr| (segment.tick, cr))
         })
         .collect();
-    if events.is_empty() {
+    let measure_repeat = options.full_support
+        && voice == 0
+        && measure
+            .measure_repeat
+            .is_some_and(|mark| mark.staff.raw() as usize == track.staff().raw() as usize);
+    if events.is_empty() && !measure_repeat {
         return;
     }
     let layer_id = format!(
@@ -694,19 +717,29 @@ fn write_layer(
         attrs.push(("tstamp", &stamp));
         xml.tag_empty("clef", &attrs);
     }
-    // `<mRpt @n>` (MEI 5.1 `att.numbered`) est le porteur d'un symbole de
-    // reprise de mesure. MuseScore 4.7.4 ne l'écrit pas ; une mesure qui ne
-    // contient que ce symbole n'a aucun `<layer>` sans ce porteur additionnel.
-    if options.full_support && events.is_empty() && voice == 0 {
-        if let Some(mark) = measure.measure_repeat {
-            if mark.staff.raw() as usize == track.staff().raw() as usize {
-                let count = mark.count.to_string();
-                let id = format!("m{}s{}r", measure_index, track.raw());
-                xml.tag_empty("mRpt", &[("xml:id", &id), ("n", &count)]);
-                xml.end_element();
-                return;
-            }
-        }
+    // `@right="dotted"` est ambigu en 4.7.4 : `Dashed`, `Tick` et `Dotted`
+    // s'y confondent. `<barLine @form>` (`mei_barLine`, `data.BARRENDITION`)
+    // porte la rendition exacte quand le porteur additionnel est actif.
+    if options.full_support
+        && voice == 0
+        && track.staff().raw() == 0
+        && measure.end_bar_line == scoretk_core::model::BarLineType::Dashed
+    {
+        let stamp = format_tstamp(
+            convert::tstamp_from_fraction(
+                measure.end_tick() - measure.start_tick,
+                round_trip_tstamp_denominator(measure),
+            ),
+            true,
+        );
+        xml.tag_empty(
+            "barLine",
+            &[
+                ("form", "dashed"),
+                ("tstamp", stamp.as_str()),
+                ("staff", "1"),
+            ],
+        );
     }
     let mut open_tuplets: Vec<scoretk_core::model::TupletId> = Vec::new();
     let mut open_beam = false;
@@ -926,6 +959,24 @@ fn write_layer(
     }
     if open_beam {
         xml.end_element();
+    }
+    // `<mRpt @n>` (`att.numbered`, `mei_mRpt`) porte le symbole de reprise de
+    // mesure. Écrit en fin de couche avec un `@tstamp` explicite : il ne décale
+    // pas le curseur rythmique des événements qui le précèdent.
+    if measure_repeat {
+        if let Some(mark) = measure.measure_repeat {
+            let count = mark.count.to_string();
+            let id = format!("m{}s{}r", measure_index, track.raw());
+            let stamp = format_tstamp(1.0, true);
+            xml.tag_empty(
+                "mRpt",
+                &[
+                    ("xml:id", id.as_str()),
+                    ("n", count.as_str()),
+                    ("tstamp", stamp.as_str()),
+                ],
+            );
+        }
     }
     xml.end_element();
 }
