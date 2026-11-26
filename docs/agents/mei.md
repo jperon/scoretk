@@ -725,6 +725,16 @@ glyphs, signs, bars, spaces), except for source UTF-16 offsets.
 offsets included, when the extension is enabled.
 `gabc_mei_round_trip_is_measured` forbids copying the source.
 
+Exact source layout (`Gregorian::opening_separator`,
+`Syllable::separator_after`) and the NABC cut resumption use the standard
+`@label` attribute (`att.labelled/@label`, `data.string`) on `<layer>`, `<syl>`
+and `<signifLet type="gabc-nabc">` respectively, encoded as
+`layout:<kind>:<S|L|T|R|UXXXX|E>` by
+`scoretk-mei-common::neumes::{layout_label, layout_from_label}`. No private
+`<annot type="gabc-*">` is involved. Without that attribute, the reader falls
+back to `wordpos` for the separator and leaves the other two fields empty,
+which reproduces the pre-branch defaults. See `gabc.md` §19.
+
 #### What still has no MEI 5.1 carrier (by kind)
 
 | Kind / fact | Standard carrier | Cited limit |
@@ -1012,14 +1022,13 @@ carrier keeps the information, and the mapping table says so explicitly.
 | `crates/scoretk/tests/gabc_nabc.rs` | round trip, structure, default-byte invariance, coverage measurement |
 | `scripts/check-mei-nabc.sh` | `jing` + Schematron validation and measured report |
 
-Without `full_support`, or without NABC, the writer is unchanged: the 56
-`.mscx` corpus exports are byte-identical to `master` (0/56 diffs measured),
-and the six non-NABC GABC exports likewise. The three NABC exports change in
-the GABC direction only, because the reader no longer sings NABC glyph
-letters as square notes; their MEI output stays byte-identical to `master`
-unless `full_support` is enabled; their *square* notes in default MEI do
-change because the GABC reader no longer parses NABC glyph letters as sung
-pitches (that is the defect being fixed, not a layout change).
+The 56 `.mscx` corpus exports remain byte-identical to `master` (0/56 diffs
+measured), whatever the options: the CMN writer is untouched. The nine GABC
+exports now differ from `master` by design: since §16 the three NABC files
+keep their manuscript snippets instead of singing NABC glyph letters as square
+notes, and since `gabc.md` §19 every GABC export carries the exact body layout
+and cut resumption in standard `@label` attributes. Without `full_support` the
+second manuscript staff is still absent; only the layout carrier changes.
 
 ### 13.3 Measured results
 
@@ -1077,9 +1086,16 @@ in each direction is the removal of notes that were never sung.
 | ABC | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
 | MEI (default) | 3/3 | **3/3 identical** | **3/3 byte-identical** | — |
 
+These are the historical measurements of the §16 campaign. Since `gabc.md`
+§19 the standard `@label` layout carrier changes the GABC → MEI bytes by
+design (also on square-only inputs), so the last MEI row no longer describes
+the current tree; the four other rows are unchanged. The 56 `.mscx` CMN
+exports still have 0/56 diffs against `master`.
+
 Limits: the `S`/`G`/`M` variant digits and horizontal spacing have no MEI
 element (RNG/Guidelines §6.4.9), the two Laon "inside" letters have no
 `data.EVENTREL` value (RNG :6466), and a third-party file without the
 `<signifLet>` carrier can only be read back approximately. Exactness of the
-GABC round trip never depends on those interpretations. No default output
-changed, no declaration was narrowed and no new wasm API was introduced.
+GABC round trip never depends on those interpretations. In that campaign no
+default output changed, no declaration was narrowed and no new wasm API was
+introduced; §19 adds a standard layout carrier to GABC → MEI only.

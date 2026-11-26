@@ -757,9 +757,10 @@ the NABC glyph letters were silently sung as square notes.
 parallel, unpitched staff, with the exact text retained in
 `<signifLet type="gabc-nabc">`; the full mapping table (one citation per
 row) is in [`format-mapping/mei.md`](format-mapping/mei.md) and the measured
-campaign in [`mei.md`](mei.md) §13. Default MEI output is unchanged: the 56
-`.mscx` exports and the six non-NABC GABC exports are byte-identical to
-`master`. The three NABC exports deliberately change: they now keep their
+campaign in [`mei.md`](mei.md) §13. The 56 `.mscx` exports remain byte-identical
+to `master`; the GABC exports now carry the exact body layout and the cut
+resumption in standard `@label` attributes (§19), so they are no longer
+byte-identical to `master`. Since §16 the three NABC exports also keep their
 manuscript snippets instead of singing their glyph letters as square notes.
 
 **Measured on the three versioned NABC examples** (`cargo test -p scoretk
@@ -927,4 +928,55 @@ within-square bar ordering stays out of reach (§10).
 MusicXML, MIDI, LilyPond, ABC and MEI with the baseline and the branch CLI:
 **1305/1305 outputs byte-identical** (fixed `--encoding-date 2026-01-01`,
 0 failures). The baseline CLI compared with itself is also 1305/1305, which
-makes the instrument deterministic.
+makes the instrument deterministic. That measurement predates §19: the MEI
+carrier added there changes the GABC → MEI bytes by design (the 56 CMN exports
+and the four other destinations remain identical to `master`).
+
+## 19. Layout and cut-resumption fields across MEI (review fix, 2026-11-26)
+
+The three payload fields introduced in §18 (`Gregorian::opening_separator`,
+`Syllable::separator_after`, `NabcSnippet::resume`) were absent from the MEI
+writer: after GABC → MEI → GABC the GABC writer fell back to `space_after` and
+the exact source layout disappeared. Three tests failed on this branch while
+passing on `master`: `gabc_mei_neumes.rs:75`
+(`gabc_crosses_mei_with_the_whole_structured_payload`),
+`gabc_mei_neumes.rs:147`
+(`standard_mei_neumes_carry_the_payload_without_any_private_annotation`) and
+`gabc_nabc.rs:159` (`gabc_to_mei_to_gabc_keeps_every_nabc_snippet_byte_for_byte`).
+None of these tests was modified.
+
+**Carrier.** MEI 5.1 has no element for the exact spelling of inter-group
+whitespace. `@label` (`att.labelled/@label`, `data.string`) is a standard
+attribute accepting arbitrary text; no `<annot type="gabc-*">` is added, so
+the default MEI still satisfies the "without any private annotation" test.
+
+| Payload field | Standard MEI element | `@label` |
+| --- | --- | --- |
+| `Gregorian::opening_separator` | `<layer n="1">` (first layer) | `layout:open:<encoded>` |
+| `Syllable::separator_after` | `<syl>` of the square syllable | `layout:sep:<encoded>` |
+| `NabcSnippet::resume` | `<signifLet type="gabc-nabc">` | `layout:resume:<encoded>` |
+
+The encoding lives in `scoretk-mei-common::neumes::layout_label` and
+`layout_from_label` (used by both directions): `S` = space, `L` = LF, `T` = tab,
+`R` = CR, `UXXXX` = any other Unicode scalar, `E` = the empty string (so
+`Some("")` stays distinct from a missing field). The `<syllable>` start tag is
+left exactly `<syllable>`: the carrier is on `<syl>`, which keeps the existing
+structural assertions valid. Without `@label` (third-party MEI or files written
+before this fix) the reader derives the historical default —
+`opening_separator = None`, `separator_after = Some(" ")` for `wordpos="t"`
+and `Some("")` otherwise, `resume = ""`; the GABC writer therefore reproduces
+the pre-branch behaviour for such documents.
+
+**Files.** `crates/scoretk-mei-common/src/neumes.rs` (carrier + unit test),
+`crates/scoretk-mei-export/src/neumes.rs` and `nabc.rs` (writer),
+`crates/scoretk-mei-import/src/neumes.rs` and `nabc.rs` (reader + unit tests).
+
+**Measured (2026-11-26).** Targeted tests `gabc_mei_neumes` 3/3 and
+`gabc_nabc` 5/5 pass, including 144/144 NABC snippets byte-for-byte and
+3/3 GABC → MEI → GABC outputs identical to the direct write. Unit tests of the
+three MEI crates: 73/73. `scripts/check-mei-neumes.sh`: 9/9 outputs valid
+against `mei-all-5.1.rng`. `scripts/check-mei-nabc.sh`: 3/3 RelaxNG valid,
+embedded Schematron 0 errors / 0 warnings. `scripts/oracle/mei/valide-corpus.sh
+--schematron`: 56/56 CMN outputs byte-identical to `master`, full-support mode
+56/56 valid against `mei-all-5.1.rng`, Schematron 0 errors / 0 warnings. The
+default `mei-basic` violations are the 56 inherited from `master`.
