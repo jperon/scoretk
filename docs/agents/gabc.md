@@ -980,3 +980,143 @@ embedded Schematron 0 errors / 0 warnings. `scripts/oracle/mei/valide-corpus.sh
 --schematron`: 56/56 CMN outputs byte-identical to `master`, full-support mode
 56/56 valid against `mei-all-5.1.rng`, Schematron 0 errors / 0 warnings. The
 default `mei-basic` violations are the 56 inherited from `master`.
+
+## 20. Byte-exact full GABC files (2026-11-26, branch `gabcrt2`)
+
+§18 made the *body* verbatim but left **0/261 full files** byte-identical:
+the header, the text between `%%` and the first group, and several kinds of
+non-sung token inside a group were still lost. This campaign closes that gap
+by giving each of those facts a **structured field at the level where it
+lives**. No source text (whole file, header or body) is stored in the model:
+`scoretk-gabc-export::tests::payload_has_no_raw_source_field` still checks
+that the raw-source fields are absent, and `Gregorian`, `Syllable`,
+`GregorianNote` and the new token structs derive `PartialEq`, so a difference
+in any preserved fact is visible to the cross-format comparisons.
+
+### 20.1 Classification of the original 261 differences (first cause)
+
+`roundtrip_bytes.py --cli <baseline> --out …` was run before any edit; the
+first differing byte of every full file was classified by its source context:
+
+| First cause | Files | Rule cited |
+| --- | ---: | --- |
+| Blank line before the `%%` marker | 241 | `Gabc.tex:51,58`; lexer `INITIAL` ignores empty lines, `gabc-score-determination.l:126-128` |
+| Text between `%%` and the first group (extra blank line, nested GregoBase header, `%` line) | 14 | `Gabc.tex:51,58,63-64`; `END_OF_DEFINITIONS` at `gabc-score-determination.y:737-749` |
+| Header `%` comment / TeX line | 5 | `Gabc.tex:63-64`; states `INITIAL`/`inicomments` at `gabc-score-determination.l:129-133` |
+| Header terminator `;;` with no continuation | 1 | `Gabc.tex:69-74` |
+
+After the header fixes, the *next* first causes were measured again (same
+instrument, same 261 inputs):
+
+| Next cause | Files after §20.2 | Files after §20.3 |
+| --- | ---: | ---: |
+| Bracketed `[…]` layout/tuning/TeX attribute | 74 | 10 (placement *within* a glyph) |
+| Bar spelling / bar with custos or clef in one group | 54 | 56 |
+| Empty `()` / `( )` group, leading `-`, double initial clef | 14 | 14 |
+| NABC snippet ordering / cut slash | 2 | 2 |
+| `%` comment in the notation prefix | — | 1 |
+
+Counts are per file (the nine versioned examples and 252 private GregoBase
+files); a file whose first difference was a header blank line can therefore
+appear again in the second table once that line is fixed. Fixes were applied
+in decreasing count and the instrument was re-run after each one (§20.5).
+
+### 20.2 Structured fields added
+
+| Source fact | Structured field | Writer emission / citation |
+| --- | --- | --- |
+| Ordered header fields, `%` comments and empty lines | `Gregorian::header_items` (`Field` / `Comment` / `Blank`) | Rebuilt in order, `%` included (`Gabc.tex:36-74,63-64`; lexer `:129-133`) |
+| `;;` terminator with no continuation | `Gregorian::header_double_semicolons` | `write_header_field` emits `;;` (`Gabc.tex:69-74`) |
+| Exact text after the `%%` line, including a second GregoBase header block | `Gregorian::notation_prefix` | Emitted between `%%` and the first group (`Gabc.tex:51,58`; grammar `y:737-749`) |
+| Whitespace between groups, including whole-line `%` comments and empty groups | `Syllable::separator_after` (now the **full** inter-group text), `Gregorian::opening_separator` | Verbatim; `space_after` still carries the word-break *fact* for the derived view (`Gabc.tex:60-64,241-245`) |
+| Space between syllable text and its group | `Syllable::text_spacing` | Keeps `text` the trimmed lyric used by the five other directions (`Gabc.tex:60-61`) |
+| `[cs:t]`, `[oh:h]`, `[ll:1]`, `[-0.5]`, `[alt:…]`, `[ull:…]` | `GregorianNote::attributes: Vec<NoteAttribute>` with `after` = glyph offset, plus `Syllable::leading_attributes` | Re-emitted at that offset, never as a note or a sign (`Gabc.tex:689-700,908-931,1088-1091,1093-1118`) |
+| Bar spelling (`;1` vs `,1`) and its position among the notes; custos `z0`/`f+`/`Z-`; clef after a bar; `-`, `/`, `!`, `@`, `[]` inside a group | `Syllable::group_tokens: Vec<GroupToken { notes_before, text, kind }>` | Notes and tokens are interleaved by `notes_before` in source order (`Gabc.tex:627-700,801-906,847-870,872-906`; `gabc-notes-determination.l:1246-1248`; `dump.c:805-821`) |
+
+The lexer states and grammar rules above are the ones used by Gregorio
+`b63f074` (`specs/gabc/gregorio/`). `GroupToken.text` and
+`NoteAttribute.text` are the smallest local **atomic tokens**: `[cs:t]`,
+`z0`, `;1` and `cb3` have no decomposed representation in the pivot, exactly
+as `NeumeSign::raw`, `GregorianNote::glyph` and the clef token already did in
+§8. They are produced by the reader from parsed characters, never by slicing
+the source file. An empty group is not a sung syllable: its exact `(`…`)`
+text stays in the inter-group layout field, so `build_derived_score` sees no
+extra event. `( )` is valid Gregorio syntax (`Gabc.tex:502,505,508`; the
+grammar's `notes: | notes note` at `gabc-score-determination.y:854-855`):
+the nine **header-less** variants rejected by the instrument are rejected
+because a body without `%%` never enters Gregorio's `score` lexer state
+(§15), not because of `( )`. None of the 261 full files is rejected.
+
+### 20.3 MEI carriers (standard attributes, no private annotation)
+
+All new fields cross GABC → MEI → GABC exactly. As in §19 they travel in
+standard `@label` attributes (`att.labelled/@label`, `data.string`,
+*Guidelines* ch. 2; hex encoding keeps them insensitive to XML escaping):
+
+| Payload fields | MEI carrier |
+| --- | --- |
+| `header_items`, `header_double_semicolons`, `notation_prefix` | `<meiHead label="gabc:layout:…">` |
+| `note.attributes`, `leading_attributes`, `group_tokens`, `text_spacing` | `<syl label="layout:sep:…|gabc:detail:…">` — appended after the §19 separator segment |
+
+`<syllable>` is still written as `<syllable>` and no `<annot type="gabc-*">`
+is added: `standard_mei_neumes_carry_the_payload_without_any_private_annotation`
+and the RelaxNG checks still pass. The codec lives in
+`scoretk-mei-common/src/gabc_layout.rs`; `neumes::layout_from_label` ignores
+the segment after `|`, so pre-§20 MEI documents keep their historical
+defaults. Without a carrier the writer falls back to the pre-branch
+behaviour, as for `layout_from_label` in §19.
+
+### 20.4 Measured results
+
+Instrument and inputs unchanged from §18:
+
+```sh
+python3 scripts/oracle/gabc/roundtrip_bytes.py \
+  --cli /tmp/gabcrt2-final-cli --baseline /tmp/gabcrt2-current-cli \
+  --out /tmp/gabcrt2-final \
+  --dir tests/corpus/gabc \
+  --dir /home/jacques/programmes/musique/specs/gabc/lot/corpus
+```
+
+| Phase | Before (§18) | After (§20) |
+| --- | ---: | ---: |
+| Full files, header included | 0/261 | **261/261 = 100 %**, 0 different, 0 failed |
+| Header-less variants | 115/261 | 233/261 (19 different, 9 rejected as header-less bodies) |
+| Header-less variants with NABC | 4/6 | **6/6** |
+
+Stage results (same instrument): header layout **0 → 117/261**; note-level
+brackets **117 → 178/261**; group tokens and exact inter-group layout
+**178 → 248 → 261/261**. The intermediate fall to 0/261 during the layout
+rewrite was a double-emission bug in the reader's whitespace split, found by
+the instrument and corrected before the next commit.
+
+**Other directions.** The 261 sources were also converted to MusicXML,
+MIDI, LilyPond, ABC and MEI with the pre-change CLI as baseline:
+
+| Direction | Identical to baseline | Note |
+| --- | ---: | --- |
+| MIDI, LilyPond, ABC | 261/261 each | 783/783 unchanged |
+| MusicXML | 242/261 | 19 files: a GregoBase header block nested *after* the first `%%` is now notation-prefix layout instead of a phantom first syllable (proven fix; source offsets and real lyrics unchanged) |
+| MEI | 0/261 | 261 files gain the standard `@label` carriers of §20.3 (proven fix: without them GABC → MEI → GABC loses the new structured fields) |
+| Total other | 1025/1305 | 0 conversion failures |
+
+**Cross conversions.** `cargo test -p scoretk --test gabc_mei_neumes`
+3/3 and `--test gabc_nabc` 5/5 pass, including 144/144 NABC snippets
+byte-for-byte, 3/3 GABC → MEI → GABC outputs identical to the direct write,
+and `layer_coverage` 26/26 with the standard MEI row at 100 % / 100 %
+(2 314 items). `gabc_mei_round_trip_is_measured` no longer asserts that all
+nine outputs differ from their source: six of them are now byte-identical
+thanks to the structured carriers, so the assertion checks a non-empty
+inventory instead, while the no-raw-source guarantee stays a compile-time
+test in the writer crate.
+
+**Wasm.** `nix build .#wasm`, `result/SIZE` and `gzip -9`:
+
+| | Raw `scoretk_wasm_bg.wasm` | Gzip |
+| --- | ---: | ---: |
+| Before (final tree of §9, recorded in §9) | 2 558 465 | 1 006 608 |
+| After (this branch) | **2 885 877** | **1 127 082** |
+| Delta | +327 412 (+12,80 %) | +120 474 (+11,97 %) |
+
+The growth is the code for the header/token layout fields and their MEI
+codec; the wasm contract of invariant 5 is unchanged.

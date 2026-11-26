@@ -354,7 +354,7 @@ fn write_syllable(
     if let Some(label) = &separator_label {
         syl_attributes.push(("label", label.as_str()));
     }
-    let mut attributes = if linked {
+    let attributes = if linked {
         nabc::link(syllable_index, 1)
     } else {
         Vec::new()

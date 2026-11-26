@@ -40,12 +40,12 @@ fn hex(text: &str) -> String {
 }
 
 fn unhex(text: &str) -> Option<String> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     let mut bytes = Vec::with_capacity(text.len() / 2);
     let digits: Vec<u8> = text.bytes().collect();
-    for pair in digits.chunks_exact(2) {
+    for pair in digits.as_chunks::<2>().0 {
         let high = (pair[0] as char).to_digit(16)?;
         let low = (pair[1] as char).to_digit(16)?;
         bytes.push((high * 16 + low) as u8);
@@ -224,7 +224,7 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
         syllable.leading_attributes = leading
             .split(';')
             .filter(|token| !token.is_empty())
-            .filter_map(|token| unhex(token))
+            .filter_map(unhex)
             .collect();
     }
     for note in &mut syllable.notes {
@@ -244,7 +244,10 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
             }
         }
     }
-    let tokens = parts.next().and_then(|part| part.strip_prefix('T')).unwrap_or("");
+    let tokens = parts
+        .next()
+        .and_then(|part| part.strip_prefix('T'))
+        .unwrap_or("");
     syllable.group_tokens = tokens
         .split(',')
         .filter_map(|entry| {

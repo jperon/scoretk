@@ -126,12 +126,7 @@ fn parse_notation(
     base: usize,
     nabc_lines: usize,
     has_header: bool,
-) -> (
-    Vec<Syllable>,
-    Vec<String>,
-    Option<String>,
-    Option<String>,
-) {
+) -> (Vec<Syllable>, Vec<String>, Option<String>, Option<String>) {
     let chars: Vec<char> = body.chars().collect();
     // `offsets[i]` est la position UTF-16 du caractère `chars[i]` dans le
     // fichier entier ; le dernier élément est la fin du corps.

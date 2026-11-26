@@ -873,7 +873,7 @@ fn gabc_mei_round_trip_is_measured() {
     // The no-raw-source guarantee is checked at compile time in
     // `scoretk-gabc-export::tests::payload_has_no_raw_source_field`.
     assert!(
-        totals.total.reference > 0,
+        totals.total.reference > 0 && rewritten <= 9,
         "the MEI cross trip must re-serialise the GABC"
     );
 }
@@ -887,7 +887,7 @@ fn gabc_mei_round_trip_reaches_full_support_target() {
     // A raw-string copy cannot produce a non-empty structured inventory and
     // is forbidden by `payload_has_no_raw_source_field` in the writer crate.
     assert!(
-        totals.total.reference > 0,
+        totals.total.reference > 0 && rewritten <= 9,
         "no raw-string copy may stand in for a conversion"
     );
     assert!(
