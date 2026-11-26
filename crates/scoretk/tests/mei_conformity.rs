@@ -280,3 +280,35 @@ fn two_clefs_at_one_tick_are_both_read() {
         .collect();
     assert_eq!(clefs.len(), 2, "both clefs must survive the import");
 }
+
+/// The additive text carriers (`<rend @n>` and `<dir type="mscore-tbox-*">`)
+/// write the pivot `RichText` verbatim: a trailing space or newline is part
+/// of the model and must survive the round trip. A 4.7.4 `<rend>` without
+/// `@n` keeps the importer's trimming.
+#[test]
+fn additive_text_carriers_keep_trailing_whitespace() {
+    let mei = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+      <music><body><mdiv><score>
+        <scoreDef><pgHead func="first">
+          <rend type="title" n="1">Sonata &quot;Moonlight&quot; </rend>
+          <rend type="subtitle">Subtitle</rend>
+        </pgHead><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+        <section><measure n="1">
+          <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+          <dir type="mscore-tbox-0">volta
+</dir>
+        </measure></section>
+      </score></mdiv></body></music></mei>"#;
+    let score = read(mei, Format::Mei).expect("read MEI");
+    assert!(score
+        .engraving
+        .credits
+        .iter()
+        .any(|credit| credit.text.plain() == "Subtitle"));
+    assert!(score
+        .engraving
+        .credits
+        .iter()
+        .any(|credit| credit.text.plain() == "Sonata \"Moonlight\" "));
+    assert_eq!(score.engraving.tbox_texts[0].text.plain(), "volta\n");
+}

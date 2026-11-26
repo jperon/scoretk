@@ -372,8 +372,12 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readDir` (`meiimporter.cpp:2511`).
     fn add_direction(&mut self, node: &Element, measure: usize) {
-        let text = crate::lines_of(node);
         let typ = node.attribute("type").unwrap_or_default();
+        let text = if typ.starts_with(scoretk_mei_common::ids::TBOX_TYPE) {
+            crate::lines_of_additive(node)
+        } else {
+            crate::lines_of(node)
+        };
         // Changement d'instrument en cours de partition : MuseScore 4.7.4 ne
         // l'écrit pas, mais `<dir>` porte le texte et `@trans.*` la nouvelle
         // transposition (porteur additionnel).

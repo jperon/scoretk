@@ -56,12 +56,17 @@ impl<'a> Reader<'a> {
         };
         let mut first = true;
         for title in title_stmt.children_named("title") {
-            let text = title.text_trimmed();
+            let additive = title.attribute("type") == Some("work-number");
+            let text = if additive {
+                crate::lines_of_additive(title)
+            } else {
+                title.text_trimmed().to_owned()
+            };
             if text.is_empty() {
                 continue;
             }
-            if title.attribute("type") == Some("work-number") {
-                self.score.metadata.work_number = text.to_owned();
+            if additive {
+                self.score.metadata.work_number = text;
             } else if first {
                 self.score.metadata.work_title = text.to_owned();
                 first = false;
@@ -257,7 +262,11 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            let text = crate::lines_of(rend);
+            let text = if rend.attribute("n").is_some() {
+                crate::lines_of_additive(rend)
+            } else {
+                crate::lines_of(rend)
+            };
             if text.is_empty() {
                 continue;
             }

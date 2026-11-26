@@ -78,6 +78,23 @@ pub(crate) fn first_descendant<'a>(node: &'a Element, name: &str) -> Option<&'a 
         .find_map(|child| first_descendant(child, name))
 }
 
+/// Texte des porteurs additionnels, avec les espaces finaux du modèle.
+///
+/// `lines_of` normalise les bords avec `trim()`, comme l'importeur 4.7.4.
+/// Les porteurs additionnels (`<rend @n>` ordonné, `<title type="work-number">`,
+/// `<dir type="mscore-tbox-*">`) écrivent le `RichText` du modèle tel quel :
+/// un titre sur plusieurs lignes se termine par `\n`, un crédit peut se
+/// terminer par une espace. Sans cette variante la relecture perd ces six
+/// faits de texte (`docs/agents/mei.md` §12). Aucun `*.ref.mei` 4.7.4 ne porte
+/// ces marqueurs, donc le chemin par défaut reste inchangé.
+pub(crate) fn lines_of_additive(node: &Element) -> String {
+    if !node.text.is_empty() {
+        node.text.clone()
+    } else {
+        lines_of(node)
+    }
+}
+
 /// Texte direct d'un élément, ou texte du premier enfant texte/rend.
 pub(crate) fn lines_of(node: &Element) -> String {
     let mut lines = Vec::new();
