@@ -40,13 +40,13 @@ fn gabc_round_trip_serialises_the_payload() {
     let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
     let bytes = write(&score, Format::Gabc, &Options::default()).expect("GABC export");
     let written = String::from_utf8(bytes).expect("UTF-8");
-    // The leading comment is not a modelled field: it must not come back.
-    // A byte-identical output would mean the writer copied its input.
-    assert!(!written.contains("a comment"), "{written}");
-    assert!(
-        written.starts_with("name: Veni Sancte Spiritus;\n"),
-        "{written}"
-    );
+    // The leading `%` comment is now an ordered header item (docs/agents/
+    // gabc.md §20), so it must come back *in place*. Byte identity is no
+    // longer a sign of a raw copy: the model has no source-text field and
+    // `scoretk-gabc-export::tests::payload_has_no_raw_source_field` checks
+    // that compile-time invariant.
+    assert!(written.starts_with("% a comment\nname: "), "{written}");
+    assert_eq!(written, GABC, "the structured round trip must be exact");
     let again = read(written.as_bytes(), Format::Gabc).expect("second import");
     let reference = scoretk::model::inventory(&score);
     let candidate = scoretk::model::inventory(&again);
