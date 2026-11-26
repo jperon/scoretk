@@ -10415,12 +10415,20 @@ fn new_staff_imbrique_ouvre_une_portee_et_une_piste_distinctes() {
   }
 }"#;
     let score = read_lilypond(source).expect("lecture");
-    assert_eq!(score.staves.len(), 2, "le `\new Staff` imbriqué a sa portée");
+    assert_eq!(
+        score.staves.len(),
+        2,
+        "le `\new Staff` imbriqué a sa portée"
+    );
     let jouees: Vec<u8> = score
         .notes
         .iter()
         .filter(|note| !note.playback.unperformed)
         .map(|note| note.pitch)
         .collect();
-    assert_eq!(jouees, vec![72, 72], "les deux unissons sonnent sur deux pistes");
+    assert_eq!(
+        jouees,
+        vec![72, 72],
+        "les deux unissons sonnent sur deux pistes"
+    );
 }
