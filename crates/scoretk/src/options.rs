@@ -77,6 +77,11 @@ pub struct Options {
     /// Carrier SMuFL optionnel des neumes grégoriens (MusicXML). Additif,
     /// `false` par défaut : voir `docs/agents/gabc.md` §14.
     pub gabc_neume_smufl: bool,
+    /// Écriture grégorienne en ancienne notation LilyPond
+    /// (`VaticanaVoice`/`VaticanaStaff`, §17.4 du Notation Reference).
+    /// Additive : `false` par défaut, donc les `.ly` non grégoriens restent
+    /// octet pour octet identiques.
+    pub ly_gregorian: bool,
     /// Porteurs XSD 4.0 standard au-delà de l'exporteur 4.7.4. Additif :
     /// `false` par défaut, donc les octets MusicXML restent conformes aux
     /// références `*.ref.musicxml`; voir `docs/agents/musicxml-export.md` §55.
@@ -109,6 +114,7 @@ impl Default for Options {
             gabc_modern_clef: false,
             mei_full_support: false,
             gabc_neume_smufl: false,
+            ly_gregorian: false,
             xml_full_support: false,
             xml_lossless_round_trip: false,
         }

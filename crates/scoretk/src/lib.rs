@@ -226,7 +226,7 @@ pub fn write_with_report(
         Format::Midi => hooks::write_midi(score, options)?,
         Format::Mscx => hooks::write_mscx(score)?,
         Format::Mscz => hooks::write_mscz(score)?,
-        Format::Ly => hooks::write_lilypond(score)?,
+        Format::Ly => hooks::write_lilypond(score, options.ly_gregorian)?,
         Format::Abc => hooks::write_abc(score)?,
         Format::Gabc => hooks::write_gabc(score)?,
     };

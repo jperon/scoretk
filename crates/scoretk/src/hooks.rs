@@ -281,15 +281,15 @@ non_branche!(
 // --- LilyPond (écriture) --------------------------------------------------
 
 #[cfg(feature = "lilypond-export")]
-pub(crate) fn write_lilypond(score: &Score) -> Result<Vec<u8>> {
-    scoretk_lilypond_export::write_lilypond(score)
+pub(crate) fn write_lilypond(score: &Score, gregorian: bool) -> Result<Vec<u8>> {
+    scoretk_lilypond_export::write_lilypond_with(score, gregorian)
         .map(String::into_bytes)
         .map_err(|error| Error::LilyPond(error.to_string()))
 }
 
 non_branche!(
     "lilypond-export",
-    write_lilypond(score: &Score) -> Result<Vec<u8>>,
+    write_lilypond(score: &Score, gregorian: bool) -> Result<Vec<u8>>,
     Format::Ly,
     Ecriture
 );

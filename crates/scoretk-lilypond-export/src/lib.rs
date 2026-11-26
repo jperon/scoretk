@@ -80,6 +80,7 @@ pub mod capabilities;
 mod chord;
 mod duration;
 mod event;
+mod gregorian;
 mod pitch;
 mod spanners;
 mod structure;
@@ -92,12 +93,25 @@ pub use capabilities::CAPABILITIES;
 pub use scoretk_core::model::Fraction;
 pub use scoretk_lilypond_common::{Error, Result};
 
-use scoretk_core::model::Score;
+use scoretk_core::model::{Extension, Score};
 
 /// Écrit une partition du modèle pivot au format LilyPond.
 ///
 /// La sortie est un document complet, reproductible (aucune horloge, aucun
 /// identifiant aléatoire), terminé par un saut de ligne.
 pub fn write_lilypond(score: &Score) -> Result<String> {
+    write_lilypond_with(score, false)
+}
+
+/// Variante additive : `gregorian = true` demande le dialecte d'ancienne
+/// notation du *Notation Reference* §17.4 pour une partition qui porte une
+/// charge `Gregorian`. Sans charge, ou avec `gregorian = false`, les octets
+/// sont exactement ceux de [`write_lilypond`].
+pub fn write_lilypond_with(score: &Score, gregorian: bool) -> Result<String> {
+    if gregorian {
+        if let Some(Extension::Gregorian(payload)) = &score.extensions.format {
+            return Ok(gregorian::render(score, payload, writer::LILYPOND_VERSION));
+        }
+    }
     writer::Writer::new(score).render()
 }

@@ -98,6 +98,12 @@ struct Cli {
     #[arg(long)]
     xml_full_support: bool,
 
+    /// Export LilyPond : notation grégorienne d'ancien style
+    /// (VaticanaVoice/VaticanaStaff, `\[ … \]`, articulations et divisiones,
+    /// Notation Reference §17.4). Additif : le `.ly` par défaut ne change pas.
+    #[arg(long)]
+    ly_gregorian: bool,
+
     /// Export MEI : porteurs 5.1 au-delà de l'export 4.7.4 (module NEUMES,
     /// seconde portée NABC, valeurs dynamiques). Additif : le défaut reste
     /// octet pour octet conforme à MuseScore 4.7.4 pour les sources non
@@ -286,6 +292,7 @@ fn main() -> ExitCode {
         midi_full_support: cli.midi_full_support,
         mei_full_support: cli.mei_full_support,
         xml_full_support: cli.xml_full_support,
+        ly_gregorian: cli.ly_gregorian,
         ..Options::default()
     };
 

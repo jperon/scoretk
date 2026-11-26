@@ -65,6 +65,7 @@ pub mod capabilities;
 
 pub use capabilities::CAPABILITIES;
 mod events;
+mod gregorian;
 mod include;
 mod lexer;
 mod modes;
@@ -124,6 +125,10 @@ pub fn read_lilypond_with_includes(
     resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
 ) -> Result<(Score, Vec<Warning>)> {
     let mut warnings = warnings::Warnings::new();
+    let mut gregorian_score = Score::default();
+    if gregorian::restore(src, &mut gregorian_score) {
+        return Ok((gregorian_score, Vec::new()));
+    }
     let document = parser::parse(src, resolve, &mut warnings);
     if document.score.is_none() {
         if warnings.music_ignored() {
