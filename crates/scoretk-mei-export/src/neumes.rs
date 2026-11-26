@@ -321,10 +321,23 @@ fn write_syllable(
     // spelling sans ajouter d'annotation `gabc-*` au document. Il est porté
     // par `<syl>` et non par `<syllable>` pour laisser intacte la structure
     // neumatique attendue par les lecteurs du module NEUMES.
-    let separator_label = syllable
+    let mut separator_label = syllable
         .separator_after
         .as_ref()
         .map(|separator| neumes::layout_label("sep", separator));
+    // Le détail GABC (attributs `[…]`, jetons de groupe, espace avant `(`)
+    // partage le même `@label` standard, après le séparateur de §19 : le
+    // `<syllable>` reste exactement `<syllable>` pour les lecteurs tiers.
+    let detail = scoretk_mei_common::gabc_layout::attributes_label(syllable);
+    if let Some(detail) = &detail {
+        match &mut separator_label {
+            Some(label) => {
+                label.push('|');
+                label.push_str(detail);
+            }
+            None => separator_label = Some(detail.clone()),
+        }
+    }
     let mut syl_attributes = vec![
         ("wordpos", if syllable.space_after { "t" } else { "m" }),
         (
@@ -346,9 +359,6 @@ fn write_syllable(
     } else {
         Vec::new()
     };
-    if let Some(label) = scoretk_mei_common::gabc_layout::attributes_label(syllable) {
-        attributes.push(("label".to_owned(), label));
-    }
     let link_refs: Vec<(&str, &str)> = attributes
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))

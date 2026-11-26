@@ -164,7 +164,7 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         // note ; ils ne sont pas des signes MEI et ne deviennent pas des
         // `<nc>` supplémentaires.
         scoretk_mei_common::gabc_layout::read_attributes_label(
-            syllable_node.attribute("label"),
+            syl.and_then(|node| node.attribute("label")),
             &mut syllable,
         );
 

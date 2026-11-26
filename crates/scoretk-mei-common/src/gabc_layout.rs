@@ -140,8 +140,17 @@ pub fn read_header_label(label: Option<&str>, gregorian: &mut Gregorian) {
     };
 }
 
-/// Préfixe du `@label` portant les attributs `[…]` d'une syllabe.
-pub const SYLLABLE_LABEL: &str = "gabc:attrs:";
+/// Préfixe du segment portant les attributs `[…]` et jetons de groupe
+/// dans le `@label` de `<syl>` (après le porteur `layout:sep:` de §19).
+pub const SYLLABLE_LABEL: &str = "gabc:detail:";
+
+/// Extrait le segment GABC d'un `@label` composite de `<syl>`.
+#[must_use]
+pub fn detail_from_label(label: Option<&str>) -> Option<&str> {
+    label?
+        .split('|')
+        .find_map(|part| part.strip_prefix(SYLLABLE_LABEL))
+}
 
 /// Sérialise les attributs `[…]` et les jetons non chantés du groupe dans un
 /// `@label` de `<syllable>` (`Gabc.tex:627-700,801-906`).
@@ -149,6 +158,7 @@ pub const SYLLABLE_LABEL: &str = "gabc:attrs:";
 pub fn attributes_label(syllable: &Syllable) -> Option<String> {
     if syllable.leading_attributes.is_empty()
         && syllable.group_tokens.is_empty()
+        && syllable.text_spacing.is_none()
         && syllable.notes.iter().all(|note| note.attributes.is_empty())
     {
         return None;
@@ -189,8 +199,12 @@ pub fn attributes_label(syllable: &Syllable) -> Option<String> {
     }
     inner.push('|');
     inner.push('X');
-    if let Some(spacing) = &syllable.text_spacing {
-        inner.push_str(&hex(spacing));
+    match &syllable.text_spacing {
+        Some(spacing) => {
+            inner.push('1');
+            inner.push_str(&hex(spacing));
+        }
+        None => inner.push('0'),
     }
     inner.push('|');
     Some(format!("{SYLLABLE_LABEL}{}", hex(&inner)))
@@ -199,7 +213,7 @@ pub fn attributes_label(syllable: &Syllable) -> Option<String> {
 /// Restaure les attributs `[…]` depuis un `@label` de `<syllable>`.
 /// Appelé après la lecture des `<nc>`, dont l'ordre donne l'index de note.
 pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
-    let Some(value) = label.and_then(|text| text.strip_prefix(SYLLABLE_LABEL)) else {
+    let Some(value) = detail_from_label(label) else {
         return;
     };
     let Some(inner) = unhex(value) else {
@@ -209,6 +223,7 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
     if let Some(leading) = parts.next().and_then(|part| part.strip_prefix('L')) {
         syllable.leading_attributes = leading
             .split(';')
+            .filter(|token| !token.is_empty())
             .filter_map(|token| unhex(token))
             .collect();
     }
@@ -217,6 +232,7 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
             if let Some(tokens) = part.strip_prefix('A') {
                 note.attributes = tokens
                     .split(';')
+                    .filter(|token| !token.is_empty())
                     .filter_map(|token| {
                         let (text, after) = token.split_once('@')?;
                         Some(scoretk_core::model::NoteAttribute {
@@ -248,7 +264,10 @@ pub fn read_attributes_label(label: Option<&str>, syllable: &mut Syllable) {
         })
         .collect();
     if let Some(spacing) = parts.next().and_then(|part| part.strip_prefix('X')) {
-        syllable.text_spacing = unhex(spacing);
+        syllable.text_spacing = match spacing.as_bytes().first() {
+            Some(b'1') => unhex(&spacing[1..]),
+            _ => None,
+        };
     }
 }
 

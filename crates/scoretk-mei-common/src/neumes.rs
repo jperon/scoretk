@@ -1064,6 +1064,9 @@ pub fn layout_label(kind: &str, separator: &str) -> String {
 pub fn layout_from_label(label: Option<&str>, kind: &str) -> Option<String> {
     let prefix = format!("{LAYOUT_LABEL_PREFIX}:{kind}:");
     let encoded = label?.strip_prefix(&prefix)?;
+    // Un porteur de layout GABC peut suivre, séparé par `|` : il ne fait
+    // pas partie de l'espacement (`docs/agents/gabc.md` §20).
+    let encoded = encoded.split('|').next()?;
     if encoded == "E" {
         return Some(String::new());
     }
