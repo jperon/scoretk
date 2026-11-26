@@ -139,6 +139,11 @@ impl<'a> Reader<'a> {
                 .and_then(|value| value.parse::<i32>().ok())
                 .unwrap_or(fraction.numerator() as i32);
             let denominator = unit.unwrap_or(fraction.denominator() as i32);
+            // `att.scoreDef.log/@meter.count` a priorité sur la valeur
+            // initiale de `<staffDef>` (`format-ref/mei.md` §4). Sans cette
+            // remise à zéro, une mesure avec `meter.count="3"` après un
+            // `staffDef @meter.count="4"` relirait `4` (v3/barlinedelete).
+            self.timesigs.retain(|key, _| *key == SCOREDEF_IDX);
             self.timesigs
                 .insert(SCOREDEF_IDX, (numerator, denominator, kind));
             self.current_time = fraction;

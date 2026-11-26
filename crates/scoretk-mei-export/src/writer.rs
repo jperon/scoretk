@@ -62,6 +62,9 @@ pub(crate) fn write(
         write_score_def_change(&mut xml, &signatures, &current);
         signatures = current;
         if options.full_support {
+            write_staff_time_signatures(&mut xml, score, measure, &current);
+        }
+        if options.full_support {
             write_transposition_change(&mut xml, score, index);
         }
         write_ending_start(&mut xml, score, index);
@@ -177,6 +180,68 @@ fn write_score_def_change(xml: &mut XmlWriter, previous: &Signatures, current: &
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
     xml.start_element("scoreDef", &refs);
+    xml.end_element();
+}
+
+/// A local time signature on one staff cannot be carried by a global
+/// `<scoreDef @meter.count>`: MEI's `staffDef` carries the same attributes
+/// (`att.staffDef.log`, Guidelines §4.2.2). The additive writer emits a
+/// `<scoreDef><staffGrp><staffDef n=… meter.count=… meter.unit=…>` so the
+/// reader can give each staff its own `TimeSig` segment.
+fn write_staff_time_signatures(
+    xml: &mut XmlWriter,
+    score: &Score,
+    measure: &scoretk_core::model::Measure,
+    global: &Signatures,
+) {
+    let mut changes: Vec<(usize, (i32, i32, TimeSigType))> = Vec::new();
+    for staff_idx in 0..score.staves.len() {
+        let track = Track::new(scoretk_core::model::StaffId::from_index(staff_idx), 0);
+        let signature = measure.segments.iter().find_map(|segment| {
+            if segment.tick != measure.start_tick {
+                return None;
+            }
+            match segment.element(track) {
+                Some(SegmentItem::TimeSig(sig)) => Some((sig.numerator, sig.denominator, sig.kind)),
+                _ => None,
+            }
+        });
+        if let Some(signature) = signature {
+            if Some(signature) != global.0 {
+                changes.push((staff_idx, signature));
+            }
+        }
+    }
+    if changes.is_empty() {
+        return;
+    }
+    xml.start_element("scoreDef", &[]);
+    xml.start_element("staffGrp", &[]);
+    for (staff_idx, (numerator, denominator, kind)) in changes {
+        let time = scoretk_core::model::TimeSig {
+            numerator,
+            denominator,
+            kind,
+            ..scoretk_core::model::TimeSig::new(1, 1)
+        };
+        let (count, unit, sym) = convert::meter_to_mei(&time);
+        let mut attrs = vec![("n".to_owned(), (staff_idx + 1).to_string())];
+        if let Some(count) = count {
+            attrs.push(("meter.count".to_owned(), count));
+        }
+        if let Some(unit) = unit {
+            attrs.push(("meter.unit".to_owned(), unit.to_string()));
+        }
+        if let Some(sym) = sym {
+            attrs.push(("meter.sym".to_owned(), sym.to_owned()));
+        }
+        let refs: Vec<(&str, &str)> = attrs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        xml.tag_empty("staffDef", &refs);
+    }
+    xml.end_element();
     xml.end_element();
 }
 

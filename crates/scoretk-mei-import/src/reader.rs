@@ -327,6 +327,15 @@ impl<'a> Reader<'a> {
                         ..scoretk_core::model::KeySig::new(key)
                     }),
                 );
+                // `staffDef @meter.count/@meter.unit` (`att.staffDef.log`)
+                // peut donner à une portée sa propre mesure locale ; le
+                // `<scoreDef>` global ne s'applique qu'aux autres portées.
+                let (sig_num, sig_den, sig_kind) = self
+                    .timesigs
+                    .get(&staff_idx)
+                    .or_else(|| self.timesigs.get(&SCOREDEF_IDX))
+                    .copied()
+                    .unwrap_or((numerator as i32, denominator as i32, kind));
                 Self::insert_segment(
                     &mut measure,
                     staff_count,
@@ -334,10 +343,10 @@ impl<'a> Reader<'a> {
                     SegmentType::TimeSig,
                     staff_idx,
                     SegmentItem::TimeSig(TimeSig {
-                        numerator: numerator as i32,
-                        denominator: denominator as i32,
-                        kind,
-                        ..TimeSig::new(numerator as i32, denominator as i32)
+                        numerator: sig_num,
+                        denominator: sig_den,
+                        kind: sig_kind,
+                        ..TimeSig::new(sig_num, sig_den)
                     }),
                 );
             }
