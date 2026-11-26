@@ -64,6 +64,14 @@ export interface ConvertOptions {
   includes?: Record<string, Uint8Array>;
   /** Vue moderne du chant grégorien : clé de sol (`8vb` si le registre est bas) et portée à 5 lignes au lieu de la clé d'ut/4 lignes. Additive, défaut `false`. */
   gabcModernClef?: boolean;
+  /** Chant grégorien : porte les neumes par des glyphes SMuFL (`smufl="chant…"`) dans le MusicXML (XSD 4.0). Additive, défaut `false`. */
+  gabcNeumeSmufl?: boolean;
+  /** MEI : porteurs 5.1 au-delà de l'exporteur 4.7.4 (vitesses des nuances, identité des instruments, ordre des credits…). Additive, défaut `false`. */
+  meiFullSupport?: boolean;
+  /** MusicXML : porteurs XSD 4.0 au-delà de l'exporteur 4.7.4, sans attribut privé. Additive, défaut `false`. */
+  xmlFullSupport?: boolean;
+  /** MusicXML : préserve les valeurs du modèle au lieu des valeurs de mise en page déduites par MuseScore 4.7.4. Additive, défaut `false`. */
+  xmlLosslessRoundTrip?: boolean;
 }
 
 /** Changement de tempo de la performance. */
@@ -142,25 +150,7 @@ pub fn convert(input: &[u8], options: Option<ConvertOptions>) -> Result<Vec<u8>,
 
     let score = read_score(input, from, &options)?;
 
-    let mut write_options = scoretk::Options::default();
-    if let Some(date) = options.encoding_date {
-        write_options.encoding_date = date;
-    }
-    if let Some(software) = options.software {
-        write_options.software = software;
-    }
-    if let Some(concert_pitch) = options.concert_pitch {
-        write_options.concert_pitch = Some(concert_pitch);
-    }
-    if let Some(expand_repeats) = options.expand_repeats {
-        write_options.midi.expand_repeats = expand_repeats;
-    }
-    if let Some(modern) = options.gabc_modern_clef {
-        write_options.gabc_modern_clef = modern;
-    }
-    if let Some(midi_text) = options.midi_text {
-        write_options.midi.smf_text = midi_text;
-    }
+    let write_options = build_write_options(&options);
 
     scoretk::write(&score, to, &write_options).map_err(js_error)
 }
@@ -197,25 +187,7 @@ pub fn convert_detailed(input: &[u8], options: Option<ConvertOptions>) -> Result
         )));
     }
     let (score, _) = scoretk::read_with_report(input, from).map_err(js_error)?;
-    let mut write_options = scoretk::Options::default();
-    if let Some(date) = options.encoding_date {
-        write_options.encoding_date = date;
-    }
-    if let Some(software) = options.software {
-        write_options.software = software;
-    }
-    if let Some(concert_pitch) = options.concert_pitch {
-        write_options.concert_pitch = Some(concert_pitch);
-    }
-    if let Some(expand_repeats) = options.expand_repeats {
-        write_options.midi.expand_repeats = expand_repeats;
-    }
-    if let Some(modern) = options.gabc_modern_clef {
-        write_options.gabc_modern_clef = modern;
-    }
-    if let Some(midi_text) = options.midi_text {
-        write_options.midi.smf_text = midi_text;
-    }
+    let write_options = build_write_options(&options);
     let (bytes, report) =
         scoretk::write_with_report(&score, to, &write_options).map_err(js_error)?;
 
@@ -290,25 +262,7 @@ pub fn convert_with_timeline(
 
     let score = read_score(input, from, &options)?;
 
-    let mut write_options = scoretk::Options::default();
-    if let Some(date) = options.encoding_date {
-        write_options.encoding_date = date;
-    }
-    if let Some(software) = options.software {
-        write_options.software = software;
-    }
-    if let Some(concert_pitch) = options.concert_pitch {
-        write_options.concert_pitch = Some(concert_pitch);
-    }
-    if let Some(expand_repeats) = options.expand_repeats {
-        write_options.midi.expand_repeats = expand_repeats;
-    }
-    if let Some(modern) = options.gabc_modern_clef {
-        write_options.gabc_modern_clef = modern;
-    }
-    if let Some(midi_text) = options.midi_text {
-        write_options.midi.smf_text = midi_text;
-    }
+    let write_options = build_write_options(&options);
 
     let playback = scoretk::write_playback(&score, &write_options).map_err(js_error)?;
     let result = js_sys::Object::new();
@@ -347,6 +301,46 @@ pub fn formats() -> js_sys::Array {
         array.push(&formats::to_js(format));
     }
     array
+}
+
+/// Construit les options d'écriture de la façade à partir de `ConvertOptions`.
+///
+/// Toutes les options sont additives : absentes, `scoretk::Options::default()`
+/// s'applique et les octets restent ceux de MuseScore 4.7.4. Unique point de
+/// passage pour `convert`, `convertDetailed` et `convertWithTimeline`.
+fn build_write_options(options: &ApiOptions) -> scoretk::Options {
+    let mut write_options = scoretk::Options::default();
+    if let Some(date) = options.encoding_date.as_deref() {
+        write_options.encoding_date = date.to_owned();
+    }
+    if let Some(software) = options.software.as_deref() {
+        write_options.software = software.to_owned();
+    }
+    if let Some(concert_pitch) = options.concert_pitch {
+        write_options.concert_pitch = Some(concert_pitch);
+    }
+    if let Some(expand_repeats) = options.expand_repeats {
+        write_options.midi.expand_repeats = expand_repeats;
+    }
+    if let Some(modern) = options.gabc_modern_clef {
+        write_options.gabc_modern_clef = modern;
+    }
+    if let Some(smufl) = options.gabc_neume_smufl {
+        write_options.gabc_neume_smufl = smufl;
+    }
+    if let Some(full) = options.mei_full_support {
+        write_options.mei_full_support = full;
+    }
+    if let Some(full) = options.xml_full_support {
+        write_options.xml_full_support = full;
+    }
+    if let Some(lossless) = options.xml_lossless_round_trip {
+        write_options.xml_lossless_round_trip = lossless;
+    }
+    if let Some(midi_text) = options.midi_text {
+        write_options.midi.smf_text = midi_text;
+    }
+    write_options
 }
 
 /// Lit la source, en résolvant ses `\include` depuis `options.includes` quand

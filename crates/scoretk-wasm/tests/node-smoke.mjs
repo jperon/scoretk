@@ -368,6 +368,20 @@ assert.ok(
   'gabcModernClef affiche une portée à 5 lignes',
 );
 
+// 27. gabcNeumeSmufl : porteurs SMuFL additifs sur les neumes, absents sinon.
+const gabcPlain = text(wasm.convert(encoder.encode(gabcSource), { from: 'gabc' }));
+assert.ok(
+  !gabcPlain.includes('smufl="'),
+  'sans gabcNeumeSmufl, le MusicXML ne doit pas contenir d\'attribut smufl',
+);
+const gabcSmufl = text(
+  wasm.convert(encoder.encode(gabcSource), { from: 'gabc', gabcNeumeSmufl: true }),
+);
+assert.ok(
+  gabcSmufl.includes('smufl="'),
+  'gabcNeumeSmufl doit ajouter des glyphes SMuFL aux neumes',
+);
+
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +
     `taille ${new Uint8Array(readFileSync(join(esmDir, 'scoretk_wasm_bg.wasm'))).length} octets, ` +

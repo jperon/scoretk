@@ -613,6 +613,10 @@ interface ConvertOptions {
   midiText?: boolean; // export MIDI : textes génériques, copyrights et repères FF 01/FF 02/FF 06 (défaut false)
   includes?: Record<string, Uint8Array>; // folder files by relative path, for LilyPond \include resolution
   gabcModernClef?: boolean; // chant grégorien : clé de sol (8vb si besoin) et 5 lignes, au lieu de la clé d'ut/4 lignes (défaut false)
+  gabcNeumeSmufl?: boolean; // carry Gregorian neumes with SMuFL glyphs (smufl="chant…", MusicXML 4.0 XSD); default false
+  meiFullSupport?: boolean; // additional MEI 5.1 carriers beyond the 4.7.4 exporter; default false
+  xmlFullSupport?: boolean; // additional standard MusicXML 4.0 XSD carriers beyond 4.7.4, no private attributes; default false
+  xmlLosslessRoundTrip?: boolean; // preserve model values instead of MuseScore 4.7.4 layout-derived values (MusicXML); default false
 }
 
 interface FormatInfo {
@@ -649,6 +653,20 @@ documented in `docs/agents/timemap.md` § 6. `MeasureSync::number`,
 A missing `from` is detected by content (`Format::detect`); an unrecognised input
 raises an explicit error rather than guessing. A missing `to` defaults to
 `musicxml`: `mscz → musicxml` remains the zero-option call.
+
+`gabcNeumeSmufl`, `meiFullSupport`, `xmlFullSupport` and
+`xmlLosslessRoundTrip` are additive write options, mapped respectively to
+`Options::gabc_neume_smufl`, `Options::mei_full_support`,
+`Options::xml_full_support` and `Options::xml_lossless_round_trip` of the
+facade. A single helper builds these write options for `convert`,
+`convertDetailed` and `convertWithTimeline`, so all three entry points accept
+them. All four default to `false`: when absent, the output bytes remain those
+of the MuseScore 4.7.4 behaviour. `gabcNeumeSmufl` adds `smufl="chant…"` to
+Gregorian neumes in MusicXML (XSD 4.0 `other-notation/@smufl`);
+`meiFullSupport` enables the additional MEI 5.1 carriers;
+`xmlFullSupport` enables the standard XSD 4.0 MusicXML carriers (without
+private `scoretk-*` attributes); `xmlLosslessRoundTrip` keeps model values
+instead of the layout-derived values inferred by MuseScore 4.7.4.
 
 `includes` is additive and only affects LilyPond input (with `from: "ly"` or
 `"lilypond"`, or content detection). It maps folder-relative paths to the raw
@@ -710,7 +728,7 @@ correct but slower).
 ## 6. Tests
 
 `crates/scoretk-wasm/tests/node-smoke.mjs` loads the ESM variant of the package
-as produced by `nix build` and covers the following cases (numbered 1 to 25
+as produced by `nix build` and covers the following cases (numbered 1 to 27
 in the script):
 
 - `version()` equals `package.json` ;
@@ -732,6 +750,12 @@ in the script):
   `partituer.ref.mid`, `fideo.ly` yields notes despite its unknown
   `ly2video-events.ily` include, `convertWithTimeline` sees the included notes,
   and a nested include under `sub/` resolves relative to the including file.
+- GABC: source positions in the MusicXML ids and in the timeline,
+  `gabcModernClef` (treble clef and five staff lines), and the additive
+  `gabcNeumeSmufl` option: converting the same source with
+  `{ gabcNeumeSmufl: true }` yields `smufl="` in the MusicXML while the
+  default conversion yields none.
+- `convertDetailed`: additive API, same bytes as `convert` plus the loss report.
 
 Environment variables: `SCORETK_PKG_DIR` (default `result/`) and
 `SCORETK_CORPUS` (default `tests/corpus/`). The flake check

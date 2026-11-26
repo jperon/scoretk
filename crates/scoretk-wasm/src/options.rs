@@ -32,6 +32,14 @@ pub(crate) struct ApiOptions {
     pub(crate) expand_repeats: Option<bool>,
     /// Vue moderne du chant grégorien (clé de sol, 5 lignes).
     pub(crate) gabc_modern_clef: Option<bool>,
+    /// Porteurs SMuFL des neumes grégoriens dans le MusicXML.
+    pub(crate) gabc_neume_smufl: Option<bool>,
+    /// Porteurs MEI 5.1 au-delà de l'exporteur 4.7.4.
+    pub(crate) mei_full_support: Option<bool>,
+    /// Porteurs XSD 4.0 du MusicXML au-delà de l'exporteur 4.7.4.
+    pub(crate) xml_full_support: Option<bool>,
+    /// Préservation des valeurs du modèle dans l'export MusicXML.
+    pub(crate) xml_lossless_round_trip: Option<bool>,
     pub(crate) midi_exact_ticks: Option<bool>,
     pub(crate) midi_text: Option<bool>,
     /// Fichiers d'un dossier, indexés par leur chemin relatif à sa racine.
@@ -55,6 +63,10 @@ impl ApiOptions {
             concert_pitch: boolean(&value, "concertPitch"),
             expand_repeats: boolean(&value, "expandRepeats"),
             gabc_modern_clef: boolean(&value, "gabcModernClef"),
+            gabc_neume_smufl: boolean(&value, "gabcNeumeSmufl"),
+            mei_full_support: boolean(&value, "meiFullSupport"),
+            xml_full_support: boolean(&value, "xmlFullSupport"),
+            xml_lossless_round_trip: boolean(&value, "xmlLosslessRoundTrip"),
             midi_exact_ticks: boolean(&value, "midiExactTicks"),
             midi_text: boolean(&value, "midiText"),
             includes: includes(&value),
