@@ -4841,6 +4841,7 @@ impl<'a> Parser<'a> {
                             cue_notes: name != "quoteDuring",
                             music: Box::new(quote.clone()),
                             duration: duree,
+                            principal: Some(Box::new(principal)),
                         })
                     })
                     .unwrap_or(Music::Empty)
@@ -8212,6 +8213,35 @@ fn ajoute_point(music: Music, default_duration: Duration) -> Music {
 
 /// Rend une musique silencieuse en conservant ses durées.
 ///
+/// Vrai si une musique porte au moins une note jouée, pour ne pas doubler la
+/// durée d'un argument principal déjà fait de silences.
+fn contient_des_notes(music: &Music) -> bool {
+    match music {
+        Music::Chord(chord) => matches!(&chord.kind, ChordKind::Notes(notes) if !notes.is_empty()),
+        Music::Seq(items) | Music::Sim(items) | Music::SimVoices(items) => {
+            items.iter().any(contient_des_notes)
+        }
+        Music::Tag { music, .. } | Music::Filtered { music, .. } => contient_des_notes(music),
+        Music::Context(context) => match context {
+            Context::Tuplet { music, .. }
+            | Context::Grace { music, .. }
+            | Context::Fixed { music, .. }
+            | Context::Relative { music, .. }
+            | Context::NonRelative { music }
+            | Context::Transpose { music, .. }
+            | Context::Harmonic { music, .. }
+            | Context::Volta { music, .. }
+            | Context::Repeat { body: music, .. } => contient_des_notes(music),
+            Context::Alternative(items) => items.iter().any(contient_des_notes),
+            Context::AfterGrace { main, grace, .. } => {
+                contient_des_notes(main) || contient_des_notes(grace)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// `ly/music-functions-init.ly:2267-2274` : `\skip <musique>` construit un
 /// `SkippedMusic`, dont l'élément est traversé sans produire de notes, mais
 /// en avançant le temps de ses accord. Chaque accord devient donc un
@@ -8228,28 +8258,43 @@ fn kill_cues(music: Music) -> Music {
         Music::Context(Context::Cue {
             cue_notes: true,
             duration,
+            principal,
             ..
-        }) => Music::Chord(Chord {
-            kind: ChordKind::SkipNumeric,
-            duration: Some(Duration::whole()),
-            multiplier: if duration == Fraction::ONE {
-                None
-            } else {
-                Some(duration)
-            },
-            from_scale: false,
-            bracketed: false,
-            posts: Vec::new(),
-            invisible: true,
-        }),
+        }) => {
+            // `\killCues` ne retire que les notes de cue : la musique écrite
+            // dans l'argument principal continue de jouer.
+            let silence = Music::Chord(Chord {
+                kind: ChordKind::SkipNumeric,
+                duration: Some(Duration::whole()),
+                multiplier: if duration == Fraction::ONE {
+                    None
+                } else {
+                    Some(duration)
+                },
+                from_scale: false,
+                bracketed: false,
+                posts: Vec::new(),
+                invisible: true,
+            });
+            match principal {
+                Some(principal) if contient_des_notes(&principal) => {
+                    Music::Seq(vec![*principal, silence])
+                }
+                // `r2`/`s1` fournissent déjà la durée : ajouter le silence
+                // ci-dessus doublerait le temps (`quote-kill-cues.ly`).
+                _ => silence,
+            }
+        }
         Music::Context(Context::Cue {
             music,
             cue_notes: false,
             duration,
+            principal,
         }) => Music::Context(Context::Cue {
             music: Box::new(kill_cues(*music)),
             cue_notes: false,
             duration,
+            principal,
         }),
         Music::Seq(items) => Music::Seq(items.into_iter().map(kill_cues).collect()),
         Music::Sim(items) => Music::Sim(items.into_iter().map(kill_cues).collect()),

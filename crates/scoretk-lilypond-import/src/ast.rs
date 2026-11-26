@@ -327,6 +327,12 @@ pub(crate) enum Context {
         /// cette fenêtre, au temps absolu de la partition
         /// (`lily/quote-iterator.cc:161-211`).
         duration: Fraction,
+        /// Musique écrite dans l'argument principal. `Quote_iterator` ne
+        /// remplace pas cette musique : il ajoute la citation dans une
+        /// `CueVoice` parallèle (`lily/quote-iterator.cc:229-271`). Le lecteur
+        /// l'interprète donc à la même attache que la citation, sans quoi les
+        /// notes réelles d'un `\cueDuring "flûte" #UP { c'4 g'4 }` disparaissent.
+        principal: Option<Box<Music>>,
     },
     /// Musique dont les notes sont invisibles et silencieuses (`NullVoice`) :
     /// la trame et les paroles restent dans le modèle, seul le MIDI les ignore.

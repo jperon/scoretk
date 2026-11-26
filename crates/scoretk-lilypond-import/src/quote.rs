@@ -67,6 +67,8 @@ fn cited_transposition(music: &Music) -> Option<PitchSpec> {
         Music::Context(context) => match context {
             Context::Transpose { music, .. }
             | Context::Harmonic { music, .. }
+            | Context::Relative { music, .. }
+            | Context::Fixed { music, .. }
             | Context::Tuplet { music, .. }
             | Context::Grace { music, .. }
             | Context::Repeat { body: music, .. }

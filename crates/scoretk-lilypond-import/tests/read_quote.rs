@@ -66,3 +66,19 @@ fn cue_during_suit_le_meme_temps_absolu() {
     let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
     assert_eq!(notes(&score), vec![67, 69, 71, 72]);
 }
+
+#[test]
+fn cue_during_garde_la_musique_de_l_argument_principal() {
+    // `Quote_iterator` ajoute les notes citées dans une `CueVoice` : les
+    // notes écrites dans l'argument principal restent jouées. Réduction de
+    // `adding-orchestral-cues-to-a-vocal-score.ly` (LSR), où `\cueWhile`
+    // enveloppe `\cueDuring` et passe `c4. g8` comme musique principale.
+    let source = "\\version \"2.24.0\"\n\
+        quote = \\relative { c'4 d e f }\n\
+        \\addQuote \"Q\" \\quote\n\
+        \\score { \\relative { \\cueDuring \"Q\" #UP { g'4 a'4 } } }";
+    let score = scoretk_lilypond_import::read_lilypond(source).expect("lecture");
+    let mut resultat = notes(&score);
+    resultat.sort_unstable();
+    assert_eq!(resultat, vec![60, 62, 67, 81]);
+}

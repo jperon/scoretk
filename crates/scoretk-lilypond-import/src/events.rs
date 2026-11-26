@@ -1305,9 +1305,20 @@ impl<'a> Interpreter<'a> {
             // accords de `[T, T + duration)`, dans la voix courante (piste de
             // la portée), avec le drapeau de cue pour les têtes réduites.
             Context::Cue {
-                music, duration, ..
+                music,
+                duration,
+                principal,
+                ..
             } => {
                 let debut = self.cursor;
+                // La citation s'ajoute à la musique de l'argument principal,
+                // elle ne la remplace pas (`quote-iterator.cc:229-271`) :
+                // `\cueDuring "flûte" #UP { c'4 g'4 }` joue les deux notes
+                // écrites *et* les notes citées dans la même fenêtre.
+                if let Some(principal) = principal {
+                    self.walk(principal);
+                }
+                self.cursor = debut;
                 let fin = debut + *duration;
                 let saved = self.cue;
                 self.cue = true;
@@ -1351,11 +1362,50 @@ impl<'a> Interpreter<'a> {
                         if event.tick < debut || event.tick >= fin {
                             continue;
                         }
-                        if let EventKind::Chord(chord) = &mut event.kind {
-                            if let Some(index) = chord.tuplet {
-                                chord.tuplet = Some(base + index);
+                        let chord = match &mut event.kind {
+                            EventKind::Chord(chord) => chord,
+                            _ => continue,
+                        };
+                        if let Some(index) = chord.tuplet {
+                            chord.tuplet = Some(base + index);
+                        }
+                        // Un seul accord par tick et par voix dans le modèle :
+                        // la citation doit s'ajouter aux notes déjà écrites à
+                        // la même attache, sinon l'événement suivant écrase le
+                        // premier (`\cueDuring "Q" #UP { c'4 }` perdait `c'`).
+                        let existant = self.voice.events.iter_mut().rev().find(|e| {
+                            e.tick == event.tick && matches!(&e.kind, EventKind::Chord(_))
+                        });
+                        if let Some(existant) = existant {
+                            let EventKind::Chord(cible) = &mut existant.kind else {
+                                continue;
+                            };
+                            let notes = match std::mem::replace(
+                                &mut chord.content,
+                                ChordContent::Rest { visible: false },
+                            ) {
+                                ChordContent::Notes(notes) => notes,
+                                autre => {
+                                    chord.content = autre;
+                                    continue;
+                                }
+                            };
+                            match &mut cible.content {
+                                ChordContent::Notes(deja) => {
+                                    let mut tout = std::mem::take(deja);
+                                    tout.extend(notes);
+                                    cible.content = ChordContent::Notes(tout);
+                                }
+                                _ => cible.content = ChordContent::Notes(notes),
                             }
-                        } else {
+                            // Les grâces de la citation vivent dans ces champs,
+                            // pas dans `content` (`quote-grace.ly`).
+                            cible
+                                .grace_before
+                                .append(&mut std::mem::take(&mut chord.grace_before));
+                            cible
+                                .grace_after
+                                .append(&mut std::mem::take(&mut chord.grace_after));
                             continue;
                         }
                         event.order = self.order;
@@ -2360,8 +2410,15 @@ impl<'a> Interpreter<'a> {
                 | Context::Invisible { music }
                 | Context::Silent { music }
                 | Context::Skipped { music }
-                | Context::Cue { music, .. }
                 | Context::Harmonic { music, .. } => self.scan_rest_ties(music, tick),
+                Context::Cue {
+                    music, principal, ..
+                } => {
+                    self.scan_rest_ties(music, tick);
+                    if let Some(principal) = principal {
+                        self.scan_rest_ties(principal, tick);
+                    }
+                }
                 Context::AfterGrace { main, grace, .. } => {
                     self.scan_rest_ties(main, tick);
                     self.scan_rest_ties(grace, tick);
