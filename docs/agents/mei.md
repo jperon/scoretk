@@ -648,102 +648,101 @@ is a **current implementation or model limitation**, not a claim that MEI
 
 Only items MEI 5.1 genuinely cannot represent may ever be removed from the
 declaration (with an RNG/Guidelines citation); none were removed here.
-## 11. Module NEUMES 5.1 pour le chant grégorien (branche `meineume`)
+## 11. The NEUMES 5.1 module for Gregorian chant (branch `meineume`)
 
-MEI 5.1 n'est complet qu'avec son module **Neume Notation** (*Guidelines*
-5.1, ch. 6 « Repertoire: Neume Notation », consulté en ligne le 2026-11-26 à
-`https://music-encoding.org/guidelines/v5/content/neumes.html` : la copie
-locale de `specs/mei/` ne contient que l'index, l'introduction et le CMN ;
-le schéma normatif local est `mei-all-5.1.rng`, ECL-2.0, pas `mei-basic`).
-MuseScore 4.7.4 n'écrit ni ne lit ce module : les paragraphes précédents
-mesurent son **CMN**. Le module neumatique est une extension additive du
-port, sans modification du chemin CMN.
+MEI 5.1 is complete only with its **Neume Notation** module (*Guidelines*
+5.1, ch. 6 "Repertoire: Neume Notation", read online on 2026-11-26 at
+`https://music-encoding.org/guidelines/v5/content/neumes.html`: the local
+copy under `specs/mei/` contains only the index, the introduction and the CMN;
+the normative local schema is `mei-all-5.1.rng`, ECL-2.0, not `mei-basic`).
+MuseScore 4.7.4 neither writes nor reads this module: the preceding sections
+measure its **CMN**. The neume module is an additive extension of the port,
+with no change to the CMN path.
 
-### 11.1 Porteurs standard, par élément de la RNG
+### 11.1 Standard carriers, by RNG element
 
-| Fait GABC (L6) | Porteur MEI 5.1 | Citation |
+| GABC fact (L6) | MEI 5.1 carrier | Citation |
 | --- | --- | --- |
-| Syllabe, paroles et groupes de glyphes | `<section>/<staff>/<layer>/<syllable>(<syl>, <neume>/<nc>)` ; un `<neume>` par groupe GABC (coupures `/`, `//`, `/0`, `!`) et `@type` = nom de neume (`punctum`, `pes`, `clivis`, `torculus`, …) | *Guidelines* §6.1, §6.1.1, §6.4.10 ; RNG `att.neumeType/@type` (20 valeurs suggérées + NMTOKEN) |
-| Hauteur, casse et forme du trait | `<nc @pname @oct>`, `@tilt` (direction du trait), `@curve`, `@con` = `g`/`l`/`e`, `@intm` ; le punctum inclinatum (lettre GABC majuscule) est `@tilt="se"` et `@type="punctum-inclinatum"` | §6.4.2 (`att.nc.log`, `att.ncForm`, `att.curvatureDirection`) ; RNG `att.ncForm.attribute.con` (`g` gapped, `l` looped, `e` extended) |
-| Oriscus, quilisma, liquescent, strophicus | enfants de `<nc>` ; variantes par `@looped`/`@curve` sur `<liquescent>`, `@waves` sur `<quilisma>`, `@n` sur `<strophicus>` | §6.4.1, §6.4.5, §6.4.7 ; RNG `mei_liquescent`, `mei_quilisma`, `mei_strophicus` |
-| Épisème horizontal/vertical, ictus, mora, virge, cavum, altération, ligne | `<episema form="h\|v" place>` pour `_`/`'` ; `<signifLet type="PunctumMora\|Virga\|Cavum\|Accent\|Alteration\|Linea" n place>` pour les signes sans élément dédié | §6.4.4, §6.4.8, §6.4.9 (« autres marques d'articulation ») ; RNG `att.episema.vis/@place` (`data.EVENTREL`) |
-| Lettres significatives NABC (`su1`, `st2`, `ta`, …) et chiffres de placement | texte de `<signifLet>` avec `@type="gabc-nabc"` et `@place` | §6.4.1, §6.4.8 (« significative letter(s) attached to a neume or a nc ») ; RNG `mei_signifLet` (contenu textuel libre) |
-| Barres de séparation | `<divLine form>` : `virgula`, `caesura`, `minima`, `minor`, `maior`, `finalis` et NMTOKEN complémentaires (`virgula-ledger`, `minima-ledger`, `maior-dotted`, `dominican-1`…`dominican-8`) | §6.4.1 ; RNG `att.divLine.log/@form` (six valeurs suggérées **et** `data.NMTOKEN`) |
-| Clé, clé basse, nombre de lignes | `<staffDef @lines>`, `<clef shape="C\|F" line="n">`, clé basse GABC `cbN` → `@type="clef-flat"` | §4.2.2, §6.4.10 ; RNG `mei_clef` (`att.clef.log`, `att.typed/@type`) |
-| Custos | `<custos @pname @oct>` (non émis : le payload L6 n'a pas de champ custos, `gabc.md` §10) | §6.4.3 (`att.custos`) |
-| En-têtes | `name` → `fileDesc/titleStmt/title` ; `author`/`transcriber` → `respStmt/persName @role` ; `office-part`/`book` → `workList/work/title @type` ; `mode`/`annotation`/`occasion`/`style` → `classification/termList/term @type` ; les autres → `sourceDesc/source/bibl/rend @type`. L'attribut `@n` conserve l'ordre des champs GABC. | *Guidelines* ch. 3 ; RNG `mei_fileDesc`, `mei_titleStmt`, `mei_respStmt`, `mei_workList`, `mei_classification`, `mei_sourceDesc` |
-| Fin de mot, élision, style du texte | `<syl @wordpos @con>` (`s` = espace, `t` = tilde d'élision) ; `<rend fontstyle="italic"|fontweight="bold"|color>` pour `<i>`, `<b>`, `<c>` etc. | §6.1.1, §6.4.10 (exemple `<syl n="initial"><rend color="red">O</rend></syl>`) ; RNG `att.syl.log/@wordpos`, `@con`, `mei_rend` |
+| Syllable, words and glyph groups | `<section>/<staff>/<layer>/<syllable>(<syl>, <neume>/<nc>)`; one `<neume>` per GABC group (cuts `/`, `//`, `/0`, `!`) and `@type` = neume name (`punctum`, `pes`, `clivis`, `torculus`, …) | *Guidelines* §6.1, §6.1.1, §6.4.10; RNG `att.neumeType/@type` (20 suggested values + NMTOKEN) |
+| Pitch, case and stroke shape | `<nc @pname @oct>`, `@tilt` (stroke direction), `@curve`, `@con` = `g`/`l`/`e`, `@intm`; the inclinatum (uppercase GABC letter) is `@tilt="se"` and `@type="punctum-inclinatum"` | §6.4.2 (`att.nc.log`, `att.ncForm`, `att.curvatureDirection`); RNG `att.ncForm.attribute.con` (`g` gapped, `l` looped, `e` extended) |
+| Oriscus, quilisma, liquescent, strophicus | children of `<nc>`; variants via `@looped`/`@curve` on `<liquescent>`, `@waves` on `<quilisma>`, `@n` on `<strophicus>` | §6.4.1, §6.4.5, §6.4.7; RNG `mei_liquescent`, `mei_quilisma`, `mei_strophicus` |
+| Horizontal/vertical episema, ictus, mora, virga, cavum, alteration, line | `<episema form="h\|v" place>` for `_`/`'`; `<signifLet type="PunctumMora\|Virga\|Cavum\|Accent\|Alteration\|Linea" n place>` for signs without a dedicated element | §6.4.4, §6.4.8, §6.4.9 ("other articulation marks"); RNG `att.episema.vis/@place` (`data.EVENTREL`) |
+| Significant NABC letters (`su1`, `st2`, `ta`, …) and placement digits | text of `<signifLet>` with `@type="gabc-nabc"` and `@place` | §6.4.1, §6.4.8 ("significant letter(s) attached to a neume or a nc"); RNG `mei_signifLet` (free text content) |
+| Separation bars | `<divLine form>`: `virgula`, `caesura`, `minima`, `minor`, `maior`, `finalis` and additional NMTOKENs (`virgula-ledger`, `minima-ledger`, `maior-dotted`, `dominican-1`…`dominican-8`) | §6.4.1; RNG `att.divLine.log/@form` (six suggested values **and** `data.NMTOKEN`) |
+| Clef, bass clef, line count | `<staffDef @lines>`, `<clef shape="C\|F" line="n">`, GABC flat clef `cbN` → `@type="clef-flat"` | §4.2.2, §6.4.10; RNG `mei_clef` (`att.clef.log`, `att.typed/@type`) |
+| Custos | `<custos @pname @oct>` (not emitted: the L6 payload has no custos field, `gabc.md` §10) | §6.4.3 (`att.custos`) |
+| Headers | `name` → `fileDesc/titleStmt/title`; `author`/`transcriber` → `respStmt/persName @role`; `office-part`/`book` → `workList/work/title @type`; `mode`/`annotation`/`occasion`/`style` → `classification/termList/term @type`; the others → `sourceDesc/source/bibl/rend @type`. `@n` keeps the GABC field order. | *Guidelines* ch. 3; RNG `mei_fileDesc`, `mei_titleStmt`, `mei_respStmt`, `mei_workList`, `mei_classification`, `mei_sourceDesc` |
+| End of word, elision, text style | `<syl @wordpos @con>` (`s` = space, `t` = elision tilde); `<rend fontstyle="italic"\|fontweight="bold"\|color>` for `<i>`, `<b>`, `<c>` etc. | §6.1.1, §6.4.10 (example `<syl n="initial"><rend color="red">O</rend></syl>`); RNG `att.syl.log/@wordpos`, `@con`, `mei_rend` |
 
-Le punctum mora, la virge, le cavum, l'altération non chantée (`x`, `#`,
-`y`, `Gabc.tex:512-540`) et les chiffres de placement n'ont pas d'élément
-dans le module neumes : ils sont encodés comme *lettres significatives*
-(`<signifLet>`), ce que la §6.4.9 prévoit explicitement pour les marques qui
-ne sont pas des neumes. Aucune annotation `gabc-*` n'est nécessaire pour les
-lire : les attributs standards (`@type`, `@n`, `@place`, `@form`, `@curve`)
-sont convertis en jetons GABC par `neumes::glyph_parts` / `part_from_mei`.
+The punctum mora, the virga, the cavum, unsung alteration (`x`, `#`,
+`y`, `Gabc.tex:512-540`) and placement digits have no element in the neume
+module: they are encoded as *significant letters* (`<signifLet>`), which §6.4.9
+explicitly provides for marks that are not neumes. No `gabc-*` annotation is
+needed to read them: standard attributes (`@type`, `@n`, `@place`, `@form`,
+`@curve`) are converted back to GABC tokens by `neumes::glyph_parts` /
+`part_from_mei`.
 
-### 11.2 Fichiers et câblage
+### 11.2 Files and wiring
 
-| Fichier | Rôle |
+| File | Role |
 | --- | --- |
-| `crates/scoretk-mei-common/src/neumes.rs` | tables clef/lettre/barre, décomposition des glyphes en éléments MEI, réciproque, `<rend>` pour les styles |
-| `crates/scoretk-mei-export/src/neumes.rs` | écriture MEI 5.1 `mei-all` du payload L6, **sans annotation par défaut** |
-| `crates/scoretk-mei-import/src/neumes.rs` | lecture du module neumes, reconstruction du payload et de la vue dérivée |
-| `crates/scoretk/tests/gabc_mei_neumes.rs` | tests structuraux, absence d'annotation privée, CMN inchangé |
-| `crates/scoretk/tests/layer_coverage.rs` | ligne de mesure standard, ligne « avec extension privée » en second |
-| `scripts/check-mei-neumes.sh` | validation RelaxNG des neuf sorties avec `jing` contre `mei-all-5.1.rng` |
+| `crates/scoretk-mei-common/src/neumes.rs` | clef/letter/bar tables, decomposition of glyphs into MEI elements, inverse, `<rend>` for styles |
+| `crates/scoretk-mei-export/src/neumes.rs` | MEI 5.1 `mei-all` writer of the L6 payload, **without annotation by default** |
+| `crates/scoretk-mei-import/src/neumes.rs` | reads the neume module, rebuilds the payload and the derived view |
+| `crates/scoretk/tests/gabc_mei_neumes.rs` | structural tests, absence of private annotation, unchanged CMN |
+| `crates/scoretk/tests/layer_coverage.rs` | standard measurement line, line "with private extension" second |
+| `scripts/check-mei-neumes.sh` | RelaxNG validation of the nine outputs with `jing` against `mei-all-5.1.rng` |
 
-`MeiOptions::gabc_tokens` (faux par défaut) active les `<annot type="gabc-*">`
-de la version précédente : ils dupliquaient chaque jeton atomique (glyphe,
-signe, barre, clé, en-tête, décalage source) et n'apportent plus rien au
-lecteur standard. Le câblage CMN reste inchangé : `mod neumes;` dans les deux
-crates, retour anticipé dans `writer::write` pour `Extension::Gregorian` et
-dans `read_mei` pour les documents à `<syllable>`/`<neume>`. Les `.mscx` du
-corpus produisent toujours un MEI `5.1+basic` avec `<measure>` (test
-`cmn_scores_still_use_the_unchanged_mei_basic_path`).
+`MeiOptions::gabc_tokens` (false by default) enables the `<annot type="gabc-*">`
+of the previous version: they duplicated every atomic token (glyph, sign, bar,
+clef, header, source offset) and no longer help the standard reader. CMN wiring
+is unchanged: `mod neumes;` in both crates, early return in `writer::write` for
+`Extension::Gregorian` and in `read_mei` for documents containing `<syllable>`/
+`<neume>`. Corpus `.mscx` files still produce a `5.1+basic` MEI with `<measure>`
+(test `cmn_scores_still_use_the_unchanged_mei_basic_path`).
 
-### 11.3 Mesures (neuf exemples Gregorio, 3 322 items)
+### 11.3 Measurements (nine Gregorio examples, 3 322 items)
 
-Commandes : `cargo test -p scoretk --test layer_coverage gabc_mei -- --nocapture`
-et `cargo test -p scoretk --test gabc_mei_neumes`. La **première** ligne du
-tableau imprimé est le chiffre standard : le MEI est réimporté tel quel, sans
-annotation privée. La seconde ne sert qu'à mesurer ce qu'ajoutait l'extension.
+Commands: `cargo test -p scoretk --test layer_coverage gabc_mei -- --nocapture`
+and `cargo test -p scoretk --test gabc_mei_neumes`. The **first** line of the
+printed table is the standard figure: the MEI is re-imported as-is, without
+private annotation. The second only measures what the extension used to add.
 
-| Ligne | Essentiel | Plein support | Détail |
+| Line | Essential | Full support | Detail |
 | --- | ---: | ---: | --- |
-| **Avant** (pas de module, vue CMN dérivée) | 94.14 % | **66.35 %** | L1 73.33 % (99/135), L2 91.93 % (1 036/1 127), L3 74.68 % (230/308), L6 47.89 % (839/1 752) |
-| **Après, sans `gabc-*` (chiffre retenu)** | **100.00 %** | **100.00 %** | L1 135/135, L2 1 127/1 127, L3 308/308, L6 1 752/1 752, 0 extra ; 9/9 sorties diffèrent de leur source |
-| **Après, avec extension privée** (secondaire) | 100.00 % | 100.00 % | même couverture, mais 35 en-têtes, 1 033 glyphes, 290 signes et 61 barres y sont encore dupliqués dans des `<annot type="gabc-*">` : ce chiffre n'est pas un chiffre d'interopérabilité |
-| Étape intermédiaire (module neumes sans porteurs standard, 2026-11-25) | 27.54 % | 49.37 % | L6 72.66 %, L1 19.26 %, L2 26.97 %, L3 12.01 % ; c'est le **49.37 %** du verdict, désormais dépassé |
+| **Before** (no module, derived CMN view) | 94.14 % | **66.35 %** | L1 73.33 % (99/135), L2 91.93 % (1 036/1 127), L3 74.68 % (230/308), L6 47.89 % (839/1 752) |
+| **After, without `gabc-*` (retained figure)** | **100.00 %** | **100.00 %** | L1 135/135, L2 1 127/1 127, L3 308/308, L6 1 752/1 752, 0 extra; 9/9 outputs differ from their source |
+| **After, with private extension** (secondary) | 100.00 % | 100.00 % | same coverage, but 35 headers, 1 033 glyphs, 290 signs and 61 bars are still duplicated in `<annot type="gabc-*">`: this figure is not an interoperability figure |
+| Intermediate step (neume module without standard carriers, 2026-11-25) | 27.54 % | 49.37 % | L6 72.66 %, L1 19.26 %, L2 26.97 %, L3 12.01 %; this is the **49.37 %** of the verdict, now superseded |
 
-Le test `standard_mei_neumes_carry_the_payload_without_any_private_annotation`
-vérifie sur les neuf fichiers l'absence de `<annot type="gabc-` et l'égalité
-champ par champ du payload L6 (en-têtes, clés, syllabes, lettres, glyphes,
-signes, barres, espaces), à l'exception des décalages UTF-16 de la source.
-`gabc_crosses_mei_with_the_whole_structured_payload` vérifie l'égalité
-**totale**, décalages compris, quand l'extension est activée.
-`gabc_mei_round_trip_is_measured` interdit la copie de la source.
+The test `standard_mei_neumes_carry_the_payload_without_any_private_annotation`
+checks the nine files for the absence of `<annot type="gabc-` and the
+field-by-field equality of the L6 payload (headers, clefs, syllables, letters,
+glyphs, signs, bars, spaces), except for source UTF-16 offsets.
+`gabc_crosses_mei_with_the_whole_structured_payload` checks **total** equality,
+offsets included, when the extension is enabled.
+`gabc_mei_round_trip_is_measured` forbids copying the source.
 
-#### Ce qui reste sans porteur MEI 5.1 (par genre)
+#### What still has no MEI 5.1 carrier (by kind)
 
-| Genre / fait | Porteur standard | Limite citée |
+| Kind / fact | Standard carrier | Cited limit |
 | --- | --- | --- |
-| `gregorian-note` (lettre + glyphe) | `<nc @pname @oct @tilt @curve @type>` + `<liquescent>`, `<oriscus>`, `<quilisma>`, `<strophicus>`, `<signifLet>`, `<episema>` | Aucune perte sur les neuf exemples ; §6.3 rappelle que les styles régionaux ne se réduisent pas à une notation unique, donc la réversibilité est propre à la convention GABC↔MEI documentée ici, pas une garantie universelle |
-| `gregorian-sign` (`.`, `..`, `_502`, `r6`, `x?`, `>`…) | `<signifLet @type @n @place>` / `<episema @form @place @n>` | Le module ne définit pas d'élément `<punctumMora>` ni `<cavum>` ; §6.4.9 renvoie aux marques d'articulation et aux glyph.*, nous utilisons `<signifLet>` |
-| `gregorian-bar` (`` ` ``, `,`, `;`, `:`, `::`, `;1`…`;8`) | `<divLine @form>` + NMTOKEN | RNG : six valeurs suggérées seulement, NMTOKEN libre pour les variantes ; le nom exact de la variante est donc une convention de ce port |
-| `gregorian-header` (35 champs) | `titleStmt`, `respStmt`, `workList`, `classification`, `sourceDesc/bibl/rend` | `<bibl>` n'accepte pas `<p>` (RNG `mei_bibl`) : les champs libres passent par `<rend @type>` |
+| `gregorian-note` (letter + glyph) | `<nc @pname @oct @tilt @curve @type>` + `<liquescent>`, `<oriscus>`, `<quilisma>`, `<strophicus>`, `<signifLet>`, `<episema>` | No loss on the nine examples; §6.3 notes that regional styles do not reduce to a single notation, so reversibility is specific to the documented GABC↔MEI convention, not a universal guarantee |
+| `gregorian-sign` (`.`, `..`, `_502`, `r6`, `x?`, `>`…) | `<signifLet @type @n @place>` / `<episema @form @place @n>` | The module defines no `<punctumMora>` or `<cavum>` element; §6.4.9 refers to articulation marks and `glyph.*`, we use `<signifLet>` |
+| `gregorian-bar` (`` ` ``, `,`, `;`, `:`, `::`, `;1`…`;8`) | `<divLine @form>` + NMTOKEN | RNG: only six suggested values, free NMTOKEN for variants; the exact variant name is therefore a convention of this port |
+| `gregorian-header` (35 fields) | `titleStmt`, `respStmt`, `workList`, `classification`, `sourceDesc/bibl/rend` | `<bibl>` does not accept `<p>` (RNG `mei_bibl`): free fields go through `<rend @type>` |
 | `gregorian-clef` (`c3`, `f3`, `cb3`) | `<clef @shape @line @type="clef-flat">` | — |
-| `gregorian-clef` double `c1@c4` | **aucun** | `<clef>` est unique ; RNG `mei_clefGrp` n'est pas admissible dans `<staffDef>` : seule la première clé est écrite, l'autre reste dans l'extension privée |
-| `gregorian-above-text`, `gregorian-rubric` | `<signifLet type="gabc-above" place="above">` ; rubrique conservée dans le texte de `<syl>` | — |
-| `space_after`, élisions | `<syl @wordpos @con>` | RNG `att.syl.log/@con` (`s` espace, `t` tilde) |
-| Styles `<b>`, `<i>`, `<c>`, `<sc>`, `<tt>`, `<ul>` | `<rend>` + `@fontstyle`/`@fontweight`/`@color`/`@fontfam` | Seuls ces styles réversibles sont convertis ; `<sp>`, `<v>`, `<e>`, `<clear>`, `<pr>` restent du texte exact dans `<syl>` (§6.4.10 montre `<rend>` mais ne définit pas de mappage GABC) |
-| `custos`, coupures NABC `\|`, `[…]` de mise en page, sauts de ligne `z`/`Z` | **aucun dans le payload L6** | `gabc.md` §10 : ces faits sont déjà absents du modèle (MEI a `<custos>`, §6.4.3, mais rien à alimenter) |
-| Décalages UTF-16 `source_offset`/`source_end` | **aucun** | Attribut de suivi pour le client wasm (`timemap.md`), pas un fait musical MEI ; conservé uniquement par l'extension privée et exclu de l'inventaire comparé |
+| `gregorian-clef` double `c1@c4` | **none** | `<clef>` is unique; RNG `mei_clefGrp` is not allowed in `<staffDef>`: only the first clef is written, the other remains in the private extension |
+| `gregorian-above-text`, `gregorian-rubric` | `<signifLet type="gabc-above" place="above">`; rubric kept in the text of `<syl>` | — |
+| `space_after`, elisions | `<syl @wordpos @con>` | RNG `att.syl.log/@con` (`s` space, `t` tilde) |
+| Styles `<b>`, `<i>`, `<c>`, `<sc>`, `<tt>`, `<ul>` | `<rend>` + `@fontstyle`/`@fontweight`/`@color`/`@fontfam` | Only these reversible styles are converted; `<sp>`, `<v>`, `<e>`, `<clear>`, `<pr>` remain exact text in `<syl>` (§6.4.10 shows `<rend>` but defines no GABC mapping) |
+| `custos`, NABC cuts `\|`, `[…]` layout, `z`/`Z` line breaks | **none in the L6 payload** | `gabc.md` §10: these facts are already absent from the model (MEI has `<custos>`, §6.4.3, but nothing to feed it) |
+| UTF-16 offsets `source_offset`/`source_end` | **none** | Tracking attribute for the wasm client (`timemap.md`), not a musical MEI fact; kept only by the private extension and excluded from the compared inventory |
 
-Aucun élément n'a été retiré du dénominateur et aucune déclaration de layer
-n'a été réduite pour obtenir le chiffre standard.
+No element was removed from the denominator and no layer declaration was
+reduced to obtain the standard figure.
 
-### 11.4 Validation RelaxNG
+### 11.4 RelaxNG validation
 
 ```sh
 nix develop -c cargo build -p scoretk-cli
@@ -751,13 +750,86 @@ scripts/check-mei-neumes.sh
 # MEI 5.1 neumes : 9 fichier(s) valide(s) contre mei-all-5.1.rng
 ```
 
-`jing` est fourni par `nix shell nixpkgs#jing` ; le schéma est la copie locale
-de `specs/mei/mei-all-5.1.rng` (ECL-2.0). Aucun MEI CMN n'a changé : les
-figures de conformité de §3, §7 et §9 restent celles du chemin 4.7.4.
+`jing` comes from `nix shell nixpkgs#jing`; the schema is the local copy at
+`specs/mei/mei-all-5.1.rng` (ECL-2.0). No CMN MEI changed: the conformity
+figures of §3, §7 and §9 remain those of the 4.7.4 path.
 
-Taille du paquet wasm (`nix build .#wasm`, `result/SIZE`) : **2 740 634 octets
-bruts / 1 068 351 gzip**. Le commit `3ea3dd73` (module neumes initial) était
-à 2 714 783 / 1 058 298, soit **+25 851 brut (+0,95 %)** et **+10 053 gzip
-(+0,95 %)** pour les porteurs standard et les styles `<rend>` ; par rapport
-à la dernière figure documentée avant le module (2 558 465 / 1 006 608),
-l'ajout total du module est de +182 169 brut / +61 743 gzip.
+Wasm package size (`nix build .#wasm`, `result/SIZE`): **2 740 634 raw bytes /
+1 068 351 gzip**. Commit `3ea3dd73` (initial neume module) was at 2 714 783 /
+1 058 298, i.e. **+25 851 raw (+0.95 %)** and **+10 053 gzip (+0.95 %)** for the
+standard carriers and the `<rend>` styles; compared with the last figure
+documented before the module (2 558 465 / 1 006 608), the module adds a total
+of +182 169 raw / +61 743 gzip.
+
+## 12. Full-support coverage campaign (2026-11-26, branch `mei3`)
+
+### 12.1 Method and headline figures
+
+`Options::mei_full_support` / `MeiOptions::full_support` stays opt-in and
+**false** by default: the bytes written with the default options remain
+4.7.4-faithful (`mei_conformity` unchanged, no parity test relaxed). Every step
+below was one commit with its measured gain, followed by the full verification
+suite. No kind was removed from the declaration, no denominator was reduced and
+no private `<annot>` was introduced; each carrier is a standard MEI 5.1 element
+or attribute, cited below.
+
+| Measurement | Before this pass | After this pass |
+| --- | ---: | ---: |
+| Round trip, default export (56 scores, 5 879 items) | 95.63 % | **95.63 %** (unchanged, byte-faithful) |
+| Round trip, `mei_full_support` | 99.51 % (29 missing) | **100.00 %** (0/5 879) |
+| Import of MuseScore `*.ref.mei` (main figure) | 87.58 % | **87.67 %** |
+| Import, carriers MuseScore never writes excluded | 96.13 % | **96.23 %** |
+
+### 12.2 Per-kind residual, before → after (`mei_full_support`)
+
+| Kind | Before | After | Standard carrier and citation |
+| --- | ---: | ---: | --- |
+| `clef` | 13 | 0 | `<staffDef>/<clef>` and a second `<clef>` inside `<layer>` at the same tick: RNG `mei_staffDef`, `mei_clef`, `att.clef.log` (Guidelines §4.2.2). The pivot keeps the two facts in two segments; the reader no longer overwrites one with the other. |
+| `tie`, `note`, `articulation` (grace/id anchoring) | 3 + 1 + 1 | 0 | `xml:id` (`att.common`) on grace-note `<note>` and `<tie @startid/@endid>` (RNG `att.startEndId`, Guidelines §10): grace notes now carry the model note id. |
+| `note` (breath at the same tick) | 1 | 0 | `<breath>`/`<caesura>` is a separate control event (`mei_breath`, Guidelines §10, `att.timestamp`): the reader adds its own segment instead of replacing the chord rest. |
+| `circle`/`stamp` rounding (`clef`, `rest`, `tremolo-bar`, `mRpt`) | 6 | 0 | `att.timestamp/@tstamp` is `data.NUMBER`; nine decimals let `Convert::tstampToFraction`'s continued-fraction reader recover exact thirds, and the additive writer uses the same denominator as that reader. |
+| `credit`, `tbox-text`, `title` (trailing spaces) | 6 | 0 | `<rend @n>`, `<title type="work-number">`, `<dir type="mscore-tbox-*">`: RNG `att.common/@n`, `att.typed/@type`, `att.labels.addr/@label`; the additive text reader keeps the trailing whitespace that the pivot stores. |
+| `multi-measure-rest`, `measure-repeat` | 6 + 1 | 0 | `<multiRest @n>` and `<mRpt @n>`: RNG `att.numbered` (`mei_multiRest`, `mei_mRpt`); unique `xml:id` per track, `@tstamp` for the symbol at measure start. |
+| `barline`, `barline-end` | 2 | 0 | `<barLine @form="dashed">`, RNG `mei_barLine` + `data.BARRENDITION` (§5): disambiguates MuseScore's lossy `@right="dotted"`. |
+| `jump`, `marker` | 2 | 0 | `att.staff/@staff` on `<repeatMark>` (§10, `mei_repeatMark`): the marker and jump of each staff keep their own anchor. |
+| `time-sig` (local signature) | 1 | 0 | `<scoreDef><staffGrp><staffDef @meter.count/@meter.unit>` (RNG `mei_staffDef`, Guidelines §4.2.2), plus global `scoreDef` precedence over the initial `staffDef`. |
+| `chord-line`, `tremolo-bar` | 2 | 0 | `<dir>` control event (§10, RNG `mei_dir`, `att.typed/@type`): `mscore-chordline-*` and `mscore-tremolo-bar-*` variants, the curve points in `<dir>` text. |
+| `figured-bass` | 4 | 0 | `<harm><fb><f>` (§10, RNG `mei_harm`, `mei_fb`, `mei_f`; `mei_fb` is only admissible as a child of `mei_harm`): `prefix/digit/suffix/continuation/brackets` per item, `;` between items, in the text of `<f>`. |
+| `articulation`, `note`, `rest`, `chord-line`, `tremolo-bar` (reader only) | 5 | 0 | `att.startEndId` anchors and inline measure control events: the reader now reads the additive carriers written by this port and no longer erases an event at the same tick. |
+
+No residual coverage item remains. The `mscore-*` values are documented
+MuseScore extensions of *standard* attributes/elements, not a private binary
+payload; all numeric data uses standard attributes (`@val`, `@n`, `@staff`,
+`@midi.*`, `@fontsize`, `@tstamp`, `@form`).
+
+### 12.3 RelaxNG validation of the 56 additive exports
+
+The 56 files are produced with `SCORETK_MEI_DUMP_DIR=<dir> cargo test -p
+scoretk --test mei_full_support_dump dump_mei_full_support_corpus`, then
+validated exactly as `scripts/check-mei-neumes.sh` validates the neume module:
+
+```sh
+SCHEMA=$SCORETK_SPECS_DIR/mei/mei-all-5.1.rng
+for f in "$DUMP"/*.mei; do jing "$SCHEMA" "$f"; done
+# 44 of 56 files are strictly valid against mei-all-5.1.rng
+```
+
+Result: **44/56 valid**, **12 invalid**. The 12 files are
+`v3/layout_elements`, `v3/moonlight`, `v3/testMultiInstrumentPart3`,
+`v3/testWedge4`, `v3/timesig-05`, `v3/voices`, `v4/changevisibility`,
+`v4/copypaste_parts`, `v4/linked-ties`, `v4/tenuto_accent`,
+`v4/testExcludeInvisibleElements`, `v4/timesig-09`. None of the violations come
+from a carrier added in this pass (the `<barLine>`, `<harm><fb><f>` and
+measure-level `<dir>` were moved into their RNG-allowed positions). They are
+strict-RNG residuals of the 4.7.4 CMN style and of the earlier §10 carriers:
+`@dur` on `<graceGrp>` (RNG `mei_graceGrp` has only `att.graceGrp`; the duration
+belongs to the child `<note>`), `@startid` on `<artic>` (`mei_artic` has no
+`att.startEndId`), `@visible` on `<note>`/`<rest>` (not in `att.common`),
+`<arpeg>`/`<ornam>` written inside `<note>`/`<chord>` instead of as control
+events (`mei_arpeg`, `mei_ornam`), `<fTrem>` with a single note (RNG requires at
+least two children), `<pedal>` without required `@dir` (`att.pedal`),
+`<syl con="m">` (RNG `data.SYLLABIC` has no `m`, even though 4.7.4 writes it),
+and `<staffDef @trans.diat/@trans.semi>` outside `<staffGrp>` plus `@trans.*`
+on `<dir>` (those attributes belong to `att.staffDef.transposition`). These
+are reported, not hidden: fixing them changes earlier §10 carriers or
+4.7.4-authored attributes and is outside the coverage target of this pass.
