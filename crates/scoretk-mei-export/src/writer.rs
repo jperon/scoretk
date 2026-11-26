@@ -1620,7 +1620,7 @@ mod tests {
             },
         )
         .expect("extended export");
-        assert!(full.contains("<dynam staff=\"1\" tstamp=\"1.000\" val=\"96\">f</dynam>"));
+        assert!(full.contains("<dynam staff=\"1\" tstamp=\"1.000000000\" val=\"96\">f</dynam>"));
         let read_back = scoretk_mei_import::read_mei(full.as_bytes()).expect("read MEI");
         let items = scoretk_core::model::inventory(&read_back);
         assert!(items
