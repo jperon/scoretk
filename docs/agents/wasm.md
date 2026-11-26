@@ -611,6 +611,7 @@ interface ConvertOptions {
   expandRepeats?: boolean; // dérouler les reprises MIDI (défaut : true)
   midiExactTicks?: boolean; // import MIDI : quantification au tick source, sans n-olets ni simplification (défaut false)
   midiText?: boolean; // export MIDI : textes génériques, copyrights et repères FF 01/FF 02/FF 06 (défaut false)
+  midiFullSupport?: boolean; // MIDI : porteurs SMF standard uniquement (textes, cue points, RP-026, ticks exacts à la lecture), sans préfixe privé ; défaut false
   includes?: Record<string, Uint8Array>; // folder files by relative path, for LilyPond \include resolution
   gabcModernClef?: boolean; // chant grégorien : clé de sol (8vb si besoin) et 5 lignes, au lieu de la clé d'ut/4 lignes (défaut false)
   gabcNeumeSmufl?: boolean; // carry Gregorian neumes with SMuFL glyphs (smufl="chant…", MusicXML 4.0 XSD); default false
@@ -654,14 +655,18 @@ A missing `from` is detected by content (`Format::detect`); an unrecognised inpu
 raises an explicit error rather than guessing. A missing `to` defaults to
 `musicxml`: `mscz → musicxml` remains the zero-option call.
 
-`gabcNeumeSmufl`, `meiFullSupport`, `xmlFullSupport` and
-`xmlLosslessRoundTrip` are additive write options, mapped respectively to
-`Options::gabc_neume_smufl`, `Options::mei_full_support`,
-`Options::xml_full_support` and `Options::xml_lossless_round_trip` of the
+`gabcNeumeSmufl`, `meiFullSupport`, `xmlFullSupport`,
+`xmlLosslessRoundTrip` and `midiFullSupport` are additive write options,
+mapped respectively to `Options::gabc_neume_smufl`,
+`Options::mei_full_support`, `Options::xml_full_support`,
+`Options::xml_lossless_round_trip` and `Options::midi_full_support` of the
 facade. A single helper builds these write options for `convert`,
 `convertDetailed` and `convertWithTimeline`, so all three entry points accept
-them. All four default to `false`: when absent, the output bytes remain those
-of the MuseScore 4.7.4 behaviour. `gabcNeumeSmufl` adds `smufl="chant…"` to
+them. All five default to `false`: when absent, the output bytes remain those
+of the MuseScore 4.7.4 behaviour. `midiFullSupport` writes only standard SMF
+carriers (`FF 01` texts, RP-026 song information, `FF 02`, `FF 03`, `FF 06`,
+`FF 07`) with no `@ST:`/`@SY:`/`@TK:` private prefix; on reading it also
+preserves the source ticks. `gabcNeumeSmufl` adds `smufl="chant…"` to
 Gregorian neumes in MusicXML (XSD 4.0 `other-notation/@smufl`);
 `meiFullSupport` enables the additional MEI 5.1 carriers;
 `xmlFullSupport` enables the standard XSD 4.0 MusicXML carriers (without
@@ -755,6 +760,9 @@ in the script):
   `gabcNeumeSmufl` option: converting the same source with
   `{ gabcNeumeSmufl: true }` yields `smufl="` in the MusicXML while the
   default conversion yields none.
+- `midiFullSupport`: converting `v4/dynamics.mscx` to MIDI writes the composer
+  as an RP-026 `{#COMPOSER=…}` text carrier, while the default conversion
+  writes none and no `@…` private prefix appears in either case.
 - `convertDetailed`: additive API, same bytes as `convert` plus the loss report.
 
 Environment variables: `SCORETK_PKG_DIR` (default `result/`) and

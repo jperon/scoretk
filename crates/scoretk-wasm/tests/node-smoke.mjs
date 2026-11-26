@@ -382,6 +382,22 @@ assert.ok(
   'gabcNeumeSmufl doit ajouter des glyphes SMuFL aux neumes',
 );
 
+// 28. midiFullSupport : porteurs SMF standard (RP-026), absents par défaut.
+const midiPlain = text(wasm.convert(mscx, { to: 'midi' }));
+assert.ok(
+  !midiPlain.includes('{#COMPOSER='),
+  'sans midiFullSupport, le MIDI ne doit pas porter de balise RP-026',
+);
+const midiFull = text(wasm.convert(mscx, { to: 'midi', midiFullSupport: true }));
+assert.ok(
+  midiFull.includes('{#COMPOSER='),
+  'midiFullSupport doit écrire le compositeur comme texte RP-026 standard',
+);
+assert.ok(
+  !midiFull.includes('@TK:') && !midiFull.includes('@ST:') && !midiFull.includes('@SY:'),
+  'midiFullSupport ne doit pas écrire de préfixe privé',
+);
+
 console.log(
   `node-smoke: ok (${pkgDir}, format détecté ${wasm.detect(mscx)}, ` +
     `taille ${new Uint8Array(readFileSync(join(esmDir, 'scoretk_wasm_bg.wasm'))).length} octets, ` +
