@@ -72,6 +72,28 @@ constants are compiled into `scoretk-smufl` (GPL-3.0-only code); the OFL-1.1
 font data is *not* linked as a crate and introduces no Cargo dependency. OFL
 1.1 is GPL-3 compatible, so the combined work remains GPL-3.0-only.
 
+### Edwin font data (SIL OFL 1.1, generated text subset)
+
+`crates/scoretk-smufl/fonts/edwin/` vendors `Edwin-Roman.otf`,
+`Edwin-Bold.otf`, `LICENSE.txt`, `README.md` and `FONTLOG.txt` from MuseScore
+**4.7.4** `fonts/edwin/` (tag `v4.7.4`, commit
+`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`). Edwin is Copyright (C) 2021
+MuseScore Limited, reserved font name « Edwin », licensed under the **SIL
+Open Font License 1.1**; its licence, README and font log are kept alongside
+the data (OFL §1/§2).
+
+`scripts/gen-edwin-subset.py` reuses the dependency-free CFF reader of
+`gen-smufl-subset.py` and writes the generated
+`crates/scoretk-smufl/src/text.rs`: 167 codepoints per style (ASCII, Latin-1
+and the typographic signs used by the corpus), real advance widths, bounding
+boxes and quadratic outlines. It runs with `python3 -I` and never executes
+the font. The generated constants are compiled into `scoretk-smufl` (GPL-3.0
+code); the OFL font files are not linked and add no Cargo dependency. OFL 1.1
+is GPL-3 compatible, so the combined work remains GPL-3.0-only. The text
+subset is smaller than notation glyph data: about 93 KB of raw quadratic
+edges for both styles, well inside the font-data budget of
+`docs/agents/engraving.md` §1.
+
 ## Table
 
 | Crate | Version | Declared licence | Role |

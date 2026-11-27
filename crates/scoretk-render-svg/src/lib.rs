@@ -38,7 +38,7 @@ use alloc::string::String;
 
 use scoretk_engrave::display::{DisplayItem, DisplayList, Geometry, ItemKind};
 use scoretk_engrave::layout::PageSpec;
-use scoretk_smufl::{units_to_fixed, Edge, GLYPHS};
+use scoretk_smufl::{units_to_fixed, Edge, GLYPHS, TEXT_EDGES, UPEM};
 
 /// Appends the quadratic outline of a SMuFL glyph, in fixed 1/1024 sp units.
 ///
@@ -77,6 +77,41 @@ fn write_outline(out: &mut String, glyph_index: u16) {
     let _ = write!(out, "Z");
 }
 
+/// Outline of one Edwin text glyph, scaled to the font em in fixed sp.
+/// // Port of `tdraw.cpp`'s text drawing: the same y flip as music glyphs.
+fn write_text_outline(out: &mut String, codepoint: u16, bold: bool, size: i32) {
+    let Some(glyph) = scoretk_smufl::text_glyph(codepoint, bold) else {
+        return;
+    };
+    let scale = |value: i16| i32::from(value) * size / i32::from(UPEM);
+    let start = usize::from(glyph.edges.0);
+    let end = start + usize::from(glyph.edges.1);
+    let mut cx = 0i32;
+    let mut cy = 0i32;
+    for edge in &TEXT_EDGES[start..end] {
+        match *edge {
+            Edge::Move(x, y) => {
+                cx = scale(x);
+                cy = -scale(y);
+                let _ = write!(out, "M{cx},{cy}");
+            }
+            Edge::Line(dx, dy) => {
+                cx += scale(dx);
+                cy -= scale(dy);
+                let _ = write!(out, "L{cx},{cy}");
+            }
+            Edge::Quad(qx, qy, x, y) => {
+                let control_x = cx + scale(qx);
+                let control_y = cy - scale(qy);
+                cx += scale(x);
+                cy -= scale(y);
+                let _ = write!(out, "Q{control_x},{control_y} {cx},{cy}");
+            }
+        }
+    }
+    let _ = write!(out, "Z");
+}
+
 fn write_item(out: &mut String, item: &DisplayItem) {
     let class = item.kind.as_str();
     match item.geometry {
@@ -100,6 +135,20 @@ fn write_item(out: &mut String, item: &DisplayItem) {
                 bottom1 = y1 + width,
                 bottom2 = y2 + width,
             );
+        }
+        Geometry::Text {
+            codepoint,
+            x,
+            y,
+            size,
+            bold,
+        } => {
+            let _ = write!(
+                out,
+                "<path class=\"{class}\" transform=\"translate({x},{y})\" d=\""
+            );
+            write_text_outline(out, codepoint, bold, size);
+            out.push_str("\"/>");
         }
         Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {
             let _ = write!(

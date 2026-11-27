@@ -29,8 +29,8 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use scoretk_core::model::{BeamMode, Score, StemDirection};
-use scoretk_smufl::{anchor, glyph, units_to_fixed};
+use scoretk_core::model::{BeamMode, Credit, CreditJustify, CreditStyle, Score, StemDirection};
+use scoretk_smufl::{anchor, glyph, text_advance, text_glyph, units_to_fixed, UPEM};
 
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, MeasureAtom};
 use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
@@ -41,7 +41,7 @@ use crate::style::*;
 /// // Port of `styledef.cpp:41-59, 279` (4.7.4 defaults): A4 210 × 297 mm,
 /// 15 mm margins, 180 mm printable width, `minSystemDistance` 8.5 sp,
 /// `maxSystemDistance` 15 sp and `lastSystemFillLimit` 0.3.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PageSpec {
     /// Printable width (180 mm on A4 with 15 mm margins at 1.75 mm/sp).
     pub printable_width: i32,
@@ -61,6 +61,11 @@ pub struct PageSpec {
     /// the left indent of the first system when the score opens with a
     /// vertical frame (title, subtitle, composer).
     pub first_system_indent: i32,
+    /// Spatium in millimetres, to convert point font sizes into staff spaces.
+    pub spatium_mm: f64,
+    /// Height of the first-page VBox plus `frameSystemDistance` (7 sp),
+    /// added above the first system. Zero when the score has no title frame.
+    pub title_frame_height: i32,
 }
 
 impl Default for PageSpec {
@@ -74,6 +79,8 @@ impl Default for PageSpec {
             max_system_distance: 15 * SP,
             last_system_fill_limit: 307,
             first_system_indent: 0,
+            spatium_mm: 1.75,
+            title_frame_height: 0,
         }
     }
 }
@@ -106,6 +113,18 @@ impl PageSpec {
             } else {
                 0
             },
+            spatium_mm: spatium,
+            // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
+            // page 1 pushes the first system down by its own height plus
+            // `frameSystemDistance` (7 sp, styledef.cpp:139).
+            title_frame_height: score
+                .engraving
+                .credits
+                .iter()
+                .filter(|credit| credit.page == 1)
+                .map(|credit| (credit.vbox_height * SP as f64) as i32)
+                .max()
+                .map_or(0, |height| height + 7 * SP),
         }
     }
 
@@ -732,6 +751,107 @@ fn place_time_sig(out: &mut DisplayList, numerator: u8, denominator: u8, x: i32,
     }
 }
 
+/// Font em in fixed staff spaces: point size converted with the score's
+/// spatium (`styledef.cpp:1209-1223`, `TextStyle::fontSize`).
+fn text_em(spec: &PageSpec, font_size: f64) -> i32 {
+    ((font_size * 25.4 / 72.0) / spec.spatium_mm * SP as f64) as i32
+}
+
+/// Width of a text run with real Edwin advances (`horizontalspacing.cpp` uses
+/// the same item widths to size its segments).
+fn text_run_width(text: &str, em: i32, bold: bool) -> i32 {
+    text.chars()
+        .filter_map(|character| u16::try_from(character).ok())
+        .map(|codepoint| text_advance(codepoint, em, bold))
+        .sum()
+}
+
+/// Baseline offset from the top of a text run (Edwin cap height is about
+/// 736 font units; measured on the 4.7.4 title SVG).
+fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
+    text.chars()
+        .filter_map(|character| u16::try_from(character).ok())
+        .filter_map(|codepoint| text_glyph(codepoint, bold))
+        .map(|glyph| i32::from(glyph.bbox[3]) * em / i32::from(UPEM))
+        .max()
+        .unwrap_or(em * 3 / 4)
+}
+
+/// Emits one Edwin glyph per character. `align` is 0 (left), 1 (centre) or
+/// 2 (right); the pen starts at `x` with a top at `y` (not the baseline).
+fn place_text(out: &mut DisplayList, text: &str, x: i32, y: i32, em: i32, bold: bool, align: u8) {
+    let width = text_run_width(text, em, bold);
+    let mut pen = match align {
+        1 => x - width / 2,
+        2 => x - width,
+        _ => x,
+    };
+    let baseline = y + text_cap_height(text, em, bold);
+    for character in text.chars() {
+        let Some(codepoint) = u16::try_from(character).ok() else {
+            continue;
+        };
+        if text_glyph(codepoint, bold).is_some() {
+            out.push(DisplayItem::text(
+                ItemKind::Text,
+                codepoint,
+                pen,
+                baseline,
+                em,
+                bold,
+            ));
+        }
+        pen += text_advance(codepoint, em, bold);
+    }
+}
+
+/// Title-frame texts (`VBox` in the .mscx, `score.engraving.credits` in the
+/// pivot model), laid out at the top of the page.
+/// // Port of `boxlayout.cpp` and `textlayout.cpp`, with the style defaults
+/// of `styledef.cpp` (title centred, subtitle centred, composer right).
+fn place_credits(out: &mut DisplayList, credits: &[Credit], spec: &PageSpec, page: usize) {
+    let top = spec.margin_top;
+    let visible: Vec<_> = credits
+        .iter()
+        .filter(|credit| credit.page as usize == page + 1 && !credit.text.plain().is_empty())
+        .collect();
+    // The VBox lists the subtitle before the title in `Beam-CrossM1`; they
+    // must be placed in reading order, not in source order.
+    let title_em = visible
+        .iter()
+        .find(|credit| matches!(credit.style, CreditStyle::Title))
+        .map(|credit| {
+            text_em(
+                spec,
+                credit
+                    .font_size
+                    .unwrap_or_else(|| credit.style.default_font_size()),
+            )
+        })
+        .unwrap_or(SP * 4);
+    for credit in &visible {
+        let text = credit.text.plain();
+        let size = credit
+            .font_size
+            .unwrap_or_else(|| credit.style.default_font_size());
+        let em = text_em(spec, size);
+        let (x, align) = match credit.justify {
+            CreditJustify::Left => (spec.margin_left, 0),
+            CreditJustify::Right => (spec.margin_left + spec.printable_width, 2),
+            CreditJustify::Center => (spec.margin_left + spec.printable_width / 2, 1),
+        };
+        let y = match credit.style {
+            CreditStyle::Title => top,
+            CreditStyle::Subtitle => top + title_em + SP / 2,
+            CreditStyle::Composer | CreditStyle::Lyricist => {
+                top + spec.title_frame_height.saturating_sub(7 * SP + em)
+            }
+            CreditStyle::Other(_) => top,
+        };
+        place_text(out, text, x, y, em, false, align);
+    }
+}
+
 /// Ledger lines: // Port of `chordlayout.cpp:1310-1314, 1355-1360, 1394-1419`
 /// — notes outside `[-1, lineBelow+1]` need lines on every even line between
 /// the note and the staff, extended by `ledgerLineLength` on both sides.
@@ -1025,9 +1145,11 @@ pub fn build_page(
     atoms: &[MeasureAtom],
     spec: &PageSpec,
     systems: &[crate::breaking::SystemPlan],
+    credits: &[Credit],
     page: usize,
 ) -> DisplayList {
     let mut out = DisplayList::new(page);
+    place_credits(&mut out, credits, spec, page);
     for system in systems.iter().filter(|system| system.page == page) {
         let sy = system.y;
         // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
@@ -1040,6 +1162,23 @@ pub fn build_page(
         };
         let left = spec.margin_left + indent;
         let staff_width = spec.printable_width - indent;
+        // // Port of `MeasureLayout`/`measurelayout.cpp`: measure numbers are
+        // drawn above the first measure of every system (except measure 1,
+        // `showMeasureNumberOne` false by default), centred on the staff's
+        // left edge (`measureNumberFontSize` 8 pt, styledef.cpp:1210).
+        let first = &atoms[system.first];
+        if first.number > 0 {
+            let label = alloc::format!("{}", first.number + 1);
+            place_text(
+                &mut out,
+                &label,
+                left,
+                sy - 3 * SP,
+                text_em(spec, 8.0),
+                false,
+                1,
+            );
+        }
         // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
         // system's last bar line. A short final system (below
         // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not stretched
@@ -1108,7 +1247,7 @@ pub fn items(
     systems: &[crate::breaking::SystemPlan],
     page: usize,
 ) -> Vec<DisplayItem> {
-    build_page(atoms, spec, systems, page).items
+    build_page(atoms, spec, systems, &[], page).items
 }
 
 /// Exposed for the raster backend: the quadratic outline of a display item.
@@ -1125,7 +1264,7 @@ mod tests {
 
     fn page(atoms: &[MeasureAtom], spec: &PageSpec, number: usize) -> DisplayList {
         let systems = crate::breaking::compute(atoms, spec);
-        build_page(atoms, spec, &systems, number)
+        build_page(atoms, spec, &systems, &[], number)
     }
 
     fn page_count(atoms: &[MeasureAtom], spec: &PageSpec) -> usize {

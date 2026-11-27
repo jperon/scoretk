@@ -50,7 +50,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::fmt;
 
-use scoretk_core::model::Score;
+use scoretk_core::model::{Credit, Score};
 
 pub mod atoms;
 pub mod breaking;
@@ -94,6 +94,8 @@ pub struct Engraver {
     atoms: Vec<MeasureAtom>,
     systems: Vec<SystemPlan>,
     spec: PageSpec,
+    /// Title-frame texts copied once: `page(n)` never borrows the `Score`.
+    credits: Vec<Credit>,
 }
 
 impl Engraver {
@@ -108,6 +110,7 @@ impl Engraver {
                     atoms,
                     systems,
                     spec,
+                    credits: score.engraving.credits.clone(),
                 })
             }
             count => Err(EngraveError::MultipleStaves(count)),
@@ -123,7 +126,7 @@ impl Engraver {
 
     /// Engraves one page from the cached atoms and breaking plan.
     pub fn page(&self, page: usize) -> DisplayList {
-        layout::build_page(&self.atoms, &self.spec, &self.systems, page)
+        layout::build_page(&self.atoms, &self.spec, &self.systems, &self.credits, page)
     }
 
     /// Total number of pages.
@@ -150,8 +153,8 @@ impl Engraver {
 mod tests {
     use super::*;
     use scoretk_core::model::{
-        Chord, ChordRest, Clef, ClefType, Duration, Fraction, KeySig, Measure, Note, Part, Segment,
-        SegmentItem, SegmentType, Staff, TimeSig, Track,
+        Chord, ChordRest, Clef, ClefType, Credit, CreditStyle, Duration, Fraction, KeySig, Measure,
+        Note, Part, RichText, Segment, SegmentItem, SegmentType, Staff, TimeSig, Track,
     };
 
     fn one_staff_score() -> Score {
@@ -204,6 +207,22 @@ mod tests {
         assert_eq!(page.count(ItemKind::Clef), 1);
         assert_eq!(page.count(ItemKind::Accidental), 1);
         assert!(page.count(ItemKind::TimeSig) >= 2);
+    }
+
+    #[test]
+    fn title_frame_shifts_the_first_system_and_draws_text() {
+        let mut score = one_staff_score();
+        let mut credit = Credit::new(RichText::new("A title"), CreditStyle::Title);
+        credit.vbox_height = 10.0;
+        score.engraving.credits.push(credit);
+        let engraver = Engraver::from_score(&score).unwrap();
+        assert_eq!(
+            engraver.systems()[0].y,
+            engraver.spec().margin_top + engraver.spec().title_frame_height
+        );
+        assert!(engraver.spec().title_frame_height >= 17 * SP);
+        let page = engraver.page(0);
+        assert!(page.count(ItemKind::Text) > 0);
     }
 
     #[test]

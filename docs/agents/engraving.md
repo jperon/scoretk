@@ -840,6 +840,41 @@ reported from the SVG comparison
 full-measure rests of the short last system now sit near the centre of their
 measures instead of against the clef. Oracle run: `/tmp/oracle-p3b-step3b`.
 
+### 9.22 Title frames, measure numbers and Edwin text (eng3b, step 4, 2026-11-27)
+
+`score.engraving.credits` was ignored by the engraver: `Beam-CrossM1` had no
+title, no subtitle and no measure numbers, and its first system started at
+the top margin instead of below the VBox. The engraver now copies the credits
+once in `Engraver::new`, draws VBox texts as Edwin glyph outlines (one SVG
+path per character), offsets the first system by the VBox height plus
+`frameSystemDistance` 7 sp (`boxlayout.cpp`, `systemlayout.cpp:2900-2991`),
+and draws the measure number above the first measure of each system except
+measure 1 (`styledef.cpp:467-471, 1210`). Title/subtitle are placed in
+reading order even when the VBox lists the subtitle first.
+
+The text subset comes from MuseScore 4.7.4's `fonts/edwin/` (OFL 1.1,
+Copyright (C) MuseScore Limited) through `scripts/gen-edwin-subset.py`,
+which reuses the dependency-free CFF reader of `gen-smufl-subset.py`: 167
+codepoints per style, with **real** advance widths and quadratic outlines.
+It is declared in `NOTICE` and `docs/licences-tierces.md`; the generated
+`crates/scoretk-smufl/src/text.rs` is never hand-edited. Only the generated
+constants (≈ 93 KB of raw edges for both styles) ship in binaries.
+
+| Metric | Step 3 | Step 4 | Gate |
+| --- | ---: | ---: | ---: |
+| Stem-length agreement | 0.8076 (319/395) | 0.8076 (319/395) | ≥ 0.90 — failed |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+The first staff line of three 4.7.4 files with a VBox (`dynamics`,
+`mmrest`, `testNoteheads2`) is within 0.15 sp of the oracle after scaling
+each SVG by its own staff spatium; first-system indentation is likewise
+within 0.11 sp (`mmrest`: no indent for a legacy 3.x style; `dynamics`:
+5 sp for a 4.x style). `/tmp/Beam-CrossM1-p3b-step4b.png` shows the title,
+subtitle, measure numbers and the shifted first system; the same image
+before this step is `/tmp/Beam-CrossM1-p3b-step3b.png`. Oracle run:
+`/tmp/oracle-p3b-step4b`.
+
 ## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,

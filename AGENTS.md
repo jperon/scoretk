@@ -188,8 +188,10 @@ Derived data is regenerated with `scripts/gen-references.sh` and
 - **Generated files**: `crates/scoretk-core/src/instruments.rs`,
   `crates/scoretk-smufl/src/glyphs.rs` (regenerate with `python3 -I
   scripts/gen-smufl-subset.py crates/scoretk-smufl/fonts/leland
-  crates/scoretk-smufl/src/glyphs.rs`) and `docs/agents/ecarts-complets.md`
-  are regenerated, never hand-edited.
+  crates/scoretk-smufl/src/glyphs.rs`), `crates/scoretk-smufl/src/text.rs`
+  (`python3 -I scripts/gen-edwin-subset.py
+  crates/scoretk-smufl/fonts/edwin crates/scoretk-smufl/src/text.rs`) and
+  `docs/agents/ecarts-complets.md` are regenerated, never hand-edited.
 - **Order of `<direction>`, spanners and `<credit>` is significant** for
   parity: do not sort a collection without checking the C++ and the reference.
 - **`ref-musescore/` is absent from a fresh checkout**: recreate it with

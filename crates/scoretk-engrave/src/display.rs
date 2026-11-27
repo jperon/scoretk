@@ -43,6 +43,8 @@ pub enum ItemKind {
     Dot,
     Flag,
     Beam,
+    /// Title, subtitle, measure numbers, lyrics and other Edwin text.
+    Text,
 }
 
 impl ItemKind {
@@ -60,6 +62,7 @@ impl ItemKind {
             Self::Dot => "NoteDot",
             Self::Flag => "Hook",
             Self::Beam => "Beam",
+            Self::Text => "Text",
         }
     }
 }
@@ -97,6 +100,16 @@ pub enum Geometry {
         x2: i32,
         y2: i32,
         width: i32,
+    },
+    /// One Edwin glyph of a text run: `codepoint` indexes the generated
+    /// Latin subset in `scoretk-smufl`, `size` is the font em in fixed staff
+    /// spaces (1/1024), and `x`/`y` are the glyph's pen origin and baseline.
+    Text {
+        codepoint: u16,
+        x: i32,
+        y: i32,
+        size: i32,
+        bold: bool,
     },
 }
 
@@ -142,10 +155,32 @@ impl DisplayItem {
         }
     }
 
+    pub const fn text(
+        kind: ItemKind,
+        codepoint: u16,
+        x: i32,
+        y: i32,
+        size: i32,
+        bold: bool,
+    ) -> Self {
+        Self {
+            kind,
+            geometry: Geometry::Text {
+                codepoint,
+                x,
+                y,
+                size,
+                bold,
+            },
+        }
+    }
+
     /// Position of the item's origin in fixed-point staff spaces.
     pub const fn origin(&self) -> (i32, i32) {
         match self.geometry {
-            Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => (x, y),
+            Geometry::Glyph { x, y, .. }
+            | Geometry::Path { x, y, .. }
+            | Geometry::Text { x, y, .. } => (x, y),
             Geometry::Rect { x, y, .. } | Geometry::Beam { x1: x, y1: y, .. } => (x, y),
         }
     }
@@ -173,6 +208,22 @@ impl DisplayItem {
                     y - units_to_fixed(b[3]),
                     x + units_to_fixed(b[2]),
                     y - units_to_fixed(b[1]),
+                ))
+            }
+            Geometry::Text {
+                codepoint,
+                x,
+                y,
+                size,
+                bold,
+            } => {
+                let g = scoretk_smufl::text_glyph(codepoint, bold)?;
+                let scale = |units: i16| i32::from(units) * size / i32::from(scoretk_smufl::UPEM);
+                Some((
+                    x + scale(g.bbox[0]),
+                    y - scale(g.bbox[3]),
+                    x + scale(g.bbox[2]),
+                    y - scale(g.bbox[1]),
                 ))
             }
         }
@@ -225,7 +276,7 @@ impl DisplayList {
             Geometry::Glyph { glyph, .. } | Geometry::Path { glyph, .. } => {
                 GLYPHS.get(usize::from(glyph)).map(|g| g.name)
             }
-            Geometry::Rect { .. } | Geometry::Beam { .. } => None,
+            Geometry::Rect { .. } | Geometry::Beam { .. } | Geometry::Text { .. } => None,
         }
     }
 }

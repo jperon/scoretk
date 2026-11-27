@@ -34,11 +34,13 @@
 #![no_std]
 
 pub mod glyphs;
+pub mod text;
 
 pub use glyphs::{
     Anchor, Default, Edge, Glyph, ANCHORS, ANCHOR_NAMES, DEFAULTS, EDGES, GLYPHS, SPATIUM_UNITS,
     UPEM,
 };
+pub use text::{TextGlyph, EDWIN_BOLD, EDWIN_ROMAN, TEXT_EDGES};
 
 /// Cherche un glyphe par son nom SMuFL (table triée par nom).
 pub fn glyph(name: &str) -> Option<&'static Glyph> {
@@ -54,6 +56,33 @@ pub fn glyph_index(name: &str) -> Option<u16> {
         .binary_search_by(|glyph| glyph.name.cmp(name))
         .ok()
         .and_then(|index| u16::try_from(index).ok())
+}
+
+/// Cherche un glyphe de texte Edwin par codepoint Unicode. Les deux styles
+/// livrés (Roman, Bold) couvrent les textes de cadre, paroles, accord et
+/// tempo ; l'italique utilise les avances Roman (P4 groundwork).
+pub fn text_glyph(codepoint: u16, bold: bool) -> Option<&'static TextGlyph> {
+    let table = if bold { &EDWIN_BOLD } else { &EDWIN_ROMAN };
+    table
+        .binary_search_by_key(&codepoint, |glyph| glyph.codepoint)
+        .ok()
+        .map(|index| &table[index])
+}
+
+/// Avance d'un texte Edwin en 1/1024 de portée, pour un em de `em_fixed`
+/// unités (une portée = 1024, un em = 4 portées = 1000 font units).
+pub fn text_advance(codepoint: u16, em_fixed: i32, bold: bool) -> i32 {
+    text_glyph(codepoint, bold).map_or(em_fixed / 2, |glyph| {
+        i32::from(glyph.advance) * em_fixed / i32::from(UPEM)
+    })
+}
+
+/// Largeur d'un texte Edwin en 1/1024 de portée.
+pub fn text_width(text: &str, em_fixed: i32, bold: bool) -> i32 {
+    text.chars()
+        .filter_map(|character| u16::try_from(character).ok())
+        .map(|codepoint| text_advance(codepoint, em_fixed, bold))
+        .sum()
 }
 
 /// Cherche un glyphe par son codepoint Unicode privé SMuFL.
@@ -150,6 +179,19 @@ mod tests {
                 g.name
             );
         }
+    }
+
+    #[test]
+    fn edwin_text_metrics_are_real_advances() {
+        // Edwin 0.54 : 'A' avance 722 font units (Roman) et 759 (Bold).
+        let a = text_glyph(b'A' as u16, false).unwrap();
+        assert_eq!(a.advance, 722);
+        assert_eq!(text_glyph(b'A' as u16, true).unwrap().advance, 759);
+        assert_eq!(text_advance(b'A' as u16, 4096, false), 2957);
+        assert!(text_width("AAA", 4096, false) > text_width("A", 4096, false));
+        let start = usize::from(a.edges.0);
+        let end = start + usize::from(a.edges.1);
+        assert!(end <= TEXT_EDGES.len());
     }
 
     #[test]

@@ -283,6 +283,26 @@ hand-edited): a notation subset of quadratic outlines, advances, bounding
 boxes, anchors and `engravingDefaults`. No font file is shipped in a binary;
 only the generated constants are compiled in.
 
+### Edwin font data (`scoretk-smufl`)
+
+`crates/scoretk-smufl/fonts/edwin/` contains `Edwin-Roman.otf`,
+`Edwin-Bold.otf`, `LICENSE.txt`, `README.md` and `FONTLOG.txt`, extracted
+read-only from `fonts/edwin/` in the **MuseScore 4.7.4** tag `v4.7.4`
+(commit `7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`) with
+`git show v4.7.4:fonts/edwin/<file>`. Nothing was compiled or executed from
+that extraction (SHA-256 `edf9bddc…` for the Roman OTF and `3cb6aebf…` for
+the Bold OTF).
+
+Edwin is **Copyright (C) 2021 MuseScore Limited**, with reserved font name
+« Edwin », licensed under the **SIL Open Font License 1.1**; the licence,
+font log and README are kept next to the data as the licence requires.
+`scripts/gen-edwin-subset.py` reads the CFF charstrings and `hmtx` with the
+Python standard library only and writes the generated
+`crates/scoretk-smufl/src/text.rs`: a reduced Latin subset (167 codepoints per
+style) of quadratic outlines, real advance widths and bounding boxes. No
+font file is linked into a binary; only the generated constants are
+compiled in.
+
 ## Trademarks
 
 « MuseScore » is a trademark of **MuseScore Limited**. This project is an

@@ -146,7 +146,9 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
 /// a page break once the next system would cross the bottom margin.
 fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec) -> usize {
     let mut page = 0;
-    let mut y = spec.margin_top;
+    // The first-page title frame (VBox + `frameSystemDistance`) precedes the
+    // first system (`boxlayout.cpp`, `systemlayout.cpp:2900-2991`).
+    let mut y = spec.margin_top + spec.title_frame_height;
     let bottom = spec.page_height - spec.margin_top;
     for system in systems.iter_mut() {
         let distance = if system.y == 0 && system.first == 0 {
