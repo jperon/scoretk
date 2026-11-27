@@ -196,6 +196,32 @@ compatible with GPL-3.0-only. `page_size` declares `MIT/Apache-2.0` (slash,
 a non-SPDX form): both branches are permitted, and the crate stays
 outside the checked graph since it is pulled only by the benchmark.
 
+### Development dependencies: raster spike (`tiny-skia`)
+
+`crates/scoretk-render-raster` declares `tiny-skia` 0.11.4 as a **development
+dependency** for `benches/spike.rs` only (phase P0 comparison, see
+`docs/agents/engraving.md` § 9.3). It is not linked into any delivered library,
+binary or wasm package and does not change the 46-crate `normal,build` graph
+above. Surveyed on 2026-11-27 with:
+
+```console
+$ cargo tree -p scoretk-render-raster --edges normal,dev --prefix none --format '{p}|{l}'
+```
+
+| Crate | Version | Declared licence | Role |
+| --- | --- | --- | --- |
+| `tiny-skia` | 0.11.4 | BSD-3-Clause | reference rasteriser in the benchmark |
+| `tiny-skia-path` | 0.11.4 | BSD-3-Clause | path representation (via tiny-skia) |
+| `arrayref` | 0.3.9 | BSD-2-Clause | tiny-skia internals |
+| `arrayvec` | 0.7.8 | MIT OR Apache-2.0 | tiny-skia internals |
+| `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT | tiny-skia internals |
+| `strict-num` | 0.1.1 | MIT | tiny-skia-path internals |
+| `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | png (via tiny-skia); the linked graph uses 0.9.1 |
+| `png`, `fdeflate`, `flate2`, `crc32fast`, `cfg-if`, `log`, `bitflags`, `simd-adler32`, `adler2` | see main table | MIT, Apache-2.0, 0BSD | pulled by tiny-skia's PNG feature, already listed above |
+
+BSD-3-Clause was already in the whitelist of `scripts/check-licences.py`; no
+script change is needed. The in-house rasteriser itself has no dependency.
+
 Build tools outside Cargo (not linked in the delivered binaries):
 `wasm-bindgen-cli` (MIT OR Apache-2.0), `binaryen` (Apache-2.0),
 `nodejs` (MIT) and the Rust toolchain (MIT OR Apache-2.0).

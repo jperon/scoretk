@@ -287,3 +287,49 @@ pattern, a *bounded scanline rasteriser* and a *display-list-driven SVG output*;
 reject whole-document retries, per-element alignment/cache objects, per-page DOM
 traversals and SVG files on disk. These are architectural choices, not ports of
 Lomse or Verovio code; no source from either engine is distributed.
+
+### 9.3 Rasteriser spike: in-house scanlines vs `tiny-skia`
+
+New crate `crates/scoretk-render-raster` (GPL-3.0-only, `#![no_std]` + `alloc`,
+no dependency): `Point`/`Path` in fixed point 1/256 px, `Gray8` caller-owned 8-bit
+buffer, `fill_rect` for pixel-snapped lines and `fill_path` for quadratic outlines.
+`fill_path` computes exact x-crossings of lines and quadratics (integer quadratic
+solver, no `libm`) on four subrows per pixel and accumulates horizontal coverage
+in 1/256 px units. `tiny-skia` 0.11.4 is a **dev-dependency of `benches/spike.rs`
+only** (declared in `docs/licences-tierces.md`), never linked into a delivered
+crate.
+
+The scene is one dense synthetic page, 800 × 600: 5 systems × 2 staves,
+**600 quadratic noteheads** (four quadratic edges each) from one hardcoded
+outline, plus 660 pixel-snapped rectangles (staff lines, stems, barlines). Both
+rasterisers draw the same scene, and both allocate their output buffer inside
+the measured region (480 152 B grey for ours, 1 982 895 B RGBA for tiny-skia).
+The benchmark uses a counting global allocator and reports the median of N
+iterations. Commands: `cargo bench -p scoretk-render-raster --bench spike -- 20`
+(host) and the cross-built binary run through `qemu-arm`.
+
+| Environment | Scanline, median per page | tiny-skia, median per page | Peak heap (ours / tiny-skia) |
+| --- | --- | --- | --- |
+| Host x86-64, 3 batches of 20 iterations | 1.8–3.5 ms | 13.2–27.5 ms (≈ 7.9× slower in each batch) | 480 152 B / 1 982 895 B |
+| `qemu-arm`, ARMv7, 4 batches of 10 iterations | 62–133 ms | 153–276 ms (1.3–4.1× slower per batch) | same heap figures |
+
+Cross-building **was possible**: the dev shell's Rust 1.100.0 has no ARMv7
+`std`, so `rust-overlay` was used outside the repository to produce a matching
+1.100.0 toolchain with the `armv7-unknown-linux-gnueabihf` target; linking used
+the Nixpkgs `armv7l-unknown-linux-gnueabihf-gcc` wrapper, and execution used
+`qemu-arm -L <glibc-armv7l-store-path>`. Nothing was added to `flake.nix` and
+no cross toolchain is needed to build the workspace.
+
+**Choice: keep the in-house scanline rasteriser**, and keep `tiny-skia` only in
+the benchmark as a reference. Reasons: ≈ 8× faster on the host, faster in every
+ARM batch, 4× less peak heap, no third-party dependency, direct write into the
+caller's grey buffer, fixed-point output reproducible across targets. Its cost
+is that it is not yet a complete engraving rasteriser: no cubic segments, no
+font outlines, no stroke joins, no glyph cache and no gamma/dithering to 16
+grey levels yet; P1–P6 will add what the display list actually needs.
+
+What is **not** proved by this spike: visual parity with MuseScore 4.7.4 (no
+SSIM or oracle comparison yet), behaviour on a real display list with text and
+beams, quality at a 14 px staff, and real device time (QEMU timings above vary
+by up to 2× between batches and are not a Kobo measurement). The `prlimit`/SSH
+device benchmark of the P0 gate remains to be done on the Kobo.
