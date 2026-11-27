@@ -1329,3 +1329,36 @@ or with each other and the organ brace spans the right staves, but only two
 systems fit where 4.7.4 fits four: the remaining height debt comes from
 upstream stem directions and measure-number skylines, not from the skyline
 pass itself. The P3/P2/P5 gates quoted above are not redefined by this work.
+
+### 14.1 Review: one baseline per lyric verse (2026-11-27)
+
+The page-1 render still spaced "Minuit" glyph by glyph: the capital in
+`Minuit` made `place_text_kind` choose a taller cap height for that syllable
+than for `nuit`, and `lyric_autoplace_moves` added a different `dy` to every
+glyph according to the staff outline at its own x. `LyricsLayout` does neither:
+`setDefaultPositions` gives every syllable of a verse one y
+(`lyricslayout.cpp:602-613`), collisions are measured between the staff's
+south skyline and the *verse's* skyline (`:616-676`), and
+`moveThisVerseAndOuterOnes` moves the whole verse, plus the outer ones, by
+one `diff` (`:679-702`). The engraver now emits lyrics after the notation,
+computes one offset per verse from the staff skyline, and applies it to the
+syllables and their hyphen/melisma lines. The cap height used for lyric
+baselines is font-wide (`M`), not per-string. A unit test pins both rules.
+
+| Metric | Before | After |
+| --- | --- | ---: |
+| Files / failures / elements (56 files) | 56 / 0 / 2490 | 56 / 0 / 2490 |
+| Elements within 0.1 sp | 378/2490 | 378/2490 |
+| Measure widths / system breaks | 69/394 / 34/56 | 69/394 / 34/56 |
+| Page counts / page-break patterns | 53/56 / 48/59 | 53/56 / 48/59 |
+| Staff tops within 0.5 sp | 20/216 | 20/216 |
+| Adjacent-staff gaps within 0.5 sp | 5/123 | 5/123 |
+| Lyric glyphs drawn (reference / ours) | 30 / 128 | 30 / 128 |
+| Lyric glyphs overlapping a staff | 0 / 0 | 0 / 0 |
+
+The glyph count is unchanged because MuseScore's SVG uses one path per
+syllable while our Edwin backend emits one path per character; the oracle's
+collision test compares the same glyph granularity on both sides. The visual
+evidence is `engrave-img/eng8/after.png`, rendered from the committed tree:
+every syllable of a verse now sits on one baseline on both systems of page 1.
+The remaining horizontal touching of adjacent syllables is P2 spacing debt.

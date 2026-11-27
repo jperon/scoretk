@@ -330,11 +330,11 @@ pub fn apply_skylines(
                 system.staff_offsets[staff_index] = top;
             }
             system.height = system.staff_offsets.last().copied().unwrap_or(0) + STAFF_HEIGHT;
-            if let Some((previous_y, previous_height, ref previous_skyline)) = previous {
+            if let Some((previous_y, previous_height, previous_skyline)) = &previous {
                 if let Some(first_staff) = staff_skylines.first() {
                     system.y = previous_y
                         + previous_height
-                        + system_gap(&previous_skyline, first_staff, spec);
+                        + system_gap(previous_skyline, first_staff, spec);
                 }
             }
             if let Some(last_staff) = staff_skylines.last() {

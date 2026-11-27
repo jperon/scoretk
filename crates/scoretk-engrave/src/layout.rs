@@ -989,7 +989,18 @@ pub(crate) fn place_text_kind(
         2 => x - width,
         _ => x,
     };
-    let baseline = y + text_cap_height(text, em, bold);
+    // // Port of `LyricsLayout::setDefaultPositions` (`lyricslayout.cpp:
+    // 602-613`): one verse gets ONE y for every syllable. MuseScore moves the
+    // whole `LyricsVerse` (`moveThisVerseAndOuterOnes`, `:679-702`), so using
+    // each string's tallest glyph here put "Minuit"'s capital M on a different
+    // baseline from "nuit". A font-wide cap height keeps every syllable of a
+    // verse aligned.
+    let cap = if kind == ItemKind::Lyrics {
+        text_cap_height("M", em, false)
+    } else {
+        text_cap_height(text, em, bold)
+    };
+    let baseline = y + cap;
     for character in text.chars() {
         let Some(codepoint) = u16::try_from(character).ok() else {
             continue;
@@ -1015,6 +1026,7 @@ pub(crate) fn place_lyrics(
     staff_y: i32,
     em: i32,
     spec: &PageSpec,
+    offsets: &[i32],
 ) {
     for lyric in lyrics {
         let text = &lyric.text;
@@ -1022,7 +1034,11 @@ pub(crate) fn place_lyrics(
             continue;
         }
         let line = lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
-        let top = staff_y + STAFF_HEIGHT + spec.lyrics_pos_below + line;
+        let top = staff_y
+            + STAFF_HEIGHT
+            + spec.lyrics_pos_below
+            + line
+            + offsets.get(lyric.verse).copied().unwrap_or(0);
         // The 4.7.4 style centres syllables under the notehead
         // (`lyricsEvenAlign`/`lyricsOddAlign`, `styledef.cpp:109,124`).
         // A melisma-only syllable with no text of its own would be left
@@ -1043,6 +1059,7 @@ fn plan_lyric_lines(
     right: i32,
     em: i32,
     spec: &PageSpec,
+    offsets: &[i32],
 ) -> Vec<DisplayItem> {
     let mut items = Vec::new();
     let first_line = staff_y + STAFF_HEIGHT + spec.lyrics_pos_below;
@@ -1054,7 +1071,7 @@ fn plan_lyric_lines(
             let width = text_run_width(&lyric.text, em, false);
             let cap = text_cap_height(&lyric.text, em, false);
             let line = lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
-            let baseline = first_line + line;
+            let baseline = first_line + line + offsets.get(lyric.verse).copied().unwrap_or(0);
             let y = baseline - cap / 2 - LYRIC_LINE_WIDTH / 2;
             let text_centre = *x + SP / 2;
             let start = if lyric.melisma {
@@ -1360,8 +1377,8 @@ fn place_event(
     y: i32,
     mm_rest_count: u16,
     beam: Option<(bool, i32)>,
-    lyrics_em: i32,
-    spec: &PageSpec,
+    _lyrics_em: i32,
+    _spec: &PageSpec,
 ) {
     match event.kind {
         AtomKind::Clef { name } => {
@@ -1381,18 +1398,12 @@ fn place_event(
             if let Some(chord) = &event.chord {
                 place_chord(out, chord, x, y, beam);
             }
-            if !event.lyrics.is_empty() {
-                place_lyrics(out, &event.lyrics, x + SP / 2, y, lyrics_em, spec);
-            }
         }
         AtomKind::Rest {
             duration,
             dots,
             measure,
         } => {
-            if !event.lyrics.is_empty() {
-                place_lyrics(out, &event.lyrics, x + SP / 2, y, lyrics_em, spec);
-            }
             // // Port of `RestLayout::computeVoiceOffset`
             // (`restlayout.cpp:694-765`): in a multi-voice measure the rests
             // of voices 2 and 4 move one line space down, those of voices 1
@@ -1509,35 +1520,57 @@ fn skyline_from_items(
 }
 
 /// // Port of `LyricsLayout::checkCollisionsWithStaffElements` and
-/// `moveThisVerseAndOuterOnes` (`lyricslayout.cpp:616-702`): each lyric line
-/// must clear the staff's south skyline by `lyricsMinTopDistance`. A line
-/// that is too close is moved down, together with the following lines of the
-/// same verse. Indices are relative to `items`; the caller applies them.
-fn lyric_autoplace_moves(
-    items: &[DisplayItem],
-    list: &DisplayList,
-    skyline: &Skyline,
+/// `moveThisVerseAndOuterOnes` (`lyricslayout.cpp:616-702`): the minimum
+/// distance is measured between the staff's south skyline and the **whole
+/// verse's** skyline (`:634-650`), then one `diff` moves every `Lyrics` of
+/// that verse and all outer verses (`:679-701`). Moving glyph by glyph, as
+/// the earlier `lyric_autoplace_moves` did, split "Minuit" across three
+/// baselines. The result is indexed by verse.
+fn lyric_verse_moves(
+    events: &[(i32, &Atom)],
+    em: i32,
     staff_y: i32,
+    skyline: &Skyline,
     spec: &PageSpec,
-) -> Vec<(usize, i32)> {
-    let mut moves = Vec::new();
-    for (index, item) in items.iter().enumerate() {
-        if item.kind != ItemKind::Lyrics {
-            continue;
-        }
-        let Some((x0, y0, x1, _)) = item.bbox(list) else {
-            continue;
-        };
-        let Some(south) = skyline.south().max_at(x0, x1) else {
-            continue;
-        };
-        let required = south + spec.lyrics_min_top_distance;
-        let dy = (required - (y0 - staff_y)).max(0);
-        if dy > 0 {
-            moves.push((index, dy));
+) -> Vec<i32> {
+    let max_verse = events
+        .iter()
+        .flat_map(|(_, event)| event.lyrics.iter())
+        .map(|lyric| lyric.verse)
+        .max()
+        .unwrap_or(0);
+    let mut offsets = vec![0; max_verse + 1];
+    let mut required = vec![0; max_verse + 1];
+    for (x, event) in events {
+        for lyric in &event.lyrics {
+            if lyric.text.is_empty() {
+                continue;
+            }
+            let width = text_run_width(&lyric.text, em, false);
+            let centre = *x + SP / 2;
+            let (x0, x1) = (centre - width / 2, centre + width / 2);
+            let top = staff_y
+                + STAFF_HEIGHT
+                + spec.lyrics_pos_below
+                + lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
+            if let Some(south) = skyline.south().max_at(x0, x1) {
+                // The staff outline must clear the top of the syllable by
+                // `lyricsMinTopDistance` (`lyricslayout.cpp:622-650`).
+                let dy = (south + spec.lyrics_min_top_distance - (top - staff_y)).max(0);
+                let verse = lyric.verse;
+                required[verse] = required[verse].max(dy);
+            }
         }
     }
-    moves
+    for verse in 0..offsets.len() {
+        offsets[verse] = offsets[verse].max(required[verse]);
+        // `moveThisVerseAndOuterOnes` moves this verse and every verse below
+        // it by the same amount (`lyricslayout.cpp:697-700`).
+        for outer in verse + 1..offsets.len() {
+            offsets[outer] = offsets[outer].max(offsets[verse]);
+        }
+    }
+    offsets
 }
 
 /// Builds the display list of one page and the skylines of its systems.
@@ -1662,9 +1695,6 @@ pub fn build_page_with_skylines(
             for item in &plan.items {
                 out.push(*item);
             }
-            for item in plan_lyric_lines(&events, y, left + right, lyrics_em, spec) {
-                out.push(item);
-            }
             let mut x = left;
             let mut event_offset = 0;
             for atom in &staff_atoms[system.first..system.first + system.count] {
@@ -1684,6 +1714,26 @@ pub fn build_page_with_skylines(
                 );
                 event_offset += atom.events.len();
             }
+            // // Port of `LyricsLayout::layout` (`lyricslayout.cpp:515-535`):
+            // lyrics are attached after the notation has been laid out, so
+            // the staff skyline used for autoplace contains no lyric items.
+            // One offset per verse keeps its syllables on one baseline.
+            let base = skyline_from_items(&out.items[staff_start..], &out, y, spec, false);
+            let offsets = lyric_verse_moves(&events, lyrics_em, y, &base, spec);
+            for (event_x, event) in &events {
+                place_lyrics(
+                    &mut out,
+                    &event.lyrics,
+                    event_x + SP / 2,
+                    y,
+                    lyrics_em,
+                    spec,
+                    &offsets,
+                );
+            }
+            for item in plan_lyric_lines(&events, y, left + right, lyrics_em, spec, &offsets) {
+                out.push(item);
+            }
             // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
             // line is not drawn at the beginning of a system (the 4.7.4 SVG
             // has none). Repeats and double/final start bar lines are drawn.
@@ -1699,14 +1749,8 @@ pub fn build_page_with_skylines(
                 .copied()
                 .unwrap_or(system_end);
             let staff_y = sy + system.staff_offsets.get(staff_index).copied().unwrap_or(0);
-            // First measure the non-lyric items: their south skyline is what
-            // a lyric line must clear. Then move the lyrics if needed and
-            // rebuild the skyline including their padded extents.
-            let base = skyline_from_items(&out.items[start..end], &out, staff_y, spec, false);
-            let moves = lyric_autoplace_moves(&out.items[start..end], &out, &base, staff_y, spec);
-            for (index, dy) in moves {
-                out.items[start + index].translate_y(dy);
-            }
+            // The skyline now includes the verse-aligned lyrics with their
+            // `lyricsMinBottomDistance` padding (`lyricslayout.cpp:704-742`).
             skylines[system_index][staff_index] =
                 skyline_from_items(&out.items[start..end], &out, staff_y, spec, true);
         }
@@ -1892,6 +1936,7 @@ mod tests {
             5 * SP,
             2 * SP,
             &PageSpec::default(),
+            &[],
         );
         assert_eq!(out.count(ItemKind::Lyrics), 2); // one Edwin glyph per character
         for item in &out.items {
@@ -1921,7 +1966,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 2)
         };
         let events = vec![(4 * SP, &first), (10 * SP, &second), (16 * SP, &third)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP, &PageSpec::default());
+        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP, &PageSpec::default(), &[]);
         assert_eq!(lines.len(), 3); // two hyphens, one melisma dash
         for item in &lines {
             let (_, y) = item.origin();
@@ -1941,21 +1986,66 @@ mod tests {
         let mut staff = crate::skyline::Skyline::new();
         staff.add_staff_line(0, 0, 20 * SP, STAFF_HEIGHT);
         staff.add(4 * SP, STAFF_HEIGHT, 4 * SP + 100, 7 * SP, STAFF_HEIGHT, 0);
-        let mut out = DisplayList::new(0);
         let lyric = LyricAtom {
             verse: 0,
             text: String::from("Mi"),
             syllabic: LyricsSyllabic::Begin,
             melisma: false,
         };
-        place_lyrics(&mut out, &[lyric], 3 * SP, 10 * SP, 2 * SP, &spec);
-        let before = out.items[0].origin().1;
-        let moves = lyric_autoplace_moves(&out.items, &out, &staff, 10 * SP, &spec);
-        assert!(moves.iter().any(|(index, _)| *index == 0));
-        for (index, dy) in &moves {
-            out.items[*index].translate_y(*dy);
+        let first = Atom {
+            lyrics: vec![lyric],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let events = [(4 * SP, &first)];
+        let moves = lyric_verse_moves(&events, 2 * SP, 10 * SP, &staff, &spec);
+        assert_eq!(moves, vec![SP]);
+        let mut out = DisplayList::new(0);
+        place_lyrics(
+            &mut out,
+            &first.lyrics,
+            3 * SP,
+            10 * SP,
+            2 * SP,
+            &spec,
+            &moves,
+        );
+        for item in &out.items {
+            assert!(item.origin().1 >= 10 * SP + STAFF_HEIGHT + spec.lyrics_pos_below + SP);
         }
-        assert_eq!(out.items[0].origin().1 - before, SP);
+    }
+
+    #[test]
+    fn all_syllables_of_a_verse_share_one_baseline() {
+        // The capital in "Minuit" must not put its glyphs on another line
+        // from the lowercase "nuit" (`lyricslayout.cpp:602-613`).
+        let mut out = DisplayList::new(0);
+        let spec = PageSpec::default();
+        for (index, text) in ["Minuit", "nuit"].iter().enumerate() {
+            place_lyrics(
+                &mut out,
+                &[LyricAtom {
+                    verse: 0,
+                    text: String::from(*text),
+                    syllabic: LyricsSyllabic::Single,
+                    melisma: false,
+                }],
+                (4 + index as i32 * 10) * SP,
+                5 * SP,
+                2 * SP,
+                &spec,
+                &[0],
+            );
+        }
+        let baselines: Vec<i32> = out
+            .items
+            .iter()
+            .map(|item| match item.geometry {
+                Geometry::Text { y, .. } => y,
+                _ => 0,
+            })
+            .collect();
+        assert!(baselines.iter().all(|y| *y == baselines[0]));
+        assert!(baselines.len() > 6);
     }
 
     #[test]
