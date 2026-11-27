@@ -328,9 +328,7 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                     .notes
                     .first()
                     .map_or("noteheadBlack", |note| note.head);
-                let head_w = glyph(head)
-                    .map(|g| units_to_fixed(g.bbox[2]))
-                    .unwrap_or(SP);
+                let head_w = glyph(head).map(|g| units_to_fixed(g.bbox[2])).unwrap_or(SP);
                 if up {
                     events[index].0 + head_w - STEM_WIDTH / 2
                 } else {
@@ -1372,9 +1370,9 @@ mod tests {
                 ends += 1;
                 lo = lo.min(centre);
                 hi = hi.max(centre);
-                let expected = y1 + width / 2
-                    + (i64::from(y2 - y1) * i64::from(centre - x1) / i64::from(x2 - x1))
-                        as i32;
+                let expected = y1
+                    + width / 2
+                    + (i64::from(y2 - y1) * i64::from(centre - x1) / i64::from(x2 - x1)) as i32;
                 // Up stems end at the top of the rectangle; down stems at
                 // its bottom. Tolerance is 1/16 sp for integer rounding.
                 let far_end = y.min(y + h);
