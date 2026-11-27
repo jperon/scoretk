@@ -472,6 +472,18 @@ impl Reader {
             if let Some(value) = staff_element.child("barLineSpan").and_then(Element::int) {
                 staff.bar_line_span = value != 0;
             }
+            // `TRead::read(Staff*)` (`read500/tread.cpp:4111`) reads
+            // `<mergeMatchingRests>` as a boolean property. The 4.x writer
+            // spells it "on"/"off", 3.x files may use 1/0.
+            if let Some(value) = staff_element.child("mergeMatchingRests") {
+                let on = value
+                    .text()
+                    .trim()
+                    .parse::<i32>()
+                    .map(|number| number != 0)
+                    .unwrap_or_else(|_| matches!(value.text().trim(), "on" | "true"));
+                staff.merge_matching_rests = on;
+            }
             for bracket in staff_element.children_named("bracket") {
                 let kind = bracket.attr_i64("type").unwrap_or(-1);
                 if kind < 0 {

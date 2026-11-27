@@ -389,6 +389,10 @@ pub struct Staff {
     /// Barre de mesure commune avec la portée suivante de la partie
     /// (`Staff::barLineSpan()`), pour `group-barline`.
     pub bar_line_span: bool,
+    /// `Staff::shouldMergeMatchingRests()` (`<mergeMatchingRests>`) : when
+    /// every voice of a segment has the same rest, MuseScore draws one rest
+    /// instead of stacking them (`restlayout.cpp:724-753`).
+    pub merge_matching_rests: bool,
     /// Accolades et crochets de la portée (`<bracket>`), dans l'ordre des
     /// colonnes.
     pub brackets: Vec<StaffBracket>,
@@ -412,6 +416,7 @@ impl Staff {
             small: false,
             user_mag_percent: 100,
             bar_line_span: false,
+            merge_matching_rests: false,
             brackets: Vec::new(),
             time_stretch: Fraction::ONE,
             default_clef: Clef::new(ClefType::G),

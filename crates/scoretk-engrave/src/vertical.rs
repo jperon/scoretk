@@ -661,6 +661,7 @@ mod tests {
                 short_name: String::new(),
                 brackets: Vec::new(),
                 bar_line_span: false,
+                merge_matching_rests: false,
             },
             StaffInfo {
                 index: 1,
@@ -669,6 +670,7 @@ mod tests {
                 short_name: String::new(),
                 brackets: Vec::new(),
                 bar_line_span: false,
+                merge_matching_rests: false,
             },
         ];
         spread_all(&mut systems, &staffs, &spec);

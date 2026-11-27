@@ -2337,3 +2337,27 @@ Rests are not extracted by the geometric oracle. The private page
 (`engrave-img/eng9/fix3-p3.png`, whole page inspected) now separates the two
 eighth rests of the organ treble at m.27 start and clears the voice-2 rests
 from the voice-1 notes at m.26/28.
+
+## 31. Review of the private page 3: merged full-measure rests (2026-11-27)
+
+The choir staves of m.28–30 still drew two stacked whole-measure rests, one
+per voice. The private score sets `<mergeMatchingRests>on</mergeMatchingRests>`
+on the Women and Men staves; `RestLayout::computeVoiceOffset`
+(`restlayout.cpp:724-753`) then cancels the voice offset when every other
+voice holds the same rest, and only one rest is drawn. The 4.x reader now
+keeps the per-staff property on `model::Staff`, `StaffInfo` carries it to the
+page pass, and `plan_rest_merges` clears the voice offset and skips the
+duplicate glyph for matching rests of one segment. A test pins a matching
+pair and a non-matching third rest.
+
+| Metric (`oracle-eng9-p3-fix3` → `oracle-eng9-p3-fix4`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1802 (398/2 209) | 0.1802 (398/2 209) |
+| Measure widths / system breaks | 90/394 / 37/56 | 90/394 / 37/56 |
+
+No corpus file sets the property, so the oracle figures are unchanged. The
+property is consumed by the engraver only: the MuseScore writer keeps its
+byte-for-byte 4.7.4 output. `engrave-img/eng9/final2-p3.png` (whole page
+inspected) shows one centred whole rest per measure in S A and T B at
+m.28–30, as in the 4.7.4 page 3 (`eng9-ref/private-3.svg`).

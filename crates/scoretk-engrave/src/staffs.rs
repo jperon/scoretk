@@ -51,6 +51,9 @@ pub struct StaffInfo {
     /// `Staff::barLineSpan()`: the bar line is shared with the next staff of
     /// the part (`part.rs`, `staff.h`).
     pub bar_line_span: bool,
+    /// `Staff::shouldMergeMatchingRests()` (`<mergeMatchingRests>`), used by
+    /// `RestLayout::computeVoiceOffset` (`restlayout.cpp:724-753`).
+    pub merge_matching_rests: bool,
 }
 
 impl StaffInfo {
@@ -70,6 +73,7 @@ impl StaffInfo {
                     short_name: clean(&part.short_name),
                     brackets: staff.brackets.clone(),
                     bar_line_span: staff.bar_line_span,
+                    merge_matching_rests: staff.merge_matching_rests,
                 }
             })
             .collect()

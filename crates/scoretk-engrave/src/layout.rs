@@ -962,8 +962,9 @@ fn place_measure(
     lyrics_em: i32,
     spec: &PageSpec,
     grid: &SharedMeasure,
-    multi_voice: bool,
+    offset_voices: &[bool],
     rest_offsets: &[i32],
+    skip_rests: &[bool],
 ) -> i32 {
     for (index, event) in atom.events.iter().enumerate() {
         let absolute_x = events
@@ -987,8 +988,15 @@ fn place_measure(
             plan.stems.get(event_offset + index).copied().flatten(),
             lyrics_em,
             spec,
-            multi_voice,
+            offset_voices
+                .get(event_offset + index)
+                .copied()
+                .unwrap_or(false),
             rest_offsets.get(event_offset + index).copied().unwrap_or(0),
+            skip_rests
+                .get(event_offset + index)
+                .copied()
+                .unwrap_or(false),
         );
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
@@ -1841,11 +1849,11 @@ fn chord_shape(event: &Atom, staff_y: i32, stem: Option<(bool, i32)>) -> Option<
 fn plan_rest_offsets(
     events: &[(i32, &Atom)],
     staff_y: i32,
-    multi_voice: bool,
+    offset_voices: &[bool],
     stems: &[Option<(bool, i32)>],
 ) -> alloc::vec::Vec<i32> {
-    let voice_offset = |voice: u32| {
-        if multi_voice {
+    let voice_offset = |voice: u32, index: usize| {
+        if offset_voices.get(index).copied().unwrap_or(false) {
             if voice.is_multiple_of(2) {
                 -SP
             } else {
@@ -1864,7 +1872,7 @@ fn plan_rest_offsets(
         .collect();
     for &index in &rests {
         let (rx, event) = events[index];
-        let centre = staff_y + HALF_SP + voice_offset(event.voice);
+        let centre = staff_y + HALF_SP + voice_offset(event.voice, index);
         let AtomKind::Rest { duration, .. } = event.kind else {
             continue;
         };
@@ -1922,8 +1930,10 @@ fn plan_rest_offsets(
             let first_event = events[first].1;
             let second_event = events[second].1;
             let first_above = first_event.voice < second_event.voice;
-            let first_y = staff_y + HALF_SP + voice_offset(first_event.voice) + offsets[first];
-            let second_y = staff_y + HALF_SP + voice_offset(second_event.voice) + offsets[second];
+            let first_y =
+                staff_y + HALF_SP + voice_offset(first_event.voice, first) + offsets[first];
+            let second_y =
+                staff_y + HALF_SP + voice_offset(second_event.voice, second) + offsets[second];
             let (Some((a0, a1)), Some((b0, b1))) = (
                 rest_shape(first_event, first_y),
                 rest_shape(second_event, second_y),
@@ -1946,6 +1956,51 @@ fn plan_rest_offsets(
     offsets
 }
 
+/// Matching rests in every voice of a segment are merged into one rest when
+/// the staff's `<mergeMatchingRests>` property is on. // Port of
+/// `RestLayout::computeVoiceOffset` (`restlayout.cpp:724-753`): a matching
+/// rest in another voice cancels the voice offset and stops the duplicate
+/// from being drawn. Returns the events to skip; also clears `offset_voices`
+/// for the merged pair.
+fn plan_rest_merges(events: &[(i32, &Atom)], offset_voices: &mut [bool]) -> alloc::vec::Vec<bool> {
+    let rest_signature = |event: &&Atom| match event.kind {
+        AtomKind::Rest {
+            duration,
+            dots,
+            measure,
+        } => Some((duration, dots, measure)),
+        _ => None,
+    };
+    let mut skip = alloc::vec![false; events.len()];
+    for index in 0..events.len() {
+        if skip[index] {
+            continue;
+        }
+        let Some(rest_sig) = rest_signature(&events[index].1) else {
+            continue;
+        };
+        let Some(other) = (0..events.len()).find(|&other| {
+            other != index
+                && !skip[other]
+                && (events[other].0 - events[index].0).abs() <= SP / 4
+                && events[other].1.voice != events[index].1.voice
+                && rest_signature(&events[other].1) == Some(rest_sig)
+        }) else {
+            continue;
+        };
+        offset_voices[index] = false;
+        offset_voices[other] = false;
+        // One rest per segment: keep the lower voice's glyph, which is the
+        // first one MuseScore visits in `measure->el()` track order.
+        if events[index].1.voice > events[other].1.voice {
+            skip[index] = true;
+        } else {
+            skip[other] = true;
+        }
+    }
+    skip
+}
+
 #[allow(clippy::too_many_arguments)] // page-local helper: item, bounds, staff y and beam override
 fn place_event(
     out: &mut DisplayList,
@@ -1959,8 +2014,9 @@ fn place_event(
     beam: Option<(bool, i32)>,
     _lyrics_em: i32,
     _spec: &PageSpec,
-    multi_voice: bool,
+    offset_voices: bool,
     rest_offset: i32,
+    rest_merged: bool,
 ) {
     match event.kind {
         AtomKind::Clef { name } => {
@@ -1992,7 +2048,7 @@ fn place_event(
             // (`up = voice 0 or 2`, `upSign = -1`), the second one down. The
             // former code left voice 0 on the middle line and pushed voice 1
             // onto it, which superposed rests and notes in the organ part.
-            let voice_offset = if multi_voice {
+            let voice_offset = if offset_voices {
                 if event.voice.is_multiple_of(2) {
                     -SP
                 } else {
@@ -2001,6 +2057,9 @@ fn place_event(
             } else {
                 0
             };
+            if rest_merged {
+                return;
+            }
             let name = rest_name(duration);
             let rest_y = y + HALF_SP + voice_offset + rest_offset;
             // The MMRest branch keeps the header exception of
@@ -2283,7 +2342,16 @@ pub fn build_page_with_skylines(
             }
             let multi_voice = voices.len() > 1;
             let plan = plan_beams(&events, multi_voice, y);
-            let rest_offsets = plan_rest_offsets(&events, y, multi_voice, &plan.stems);
+            let mut offset_voices = alloc::vec![multi_voice; events.len()];
+            let skip_rests = if staffs
+                .get(staff_index)
+                .is_some_and(|staff| staff.merge_matching_rests)
+            {
+                plan_rest_merges(&events, &mut offset_voices)
+            } else {
+                alloc::vec![false; events.len()]
+            };
+            let rest_offsets = plan_rest_offsets(&events, y, &offset_voices, &plan.stems);
             for item in &plan.items {
                 out.push(*item);
             }
@@ -2306,8 +2374,9 @@ pub fn build_page_with_skylines(
                     lyrics_em,
                     spec,
                     &grids[measure],
-                    multi_voice,
+                    &offset_voices,
                     &rest_offsets,
+                    &skip_rests,
                 );
                 x += grids[measure].end();
                 event_offset += atom.events.len();
@@ -2986,6 +3055,42 @@ mod tests {
     }
 
     #[test]
+    fn matching_full_measure_rests_merge_into_one() {
+        // `Staff::shouldMergeMatchingRests()` is set on the private score's
+        // choir staves; `RestLayout::computeVoiceOffset`
+        // (`restlayout.cpp:724-753`) then cancels the voice offset and draws
+        // one centred rest instead of two stacked ones.
+        let rest = |voice, duration| Atom {
+            voice,
+            ..Atom::at_segment(
+                0,
+                AtomKind::Rest {
+                    duration,
+                    dots: 0,
+                    measure: true,
+                },
+                0,
+            )
+        };
+        let voice_zero = rest(0, 1);
+        let voice_one = rest(1, 1);
+        let other = rest(2, 2);
+        let events = vec![
+            (4 * SP, &voice_zero),
+            (4 * SP, &voice_one),
+            (4 * SP, &other),
+        ];
+        let mut offsets = vec![true; events.len()];
+        let skip = plan_rest_merges(&events, &mut offsets);
+        assert_eq!(skip, vec![false, true, false]);
+        assert!(
+            !offsets[0] && !offsets[1],
+            "the pair loses its voice offset"
+        );
+        assert!(offsets[2], "a different rest keeps its own offset");
+    }
+
+    #[test]
     fn a_rest_moves_away_from_the_other_voices_chord() {
         // `RestLayout::resolveRestVSChord` (`restlayout.cpp:201-270`): a rest
         // above a chord of a higher voice moves up in whole-space steps until
@@ -3022,7 +3127,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 0)
         };
         let events = vec![(4 * SP, &rest), (4 * SP, &chord)];
-        let offsets = plan_rest_offsets(&events, 5 * SP, true, &[None, None]);
+        let offsets = plan_rest_offsets(&events, 5 * SP, &[true, true], &[None, None]);
         let (_, rest_shape) = rest_shape(&rest, 5 * SP + SP / 2 - SP + offsets[0]).unwrap();
         let (chord_top, _) = chord_shape(&chord, 5 * SP, None).unwrap();
         assert!(
@@ -3035,7 +3140,7 @@ mod tests {
             "rest and chord must clear each other by 0.35 sp"
         );
         // With one voice only, no collision correction is applied.
-        let offsets = plan_rest_offsets(&events[..1], 5 * SP, false, &[None]);
+        let offsets = plan_rest_offsets(&events[..1], 5 * SP, &[false], &[None]);
         assert_eq!(offsets, vec![0]);
     }
 
@@ -3072,6 +3177,7 @@ mod tests {
             &PageSpec::default(),
             true,
             0,
+            false,
         );
         place_event(
             &mut out,
@@ -3087,6 +3193,7 @@ mod tests {
             &PageSpec::default(),
             true,
             0,
+            false,
         );
         let first = out.items[0].origin().1;
         let second = out.items[1].origin().1;
@@ -3107,6 +3214,7 @@ mod tests {
             &PageSpec::default(),
             false,
             0,
+            false,
         );
         assert_eq!(mono.items[0].origin().1, y + SP / 2);
     }

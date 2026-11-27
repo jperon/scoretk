@@ -305,6 +305,7 @@ mod tests {
                 visible: true,
             }],
             bar_line_span,
+            merge_matching_rests: false,
         }
     }
 
