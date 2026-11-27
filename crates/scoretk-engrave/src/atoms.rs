@@ -1367,13 +1367,36 @@ pub fn visible_staves(score: &Score) -> Vec<usize> {
         .collect()
 }
 
+/// Clef in force at the first measure's start tick on one staff.
+///
+/// // Port of `read206.cpp:2863-2874` and `read400/measurerw.cpp:360-382`:
+/// a clef on the first tick is the staff's initial clef, not a later change.
+/// Readers keep it in a `HeaderClef` segment; `Staff::default_clef` can stay
+/// at its G default when only the first measure declares the clef (a 3.x
+/// piano's second staff is the usual case).
+fn initial_clef(score: &Score, staff_index: usize) -> Option<ClefType> {
+    let measure = score.measures.first()?;
+    measure
+        .segments
+        .iter()
+        .filter(|segment| segment.tick == measure.start_tick)
+        .flat_map(|segment| segment.iter_elements())
+        .filter(|(track, _)| track.staff().index() == staff_index)
+        .find_map(|(_, item)| match item {
+            SegmentItem::Clef(clef) => Some(clef.concert),
+            _ => None,
+        })
+}
+
 /// Computes the measure atoms of the given staff.
 fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
     let staff = &score.staves[staff_index];
-    let mut clef = staff.default_clef.concert;
-    if clef == ClefType::Invalid {
-        clef = ClefType::G;
-    }
+    let mut clef = initial_clef(score, staff_index)
+        .or_else(|| {
+            let clef = staff.default_clef.concert;
+            (clef != ClefType::Invalid).then_some(clef)
+        })
+        .unwrap_or(ClefType::G);
     let mut bottom = bottom_line_note(clef);
     let mut key_fifths = 0i8;
     let mut prev_fifths = 0i8;

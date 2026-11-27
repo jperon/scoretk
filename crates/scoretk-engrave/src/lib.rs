@@ -336,6 +336,48 @@ mod tests {
     }
 
     #[test]
+    fn first_measure_clef_sets_the_head_vertical_origin() {
+        // A clef on the first tick is the staff's clef, even when the
+        // part's `default_clef` is still G (a 3.x piano's left hand).
+        let mut score = one_staff_score();
+        score.measures[0].segments[0].set_element(
+            Track::from_raw(0),
+            SegmentItem::Clef(Clef::new(ClefType::F)),
+        );
+        let clef_name = |page: &crate::display::DisplayList| {
+            let glyph = page
+                .items
+                .iter()
+                .find_map(|item| match item.geometry {
+                    crate::display::Geometry::Glyph { glyph, .. }
+                        if item.kind == ItemKind::Clef =>
+                    {
+                        Some(glyph)
+                    }
+                    _ => None,
+                })
+                .expect("a clef");
+            scoretk_smufl::GLYPHS[usize::from(glyph)].name
+        };
+        let first_head_y = |page: &crate::display::DisplayList| {
+            page.items
+                .iter()
+                .find(|item| item.kind == ItemKind::Notehead)
+                .map(|item| item.origin().1)
+                .expect("a notehead")
+        };
+        let treble = Engraver::new(&one_staff_score(), PageSpec::default())
+            .unwrap()
+            .page(0);
+        let bass = Engraver::new(&score, PageSpec::default()).unwrap().page(0);
+        assert_eq!(clef_name(&treble), "gClef");
+        assert_eq!(clef_name(&bass), "fClef");
+        // The same written G sits on the treble staff's middle line but
+        // three ledger lines above the bass staff.
+        assert!(first_head_y(&bass) < first_head_y(&treble));
+    }
+
+    #[test]
     fn different_rhythms_share_segment_and_barline_x() {
         // A Segment is shared by all staves of a system: one x per segment,
         // its width the maximum over the staves (`horizontalspacing.cpp:

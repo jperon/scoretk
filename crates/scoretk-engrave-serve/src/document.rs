@@ -51,7 +51,8 @@ impl Document {
             // block; `Engraver` keeps atoms, breaks, staves and credits only.
             let score = reader::read_score(path)?;
             let staff_px = screen_staff_px(width, height);
-            let engraver = Engraver::new(&score, PageSpec::for_screen(width, height))
+            let spec = PageSpec::for_screen_with_score(width, height, &score);
+            let engraver = Engraver::new(&score, spec)
                 .map_err(|error| format!("cannot engrave {path}: {error}"))?;
             (engraver, staff_px)
         };
