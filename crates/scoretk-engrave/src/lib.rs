@@ -103,7 +103,7 @@ impl Engraver {
             0 => Err(EngraveError::NoStaff),
             1 => {
                 let atoms = atoms::compute(score);
-                let systems = breaking::compute(&atoms, &spec);
+                let (systems, atoms) = breaking::compute_with_atoms(&atoms, &spec);
                 Ok(Self {
                     atoms,
                     systems,
@@ -112,6 +112,13 @@ impl Engraver {
             }
             count => Err(EngraveError::MultipleStaves(count)),
         }
+    }
+
+    /// Builds an engraver whose page geometry comes from the score's
+    /// `<Style>` (page size, margins, spatium). The facade uses this entry
+    /// point; `new` remains available for an explicit page geometry.
+    pub fn from_score(score: &Score) -> Result<Self, EngraveError> {
+        Self::new(score, layout::PageSpec::from_score(score))
     }
 
     /// Engraves one page from the cached atoms and breaking plan.

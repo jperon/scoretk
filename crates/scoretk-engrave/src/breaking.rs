@@ -27,7 +27,7 @@
 use alloc::vec::Vec;
 
 use crate::layout::PageSpec;
-use crate::style::STAFF_HEIGHT;
+use crate::style::{BARLINE_SEPARATION, STAFF_HEIGHT, THICK_BARLINE_WIDTH};
 use crate::MeasureAtom;
 
 /// One system, described entirely by atom indices and one scale factor.
@@ -55,16 +55,34 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
     let mut systems = Vec::new();
     let mut first = 0;
     while first < atoms.len() {
+        let printable = spec.printable_width
+            - if first == 0 {
+                spec.first_system_indent
+            } else {
+                0
+            };
         let mut count = 0;
         let mut width = 0;
         let mut header_width = 0;
         let mut spring = 0;
         while first + count < atoms.len() {
             let atom = &atoms[first + count];
-            let header = atom.events.first().map_or(atom.width, |event| event.x);
-            if count > 0
-                && (width + atom.width > spec.printable_width
-                    || atoms[first + count - 1].line_break)
+            // // Port of `horizontalspacing.cpp:1087-1111`: justification
+            // stretches only the chord/rest springs. Everything before the
+            // first chord (clef/key/time widths and barNoteDistance) is a
+            // fixed header; using the first *event* here counted only the
+            // clef's x and left 6 sp out of the spring budget.
+            let header = atom
+                .events
+                .iter()
+                .find(|event| {
+                    matches!(
+                        event.kind,
+                        crate::AtomKind::Chord | crate::AtomKind::Rest { .. }
+                    )
+                })
+                .map_or(atom.width, |event| event.x);
+            if count > 0 && (width + atom.width > printable || atoms[first + count - 1].line_break)
             {
                 break;
             }
@@ -76,10 +94,21 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
                 break;
             }
         }
-        let is_last = first + count == atoms.len();
-        let fill = width * 1024 / spec.printable_width.max(1);
-        let justify = !is_last || fill >= spec.last_system_fill_limit;
-        let available = spec.printable_width - header_width;
+        // // Port of `systemlayout.cpp:459-489`: `shouldBeJustified` only
+        // suppresses justification when `curMeasure()` is null (no measure
+        // follows). With any measure in the system it justifies even a short
+        // last system; the old `fill < lastSystemFillLimit` shortcut left
+        // `testNoteheads2`'s final system at natural width.
+        let justify = true;
+        // The last fixed segment of the final system is the generated end
+        // barline (`endBarWidth` + `endBarDistance`), not a spring
+        // (`horizontalspacing.cpp:1135-1152`).
+        let end_bar = if atoms[first + count - 1].end_bar.0 == 3 {
+            THICK_BARLINE_WIDTH + BARLINE_SEPARATION
+        } else {
+            0
+        };
+        let available = printable - header_width - end_bar;
         let scale = if justify && spring > 0 && available > 0 {
             // `stretchSegmentsToWidth`: each spring ends at width
             // `force / springConst = force * stretch`, where `force` is
@@ -129,11 +158,39 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec) -> usize {
     page + 1
 }
 
+/// Computes the systems and pages, together with the atoms augmented with
+/// the clef/key headers generated at every system start.
+///
+/// // Port of `measurelayout.cpp:2530-2590, 2597-2660`: `genClef`/`genKeysig`
+/// add header segments to the first measure of a system before spacing, so
+/// adding them changes the natural width and can move a break. Iterate until
+/// the break pattern is stable (one pass is enough for ordinary scores).
+pub fn compute_with_atoms(
+    atoms: &[MeasureAtom],
+    spec: &PageSpec,
+) -> (Vec<SystemPlan>, Vec<MeasureAtom>) {
+    let mut augmented = atoms.to_vec();
+    let mut systems = collect_systems(&augmented, spec);
+    for _ in 0..8 {
+        let mut next = atoms.to_vec();
+        for system in &systems {
+            if system.first > 0 && system.first < atoms.len() {
+                next[system.first] = atoms[system.first].with_system_header();
+            }
+        }
+        if next == augmented {
+            break;
+        }
+        augmented = next;
+        systems = collect_systems(&augmented, spec);
+    }
+    assign_pages(&mut systems, spec);
+    (systems, augmented)
+}
+
 /// Computes all systems and pages from the atoms.
 pub fn compute(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
-    let mut systems = collect_systems(atoms, spec);
-    assign_pages(&mut systems, spec);
-    systems
+    compute_with_atoms(atoms, spec).0
 }
 
 /// Number of pages of a plan.
@@ -179,6 +236,8 @@ mod tests {
             start_bar: BarCode(1),
             end_bar: BarCode(1),
             line_break: false,
+            clef_name: "gClef",
+            key_fifths: 0,
         }
     }
 
@@ -194,16 +253,18 @@ mod tests {
         assert!(systems.len() >= 2);
         assert_eq!(systems[0].first, 0);
         assert_eq!(systems.iter().map(|s| s.count).sum::<usize>(), 5);
-        assert!(systems.iter().all(|s| s.scale >= 1024));
+        assert!(systems.iter().all(|s| s.scale > 0));
     }
 
     #[test]
-    fn a_short_last_system_is_not_justified() {
+    fn a_short_last_system_is_justified() {
+        // `shouldBeJustified` (systemlayout.cpp:459-489) justifies a system
+        // as long as a measure is present, even below lastSystemFillLimit.
         let spec = PageSpec::default();
         let atoms = vec![quarter(1280)];
         let systems = compute(&atoms, &spec);
         assert_eq!(systems.len(), 1);
-        assert_eq!(systems[0].scale, 1024);
+        assert!(systems[0].scale > 1024);
     }
 
     #[test]

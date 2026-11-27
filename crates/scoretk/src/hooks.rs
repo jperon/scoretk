@@ -402,7 +402,7 @@ non_branche!(
 /// Grave une page d'une partition à une seule portée en SVG.
 #[cfg(feature = "engrave")]
 pub(crate) fn write_svg(score: &Score, page: usize) -> Result<Vec<u8>> {
-    let engraver = scoretk_engrave::Engraver::new(score, scoretk_engrave::PageSpec::default())
+    let engraver = scoretk_engrave::Engraver::from_score(score)
         .map_err(|error| Error::Engrave(error.to_string()))?;
     Ok(scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes())
 }

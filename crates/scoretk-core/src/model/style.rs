@@ -118,6 +118,30 @@ pub struct StyleSettings {
     /// `userMag`, et `writeStaffDetails` (`exportmusicxml.cpp:8139-8144`) en
     /// tire `<staff-size scaling=…>`.
     pub small_staff_mag: f64,
+    /// Distance from a bar line (or a system header) to the first chord or
+    /// rest, in staff spaces (`Sid::barNoteDistance`, 1.25 sp).
+    pub bar_note_distance_sp: f64,
+    /// Distance from a bar line to a first chord with accidentals
+    /// (`Sid::barAccidentalDistance`, 0.65 sp).
+    pub bar_accidental_distance_sp: f64,
+    /// Minimum width of a measure (`Sid::minMeasureWidth`, 8 sp).
+    pub min_measure_width_sp: f64,
+    /// Gap after a time signature at the start of a system
+    /// (`Sid::systemHeaderTimeSigDistance`, 2 sp).
+    pub system_header_time_sig_distance_sp: f64,
+    /// Printable width in inches (`pagePrintableWidth`, 180 mm by default;
+    /// 190 mm with the legacy margins). The pages of some corpus files
+    /// override it independently of the margins.
+    pub page_printable_width_in: f64,
+    /// Indent the first system by `firstSystemIndentationValue` when true
+    /// (`Sid::enableIndentationOnFirstSystem`, true in 4.x).
+    pub enable_indentation_on_first_system: bool,
+    /// Left indent of the first system (`Sid::firstSystemIndentationValue`,
+    /// 5 sp).
+    pub first_system_indentation_sp: f64,
+    /// Fill below which the last system is not justified
+    /// (`Sid::lastSystemFillLimit`, 0.3).
+    pub last_system_fill_limit: f64,
 }
 
 impl StyleSettings {
@@ -166,6 +190,17 @@ impl StyleSettings {
             create_multi_measure_rests: false,
             min_empty_measures: if legacy { 2 } else { 1 },
             small_staff_mag: 0.7,
+            // 4.7.4 defaults (`engraving/style/styledef.cpp:143,186,225,227`).
+            // The legacy `.mss` compatibility files may override these; the
+            // corpus files that need it carry an explicit `<Style>` value.
+            bar_note_distance_sp: 1.25,
+            bar_accidental_distance_sp: 0.65,
+            min_measure_width_sp: 8.0,
+            system_header_time_sig_distance_sp: 2.0,
+            page_printable_width_in: if legacy { 190.0 / 25.4 } else { 180.0 / 25.4 },
+            enable_indentation_on_first_system: !legacy,
+            first_system_indentation_sp: 5.0,
+            last_system_fill_limit: 0.3,
         }
     }
 
@@ -181,6 +216,14 @@ impl StyleSettings {
             "smallStaffMag" => Self::set_positive(&mut self.small_staff_mag, value),
             "pageWidth" => Self::set_positive(&mut self.page_width_in, value),
             "pageHeight" => Self::set_positive(&mut self.page_height_in, value),
+            "pagePrintableWidth" => Self::set_positive(&mut self.page_printable_width_in, value),
+            "enableIndentationOnFirstSystem" => {
+                self.enable_indentation_on_first_system = flag(value);
+            }
+            "firstSystemIndentationValue" => {
+                Self::set_number(&mut self.first_system_indentation_sp, value);
+            }
+            "lastSystemFillLimit" => Self::set_number(&mut self.last_system_fill_limit, value),
             "pageEvenLeftMargin" => Self::set_number(&mut self.page_even_left_margin_in, value),
             "pageOddLeftMargin" => Self::set_number(&mut self.page_odd_left_margin_in, value),
             "pageEvenRightMargin" => Self::set_number(&mut self.page_even_right_margin_in, value),
@@ -216,6 +259,14 @@ impl StyleSettings {
             "hideEmptyStaves" => self.hide_empty_staves = flag(value),
             "dontHideStavesInFirstSystem" => {
                 self.dont_hide_staves_in_first_system = flag(value);
+            }
+            "barNoteDistance" => Self::set_positive(&mut self.bar_note_distance_sp, value),
+            "barAccidentalDistance" => {
+                Self::set_positive(&mut self.bar_accidental_distance_sp, value);
+            }
+            "minMeasureWidth" => Self::set_positive(&mut self.min_measure_width_sp, value),
+            "systemHeaderTimeSigDistance" => {
+                Self::set_positive(&mut self.system_header_time_sig_distance_sp, value);
             }
             _ => {}
         }

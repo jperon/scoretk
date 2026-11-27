@@ -38,9 +38,8 @@ use scoretk_core::model::{
 use scoretk_smufl::{glyph, units_to_fixed};
 
 use crate::style::{
-    BAR_NOTE_DISTANCE, CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE,
-    KEY_TIME_DISTANCE, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH,
-    SYSTEM_HEADER_MIN_START,
+    CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
+    MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP, SYSTEM_HEADER_MIN_START,
 };
 
 /// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
@@ -116,6 +115,57 @@ pub struct MeasureAtom {
     pub end_bar: BarCode,
     /// A `<LayoutBreak>` line ends the system after this measure.
     pub line_break: bool,
+    /// Clef in force at this measure, repeated as a system header when the
+    /// measure opens a system (`measurelayout.cpp:2530-2590`, `genClef`).
+    pub clef_name: &'static str,
+    /// Key signature in force at this measure, repeated as a system header
+    /// when non-C (`measurelayout.cpp:2597-2660`, `genKeysig`).
+    pub key_fifths: i8,
+}
+
+impl MeasureAtom {
+    /// Returns a copy preceded by the clef/key header MuseScore generates at
+    /// the start of a system. // Port of `measurelayout.cpp:2530-2590` and
+    /// `:2597-2660`: `genClef` and `genKeysig` are true by default, so a
+    /// clef (and a non-C key) is generated on every system, not only the
+    /// first one. The header has fixed width and does not take part in the
+    /// spring justification.
+    pub fn with_system_header(&self) -> Self {
+        let mut atom = self.clone();
+        let clef_width = glyph_width(self.clef_name);
+        let mut header_width = CLEF_LEFT_MARGIN + clef_width + CLEF_KEY_RIGHT_MARGIN + SP / 10;
+        let mut events = Vec::with_capacity(self.events.len() + 2);
+        events.push(Atom::simple(
+            CLEF_LEFT_MARGIN,
+            AtomKind::Clef {
+                name: self.clef_name,
+            },
+        ));
+        if self.key_fifths != 0 {
+            let name = if self.key_fifths > 0 {
+                "accidentalSharp"
+            } else {
+                "accidentalFlat"
+            };
+            let key_x = CLEF_LEFT_MARGIN + clef_width + CLEF_KEY_RIGHT_MARGIN + SP / 10;
+            events.push(Atom::simple(
+                key_x,
+                AtomKind::KeySig {
+                    fifths: self.key_fifths,
+                },
+            ));
+            header_width += self.key_fifths.unsigned_abs().min(7) as i32
+                * (glyph_width(name) + KEYSIG_ACCIDENTAL_DISTANCE)
+                + KEY_TIME_DISTANCE;
+        }
+        for event in &mut atom.events {
+            event.x += header_width;
+        }
+        atom.width += header_width;
+        events.append(&mut atom.events);
+        atom.events = events;
+        atom
+    }
 }
 
 /// Diatonic index of a note, with C = 0 in each octave.
@@ -257,6 +307,21 @@ pub fn has_stem(duration: u8) -> bool {
 /// The values below are that formula in 1/1024, precomputed for power-of-two
 /// durations; `dots` multiplies the ratio by `2 - 2^-dots` (`:206-215` of
 /// `durationtype.cpp`). No floating point is needed in the `no_std` crate.
+/// // Port of `horizontalspacing.cpp:773-803`
+/// (`durationStretchForMMRests`): a collapsed group is as wide as a
+/// `timeSig` rest plus up to `mmRestMaxWidthIncrease` (8) extra
+/// `1/denominator` steps, i.e. `measureSpacing^log2(ratio)` in quarters.
+pub fn mmrest_stretch(count: u16, denominator: i64) -> i32 {
+    const RATIO_STRETCH: [i32; 13] = [
+        0, 1024, 1536, 1947, 2304, 2688, 3020, 3326, 3456, 3571, 3678, 3778, 3871,
+    ];
+    let denominator = i32::try_from(denominator).unwrap_or(4);
+    let quarters = if denominator > 0 { 4 / denominator } else { 1 };
+    let extra = (count.saturating_sub(2) as i32).min(8).max(0) * quarters.max(1);
+    let ratio = 4 * quarters.max(1) + extra;
+    RATIO_STRETCH.get(ratio as usize).copied().unwrap_or(3871)
+}
+
 pub fn duration_stretch(duration: u8, dots: u8) -> i32 {
     const BASE: [i32; 13] = [
         3456, 2304, 2304, 1536, 1024, 683, 455, 303, 202, 135, 90, 60, 40,
@@ -424,6 +489,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         clef = ClefType::G;
     }
     let mut bottom = bottom_line_note(clef);
+    let mut key_fifths = 0i8;
     // MuseScore engraves the written pitch by default (`concertPitch` false):
     // transpose the concert pitch of the pivot model by the inverse of the
     // instrument's transposition (`engraving/dom/transpose.cpp`).
@@ -432,11 +498,38 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         .get(staff.part.index())
         .and_then(|part| part.instrument.transpose);
     let inverse = transpose.map(|value| Transpose::new(-value.diatonic, -value.chromatic));
+    // // Port of `horizontalspacing.cpp:1224` and `:1193-1197`: the minimum
+    // shape padding is 0.1 sp and the distance from a bar line to the first
+    // chord is `barNoteDistance` (the style value, e.g. 0.6 sp in 3.x files
+    // with an explicit `<barNoteDistance>`).
+    let style = &score.engraving.style;
+    let bar_note_distance = (style.bar_note_distance_sp * SP as f64) as i32 + SP / 10;
+    let time_sig_distance = (style.system_header_time_sig_distance_sp * SP as f64) as i32;
     let mut atoms = Vec::with_capacity(score.measures.len());
 
-    for measure in &score.measures {
+    let mut measure_index = 0;
+    while let Some(measure) = score.measures.get(measure_index) {
+        // A `<multiMeasureRest>N</multiMeasureRest>` folds N source measures
+        // into one displayed measure (`measurelayout.cpp:194-524`).
+        let mm_count = measure.multi_measure_rest.unwrap_or(1).max(1) as usize;
+        // A line break carried by a folded measure still ends the displayed
+        // system after the multi-measure rest.
+        let mut line_break = measure.line_break;
+        for skipped in &score.measures[measure_index + 1..(measure_index + mm_count).min(score.measures.len())] {
+            line_break |= skipped.line_break;
+        }
+        measure_index += mm_count;
+        let mm_stretch = if mm_count > 1 {
+            mmrest_stretch(mm_count as u16, measure.nominal_len.denominator())
+        } else {
+            0
+        };
         let first = atoms.is_empty();
-        let mut x = BAR_NOTE_DISTANCE.max(SYSTEM_HEADER_MIN_START);
+        let mut x = if first {
+            bar_note_distance.max(SYSTEM_HEADER_MIN_START)
+        } else {
+            bar_note_distance
+        };
         let mut events = Vec::new();
         let mut spring = 0;
         let mut has_clef = false;
@@ -450,7 +543,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             let name = clef_name(clef);
             let clef_x = CLEF_LEFT_MARGIN;
             events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
-            x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN;
+            x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
             has_clef = true;
         }
         // // Port of `chordlayout.cpp:1584` (`measure()->hasVoices`): once a
@@ -488,7 +581,11 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 let mut segment_width = SEGMENT_WIDTH;
                 for (track, cr) in chord_rests {
                     let duration = duration_code(cr.duration.kind);
-                    let stretch = duration_stretch(duration, cr.duration.dots);
+                    let stretch = if mm_stretch > 0 && matches!(cr.kind, ChordRestKind::Rest(_)) {
+                        mm_stretch
+                    } else {
+                        duration_stretch(duration, cr.duration.dots)
+                    };
                     spring += stretch;
                     let mut min_width = glyph_width("noteheadBlack") + MIN_NOTE_DISTANCE;
                     if cr.duration.dots > 0 {
@@ -569,23 +666,26 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                         let name = clef_name(clef);
                         let clef_x = x + CLEF_LEFT_MARGIN;
                         events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
-                        x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN;
+                        x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
                         has_clef = true;
                     }
                     SegmentItem::KeySig(key) if segment.kind == SegmentType::KeySig && !has_key => {
                         let fifths = key.concert_key.fifths();
-                        events.push(Atom::simple(x, AtomKind::KeySig { fifths }));
-                        // // Port of `styledef.cpp:241` (`keysigAccidentalDistance`):
-                        // consecutive accidentals are one glyph width plus
-                        // 0.3 sp apart; `keyTimesigDistance` follows them.
-                        let accidental = if fifths > 0 {
-                            "accidentalSharp"
-                        } else {
-                            "accidentalFlat"
-                        };
-                        let count = fifths.unsigned_abs().min(7) as i32;
-                        x += count * (glyph_width(accidental) + KEYSIG_ACCIDENTAL_DISTANCE)
-                            + KEY_TIME_DISTANCE;
+                        key_fifths = fifths;
+                        if fifths != 0 {
+                            events.push(Atom::simple(x, AtomKind::KeySig { fifths }));
+                            // // Port of `styledef.cpp:241` (`keysigAccidentalDistance`):
+                            // consecutive accidentals are one glyph width plus
+                            // 0.3 sp apart; `keyTimesigDistance` follows them.
+                            let accidental = if fifths > 0 {
+                                "accidentalSharp"
+                            } else {
+                                "accidentalFlat"
+                            };
+                            let count = fifths.unsigned_abs().min(7) as i32;
+                            x += count * (glyph_width(accidental) + KEYSIG_ACCIDENTAL_DISTANCE)
+                                + KEY_TIME_DISTANCE;
+                        }
                         has_key = true;
                     }
                     SegmentItem::TimeSig(time)
@@ -600,7 +700,11 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 denominator,
                             },
                         ));
-                        x += glyph_width("timeSig4") + BAR_NOTE_DISTANCE;
+                        // // Port of `horizontalspacing.cpp:1345-1353`: after
+                        // a system header time signature the gap is
+                        // `systemHeaderTimeSigDistance` (2 sp), not the
+                        // ordinary `barNoteDistance`.
+                        x += glyph_width("timeSig4") + time_sig_distance;
                         has_time = true;
                     }
                     _ => {}
@@ -608,15 +712,32 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             }
         }
 
-        atoms.push(MeasureAtom {
+        let mut atom = MeasureAtom {
             number: measure.number,
             width: x,
             spring,
             events,
             start_bar: bar_code(measure.start_bar_line),
             end_bar: bar_code(measure.end_bar_line),
-            line_break: measure.line_break,
-        });
+            line_break,
+            clef_name: clef_name(clef),
+            key_fifths,
+        };
+        // // Port of `systemlayout.cpp:402-407`
+        // (`MeasureLayout::createEndBarLines`): MuseScore generates a final
+        // barline on the last measure even when the source has none. Its
+        // two strokes are drawn to the left of the measure's right edge, so
+        // the system's last fixed width is `endBarWidth + endBarDistance`
+        // (styledef.cpp:147,149).
+        if score
+            .measures
+            .last()
+            .is_some_and(|last| last.number == measure.number)
+            && atom.end_bar.0 == 1
+        {
+            atom.end_bar = BarCode(3);
+        }
+        atoms.push(atom);
     }
     atoms
 }

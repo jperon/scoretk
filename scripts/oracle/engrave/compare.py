@@ -203,7 +203,9 @@ def parse_svg(path: Path) -> dict:
     # system break pattern. MuseScore draws a double/final bar line as two
     # strokes about 0.6-1.1 sp apart (thin + thick) and scoretk as two
     # rectangles 0.37 sp apart: both are ONE measure boundary, so lines less
-    # than 1.5 sp apart are merged at their rightmost stroke. A plain
+    # than 1.5 sp apart are merged at their leftmost stroke (MuseScore draws
+    # the thin stroke at the measure's right edge and the thick one after
+    # it, `tdraw.cpp:752`). A plain
     # start bar line is not counted either: MuseScore does not draw one at
     # the beginning of a normal system, and counting scoretk's would shift
     # every measure width by one boundary.
@@ -213,8 +215,6 @@ def parse_svg(path: Path) -> dict:
         group = by_system.setdefault(key, [])
         if not group or local_x - group[-1] > 1.5:
             group.append(local_x)
-        else:
-            group[-1] = local_x
     # Consecutive system groups must be in reading order (top to bottom).
     result["barlines_by_system"] = [by_system[key] for key in sorted(by_system)]
     result["measure_widths"] = [

@@ -28,6 +28,7 @@
 
 use alloc::vec::Vec;
 
+use scoretk_core::model::Score;
 use scoretk_smufl::{glyph, units_to_fixed};
 
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, MeasureAtom};
@@ -55,6 +56,10 @@ pub struct PageSpec {
     pub max_system_distance: i32,
     /// // Port of `styledef.cpp:279` (`lastSystemFillLimit` 0.3).
     pub last_system_fill_limit: i32,
+    /// // Port of `styledef.cpp:540` (`firstSystemIndentationValue` 5 sp):
+    /// the left indent of the first system when the score opens with a
+    /// vertical frame (title, subtitle, composer).
+    pub first_system_indent: i32,
 }
 
 impl Default for PageSpec {
@@ -64,14 +69,46 @@ impl Default for PageSpec {
             margin_left: 9 * SP,
             margin_top: 9 * SP,
             page_height: 170 * SP,
-            min_system_distance: 9 * SP,
+            min_system_distance: 8704, // styledef.cpp:58 (8.5 sp)
             max_system_distance: 15 * SP,
             last_system_fill_limit: 307,
+            first_system_indent: 0,
         }
     }
 }
 
 impl PageSpec {
+    /// Derives page geometry from the score's `<Style>` (`pagestyle.cpp:26-41`,
+    /// `styledef.cpp:41-59`). A 3.x score with 10 mm margins and a 1.764 mm
+    /// spatium has a 107.7 sp printable width, not the 4.x default 103 sp;
+    /// using the default changed every measure width and every line break.
+    /// Arithmetic stays in `f64` here (no libm call), then rounds to fixed
+    /// staff spaces; the rest of the engraver stays fixed point.
+    pub fn from_score(score: &Score) -> Self {
+        let style = &score.engraving.style;
+        let spatium = style.spatium_mm.max(0.1);
+        let to_fixed = |mm: f64| ((mm / spatium) * SP as f64 + 0.5) as i32;
+        let left = style.page_odd_left_margin_in * 25.4;
+        let right = style.page_odd_right_margin_in * 25.4;
+        let top = style.page_odd_top_margin_in * 25.4;
+        Self {
+            printable_width: to_fixed(style.page_printable_width_in * 25.4),
+            margin_left: to_fixed(left),
+            margin_top: to_fixed(top),
+            page_height: to_fixed(style.page_height_in * 25.4),
+            min_system_distance: 8704,
+            max_system_distance: 15 * SP,
+            last_system_fill_limit: (style.last_system_fill_limit * 1024.0) as i32,
+            // `enableIndentationOnFirstSystem` is true by default in 4.x
+            // (legacy 3.x style files disable it).
+            first_system_indent: if style.enable_indentation_on_first_system {
+                (style.first_system_indentation_sp * SP as f64) as i32
+            } else {
+                0
+            },
+        }
+    }
+
     /// Converts a fixed staff-space coordinate to millimetres (spatium 1.75 mm).
     pub fn fixed_to_mm(fixed: i32) -> f64 {
         (fixed as f64) * 1.75 / SP as f64
@@ -100,7 +137,9 @@ fn place_measure(
     system_y: i32,
     scale: i32,
 ) -> i32 {
-    let mut cursor = 0;
+    // The first header event sits at its own x (e.g. clefLeftMargin); the
+    // loop below then advances by the gap to the following event.
+    let mut cursor = atom.events.first().map_or(0, |event| event.x);
     for (index, event) in atom.events.iter().enumerate() {
         place_event(out, event, x0 + cursor, system_y);
         let width = if index + 1 < atom.events.len() {
@@ -117,7 +156,10 @@ fn place_measure(
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
     // double lines are separated by `barlineSeparation` (SMuFL).
-    let bar_x = x0 + cursor - SEGMENT_WIDTH / 2;
+    // // Port of `horizontalspacing.cpp:1148-1152`: a measure ends at the
+    // last segment's right edge. The former -SEGMENT_WIDTH/2 offset placed
+    // every bar line 0.75 sp too early.
+    let bar_x = x0 + cursor;
     place_barline(out, atom.end_bar, bar_x, system_y);
     cursor
 }
@@ -149,16 +191,21 @@ fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: 
             ));
         }
         3 => {
+            // // Port of `tdraw.cpp:752-805`: the thin stroke sits at the
+            // measure's right edge x; the thick stroke follows it by
+            // `endBarDistance` + half of `endBarWidth`. `breaking` excludes
+            // that 0.92 sp from the justified springs, so x is already
+            // shifted left from the printable margin.
             out.push(DisplayItem::rect(
                 ItemKind::BarLine,
-                x - THICK_BARLINE_WIDTH - BARLINE_SEPARATION,
+                x - THIN_BARLINE_WIDTH / 2,
                 y,
                 THIN_BARLINE_WIDTH,
                 STAFF_HEIGHT,
             ));
             out.push(DisplayItem::rect(
                 ItemKind::BarLine,
-                x - THICK_BARLINE_WIDTH / 2,
+                x + BARLINE_SEPARATION,
                 y,
                 THICK_BARLINE_WIDTH,
                 STAFF_HEIGHT,
@@ -389,18 +436,28 @@ pub fn build_page(
     let mut out = DisplayList::new(page);
     for system in systems.iter().filter(|system| system.page == page) {
         let sy = system.y;
+        // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
+        // system after a title frame starts `firstSystemIndentationValue`
+        // to the right and ends at the same right margin.
+        let indent = if system.first == 0 {
+            spec.first_system_indent
+        } else {
+            0
+        };
+        let left = spec.margin_left + indent;
+        let staff_width = spec.printable_width - indent;
         // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
         // rectangles, thickness `staffLineWidth`.
         for line in 0..5 {
             out.push(DisplayItem::rect(
                 ItemKind::StaffLine,
-                spec.margin_left,
+                left,
                 sy + line * SP - STAFF_LINE_WIDTH / 2,
-                spec.printable_width,
+                staff_width,
                 STAFF_LINE_WIDTH,
             ));
         }
-        let mut x = spec.margin_left;
+        let mut x = left;
         for atom in &atoms[system.first..system.first + system.count] {
             x += place_measure(&mut out, atom, x, sy, system.scale);
         }
@@ -409,7 +466,7 @@ pub fn build_page(
         // none). Repeats and double/final start bar lines are drawn.
         let start_bar = atoms[system.first].start_bar;
         if start_bar.0 > 1 {
-            place_barline(&mut out, start_bar, spec.margin_left, sy);
+            place_barline(&mut out, start_bar, left, sy);
         }
     }
     out
@@ -470,6 +527,8 @@ mod tests {
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
             line_break: false,
+            clef_name: "gClef",
+            key_fifths: 0,
         }
     }
 
@@ -552,6 +611,8 @@ mod tests {
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
             line_break: false,
+            clef_name: "gClef",
+            key_fifths: 0,
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let header: Vec<_> = list
@@ -607,6 +668,8 @@ mod tests {
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
             line_break: false,
+            clef_name: "gClef",
+            key_fifths: 0,
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let accidental = list

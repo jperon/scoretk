@@ -621,3 +621,32 @@ SVGs the corrected oracle gives:
 The 203 vs 281 denominator is the count of real measure boundaries after
 merging doubles; failures remain in the denominator. The corrected figures
 are the baseline for the remaining P2 steps.
+
+### 9.14 Style-aware spacing and breaking (step 7, 2026-11-27)
+
+The engraver now derives its page geometry from the score's `<Style>`
+instead of the 4.x defaults: `pagePrintableWidth`, page margins, `Spatium`,
+`barNoteDistance` (0.6 sp in `measure-4`), `systemHeaderTimeSigDistance`
+2 sp and `enableIndentationOnFirstSystem` (4.x indents the first system by
+5 sp, 3.x does not; `styledef.cpp:43,143,186,225,539-540`). The first note
+now sits at its own header x, the bar line at the last segment's right edge
+(`horizontalspacing.cpp:1148-1152`), and the generated final double bar line
+(reserved as `endBarWidth + endBarDistance`, `styledef.cpp:147,149`) is no
+longer counted as a spring. The clef and a non-C key signature are generated
+at every system start (`measurelayout.cpp:2530-2660`) and multi-measure rests
+fold their source measures with `durationStretchForMMRests`
+(`horizontalspacing.cpp:773-803`). A short last system is justified as long
+as it contains a measure (`systemlayout.cpp:459-489`).
+
+| Metric | Corrected baseline | After step 7 | Gate |
+| --- | ---: | ---: | --- |
+| Measure widths within 0.1 sp | 0.0148 (3/203) | **0.3750 (72/192)** | ≥ 0.90 — failed |
+| Files with identical system breaks | 27/44 | **34/44** | ≥ 0.90 — failed |
+| Stem-length agreement | 0.6967 | 0.6967 | ≥ 0.90 — failed |
+| Within 0.1 sp, x only | 0.0207 | 0.2883 | — |
+
+The denominator drops from 203 to 192 because multi-measure rests are now
+folded like MuseScore's displayed measures. `userStretch` is not a cause in
+this corpus: no `.mscx` contains `<stretch>`; the remaining deficits are
+text/harmony-driven segment widths (P4), multi-voice stems (P3) and a few
+courtesy-header cases.
