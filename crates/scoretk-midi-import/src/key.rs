@@ -148,6 +148,22 @@ pub fn find_key(tracks: &[MTrack]) -> Key {
 /// Une armure de do majeur qui suit une armure de do majeur n'est pas écrite,
 /// comme dans le C++ (la première, précédée implicitement de do, l'est).
 pub fn assign_key_list_to_staff(score: &mut Score, staff: StaffId, key_list: &KeyList) {
+    assign_key_list_to_staff_with(score, staff, key_list, false);
+}
+
+/// Same as [`assign_key_list_to_staff`], with an optional anchor at the score's
+/// end tick.
+///
+/// `[SMF §Meta-Events]` allows an `FF 59` at any tick, including the tick where
+/// the last note ends. In full support that tick still belongs to a key change
+/// the file carries, so it is anchored on the last measure instead of being
+/// silently dropped. The default 4.7.4 path keeps the strict lookup.
+pub fn assign_key_list_to_staff_with(
+    score: &mut Score,
+    staff: StaffId,
+    key_list: &KeyList,
+    allow_end: bool,
+) {
     let mut previous = Key::C;
     let mut previous_mode = KeyMode::Unknown;
     let staff_count = score.staves.len();
@@ -157,10 +173,22 @@ pub fn assign_key_list_to_staff(score: &mut Score, staff: StaffId, key_list: &Ke
         }
         previous = key.key;
         previous_mode = key.mode;
-        let Some(measure_index) = measure_index_for_tick(score, tick) else {
+        let measure_index = if allow_end {
+            super::measure_index_for_tick(score, tick)
+        } else {
+            measure_index_for_tick(score, tick)
+        };
+        let Some(measure_index) = measure_index else {
             continue;
         };
-        let start = score.measures[measure_index].start_tick;
+        // A meta at the score's end tick belongs to the last measure, but its
+        // segment must stay at that tick: using the measure's start would
+        // overwrite a key change carried earlier in the same measure.
+        let start = if tick >= score.measures[measure_index].end_tick() {
+            tick
+        } else {
+            score.measures[measure_index].start_tick
+        };
         let mut keysig = KeySig::new(key.concert_key);
         keysig.transposed_key = key.key;
         // Le mode du SMF est conservé tel quel, comme pour l'import MusicXML
@@ -230,4 +258,49 @@ pub fn recognize_main_key_sig(score: &mut Score, tracks: &mut [MTrack]) {
 /// Tick (`Fraction`) d'une position en ticks MuseScore.
 pub fn fraction_from_ticks(ticks: i64) -> Fraction {
     Fraction::from_ticks(ticks, UNITS_PER_WHOLE as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scoretk_core::model::{Measure, StaffId};
+
+    fn key_list() -> KeyList {
+        let mut list = KeyList::new();
+        for (tick, fifths) in [(Fraction::ZERO, 4), (Fraction::from_integer(1), -4)] {
+            list.set_key(
+                tick,
+                TrackKey {
+                    concert_key: Key::new(fifths),
+                    key: Key::new(fifths),
+                    mode: KeyMode::Major,
+                },
+            );
+        }
+        list
+    }
+
+    fn fifths_at_end(allow_end: bool) -> Vec<i8> {
+        let mut score = Score::new();
+        score.add_measure(Measure::new(0, Fraction::ZERO, Fraction::from_integer(1)));
+        assign_key_list_to_staff_with(&mut score, StaffId::from_index(0), &key_list(), allow_end);
+        score.measures[0]
+            .segments
+            .iter()
+            .flat_map(|segment| segment.iter_elements())
+            .filter_map(|(_, element)| match element {
+                SegmentItem::KeySig(key) => Some(key.concert_key.fifths()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `FF 59` at the last tick is a key change the SMF carries: full support
+    /// keeps it beside the earlier change instead of overwriting it.
+    #[test]
+    fn key_change_at_the_last_tick_is_kept_in_full_support() {
+        assert_eq!(fifths_at_end(true), vec![4, -4]);
+        // The 4.7.4 path keeps its strict measure lookup.
+        assert_eq!(fifths_at_end(false), vec![4]);
+    }
 }

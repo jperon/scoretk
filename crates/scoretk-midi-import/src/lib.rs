@@ -261,7 +261,7 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
         last_tick
     };
     let last_tick = create_measures(score, &sigmap, first_tick, measure_end);
-    process_non_lyric_meta(score, &mut track_list, midi, &sigmap);
+    process_non_lyric_meta(score, &mut track_list, midi, &sigmap, options);
     if options.smf_text {
         smf_text::process_text_meta(score, &mut track_list, midi, options.full_support);
     }
@@ -735,6 +735,7 @@ fn process_non_lyric_meta(
     tracks: &mut [MTrack],
     _midi: &MidiFile,
     _sigmap: &TimeSigMap,
+    options: &ImportOptions,
 ) {
     for track in tracks.iter_mut() {
         let events = track.events.clone();
@@ -802,7 +803,7 @@ fn process_non_lyric_meta(
     // portée au moment du parcours.
     for track in tracks.iter() {
         if let Some(staff) = track.staff {
-            key::assign_key_list_to_staff(score, staff, &track.key_list);
+            key::assign_key_list_to_staff_with(score, staff, &track.key_list, options.full_support);
         }
     }
 }

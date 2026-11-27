@@ -393,6 +393,11 @@ Default bytes: `MIDI : 21/21 identiques` after the change. The `note` row of
 2 279/2 284 (99.78 %, five notes still paired with the wrong channel); the
 headline rose from **98.23 %** to **99.68 %**.
 
+| `key-sig` | 2 / 66 | 0 / 66 | `FF 59 02 sf mi` (`[SMF §Meta-Events]`). A change at the score's end tick is anchored on the last measure at its own tick instead of the measure start, so it no longer overwrites an earlier change. The 4.7.4 path keeps its strict lookup. |
+
+Headline: **99.68 % → 99.75 %**; `L1 metric` 125/127 → 127/127. Refs remain
+`MIDI : 21/21 identiques`.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)
