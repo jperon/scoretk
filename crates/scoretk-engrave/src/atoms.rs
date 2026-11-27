@@ -42,8 +42,8 @@ use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
-    LYRIC_DASH_MIN, LYRIC_DASH_PAD, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP,
-    STEM_WIDTH, SYSTEM_HEADER_MIN_START,
+    LYRIC_WORD_SPACE, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP, STEM_WIDTH,
+    SYSTEM_HEADER_MIN_START,
 };
 
 /// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
@@ -1293,31 +1293,34 @@ fn lyric_shape_widths(
     shapes
 }
 
-/// Minimum distance between the centre of the previous syllable and the
-/// centre of this one. // Port of `minHorizontalDistance` (`horizontalspacing.cpp:
+/// Minimum centre-to-centre distance of two consecutive syllables of one
+/// verse. // Port of `minHorizontalDistance` (`horizontalspacing.cpp:
 /// 1216-1266`): with centred lyrics (`lyricslayout.cpp:105-151`) each shape
 /// extends half its width on either side of the segment x, and the pair is
 /// `NON_KERNING` when both items are lyrics of the same verse (`:1785-1790`).
 /// The padding is the `lyricsMinDistance` entry of the padding table
 /// (`rendering/paddingtable.cpp:207-209`, `styledef.cpp:78`), floored at 0.1 sp
-/// (`horizontalspacing.cpp:1218`) and raised to `lyricsDashMinLength + 2 *
-/// lyricsDashPad` = 0.5 sp for `Begin`/`Middle` syllables when
-/// `lyricsDashForce` is set (`:1572-1604`, `styledef.cpp:80,83,90`).
+/// (`horizontalspacing.cpp:1218`). `computeLyricsPadding` (`:1583-1601`)
+/// raises it to `lyricsDashMinLength + 2 * lyricsDashPad` for a `Begin`/
+/// `Middle` syllable when `lyricsDashForce` is set, leaving room for the
+/// hyphen; a word boundary instead keeps at least `LYRIC_WORD_SPACE` so that
+/// two words do not read as one. `lyricsMelismaForce` is false in 4.7.4
+/// (`styledef.cpp:96`), so a melisma needs no extra padding here.
 fn lyric_pair_distance(
     previous: LyricsSyllabic,
     previous_width: i32,
     width: i32,
-    style_padding: i32,
+    style: &StyleSettings,
 ) -> i32 {
-    // `minHorizontalDistance` floors the table padding at 0.1 sp
-    // (`horizontalspacing.cpp:1218`), so a score with `lyricsMinDistance` 0
-    // still gets that minimum.
-    let mut padding = style_padding.max(SP / 10);
+    let table = (style.lyrics_min_distance_sp * SP as f64) as i32;
+    let mut padding = table.max(SP / 10);
     if matches!(previous, LyricsSyllabic::Begin | LyricsSyllabic::Middle) {
-        padding = padding.max(LYRIC_DASH_MIN + 2 * LYRIC_DASH_PAD);
+        let dash_min = (style.lyrics_dash_min_length_sp * SP as f64) as i32;
+        let dash_pad = (style.lyrics_dash_pad_sp * SP as f64) as i32;
+        padding = padding.max(dash_min + 2 * dash_pad);
+    } else {
+        padding = padding.max(LYRIC_WORD_SPACE);
     }
-    // `lyricsMelismaForce` is false in 4.7.4 (`styledef.cpp:96`), so a
-    // melisma does not require `lyricsMelismaMinLength` here.
     (previous_width + width) / 2 + padding
 }
 
@@ -1612,12 +1615,11 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         if let Some((previous_x, previous_width, previous_syllabic)) =
                             prev_lyrics[verse]
                         {
-                            let style_padding = (style.lyrics_min_distance_sp * SP as f64) as i32;
                             let needed = lyric_pair_distance(
                                 previous_syllabic,
                                 previous_width,
                                 width,
-                                style_padding,
+                                style,
                             );
                             let have = measure_origin + x - previous_x;
                             if have < needed {
@@ -2106,19 +2108,34 @@ mod tests {
     #[test]
     fn same_verse_lyrics_reserve_the_shape_and_dash_padding() {
         // Two 2 sp syllables need their two half-shapes plus the table
-        // padding; `Begin`/`Middle` also reserve the 0.5 sp dash.
+        // padding. A word boundary keeps a real space; `Begin`/`Middle`
+        // instead reserve the 0.5 sp dash room of `computeLyricsPadding`.
+        let style = StyleSettings::for_version(4);
         assert_eq!(
-            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, 0),
-            2 * SP + SP / 10
+            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, &style),
+            2 * SP + LYRIC_WORD_SPACE
         );
         assert_eq!(
-            lyric_pair_distance(LyricsSyllabic::Begin, 2 * SP, 2 * SP, 0),
-            2 * SP + LYRIC_DASH_MIN + 2 * LYRIC_DASH_PAD
+            lyric_pair_distance(LyricsSyllabic::End, 2 * SP, 2 * SP, &style),
+            2 * SP + LYRIC_WORD_SPACE
         );
-        // A score's `lyricsMinDistance` replaces the 0.1 sp floor.
         assert_eq!(
-            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, SP / 4),
-            2 * SP + SP / 4
+            lyric_pair_distance(LyricsSyllabic::Begin, 2 * SP, 2 * SP, &style),
+            2 * SP
+                + (style.lyrics_dash_min_length_sp * SP as f64) as i32
+                + 2 * (style.lyrics_dash_pad_sp * SP as f64) as i32
+        );
+        // A score's `lyricsMinDistance` raises the floor.
+        let mut style = style;
+        style.lyrics_min_distance_sp = 1.0;
+        assert_eq!(
+            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, &style),
+            3 * SP
+        );
+        style.lyrics_min_distance_sp = 0.0;
+        assert_eq!(
+            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, &style),
+            2 * SP + LYRIC_WORD_SPACE
         );
     }
 
@@ -2173,7 +2190,7 @@ mod tests {
             LyricsSyllabic::Begin,
             text_width("Mi", em, false),
             text_width("nuit", em, false),
-            0,
+            style,
         );
         assert!(
             lyric_gap >= needed,

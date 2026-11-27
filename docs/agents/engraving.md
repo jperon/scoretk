@@ -2032,3 +2032,42 @@ figures are expected. On the private page page 1 (`engrave-img/eng9/step1.png`,
 rendered from this tree) the hyphens are now 0.8 sp dashes exactly where the
 4.7.4 page has them, and the long lines remain only on syllables carrying
 `<ticks_f>` ("nuit", "tien", "Ou", "cer"), as in the reference.
+
+## 22. Review of the private page: spacing between words (2026-11-27)
+
+The page still read "latacheo ri gi nel" and "etdesonPère": the syllable
+shapes were separated only by the 0.1 sp absolute floor of
+`HorizontalSpacing::minHorizontalDistance` (`horizontalspacing.cpp:1218`)
+because the private score sets `lyricsMinDistance` to 0, so the lyric row of
+the padding table is zero (`paddingtable.cpp:207-209`). Per syllable pair on
+page 1, our median gap was 1.74 sp against 2.61 sp in the 4.7.4 SVG, with
+**14** pairs below 0.5 sp against **3** in the reference (the reference's
+smallest gaps are 0.13–0.6 sp, mostly occupied by a hyphen inside a word).
+
+`lyric_pair_distance` now applies `computeLyricsPadding`'s dash room
+(`horizontalspacing.cpp:1594-1601`) to `Begin`/`Middle` syllables and, at a
+word boundary (`Single`/`End`), reserves at least `LYRIC_WORD_SPACE` = 0.6 sp
+above `lyricsMinDistance` and the 0.1 sp floor. That value is the smallest
+word gap measured on the 4.7.4 private page, not a new style knob. The demand
+still goes into the preceding segment's base (§19), so the shared system grid
+separates the two syllables instead of widening only the bar line. Unit tests
+pin the word, dash and style-padding cases and the segment demand.
+
+| Metric (`oracle-eng9-review-step1` → `oracle-eng9-review-step2`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1698 (375/2 209) | 0.1711 (378/2 209) |
+| Measure widths within 0.1 sp | 92/394 | 90/394 |
+| Measure width mean abs. error, sp | 9.779 | 9.661 |
+| Note x within 0.1 sp | 174/2 209 | 173/2 209 |
+| Note x mean abs. error, sp | 2.573 | 2.493 |
+| Files with identical system breaks | 36/56 | 36/56 |
+| Files with the oracle page count | 54/56 | 54/56 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Private page 1: syllable pairs < 0.5 sp (4.7.4 / ours) | 3 / 14 | 3 / 8 |
+| Private page 1: median syllable gap, sp (4.7.4 / ours) | 2.61 / 1.74 | 2.61 / 2.65 |
+
+The two lost measure widths are reported, not excluded. On the private page
+(`engrave-img/eng9/step2.png`, the whole page inspected) "la tache",
+"o-ri-gi-nel" and "et de son" now have visible spaces, while the hyphens of
+"Mi-nuit" and "l'heu-re" still occupy their intra-word gaps.

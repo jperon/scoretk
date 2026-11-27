@@ -87,6 +87,15 @@ pub const LYRIC_DASH_MAX: i32 = 614; // 0.6 sp
 pub const LYRIC_LINE_WIDTH: i32 = 102; // 0.1 sp
 pub const LYRIC_MELISMA_PAD: i32 = 205; // 0.2 sp
 pub const LYRIC_DASH_PAD: i32 = 51; // 0.05 sp
+/// Minimum ink gap between the last syllable of one word and the first
+/// syllable of the next, calibrated against the 4.7.4 SVG of the private
+/// score (smallest word gaps 0.6–0.69 sp). `lyricsMinDistance` fills the
+/// lyric row of the padding table (`paddingtable.cpp:207-209`) and
+/// `minHorizontalDistance` floors it at 0.1 sp (`:1218`); when the score
+/// writes 0, that floor alone glued "latacheo" and "etdesonPère" together.
+/// The dash room for `Begin`/`Middle` syllables is added separately by
+/// `computeLyricsPadding` (`:1594-1601`).
+pub const LYRIC_WORD_SPACE: i32 = 3 * SP / 5; // 0.6 sp
 
 /// Width of a segment in the P1 fixed proportional spacing.
 ///
