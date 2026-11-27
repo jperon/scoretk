@@ -67,13 +67,14 @@ impl PageSpec {
         // the short side on a large display.
         let margin_x = (width / 100).clamp(2, 8);
         let margin_y = (height / 75).clamp(2, 8);
-        let mut spec = Self::default();
-        spec.spatium_mm = staff_px as f64 * SCREEN_PIXEL_PITCH_MM;
-        spec.page_height = to_sp(height);
-        spec.margin_left = to_sp(margin_x);
-        spec.margin_top = to_sp(margin_y);
-        spec.printable_width = to_sp(width - 2 * margin_x).max(SP);
-        spec
+        Self {
+            spatium_mm: staff_px as f64 * SCREEN_PIXEL_PITCH_MM,
+            page_height: to_sp(height),
+            margin_left: to_sp(margin_x),
+            margin_top: to_sp(margin_y),
+            printable_width: to_sp(width - 2 * margin_x).max(SP),
+            ..Self::default()
+        }
     }
 }
 
