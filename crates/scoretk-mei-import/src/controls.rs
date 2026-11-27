@@ -227,7 +227,14 @@ impl<'a> Reader<'a> {
             .copied()
             .unwrap_or(reduced);
         let nominal_end = mei_measure.start_tick + mei_measure.nominal_len;
-        if written != reduced && tick >= nominal_end {
+        // Le dénominateur réduit vaut 1 pour 4/4, où MuseScore 4.7.4 place
+        // volontairement `tstamp="2"` à la fin de mesure (test
+        // `mei_conformity::tstamp_uses_the_reduced_numerator`). Le repli ne
+        // s'applique donc qu'aux mesures dont le dénominateur réduit est déjà
+        // supérieur à 1 (2/4, 6/8, …). Les tampons des mesures 4/4 restent
+        // dans la convention 4.7.4, y compris pour les événements hors mesure :
+        // `mei_conformity` les compare aux références 4.7.4.
+        if written != reduced && reduced > 1 && tick >= nominal_end {
             let alternative = mei_measure.start_tick + convert::tstamp_to_fraction(stamp, written);
             if alternative < nominal_end {
                 return alternative;
