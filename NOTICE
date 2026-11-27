@@ -263,6 +263,26 @@ from MuseScore's `importexport/midi/internal/midishared/generalmidi.cpp`
 (`GM1_PROGRAM_DATA`, 128 entries) by automatic extraction, converted to Rust
 in 2026. Licence GPL-3.0, Copyright (C) MuseScore Limited and others.
 
+### Leland font data (`scoretk-smufl`)
+
+`crates/scoretk-smufl/fonts/leland/` contains the files `Leland.otf`,
+`leland_metadata.json`, `LICENSE.txt`, `OFL-FAQ.txt`, `FONTLOG.txt` and
+`README.md` extracted read-only from `fonts/leland/` in the **MuseScore 4.7.4**
+tag `v4.7.4` (commit `7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`) with
+`git archive v4.7.4 fonts/leland | tar -xf -`. Nothing in that extraction was
+compiled or executed. The Open Font License 1.1 text, FAQ and font log are
+kept alongside the data as required by that licence.
+
+The font is **Leland**, Copyright (C) MuseScore BVBA and Klaus Rettinghaus,
+licensed under the **SIL Open Font License 1.1**. The 4.7.4 `Leland.otf` and
+`leland_metadata.json` are byte-identical (SHA-256 `293788a4…` and
+`41a3dcd4…`) to the Leland 0.80 files shipped by Verovio; the MuseScore copy is
+the one used. `scripts/gen-smufl-subset.py` converts the CFF outlines and
+SMuFL metadata into `crates/scoretk-smufl/src/glyphs.rs` (generated, never
+hand-edited): a notation subset of quadratic outlines, advances, bounding
+boxes, anchors and `engravingDefaults`. No font file is shipped in a binary;
+only the generated constants are compiled in.
+
 ## Trademarks
 
 « MuseScore » is a trademark of **MuseScore Limited**. This project is an

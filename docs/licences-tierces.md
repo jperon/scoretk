@@ -51,6 +51,27 @@ copy of the licence to recipients; `NOTICE` carries the attribution and this
 section records the licence. The files are read-only measurement data: no code
 is executed and no artefact links them. No Cargo dependency was added.
 
+### Leland font data (SIL OFL 1.1, generated subset)
+
+`crates/scoretk-smufl/fonts/leland/` vendors the Leland font data shipped by
+MuseScore **4.7.4** in `fonts/leland/` (tag `v4.7.4`, commit
+`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`): `Leland.otf`,
+`leland_metadata.json`, `LICENSE.txt`, `OFL-FAQ.txt`, `FONTLOG.txt` and
+`README.md`. Leland is Copyright (C) MuseScore BVBA and Klaus Rettinghaus and
+is licensed under the **SIL Open Font License 1.1**; the licence text, FAQ and
+font log are kept next to the font data (OFL §1/§2). The MuseScore 4.7.4 OTF
+and metadata are byte-identical to the Leland 0.80 copy in Verovio, but the
+MuseScore originals are the ones used and declared in `NOTICE`.
+
+`scripts/gen-smufl-subset.py` reads these files and writes the generated
+`crates/scoretk-smufl/src/glyphs.rs`: outlines converted from CFF cubics to
+quadratics, advances, bounding boxes, SMuFL anchors and `engravingDefaults`
+for the notation subset. The script uses only the Python standard library and
+is run with `python3 -I`; the font data is never executed. The generated
+constants are compiled into `scoretk-smufl` (GPL-3.0-only code); the OFL-1.1
+font data is *not* linked as a crate and introduces no Cargo dependency. OFL
+1.1 is GPL-3 compatible, so the combined work remains GPL-3.0-only.
+
 ## Table
 
 | Crate | Version | Declared licence | Role |
