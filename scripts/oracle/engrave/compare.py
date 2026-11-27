@@ -193,6 +193,21 @@ def parse_svg(path: Path) -> dict:
                     lengths.append(abs(y1 - y0) * scale)
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
+    # One list of bar-line x positions per staff system, in staff spaces.
+    # Consecutive positions delimit a measure; the count per system is the
+    # system break pattern. Coincident bar lines (start of the next measure
+    # drawn over the end of the previous one) are one line.
+    by_system: dict[float, list[float]] = {}
+    for x, y in sorted(result["BarLine"], key=lambda point: (point[1], point[0])):
+        key = round(y, 1)
+        if not by_system.get(key) or x - by_system[key][-1] > 0.1:
+            by_system.setdefault(key, []).append(x)
+    result["barlines_by_system"] = [by_system[key] for key in sorted(by_system)]
+    result["measure_widths"] = [
+        round(right - left, 4)
+        for bars in result["barlines_by_system"]
+        for left, right in zip(bars, bars[1:])
+    ]
     return result
 
 
@@ -269,8 +284,19 @@ def compare(reference: dict, ours: dict) -> dict:
         matched_stems += 1
         if abs(ref_lengths[left_index] - our_lengths[right_index]) <= TOL:
             stem_length += 1
+    ref_widths = reference["measure_widths"]
+    our_widths = ours["measure_widths"]
+    widths_total = max(len(ref_widths), len(our_widths))
+    widths_within = sum(
+        abs(left - right) <= TOL
+        for left, right in zip(ref_widths, our_widths)
+    )
     total = sum(counts.values())
     return {
+        "measure_widths_total": widths_total,
+        "measure_widths_within": widths_within,
+        "systems_equal": [len(bars) for bars in reference["barlines_by_system"]]
+        == [len(bars) for bars in ours["barlines_by_system"]],
         "counts": counts,
         "within": within,
         "within_x": within_x,
@@ -294,7 +320,8 @@ def main() -> int:
     totals = {
         "files": 0, "failures": 0, "total": 0, "within": 0,
         "matched_notes": 0, "vertical": 0.0, "matched_stems": 0,
-        "stem": 0.0, "x": 0, "y": 0,
+        "stem": 0.0, "x": 0, "y": 0, "widths": 0, "widths_total": 0,
+        "systems_equal": 0,
     }
     for source in corpus:
         if not source.strip():
@@ -326,6 +353,9 @@ def main() -> int:
         totals["vertical"] += values["vertical_pitch"] * values["matched_notes"]
         totals["matched_stems"] += values["matched_stems"]
         totals["stem"] += values["stem_length"] * values["matched_stems"]
+        totals["widths"] += values["measure_widths_within"]
+        totals["widths_total"] += values["measure_widths_total"]
+        totals["systems_equal"] += int(values["systems_equal"])
         rows.append(row)
 
     (out / "raw.jsonl").write_text(
@@ -337,6 +367,9 @@ def main() -> int:
     stem = totals["stem"] / totals["matched_stems"] if totals["matched_stems"] else 0.0
     share_x = totals["x"] / totals["total"] if totals["total"] else 0.0
     share_y = totals["y"] / totals["total"] if totals["total"] else 0.0
+    share_widths = (
+        totals["widths"] / totals["widths_total"] if totals["widths_total"] else 0.0
+    )
     lines = [
         "# Engraving oracle — P1 skeleton",
         "",
@@ -358,6 +391,10 @@ def main() -> int:
         f"({totals['matched_notes']} matched noteheads) |",
         f"| Stem-length agreement | {stem:.4f} "
         f"({totals['matched_stems']} matched stems) |",
+        f"| Measure widths within 0.1 sp | {share_widths:.4f} "
+        f"({totals['widths']}/{totals['widths_total']}) |",
+        f"| Files with identical system breaks | "
+        f"{totals['systems_equal']}/{totals['files']} |",
         "",
         "## Failures",
         "",

@@ -553,3 +553,26 @@ For `measure-4`, quarters are now 6.9 sp apart against MuseScore's 6.8 sp
 | Within 0.1 sp, y only | 0.5303 | 0.5755 |
 | Vertical pitch / ledger agreement | 0.9571 | 0.9652 (517 noteheads) |
 | Stem-length agreement | 0.7013 | 0.6967 (389 stems) |
+
+### 9.11 P2 gate (step 4, 2026-11-27) — **not met**
+
+`compare.py` now derives measure widths from consecutive bar lines of each
+system and compares them elementwise (unmatched measures count in the
+denominator); it also reports files whose per-system measure counts match.
+A layout bug was fixed on the way: a stretched measure was drawn with
+scaled segment widths but the next measure was advanced by its natural
+width.
+
+| Metric | Before P2 | After P2 | Gate |
+| --- | ---: | ---: | ---: |
+| Measure widths within 0.1 sp | — | **0.0178** (5/281) | ≥ 0.90 — **failed** |
+| Files with identical system breaks | — | **17/44** | ≥ 0.90 — **failed** |
+| Within 0.1 sp, both axes | 0.0083 | 0.0115 (15/1307) | — |
+| Within 0.1 sp, y only | 0.4898 | 0.6205 | — |
+
+The remaining causes are the first-note offset in measures without explicit
+key/time segments (6.3 sp vs 8.6 sp in `measure-4`), per-measure user
+stretch and courtesy headers/trailers that change a system's natural width
+before justification (`measurelayout.cpp:1811-2812`). P2 is therefore not
+closed: the atoms and breaking plan are in place, but their width parity is
+not yet at the acceptance threshold.

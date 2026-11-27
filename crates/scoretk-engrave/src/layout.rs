@@ -99,7 +99,7 @@ fn place_measure(
     x0: i32,
     system_y: i32,
     scale: i32,
-) {
+) -> i32 {
     let mut cursor = 0;
     for (index, event) in atom.events.iter().enumerate() {
         place_event(out, event, x0 + cursor, system_y);
@@ -121,6 +121,7 @@ fn place_measure(
     // double lines are separated by `barlineSeparation` (SMuFL).
     let bar_x = x0 + cursor - SEGMENT_WIDTH / 2;
     place_barline(out, atom.end_bar, bar_x, system_y);
+    cursor
 }
 
 fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: i32) {
@@ -389,8 +390,7 @@ pub fn build_page(
         }
         let mut x = spec.margin_left;
         for atom in &atoms[system.first..system.first + system.count] {
-            place_measure(&mut out, atom, x, sy, system.scale);
-            x += atom.width;
+            x += place_measure(&mut out, atom, x, sy, system.scale);
         }
         // // Port of `systemlayout.cpp`: the start bar line closes the
         // system; its x is the staff origin.
