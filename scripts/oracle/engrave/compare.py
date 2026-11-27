@@ -198,6 +198,9 @@ def parse_svg(path: Path) -> dict:
                     raw_barlines.append((position[1], local[0], local[1]))
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
+    # Top line of every five-line staff system, in staff spaces from the
+    # page top: the P5 oracle measures page breaks and vertical positions.
+    result["systems"] = [system[2] / spatium for system in systems]
     # One list of bar-line x positions per staff system, in staff spaces.
     # Consecutive positions delimit a measure; the count per system is the
     # system break pattern. MuseScore draws a double/final bar line as two
@@ -209,9 +212,16 @@ def parse_svg(path: Path) -> dict:
     # start bar line is not counted either: MuseScore does not draw one at
     # the beginning of a normal system, and counting scoretk's would shift
     # every measure width by one boundary.
-    by_system: dict[float, list[float]] = {}
+    by_system: dict[int, list[float]] = {}
     for absolute_y, local_x, local_y in sorted(raw_barlines):
-        key = round(absolute_y / spatium)
+        # A bar line of a grand staff spans several staves, so its centre y
+        # is not on a staff: assign it to the nearest staff system instead
+        # of grouping by an absolute y that would create phantom systems.
+        key = min(
+            range(len(systems)),
+            key=lambda index: abs(absolute_y - (systems[index][2] + 2 * spatium)),
+            default=0,
+        ) if systems else 0
         group = by_system.setdefault(key, [])
         if not group or local_x - group[-1] > 1.5:
             group.append(local_x)
@@ -247,6 +257,51 @@ def pair_by_nearest(left: list, right: list, key) -> list[tuple[int | None, int 
             pairs.append((left_index, best))
     pairs += [(None, index) for index in range(len(right)) if index not in used]
     return pairs
+
+
+def page_numbers(path: Path) -> list[int]:
+    """Page numbers of `<id>-N.svg` files, in reading order."""
+    numbers = []
+    for path in path.glob("*-*.svg"):
+        stem = path.stem.rsplit("-", 1)[-1]
+        if stem.isdigit():
+            numbers.append(int(stem))
+    return sorted(numbers)
+
+
+def pages(reference: list[Path], ours: list[Path]) -> dict:
+    """Page count, page breaks and staff y positions of a whole score.
+
+    Missing pages and unmatched systems are counted in the denominators:
+    a file that fails to engrave cannot improve its own figures.
+    """
+    same_count = len(reference) == len(ours)
+    per_page_equal = 0
+    y_total = 0
+    y_within = 0
+    for number in range(min(len(reference), len(ours))):
+        ref = parse_svg(reference[number])
+        our = parse_svg(ours[number])
+        ref_systems = ref["systems"]
+        our_systems = our["systems"]
+        per_page_equal += int(len(ref_systems) == len(our_systems))
+        for top_ref, top_our in zip(ref_systems, our_systems):
+            y_total += 1
+            if abs(top_ref - top_our) <= 0.5:
+                y_within += 1
+        y_total += abs(len(ref_systems) - len(our_systems))
+    # Pages present on only one side count as missing systems: use the
+    # other side's system count as the number of unmatched positions.
+    for extra in reference[len(ours):] + ours[len(reference):]:
+        y_total += len(parse_svg(extra)["systems"])
+    return {
+        "page_count_equal": int(same_count),
+        "page_count_ref": len(reference),
+        "page_count_ours": len(ours),
+        "breaks_equal": per_page_equal,
+        "staff_y_total": y_total,
+        "staff_y_within": y_within,
+    }
 
 
 def compare(reference: dict, ours: dict) -> dict:
@@ -336,22 +391,32 @@ def main() -> int:
         "matched_notes": 0, "vertical": 0.0, "matched_stems": 0,
         "stem": 0.0, "x": 0, "y": 0, "widths": 0, "widths_total": 0,
         "systems_equal": 0,
+        "page_count": 0, "breaks": 0, "pages_total": 0,
+        "staff_y": 0, "staff_y_total": 0,
     }
     for source in corpus:
         if not source.strip():
             continue
         source_path = Path(source)
         identifier = source_path.stem
-        refs = sorted((out / "refs").glob(f"{identifier}-*.svg"))
+        ref_pages = sorted(
+            (out / "refs").glob(f"{identifier}-*.svg"),
+            key=lambda path: int(path.stem.rsplit("-", 1)[-1]),
+        )
+        our_pages = sorted(
+            (out / "ours").glob(f"{identifier}-*.svg"),
+            key=lambda path: int(path.stem.rsplit("-", 1)[-1]),
+        )
         ours = out / "ours" / f"{identifier}.svg"
         row = {"id": identifier}
-        if not refs or not ours.exists():
-            row["error"] = "missing SVG" if not refs else "missing ours"
+        if not ref_pages or not our_pages:
+            row["error"] = "missing SVG" if not ref_pages else "missing ours"
             rows.append(row)
             totals["failures"] += 1
             continue
         try:
-            row["compare"] = compare(parse_svg(refs[0]), parse_svg(ours))
+            row["compare"] = compare(parse_svg(ref_pages[0]), parse_svg(our_pages[0]))
+            row["pages"] = pages(ref_pages, our_pages)
         except (ET.ParseError, ValueError, OSError) as error:
             row["error"] = f"{type(error).__name__}: {error}"
             rows.append(row)
@@ -370,6 +435,14 @@ def main() -> int:
         totals["widths"] += values["measure_widths_within"]
         totals["widths_total"] += values["measure_widths_total"]
         totals["systems_equal"] += int(values["systems_equal"])
+        page_values = row["pages"]
+        totals["page_count"] += page_values["page_count_equal"]
+        totals["breaks"] += page_values["breaks_equal"]
+        totals["pages_total"] += min(
+            page_values["page_count_ref"], page_values["page_count_ours"]
+        )
+        totals["staff_y"] += page_values["staff_y_within"]
+        totals["staff_y_total"] += page_values["staff_y_total"]
         rows.append(row)
 
     (out / "raw.jsonl").write_text(
@@ -409,6 +482,11 @@ def main() -> int:
         f"({totals['widths']}/{totals['widths_total']}) |",
         f"| Files with identical system breaks | "
         f"{totals['systems_equal']}/{totals['files']} |",
+        f"| Files with the oracle page count | {totals['page_count']}/{totals['files']} |",
+        f"| Pages with identical system breaks | "
+        f"{totals['breaks']}/{totals['pages_total']} |",
+        f"| Staff system tops within 0.5 sp | "
+        f"{totals['staff_y']}/{totals['staff_y_total']} |",
         "",
         "## Failures",
         "",

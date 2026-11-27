@@ -144,6 +144,33 @@ mod tests {
     }
 
     #[test]
+    fn edwin_o_has_its_first_contour_arc() {
+        // The CFF generator used to skip `contour[0]`, replacing the first
+        // arc by a straight chord: Edwin's lowercase `o` appeared slashed
+        // in titles ("Recreati n"). The first quadratic must end near the
+        // top-left on-curve point, not across the whole glyph.
+        let glyph = text_glyph(u32::from(b'o') as u16, false).unwrap();
+        let start = usize::from(glyph.edges.0);
+        let end = start + usize::from(glyph.edges.1);
+        let mut y = 0i32;
+        let mut first_quad = None;
+        for edge in &TEXT_EDGES[start..end] {
+            match *edge {
+                Edge::Move(_, my) => y = i32::from(my),
+                Edge::Line(_, dy) => y += i32::from(dy),
+                Edge::Quad(_, _, _, ey) => {
+                    y += i32::from(ey);
+                    if first_quad.is_none() {
+                        first_quad = Some(y);
+                    }
+                }
+            }
+        }
+        let top = 481; // on-curve top of Edwin's `o`
+        assert!(first_quad.is_some_and(|end| (end - top).abs() < 300));
+    }
+
+    #[test]
     fn outlines_are_well_formed() {
         for g in &GLYPHS {
             let start = usize::from(g.edges.0);

@@ -291,8 +291,18 @@ fn quad_crossings(a: Point, c: Point, b: Point, y: i32, out: &mut Vec<i32>) {
         ts.swap(0, 1);
     }
     if ts[0] == ts[1] {
-        // A tangent touches the scanline once, not twice.
-        if (0..ONE as i64).contains(&ts[0]) {
+        // Integer `isqrt` can truncate two very close roots to the same
+        // fixed-point t near a tangency. The quadratic really crosses the
+        // scanline twice there (`disc > 0`), and dropping both crossings
+        // makes the crossing count odd: the outer and inner contours of a
+        // glyph like `o` are then paired across the hole, which draws a
+        // diagonal slash through it ("Recreati n" in Edwin titles).
+        if disc > 0 {
+            let x = quad_x(a, c, b, ts[0] as i32);
+            out.push(x);
+            out.push(x);
+        } else if ts[0] <= 1 || ts[0] >= i64::from(ONE) - 1 {
+            // A shared vertex of two consecutive edges counts once.
             out.push(quad_x(a, c, b, ts[0] as i32));
         }
         return;

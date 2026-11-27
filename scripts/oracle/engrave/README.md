@@ -8,14 +8,18 @@ files and writes SVGs into an unversioned output directory.
 
 ## Method
 
-1. `lots.sh` selects the single-staff corpus files (`tests/corpus/v3`, `v4`)
-   and writes their absolute paths to `<out>/lots/corpus.txt`.
+1. `lots.sh` selects **all** corpus files (`tests/corpus/v3`, `v4`), including
+   multi-staff scores, and writes their absolute paths to
+   `<out>/lots/corpus.txt`. Since P5 the engraver lays out every visible
+   staff of the main score, so no file is excluded from a metric.
 2. `refs.sh` exports one SVG per file with `mscore -o`, at most **two in
    parallel** (`xargs -P 2`), under `timeout` with a neutralised
    `LD_LIBRARY_PATH` and `QT_QPA_PLATFORM=offscreen` — as the other oracles
    do. MuseScore appends `-1` to the output name for page 1.
-3. `ours.sh` engraves the same files with `scoretk in.mscx -o out.svg
-   --page 0`, also two in parallel, under `timeout 10 prlimit --as=2000000000`.
+3. `ours.sh` engraves **every page** of the same files with `scoretk in.mscx
+   -o out.svg --page N`, also two in parallel, under `timeout 10 prlimit
+   --as=2000000000`. A page with no staff line ends the loop; the page count
+   is therefore measured, not assumed.
 4. `compare.py` converts both SVGs to staff spaces using each document's own
    staff lines (reference: polylines; ours: rectangles). Each element is
    localised to its own five-line staff system before comparison: absolute y
@@ -39,6 +43,10 @@ files and writes SVGs into an unversioned output directory.
      line is not drawn by MuseScore and is not counted either.
    `worst.py <out> [count]` dumps the worst element-level differences (20 by
    default), unmatched elements included.
+   The P5 figures compare the page count, the number of staff systems on
+   each page and each system's top-line y (0.5 sp tolerance) across all
+   pages. Failures, missing pages and unmatched systems remain in every
+   denominator.
 
 ## Usage
 

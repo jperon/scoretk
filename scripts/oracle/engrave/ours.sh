@@ -31,18 +31,31 @@ mkdir -p "$OUT/ours" "$OUT/progress"
 export OUT SCORETK
 
 convert_one() {
-  local src=$1 id
+  local src=$1 id page dest pages=0
   id=$(basename "$src" .mscx)
-  local dest="$OUT/ours/$id.svg"
-  if [[ -s "$dest" ]]; then
-    echo "SKIP $id" >> "$OUT/progress/ours.txt"
-    return 0
-  fi
-  if timeout 10 prlimit --as=2000000000 "$SCORETK" "$src" -o "$dest" \
-      --page 0 >/dev/null 2>&1 && [[ -s "$dest" ]]; then
-    echo "OK $id" >> "$OUT/progress/ours.txt"
+  # Grave *toutes* les pages : le nombre de pages et les ruptures de page
+  # font partie des mesures du lot P5. Une page sans portée marque la fin.
+  for page in $(seq 0 39); do
+    dest="$OUT/ours/$id-$((page + 1)).svg"
+    if [[ -s "$dest" ]]; then
+      pages=$((pages + 1))
+      continue
+    fi
+    if ! timeout 10 prlimit --as=2000000000 "$SCORETK" "$src" -o "$dest" \
+        --page "$page" >/dev/null 2>&1 || [[ ! -s "$dest" ]]; then
+      rm -f "$dest"
+      break
+    fi
+    if ! grep -q 'class="StaffLines"' "$dest"; then
+      rm -f "$dest"
+      break
+    fi
+    pages=$((pages + 1))
+  done
+  if (( pages > 0 )); then
+    cp "$OUT/ours/$id-1.svg" "$OUT/ours/$id.svg"
+    echo "OK $id ($pages pages)" >> "$OUT/progress/ours.txt"
   else
-    rm -f "$dest"
     echo "FAIL $id" >> "$OUT/progress/ours.txt"
   fi
 }

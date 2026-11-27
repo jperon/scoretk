@@ -530,7 +530,11 @@ def glyph_edges(contours):
         ops.append(("M", start))
         cx, cy = start
         segments = []
-        for item in contour[1:]:
+        # Le premier élément d'un contour CFF est déjà un segment (avec son
+        # point initial), pas seulement le point de départ : l'omettre
+        # remplace le premier arc par une corde droite (le « o » d'Edwin
+        # apparaissait barré).
+        for item in contour:
             if item[0] == "L":
                 p1 = (round(item[1]), round(item[2]))
                 if p1 != (cx, cy):
