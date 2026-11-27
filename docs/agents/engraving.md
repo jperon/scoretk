@@ -1406,3 +1406,59 @@ why its figures are unchanged; the private score's page geometry is the
 evidence for this step. The remaining gap to 4.7.4 is the total page count
 (5 vs 7) and the horizontal touching of adjacent syllables (P2 debt), neither
 of which is hidden by a metric. A unit test pins the style-file precedence.
+
+### 14.3 Lyric shapes in horizontal spacing (2026-11-27)
+
+The earlier attempts (§12.4, §13.5, §13.8) switched on a width computed for
+*every* segment carrying text. That is not how MuseScore spaces lyrics:
+`HorizontalSpacing::minHorizontalDistance` walks the **shapes** of two
+neighbouring segments (`horizontalspacing.cpp:1216-1266`), same-verse lyrics
+are `NON_KERNING` (`:1785-1796`), and their distance is the right edge of the
+previous syllable's shape minus the left edge of the next one, plus padding
+from `computePadding`/`computeLyricsPadding` (`:1438-1460`, `:1572-1604`).
+`Segment::createShape` adds `Lyrics` as annotation shapes
+(`dom/segment.cpp:2640-2697`). The padding row is `lyricsMinDistance`
+(`rendering/paddingtable.cpp:207-209`, `styledef.cpp:78`, 0.25 sp in 4.x and
+0 in the legacy 3.x styles), floored at 0.1 sp by
+`horizontalspacing.cpp:1218`, and raised to `lyricsDashMinLength + 2 *
+lyricsDashPad` = 0.5 sp for `Begin`/`Middle` syllables when
+`lyricsDashForce` is set (`styledef.cpp:80,83,90`).
+
+The atom pass now measures one Edwin shape per verse of a chord/rest segment
+and keeps the last shape of a verse in absolute system coordinates across
+measure boundaries (`horizontalspacing.cpp:47-89`). The resulting demand
+widens the measure's **minimum** width; `stretchSegmentsToWidth`
+(`:1087-1111`) overwrites every chord/rest width with `force * stretch`, so
+justification subtracts that fixed minimum from the spring budget instead of
+stretching it a second time (`breaking.rs`). Harmony/tempo widths remain
+measured but off (§9.23); the old whole-text-width switch is gone. A unit
+test pins the half-shape, `lyricsMinDistance` and dash-padding rules.
+
+| Oracle, 56 files | Before (`oracle-eng8-task1-before`) | After (`oracle-eng8-step1-final`) |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2490 | 0 / 2490 |
+| Elements within 0.1 sp | 378/2490 | **343/2490** |
+| Measure widths within 0.1 sp | 69/394 | **66/394** |
+| Files with identical system breaks | 34/56 | **33/56** |
+| Page counts / page-break patterns | 53/56 / 48/59 | 53/56 / 48/59 |
+| Stem-length agreement | 0.6447 | 0.6447 |
+
+The break count is honestly **worse**, not a redefinition of the gate: the
+faithful demand moves `testHairpinDynamics` off its oracle breaks (23 → 13
+elements within 0.1 sp) and reduces `copypastesymbollist-lyrics` (35 → 13).
+The earlier char/whole-width switch also gave 33/56 (§12.4); this port keeps
+that regression rather than hiding it, with the per-file causes named above.
+`lyricsMinDistance` is not present in the bare corpus files, so the demand
+there comes from the 0.1 sp floor and the 0.5 sp dash padding.
+
+| Private page 1 | Before | After | 4.7.4 |
+| --- | --- | --- | --- |
+| Syllable word gaps (first verse, sp) | glyphs touching | **1.5–3.4 sp** | wider |
+| Page count | 5 | **6** (a short sixth page, 43 notes) | 7 |
+
+The words on the private page now have positive ink gaps instead of
+touching, but the systems still hold too many measures: the 5 → 6 page count
+is reported rather than attributed yet. The private score sets
+`lyricsMinDistance` 0, so its floor is 0.1 sp; no score text is copied into
+the repository. The before/after PNGs are `engrave-img/eng8/before.png` and
+`after.png`, both rendered from the tree at the corresponding commit.

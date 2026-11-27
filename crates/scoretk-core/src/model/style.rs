@@ -195,6 +195,10 @@ pub struct StyleSettings {
     /// Multiplier of the lyric font's line spacing (`Sid::lyricsLineHeight`,
     /// 1.0). // `styledef.cpp:79`.
     pub lyrics_line_height: f64,
+    /// Minimum horizontal padding between two lyrics (`Sid::lyricsMinDistance`,
+    /// 0.25 sp in 4.x, 0 in the legacy 3.x styles). It fills the lyrics row
+    /// of the padding table (`rendering/paddingtable.cpp:207-209`).
+    pub lyrics_min_distance_sp: f64,
 }
 
 impl StyleSettings {
@@ -280,6 +284,7 @@ impl StyleSettings {
             lyrics_min_top_distance_sp: 1.0,
             lyrics_min_bottom_distance_sp: 1.5,
             lyrics_line_height: 1.0,
+            lyrics_min_distance_sp: if legacy { 0.0 } else { 0.25 },
         }
     }
 
@@ -392,6 +397,7 @@ impl StyleSettings {
                 Self::set_positive(&mut self.lyrics_min_bottom_distance_sp, value);
             }
             "lyricsLineHeight" => Self::set_positive(&mut self.lyrics_line_height, value),
+            "lyricsMinDistance" => Self::set_number(&mut self.lyrics_min_distance_sp, value),
             _ => {}
         }
     }

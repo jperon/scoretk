@@ -42,7 +42,8 @@ use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
-    MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP, STEM_WIDTH, SYSTEM_HEADER_MIN_START,
+    LYRIC_DASH_MIN, LYRIC_DASH_PAD, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP,
+    STEM_WIDTH, SYSTEM_HEADER_MIN_START,
 };
 
 /// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
@@ -176,6 +177,7 @@ impl Default for MeasureAtom {
             mm_rest_count: 1,
             segment_bases: Vec::new(),
             header_width: 0,
+            min_extra: 0,
         }
     }
 }
@@ -237,6 +239,11 @@ pub struct MeasureAtom {
     pub segment_bases: Vec<i32>,
     /// Width of the clef/key header generated at a system start.
     pub header_width: i32,
+    /// Fixed minimum width added by attached text shapes (lyrics). It is
+    /// part of a measure's minimum width, so justification must subtract it
+    /// from the spring budget instead of stretching it a second time
+    /// (`horizontalspacing.cpp:1087-1111, 1216-1276`).
+    pub min_extra: i32,
 }
 
 impl MeasureAtom {
@@ -1179,18 +1186,21 @@ pub(crate) fn cancellation_count(previous: i8, next: i8) -> u8 {
     removed_sharps.min(7) + removed_flats.min(7)
 }
 
-/// Whether measured text shapes widen a measure's break width. Disabled
-/// after the P4 measurement campaign (§9.23 of `docs/agents/engraving.md`):
-/// with the faithful Edwin advances the best variant kept 34/44 system breaks
-/// but reduced within-0.1-sp positions from 365 to 350. The widths and the
-/// helper are ready for the full `computePadding`/`Skyline` port in P4.
+/// Whether measured harmony/tempo shapes widen a measure's break width.
+/// Disabled after the P4 measurement campaign (§9.23 of
+/// `docs/agents/engraving.md`): with the faithful Edwin advances the best
+/// variant kept 34/44 system breaks but reduced within-0.1-sp positions from
+/// 365 to 350. Lyrics are handled separately by their own shape spacing.
 pub const TEXT_WIDTH_SPACING: bool = false;
 
-/// Lyric widths were measured in the shared segment spacing in §12.4. With
-/// the real Edwin advances they moved one of 56 oracle files away from its
-/// system breaks (34 → 33/56), so the switch is kept off as in §9.23; the
-/// text widths and their padding remain ready for the full P4 port.
-pub const LYRIC_WIDTH_SPACING: bool = false;
+/// Lyric syllables reserve the space between *shapes of neighbouring
+/// segments*, not each word's full width on its own segment (the §12.4 switch
+/// did that and moved one file off its oracle breaks, 34 → 33/56). Port of
+/// `HorizontalSpacing::minHorizontalDistance` over segment shapes
+/// (`horizontalspacing.cpp:1216-1266`), where same-verse lyrics are
+/// `NON_KERNING` (`:1785-1796`) and the padding comes from
+/// `computePadding`/`computeLyricsPadding` (`:1438-1460`, `:1572-1604`).
+pub const LYRIC_SHAPE_SPACING: bool = true;
 
 /// Font em in fixed staff spaces for a point size (`styledef.cpp:1209-1223`).
 fn text_em(style: &StyleSettings, font_size: f64) -> i32 {
@@ -1234,6 +1244,65 @@ fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSet
         }
     }
     widths
+}
+
+/// Width of one verse's syllable on a segment, measured with the real Edwin
+/// advances (`Lyrics::highResShape`, `lyricslayout.cpp:652-662`). Several
+/// voices can carry the same verse; the widest shape wins, as it does when
+/// `minHorizontalDistance` walks all the shape elements of a staff
+/// (`horizontalspacing.cpp:1223-1243`).
+fn lyric_shape_widths(
+    segment: &scoretk_core::model::Segment,
+    style: &StyleSettings,
+) -> Vec<(usize, i32, LyricsSyllabic)> {
+    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0));
+    let mut shapes: Vec<(usize, i32, LyricsSyllabic)> = Vec::new();
+    if segment.kind == SegmentType::ChordRest {
+        for (_, item) in segment.iter_elements() {
+            let SegmentItem::ChordRest(chord_rest) = item else {
+                continue;
+            };
+            for lyric in &chord_rest.lyrics {
+                let width = text_width(&lyric.text, lyric_em, false);
+                if let Some(shape) = shapes.iter_mut().find(|shape| shape.0 == lyric.verse) {
+                    if width > shape.1 {
+                        shape.1 = width;
+                    }
+                } else {
+                    shapes.push((lyric.verse, width, lyric.syllabic));
+                }
+            }
+        }
+    }
+    shapes
+}
+
+/// Minimum distance between the centre of the previous syllable and the
+/// centre of this one. // Port of `minHorizontalDistance` (`horizontalspacing.cpp:
+/// 1216-1266`): with centred lyrics (`lyricslayout.cpp:105-151`) each shape
+/// extends half its width on either side of the segment x, and the pair is
+/// `NON_KERNING` when both items are lyrics of the same verse (`:1785-1790`).
+/// The padding is the `lyricsMinDistance` entry of the padding table
+/// (`rendering/paddingtable.cpp:207-209`, `styledef.cpp:78`), floored at 0.1 sp
+/// (`horizontalspacing.cpp:1218`) and raised to `lyricsDashMinLength + 2 *
+/// lyricsDashPad` = 0.5 sp for `Begin`/`Middle` syllables when
+/// `lyricsDashForce` is set (`:1572-1604`, `styledef.cpp:80,83,90`).
+fn lyric_pair_distance(
+    previous: LyricsSyllabic,
+    previous_width: i32,
+    width: i32,
+    style_padding: i32,
+) -> i32 {
+    // `minHorizontalDistance` floors the table padding at 0.1 sp
+    // (`horizontalspacing.cpp:1218`), so a score with `lyricsMinDistance` 0
+    // still gets that minimum.
+    let mut padding = style_padding.max(SP / 10);
+    if matches!(previous, LyricsSyllabic::Begin | LyricsSyllabic::Middle) {
+        padding = padding.max(LYRIC_DASH_MIN + 2 * LYRIC_DASH_PAD);
+    }
+    // `lyricsMelismaForce` is false in 4.7.4 (`styledef.cpp:96`), so a
+    // melisma does not require `lyricsMelismaMinLength` here.
+    (previous_width + width) / 2 + padding
 }
 
 /// Indices of the staves MuseScore actually engraves: a hidden/invisible
@@ -1287,6 +1356,13 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         })
         .unwrap_or_default();
     let mut atoms = Vec::with_capacity(score.measures.len());
+    // Last lyric shape of each verse in the current system, in absolute
+    // system coordinates. `HorizontalSpacing` spaces a system's segments
+    // together (`horizontalspacing.cpp:47-89`), so the demand does not stop
+    // at a measure boundary; it is dropped when the system ends.
+    let mut prev_lyrics: alloc::vec::Vec<Option<(i32, i32, LyricsSyllabic)>> =
+        alloc::vec::Vec::new();
+    let mut system_x = 0;
 
     let mut measure_index = 0;
     while let Some(measure) = score.measures.get(measure_index) {
@@ -1307,6 +1383,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         } else {
             0
         };
+        let measure_origin = system_x;
         let first = atoms.is_empty();
         let mut x = if first {
             bar_note_distance.max(SYSTEM_HEADER_MIN_START)
@@ -1351,9 +1428,11 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                 }
             }
         }
-        // (x of the last segment carrying this text family, shape width).
+        // Harmony/tempo shapes are measured but kept off (§9.23); lyrics use
+        // the pairwise shape spacing below instead.
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
+        let mut min_extra = 0;
         let mut segment_bases = Vec::with_capacity(measure.segments.len());
         // Previous chord/rest of each voice in this measure: `baseBeamMode`
         // compares its duration with the current one (`groups.cpp:107-125`).
@@ -1386,20 +1465,16 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                 // stretch comes from its duration; `minNoteDistance` and the
                 // notehead/accidental/dot widths give the lower bound.
                 let mut segment_width = SEGMENT_WIDTH;
-                let text_widths = if TEXT_WIDTH_SPACING || LYRIC_WIDTH_SPACING {
+                let text_widths = if TEXT_WIDTH_SPACING {
                     attached_text_widths(segment, style)
                 } else {
                     [0; 3]
                 };
-                // `minDistance` between neighbouring text shapes of the same
-                // family: only an actual overlap widens the measure, as in
-                // `HorizontalSpacing::computePadding` (not the full width).
-                let short_notes = segment.iter_elements().any(|(_, item)| {
-                    matches!(item, SegmentItem::ChordRest(chord_rest)
-                        if duration_code(chord_rest.duration.kind) >= 5)
-                });
-                for (index, &width) in text_widths.iter().enumerate() {
-                    if width == 0 || last_text[index].1 == 0 || (index == 0 && !short_notes) {
+                // Harmony/tempo only while their measured switch is on;
+                // lyrics are handled by `lyric_shape_widths` below.
+                for index in [1, 2] {
+                    let width = text_widths[index];
+                    if width == 0 || last_text[index].1 == 0 {
                         continue;
                     }
                     let needed = (last_text[index].1 + width) / 2;
@@ -1408,9 +1483,44 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         text_extra += needed - have;
                     }
                 }
-                for (index, &width) in text_widths.iter().enumerate() {
-                    if width > 0 && (index != 0 || short_notes) {
-                        last_text[index] = (x, width);
+                for index in [1, 2] {
+                    if text_widths[index] > 0 {
+                        last_text[index] = (x, text_widths[index]);
+                    }
+                }
+                // // Port of `spaceAgainstPreviousSegments` (`horizontalspacing.cpp:
+                // 347-417`) restricted to same-verse lyrics: when the two
+                // shapes would overlap, the measure's minimum width grows by
+                // the difference. Adding the *whole* word width instead (the
+                // §12.4 attempt) widened every measure and changed the
+                // oracle's system breaks 34 → 33.
+                if LYRIC_SHAPE_SPACING {
+                    for (verse, width, syllabic) in lyric_shape_widths(segment, style) {
+                        if prev_lyrics.len() <= verse {
+                            prev_lyrics.resize(verse + 1, None);
+                        }
+                        if let Some((previous_x, previous_width, previous_syllabic)) =
+                            prev_lyrics[verse]
+                        {
+                            let style_padding = (style.lyrics_min_distance_sp * SP as f64) as i32;
+                            let needed = lyric_pair_distance(
+                                previous_syllabic,
+                                previous_width,
+                                width,
+                                style_padding,
+                            );
+                            let have = measure_origin + x - previous_x;
+                            if have < needed {
+                                // `stretchSegmentsToWidth` overwrites every
+                                // chord/rest width with `force * stretch`
+                                // (`horizontalspacing.cpp:1087-1111`), so the
+                                // demand widens the measure's minimum (and
+                                // hence its breaking) rather than a single
+                                // segment's drawn x.
+                                min_extra += needed - have;
+                            }
+                        }
+                        prev_lyrics[verse] = Some((measure_origin + x, width, syllabic));
                     }
                 }
                 let segment_start = events.len();
@@ -1716,7 +1826,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 
         let mut atom = MeasureAtom {
             number: measure.number,
-            width: x + text_extra,
+            width: x + min_extra + text_extra,
             spring,
             events,
             start_bar: bar_code(measure.start_bar_line),
@@ -1727,6 +1837,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             mm_rest_count: mm_count.min(u16::MAX as usize) as u16,
             segment_bases,
             header_width: 0,
+            min_extra,
         };
         // // Port of `systemlayout.cpp:402-407`
         // (`MeasureLayout::createEndBarLines`): MuseScore generates a final
@@ -1742,7 +1853,15 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         {
             atom.end_bar = BarCode(3);
         }
+        system_x += atom.width;
         atoms.push(atom);
+        // `HorizontalSpacing` works on one system at a time
+        // (`horizontalspacing.cpp:47-89`); a lyric at the start of the next
+        // system must not be pushed by the last syllable of this one.
+        if line_break {
+            system_x = 0;
+            prev_lyrics.clear();
+        }
     }
     atoms
 }
@@ -1770,6 +1889,15 @@ pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
                 atom.width - atom.segment_bases.last().copied().unwrap_or(atom.width)
             })
             .collect();
+        // A shared segment x adopts the widest staff's shape demand.
+        let min_extra = all
+            .iter()
+            .map(|atoms| atoms[measure].min_extra)
+            .max()
+            .unwrap_or(0);
+        for atoms in &mut all {
+            atoms[measure].min_extra = min_extra;
+        }
         let count = all
             .iter()
             .map(|atoms| atoms[measure].segment_bases.len())
@@ -1811,6 +1939,25 @@ pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
 mod tests {
     use super::*;
     use scoretk_core::model::tpc;
+
+    #[test]
+    fn same_verse_lyrics_reserve_the_shape_and_dash_padding() {
+        // Two 2 sp syllables need their two half-shapes plus the table
+        // padding; `Begin`/`Middle` also reserve the 0.5 sp dash.
+        assert_eq!(
+            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, 0),
+            2 * SP + SP / 10
+        );
+        assert_eq!(
+            lyric_pair_distance(LyricsSyllabic::Begin, 2 * SP, 2 * SP, 0),
+            2 * SP + LYRIC_DASH_MIN + 2 * LYRIC_DASH_PAD
+        );
+        // A score's `lyricsMinDistance` replaces the 0.1 sp floor.
+        assert_eq!(
+            lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, SP / 4),
+            2 * SP + SP / 4
+        );
+    }
 
     #[test]
     fn treble_note_lines_follow_the_staff() {

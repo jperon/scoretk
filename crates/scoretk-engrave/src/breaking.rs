@@ -69,6 +69,10 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
         let mut width = 0;
         let mut header_width = 0;
         let mut spring = 0;
+        // Attached text shapes have a fixed minimum width: justification
+        // fills only the space left after them (`horizontalspacing.cpp:
+        // 1087-1111`), it does not stretch them again.
+        let mut min_extra = 0;
         while first + count < atoms.len() {
             let atom = &atoms[first + count];
             // // Port of `horizontalspacing.cpp:1087-1111`: justification
@@ -106,6 +110,7 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
             }
             header_width += header;
             spring += atom.spring;
+            min_extra += atom.min_extra;
             width += break_width;
             count += 1;
             if atom.line_break {
@@ -131,7 +136,7 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
         } else {
             0
         };
-        let available = printable - header_width - end_bar;
+        let available = (printable - header_width - end_bar - min_extra).max(0);
         let scale = if justify && spring > 0 && available > 0 {
             // `stretchSegmentsToWidth`: each spring ends at width
             // `force / springConst = force * stretch`, where `force` is
@@ -244,6 +249,7 @@ fn merged_measure(all: &[Vec<MeasureAtom>], measure: usize) -> MeasureAtom {
         merged.end_bar.0 = merged.end_bar.0.max(atom.end_bar.0);
         merged.line_break |= atom.line_break;
         merged.header_width = merged.header_width.max(atom.header_width);
+        merged.min_extra = merged.min_extra.max(atom.min_extra);
     }
     merged
 }
