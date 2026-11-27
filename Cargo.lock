@@ -599,6 +599,7 @@ dependencies = [
  "scoretk-abc-export",
  "scoretk-abc-import",
  "scoretk-core",
+ "scoretk-engrave",
  "scoretk-gabc-common",
  "scoretk-gabc-export",
  "scoretk-gabc-import",
@@ -613,6 +614,7 @@ dependencies = [
  "scoretk-musescore-import",
  "scoretk-musicxml-export",
  "scoretk-musicxml-import",
+ "scoretk-render-svg",
  "scoretk-xml-common",
  "similar 3.2.1",
  "thiserror",
@@ -850,7 +852,17 @@ dependencies = [
 name = "scoretk-render-raster"
 version = "0.1.0"
 dependencies = [
+ "scoretk-engrave",
+ "scoretk-smufl",
  "tiny-skia",
+]
+
+[[package]]
+name = "scoretk-render-svg"
+version = "0.1.0"
+dependencies = [
+ "scoretk-engrave",
+ "scoretk-smufl",
 ]
 
 [[package]]

@@ -76,6 +76,7 @@ pub fn convert_with_report(
         abc_gregorian: false,
         xml_full_support: options.export.full_support,
         xml_lossless_round_trip: options.export.lossless_round_trip,
+        page: None,
     };
     write_with_report(&score, format, &write_options)
 }

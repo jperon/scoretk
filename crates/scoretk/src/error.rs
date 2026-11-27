@@ -65,6 +65,11 @@ pub enum Error {
     #[error("archive ZIP invalide : {0}")]
     Zip(#[from] zip::result::ZipError),
 
+    /// Erreur de gravure (feature `engrave`).
+    #[cfg(feature = "engrave")]
+    #[error("gravure : {0}")]
+    Engrave(String),
+
     /// Erreur renvoyée par la crate de lecture MusicXML (feature
     /// `musicxml-import`).
     #[error("lecture MusicXML : {0}")]

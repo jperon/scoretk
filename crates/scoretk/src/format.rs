@@ -82,11 +82,13 @@ pub enum Format {
     Midi,
     /// Gregorian GABC, syntaxe de Gregorio (`.gabc`).
     Gabc,
+    /// Gravure SVG d'une page (feature `engrave`, sortie seulement).
+    Svg,
 }
 
 impl Format {
     /// Tous les formats, dans l'ordre d'affichage de `--list-formats`.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Mscz,
         Self::Mscx,
         Self::MusicXml,
@@ -96,6 +98,7 @@ impl Format {
         Self::Abc,
         Self::Midi,
         Self::Gabc,
+        Self::Svg,
     ];
 
     /// Nom canonique (celui de `--from`/`--to`).
@@ -110,6 +113,7 @@ impl Format {
             Self::Abc => "abc",
             Self::Midi => "midi",
             Self::Gabc => "gabc",
+            Self::Svg => "svg",
         }
     }
 
@@ -125,6 +129,7 @@ impl Format {
             Self::Abc => &["abc"],
             Self::Midi => &["mid", "midi"],
             Self::Gabc => &["gabc"],
+            Self::Svg => &["svg"],
         }
     }
 
@@ -143,6 +148,7 @@ impl Format {
             Self::Abc => cfg!(feature = "abc-import"),
             Self::Midi => cfg!(feature = "midi-import"),
             Self::Gabc => cfg!(feature = "gabc-import"),
+            Self::Svg => false,
         }
     }
 
@@ -160,6 +166,7 @@ impl Format {
             Self::Ly => cfg!(feature = "lilypond-export"),
             Self::Abc => cfg!(feature = "abc-export"),
             Self::Gabc => cfg!(feature = "gabc-export"),
+            Self::Svg => cfg!(feature = "engrave"),
         }
     }
 
@@ -178,6 +185,7 @@ impl Format {
             "abc" => Some(Self::Abc),
             "mid" | "midi" => Some(Self::Midi),
             "gabc" => Some(Self::Gabc),
+            "svg" => Some(Self::Svg),
             _ => None,
         }
     }

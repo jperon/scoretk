@@ -28,6 +28,7 @@ members = [
     "crates/scoretk-render-raster",
     "crates/scoretk-smufl",
     "crates/scoretk-engrave",
+    "crates/scoretk-render-svg",
 ]
 
 [workspace.package]

@@ -95,6 +95,9 @@ pub struct Options {
     /// valeurs de mise en page déduites par MuseScore 4.7.4. Faux par défaut,
     /// pour ne pas changer les octets des références.
     pub xml_lossless_round_trip: bool,
+    /// Page à graver pour une sortie SVG (0 par défaut). Sans effet sur les
+    /// autres formats.
+    pub page: Option<usize>,
 }
 
 impl Default for Options {
@@ -123,6 +126,7 @@ impl Default for Options {
             abc_gregorian: false,
             xml_full_support: false,
             xml_lossless_round_trip: false,
+            page: None,
         }
     }
 }

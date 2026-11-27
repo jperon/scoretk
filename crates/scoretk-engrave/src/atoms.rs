@@ -455,6 +455,14 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             }
         }
 
+        if first && !has_clef {
+            // The clef at the start of a staff is generated when the file has
+            // no explicit clef segment (`staff.defaultClefType()`).
+            events.insert(
+                0,
+                Atom::simple(0, AtomKind::Clef { name: clef_name(clef) }),
+            );
+        }
         atoms.push(MeasureAtom {
             number: measure.number,
             width: x + SEGMENT_WIDTH,

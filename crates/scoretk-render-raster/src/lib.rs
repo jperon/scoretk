@@ -23,6 +23,8 @@
 
 #![no_std]
 
+pub mod display;
+
 extern crate alloc;
 
 use alloc::vec::Vec;

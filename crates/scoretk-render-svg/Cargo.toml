@@ -1,0 +1,13 @@
+[package]
+name = "scoretk-render-svg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SVG backend for the scoretk display list"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+scoretk-engrave = { path = "../scoretk-engrave" }
+scoretk-smufl = { path = "../scoretk-smufl" }

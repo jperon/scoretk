@@ -47,6 +47,9 @@ mei-import = ["dep:scoretk-mei-import"]
 mei-export = ["dep:scoretk-mei-export"]
 gabc-import = ["dep:scoretk-gabc-import", "dep:scoretk-gabc-common"]
 gabc-export = ["dep:scoretk-gabc-export"]
+# Gravure P1 (désactivée par défaut et dans le paquet wasm) : une seule portée,
+# sortie SVG. Aucune feature n'est activée par les autres formats.
+engrave = ["dep:scoretk-engrave", "dep:scoretk-render-svg"]
 
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
@@ -65,6 +68,8 @@ scoretk-mei-export = { path = "../scoretk-mei-export", optional = true }
 scoretk-gabc-import = { path = "../scoretk-gabc-import", optional = true }
 scoretk-gabc-common = { path = "../scoretk-gabc-common", optional = true }
 scoretk-gabc-export = { path = "../scoretk-gabc-export", optional = true }
+scoretk-engrave = { path = "../scoretk-engrave", optional = true }
+scoretk-render-svg = { path = "../scoretk-render-svg", optional = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 

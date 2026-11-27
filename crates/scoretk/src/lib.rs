@@ -165,6 +165,12 @@ pub fn read_with_report(bytes: &[u8], format: Format) -> Result<(Score, model::C
         Format::Abc => hooks::read_abc(bytes, false)?,
         Format::Midi => hooks::read_midi(bytes)?,
         Format::Gabc => hooks::read_gabc(bytes)?,
+        Format::Svg => {
+            return Err(Error::FormatNonPrisEnCharge {
+                format,
+                sens: Sens::Lecture,
+            })
+        }
     };
     let report = score.report.clone();
     Ok((score, report))
@@ -240,10 +246,22 @@ pub fn write_with_report(
         Format::Ly => hooks::write_lilypond(score, options.ly_gregorian)?,
         Format::Abc => hooks::write_abc(score, options.abc_gregorian)?,
         Format::Gabc => hooks::write_gabc(score)?,
+        Format::Svg => hooks::write_svg(score, options.page.unwrap_or(0))?,
     };
     let mut report = score.report.clone();
     record_write_losses(score, format, &mut report);
     Ok((bytes, report))
+}
+
+/// Grave une page en SVG (feature `engrave`).
+///
+/// `options.page` choisit la page (0 par défaut) ; les autres options n'ont
+/// aucun effet sur la gravure. La sortie est identique à celle de
+/// [`write`] avec `Format::Svg`, qui grave la page 0.
+#[cfg(feature = "engrave")]
+pub fn write_svg(score: &Score, _options: &Options, page: usize) -> Result<Vec<u8>> {
+    let _ = _options;
+    hooks::write_svg(score, page)
 }
 
 /// Ajoute au rapport les blocs que l'écrivain de `format` ne peut pas rendre.

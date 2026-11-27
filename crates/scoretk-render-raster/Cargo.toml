@@ -9,6 +9,8 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+scoretk-engrave = { path = "../scoretk-engrave" }
+scoretk-smufl = { path = "../scoretk-smufl" }
 
 [dev-dependencies]
 tiny-skia = "0.11"

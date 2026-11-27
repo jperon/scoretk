@@ -166,6 +166,10 @@ struct Cli {
     /// Import MIDI : verrouiller `doStaffSplit` sur true (tests amont)
     #[arg(long)]
     midi_staff_split: bool,
+
+    /// Sortie SVG : page à graver, à partir de 0 (par défaut : la première)
+    #[arg(long, value_name = "N")]
+    page: Option<usize>,
 }
 
 /// Valeur de quantification MIDI acceptée : une puissance de deux ≥ 4.
@@ -300,6 +304,7 @@ fn main() -> ExitCode {
         xml_full_support: cli.xml_full_support,
         ly_gregorian: cli.ly_gregorian,
         abc_gregorian: cli.abc_gregorian,
+        page: cli.page,
         ..Options::default()
     };
 
