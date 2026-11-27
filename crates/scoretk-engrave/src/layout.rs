@@ -113,6 +113,17 @@ pub struct PageSpec {
     /// // Port of `styledef.cpp:92` (`lyricsDashYposRatio` 0.5): the dash
     /// segment's baseline shift in x-heights (`dom/lyricsline.cpp:181-191`).
     pub lyrics_dash_y_pos_ratio: f64,
+    /// // Port of `styledef.cpp:80-83,89-91`: hyphen dash and melisma extender
+    /// geometry, in fixed staff spaces. `LyricsLayout::layoutDashes` uses the
+    /// dash length/pad/force for a `Begin`/`Middle` syllable without melisma
+    /// ticks; `layoutMelismaLine` uses the melisma pad and `lyricsLineThickness`
+    /// for a syllable that carries a melisma.
+    pub lyrics_dash_min: i32,
+    pub lyrics_dash_max: i32,
+    pub lyrics_dash_pad: i32,
+    pub lyrics_dash_force: bool,
+    pub lyrics_dash_width: i32,
+    pub lyrics_melisma_pad: i32,
     /// Point size of the lyricist text style (`styledef.cpp:878`, default
     /// 10 pt). // Port of `LyricsLayout::layout`.
     pub lyric_font_size: f64,
@@ -156,6 +167,12 @@ impl Default for PageSpec {
             lyrics_min_bottom_distance: 3 * SP / 2,
             lyrics_line_height: 1024,
             lyrics_dash_y_pos_ratio: 0.5,
+            lyrics_dash_min: LYRIC_DASH_MIN,
+            lyrics_dash_max: LYRIC_DASH_MAX,
+            lyrics_dash_pad: LYRIC_DASH_PAD,
+            lyrics_dash_force: true,
+            lyrics_dash_width: LYRIC_LINE_WIDTH,
+            lyrics_melisma_pad: LYRIC_MELISMA_PAD,
             lyric_font_size: 10.0,
         }
     }
@@ -215,6 +232,12 @@ impl PageSpec {
             lyrics_min_bottom_distance: (style.lyrics_min_bottom_distance_sp * SP as f64) as i32,
             lyrics_line_height: (style.lyrics_line_height * 1024.0) as i32,
             lyrics_dash_y_pos_ratio: style.lyrics_dash_y_pos_ratio,
+            lyrics_dash_min: (style.lyrics_dash_min_length_sp * SP as f64) as i32,
+            lyrics_dash_max: (style.lyrics_dash_max_length_sp * SP as f64) as i32,
+            lyrics_dash_pad: (style.lyrics_dash_pad_sp * SP as f64) as i32,
+            lyrics_dash_force: style.lyrics_dash_force,
+            lyrics_dash_width: (style.lyrics_dash_line_thickness_sp * SP as f64) as i32,
+            lyrics_melisma_pad: (style.lyrics_melisma_pad_sp * SP as f64) as i32,
             lyric_font_size: style.lyricist_font_size,
             // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
             // page 1 pushes the first system down by its own height plus
@@ -1201,13 +1224,25 @@ pub(crate) fn place_lyrics(
     }
 }
 
-/// Hyphens and melisma extender lines of one system, ported from
-/// `LyricsLayout::layoutDashes` (`lyricslayout.cpp:206-366`). The dash width
-/// is capped at `lyricsDashMaxLength` 0.6 sp and their count is derived from
-/// `lyricsDashMaxDistance` 16 sp. // Port of
-/// `LyricsLineSegment::baseLineShift` (`dom/lyricsline.cpp:181-191`): a dash
-/// sits `lyricsDashYposRatio * xHeight` **above the verse baseline**, which
-/// here is `top + cap("M")` (`place_text_kind`), not above the text's top.
+/// Hyphens and melisma extender lines of one system.
+///
+/// `LyricsLayout::createOrRemoveLyricsLine` (`lyricslayout.cpp:383-504`)
+/// creates **one** `LyricsLine` per syllable when the syllable has melisma
+/// ticks or is `Begin`/`Middle`. `LyricsLine::isEndMelisma()` is
+/// `lyrics()->ticks().isNotZero()` (`dom/lyricsline.h:144`): a syllable with
+/// `<ticks>`/`<ticks_f>` gets the continuous extender of `layoutMelismaLine`
+/// (`lyricslayout.cpp:228-259`); a plain hyphen gets the short dashes of
+/// `layoutDashes` (`:261-360`). The reader keeps both the syllabic type and
+/// the melisma duration (`read4xx::read_lyrics`), so the two never get
+/// confused here. A dash-only syllable with no following syllable in this
+/// system emits no line (`:283-285`).
+///
+/// `LyricsLineSegment::baseLineShift` (`dom/lyricsline.cpp:181-191`) puts a
+/// dash `lyricsDashYposRatio * xHeight` above the verse baseline, which here
+/// is `top + cap("M")`, not above the text's top. // Port of
+/// `lyricsLineStartX`/`lyricsLineEndX` (`:745-830`): a line runs from the
+/// start syllable's right edge plus one pad to the next syllable's left edge
+/// minus one pad.
 fn plan_lyric_lines(
     events: &[(i32, &Atom)],
     staff_y: i32,
@@ -1216,6 +1251,10 @@ fn plan_lyric_lines(
     spec: &PageSpec,
     offsets: &[i32],
 ) -> Vec<DisplayItem> {
+    // `styledef.cpp:82` (`lyricsDashMaxDistance` 16 sp, not overridden by the
+    // private score): one dash per 16 sp of gap at most, rounded down, or up
+    // when the first and last gaps are half (`lyricslayout.cpp:315-316`).
+    const DASH_MAX_DISTANCE: i32 = 16 * SP;
     let mut items = Vec::new();
     let first_line = staff_y + STAFF_HEIGHT + spec.lyrics_pos_below;
     for (index, (x, event)) in events.iter().enumerate() {
@@ -1234,25 +1273,9 @@ fn plan_lyric_lines(
                 .map_or(em / 2, |g| i32::from(g.bbox[3]) * em / i32::from(UPEM));
             let y = text_baseline
                 - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
-                - LYRIC_LINE_WIDTH / 2;
-            let text_centre = *x + SP / 2;
-            let start = if lyric.melisma {
-                text_centre + width / 2 + LYRIC_MELISMA_PAD
-            } else {
-                text_centre + width / 2 + LYRIC_DASH_MIN / 2
-            };
-            if matches!(
-                lyric.syllabic,
-                LyricsSyllabic::Begin | LyricsSyllabic::Middle
-            ) {
-                items.push(DisplayItem::rect(
-                    ItemKind::Lyrics,
-                    start - LYRIC_DASH_MIN / 2,
-                    y,
-                    LYRIC_DASH_MIN,
-                    LYRIC_LINE_WIDTH,
-                ));
-            }
+                - spec.lyrics_dash_width / 2;
+            let text_right = *x + SP / 2 + width / 2;
+
             if lyric.melisma {
                 // `LyricsLayout::createOrRemoveLyricsLine` ends the line at
                 // `Lyrics::endTick()`. When there is no later syllable in
@@ -1280,16 +1303,73 @@ fn plan_lyric_lines(
                             .map(|(next, _)| *next)
                     })
                     .unwrap_or(right);
-                let end = (end - LYRIC_MELISMA_PAD).max(start + LYRIC_LINE_WIDTH);
-                // `LyricsLayout::layoutMelismaLine` adds one continuous
-                // LineF; the spaced dashes belong to hyphens
-                // (`layoutDashes`).
+                let start = text_right + spec.lyrics_melisma_pad;
+                let end = (end - spec.lyrics_melisma_pad).max(start + LYRIC_LINE_WIDTH);
+                // `layoutMelismaLine` adds one continuous LineF. A melisma
+                // overrides the hyphen of a `Begin`/`Middle` syllable: there
+                // is only one separator per syllable.
                 items.push(DisplayItem::rect(
                     ItemKind::Lyrics,
                     start,
                     y,
                     end - start,
                     LYRIC_LINE_WIDTH,
+                ));
+                continue;
+            }
+
+            if !matches!(
+                lyric.syllabic,
+                LyricsSyllabic::Begin | LyricsSyllabic::Middle
+            ) {
+                continue;
+            }
+            // `layoutDashes` needs its end syllable: without one there is no
+            // dash line at all (`lyricslayout.cpp:283-285`). The gap is
+            // measured between the two shapes, each inset by `lyricsDashPad`.
+            let Some((next_x, next_text)) =
+                events[index + 1..].iter().find_map(|(next_x, later)| {
+                    later
+                        .lyrics
+                        .iter()
+                        .find(|later| later.verse == lyric.verse && !later.text.is_empty())
+                        .map(|later| (*next_x, &later.text))
+                })
+            else {
+                continue;
+            };
+            let next_left = next_x + SP / 2 - text_run_width(next_text, em, false) / 2;
+            let start = text_right + spec.lyrics_dash_pad;
+            let length = next_left - spec.lyrics_dash_pad - start;
+            if length <= 0 {
+                continue;
+            }
+            // `lyricslayout.cpp:315-320`: count by `lyricsDashMaxDistance`,
+            // then force at least one dash when `lyricsDashForce` is set or
+            // the gap exceeds `lyricsDashMinLength`.
+            let mut count = if length > DASH_MAX_DISTANCE {
+                (length + DASH_MAX_DISTANCE - 1) / DASH_MAX_DISTANCE
+            } else {
+                length / DASH_MAX_DISTANCE
+            };
+            if length > spec.lyrics_dash_min || spec.lyrics_dash_force {
+                count = count.max(1);
+            }
+            // `:326-339`: a forced dash on a short gap is widened to
+            // `lyricsDashMinLength`, then capped at `lyricsDashMaxLength`.
+            let length = length.max(spec.lyrics_dash_min);
+            let dash_width = length.min(spec.lyrics_dash_max).max(1);
+            // `:341-359`: `firstAndLastGapAreHalf` (true by default) leaves
+            // half a step at each end and centres every dash in its step.
+            let step = length / count;
+            for dash in 0..count {
+                let centre = start + (dash * 2 + 1) * step / 2;
+                items.push(DisplayItem::rect(
+                    ItemKind::Lyrics,
+                    centre - dash_width / 2,
+                    y,
+                    dash_width,
+                    spec.lyrics_dash_width,
                 ));
             }
         }
@@ -2177,7 +2257,8 @@ mod tests {
             "verse 1 must sit one font line height lower: {tops:?}"
         );
         assert!(expected - first_line > cap);
-        // The same offset applies to the hyphen of verse 1.
+        // The same offset applies to the hyphen of verse 1. A hyphen needs
+        // its end syllable in the same system (`lyricslayout.cpp:283-285`).
         let event = Atom {
             lyrics: vec![LyricAtom {
                 syllabic: LyricsSyllabic::Begin,
@@ -2185,7 +2266,11 @@ mod tests {
             }],
             ..Atom::at_segment(0, AtomKind::Chord, 0)
         };
-        let events = vec![(10 * SP, &event)];
+        let end = Atom {
+            lyrics: vec![lyric(1, "re")],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let events = vec![(10 * SP, &event), (16 * SP, &end)];
         let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, em, &spec, &[]);
         assert_eq!(lines.len(), 1);
         let dash_y = lines[0].bbox(&out).unwrap().1;
@@ -2218,25 +2303,103 @@ mod tests {
             lyrics: vec![lyric("chré", LyricsSyllabic::Begin, false, None)],
             ..Atom::at_segment(0, AtomKind::Chord, 2)
         };
-        let events = vec![(4 * SP, &first), (10 * SP, &second), (16 * SP, &third)];
+        let fourth = Atom {
+            lyrics: vec![lyric("tien", LyricsSyllabic::End, false, None)],
+            ..Atom::at_segment(0, AtomKind::Chord, 3)
+        };
+        let events = vec![
+            (4 * SP, &first),
+            (10 * SP, &second),
+            (16 * SP, &third),
+            (25 * SP, &fourth),
+        ];
         let spec = PageSpec::default();
-        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP, &spec, &[]);
-        assert_eq!(lines.len(), 3); // two hyphens, one melisma dash
+        let em = 2 * SP;
+        let lines = plan_lyric_lines(&events, 5 * SP, 30 * SP, em, &spec, &[]);
+        // "Mi" gets one hyphen, the melisma of "nuit" one continuous
+        // extender (which replaces its hyphen), "chré" one hyphen. Without
+        // "tien" the last syllable would have no dash at all.
+        assert_eq!(lines.len(), 3);
         for item in &lines {
             let (_, y) = item.origin();
             assert!(y > 5 * SP + 4 * SP, "lyric lines sit below the staff");
         }
+        let rect = |item: &DisplayItem| match item.geometry {
+            Geometry::Rect { x, y, w, h } => (x, y, w, h),
+            _ => panic!("a lyric line is a rectangle"),
+        };
+        let (_, _, melisma_width, melisma_height) = rect(&lines[1]);
+        assert!(melisma_width > 2 * SP, "the extender is one long line");
+        assert_eq!(melisma_height, LYRIC_LINE_WIDTH);
+        for dash in [&lines[0], &lines[2]] {
+            let (_, _, dash_width, dash_height) = rect(dash);
+            // `lyricslayout.cpp:318-339`: the dash is capped at
+            // `lyricsDashMaxLength` 0.6 sp, not an extender.
+            assert!(dash_width <= spec.lyrics_dash_max);
+            assert_eq!(dash_height, spec.lyrics_dash_width);
+        }
+        // A melisma overrides the hyphen even on a `Begin` syllable.
+        let melisma_begin = Atom {
+            lyrics: vec![lyric("chré", LyricsSyllabic::Begin, true, Some((0, 3)))],
+            ..Atom::at_segment(0, AtomKind::Chord, 2)
+        };
+        let events = vec![(16 * SP, &melisma_begin), (25 * SP, &fourth)];
+        let lines = plan_lyric_lines(&events, 5 * SP, 30 * SP, em, &spec, &[]);
+        assert_eq!(lines.len(), 1);
+        assert!(rect(&lines[0]).2 > 2 * SP);
         // `LyricsLineSegment::baseLineShift`: ratio * xHeight above the
         // verse's text baseline, not above the top of the glyphs.
-        let em = 2 * SP;
         let x_height =
             i32::from(text_glyph(u16::from(b'x'), false).unwrap().bbox[3]) * em / i32::from(UPEM);
         let text_baseline =
             5 * SP + STAFF_HEIGHT + spec.lyrics_pos_below + text_cap_height("M", em, false);
         let expected = text_baseline
             - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
-            - LYRIC_LINE_WIDTH / 2;
+            - spec.lyrics_dash_width / 2;
         assert_eq!(lines[0].origin().1, expected);
+    }
+
+    #[test]
+    fn dash_count_and_length_follow_the_style() {
+        // `lyricslayout.cpp:310-359`: a 34 sp gap with `lyricsDashMaxDistance`
+        // 16 sp and half end gaps takes ceil(34/16) = 3 dashes; each dash is
+        // capped at the score's `lyricsDashMaxLength` (0.8 sp here).
+        let begin = Atom {
+            lyrics: vec![LyricAtom {
+                verse: 0,
+                text: String::from("ef"),
+                syllabic: LyricsSyllabic::Begin,
+                melisma: false,
+                melisma_end: None,
+            }],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let end = Atom {
+            lyrics: vec![LyricAtom {
+                verse: 0,
+                text: String::from("cer"),
+                syllabic: LyricsSyllabic::End,
+                melisma: false,
+                melisma_end: None,
+            }],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let events = vec![(4 * SP, &begin), (40 * SP, &end)];
+        let spec = PageSpec {
+            lyrics_dash_max: 4 * SP / 5,
+            ..PageSpec::default()
+        };
+        let lines = plan_lyric_lines(&events, 5 * SP, 44 * SP, 2 * SP, &spec, &[]);
+        assert_eq!(lines.len(), 3, "one dash per 16 sp of gap");
+        for item in &lines {
+            let Geometry::Rect { w, .. } = item.geometry else {
+                panic!("a lyric dash is a rectangle");
+            };
+            assert_eq!(w, 4 * SP / 5);
+        }
+        let start = lines[0].origin().0;
+        let last = lines[2].origin().0;
+        assert!(start > 4 * SP && last < 40 * SP, "half gaps at the ends");
     }
 
     #[test]

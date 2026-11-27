@@ -208,6 +208,18 @@ pub struct StyleSettings {
     /// above the syllable baseline (`Sid::lyricsDashYposRatio`, 0.5 by
     /// default). // `styledef.cpp:92`; `dom/lyricsline.cpp:181-191`.
     pub lyrics_dash_y_pos_ratio: f64,
+    /// Geometry of a `LyricsLine` dash, i.e. the hyphen between two syllables
+    /// of one word (`styledef.cpp:80-81,83,90,91`): minimum and maximum dash
+    /// length (0.4/0.6 sp), the extra pad on each side (0.05 sp), whether a
+    /// dash is forced even on a short gap (true) and its stroke width
+    /// (0.1 sp). A melisma extender uses `lyricsLineThickness` and
+    /// `lyricsMelismaPad` (0.2 sp) instead.
+    pub lyrics_dash_min_length_sp: f64,
+    pub lyrics_dash_max_length_sp: f64,
+    pub lyrics_dash_pad_sp: f64,
+    pub lyrics_dash_force: bool,
+    pub lyrics_dash_line_thickness_sp: f64,
+    pub lyrics_melisma_pad_sp: f64,
     /// Density of the duration-based horizontal spacing (`Sid::spacingDensity`,
     /// 1.0): it divides the natural width of a chord/rest segment
     /// (`horizontalspacing.cpp:743`). // `styledef.cpp:229`.
@@ -311,6 +323,13 @@ impl StyleSettings {
             lyrics_line_height: 1.0,
             lyrics_min_distance_sp: if legacy { 0.0 } else { 0.25 },
             lyrics_dash_y_pos_ratio: 0.5,
+            // 4.7.4 defaults (`styledef.cpp:80-83,89-91`).
+            lyrics_dash_min_length_sp: 0.4,
+            lyrics_dash_max_length_sp: 0.6,
+            lyrics_dash_pad_sp: 0.05,
+            lyrics_dash_force: true,
+            lyrics_dash_line_thickness_sp: 0.1,
+            lyrics_melisma_pad_sp: 0.2,
             // 4.7.4 defaults (`styledef.cpp:224, 229-230, 243-244, 264, 266`).
             spacing_density: 1.0,
             measure_spacing: 1.5,
@@ -438,6 +457,18 @@ impl StyleSettings {
             "lyricsLineHeight" => Self::set_positive(&mut self.lyrics_line_height, value),
             "lyricsMinDistance" => Self::set_number(&mut self.lyrics_min_distance_sp, value),
             "lyricsDashYposRatio" => Self::set_number(&mut self.lyrics_dash_y_pos_ratio, value),
+            "lyricsDashMinLength" => {
+                Self::set_positive(&mut self.lyrics_dash_min_length_sp, value);
+            }
+            "lyricsDashMaxLength" => {
+                Self::set_positive(&mut self.lyrics_dash_max_length_sp, value);
+            }
+            "lyricsDashPad" => Self::set_number(&mut self.lyrics_dash_pad_sp, value),
+            "lyricsDashForce" => self.lyrics_dash_force = flag(value),
+            "lyricsDashLineThickness" => {
+                Self::set_positive(&mut self.lyrics_dash_line_thickness_sp, value);
+            }
+            "lyricsMelismaPad" => Self::set_number(&mut self.lyrics_melisma_pad_sp, value),
             "spacingDensity" => Self::set_positive(&mut self.spacing_density, value),
             "measureSpacing" => Self::set_positive(&mut self.measure_spacing, value),
             "minNoteDistance" => Self::set_number(&mut self.min_note_distance_sp, value),

@@ -1788,7 +1788,13 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                         verse: lyric.verse,
                                         text: lyric.text.clone(),
                                         syllabic: lyric.syllabic,
-                                        melisma: lyric.melisma.is_some(),
+                                        // `LyricsLine::isEndMelisma()` is
+                                        // `lyrics()->ticks().isNotZero()`
+                                        // (`dom/lyricsline.h:144`): a zero
+                                        // `<ticks>` is not an extender.
+                                        melisma: lyric
+                                            .melisma
+                                            .is_some_and(|ticks| !ticks.is_zero()),
                                         melisma_end: melisma_end(lyric.melisma),
                                     })
                                     .collect(),
@@ -1850,7 +1856,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                     verse: lyric.verse,
                                     text: lyric.text.clone(),
                                     syllabic: lyric.syllabic,
-                                    melisma: lyric.melisma.is_some(),
+                                    melisma: lyric.melisma.is_some_and(|ticks| !ticks.is_zero()),
                                     melisma_end: melisma_end(lyric.melisma),
                                 })
                                 .collect();

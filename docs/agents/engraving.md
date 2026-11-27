@@ -1989,3 +1989,46 @@ after), because the 4.x-only paths are not exercised by the bare `.mscx`
 files. The heap budget of §15.5 is now met on the host for the private score;
 the time budget is not (≈ 8 s extrapolated for page 1), and the next step is
 lead (a): incremental parsing/engraving rather than a whole-score pass.
+
+## 21. Review of the private page: hyphens vs melisma extenders (2026-11-27)
+
+The page still showed extender lines between syllables ("Mi nuit——",
+"chré tien——", "ef fa cer——"). `LyricsLayout::createOrRemoveLyricsLine`
+(`lyricslayout.cpp:383-504`) creates **one** `LyricsLine` per syllable when
+the syllable has melisma ticks *or* is `Begin`/`Middle`, and
+`LyricsLine::isEndMelisma()` (`dom/lyricsline.h:144`) is
+`lyrics()->ticks().isNotZero()`: a syllable with `<ticks>`/`<ticks_f>` gets
+the continuous extender of `layoutMelismaLine` (`lyricslayout.cpp:228-259`),
+all other `Begin`/`Middle` syllables get the short dashes of `layoutDashes`
+(`:261-360`). The 4.x reader already keeps both the `<syllabic>` type and the
+`<ticks_f>` duration (`read4xx::read_lyrics`); the engraver collapsed them
+into one rule and drew a dash *and* an extender for a melisma.
+
+`plan_lyric_lines` now ports that split. A nonzero melisma draws one
+continuous line from the syllable's right edge plus `lyricsMelismaPad` to its
+`endTick`, and suppresses the hyphen; a dash-only `Begin`/`Middle` syllable
+draws `ceil(gap / lyricsDashMaxDistance)` dashes (one per 16 sp, half gaps at
+both ends), each capped at `lyricsDashMaxLength` and widened to
+`lyricsDashMinLength` when `lyricsDashForce` is set (`:310-359`). A dash with
+no following same-verse syllable emits no line (`:283-285`). The seven
+`lyricsDash*`/`lyricsMelismaPad` style keys are read from `score_style.mss`
+into `StyleSettings` and `PageSpec`, so the private score's 0.8 sp maximum
+dash length and 0.15 sp dash thickness are used instead of the 4.7.4 defaults
+(`styledef.cpp:80-83,89-91`). The atom pass treats `<ticks>` of zero as no
+melisma, as `isEndMelisma()` does. Unit tests pin dash versus extender, the
+melisma-overrides-hyphen rule, the style dash length and the dash count over a
+34 sp gap.
+
+| Metric (`oracle-eng9-review-base` → `oracle-eng9-review-step1`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1698 (375/2 209) | 0.1698 (375/2 209) |
+| Measure widths / system breaks | 92/394 / 36/56 | 92/394 / 36/56 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Overlapping lyric syllables, same verse | 0 / 0 | 0 / 0 |
+
+Lyrics lines are not among the oracle's extracted elements, so the unchanged
+figures are expected. On the private page page 1 (`engrave-img/eng9/step1.png`,
+rendered from this tree) the hyphens are now 0.8 sp dashes exactly where the
+4.7.4 page has them, and the long lines remain only on syllables carrying
+`<ticks_f>` ("nuit", "tien", "Ou", "cer"), as in the reference.
