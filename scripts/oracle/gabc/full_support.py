@@ -26,11 +26,11 @@ only when a consumer of the destination can reconstruct it.
 
 A `key: <raw GABC token>` label is a dump of the source, **not** a carrier: no
 other tool gives it a meaning, and in ABC/LilyPond it prints over the notes.
-The same holds for any `gabc` substring in a carrier, for a `N:key=value` /
-`I:clef=` copy of a source field and for an empty annotation. All of them are
-removed before the return conversion and counted as **not carried**. The
-instrument then fails loudly if any of them survives in the measured output:
-a residual private carrier would pad the figure.
+The same holds for any `gabc` substring in a carrier, for a hidden
+`print-object="no"` text, for a private `layout:`/`gabc:` MEI label and for an
+empty annotation. Nothing is stripped before measurement: the instrument
+fails loudly on any such carrier in the *written* full-support output, so the
+number can only count facts a conforming consumer actually sees.
 
 Native carriers (ABC `w:`, LilyPond `\\lyricsto`, MusicXML `<lyric>`, SMuFL
 `other-notation/@smufl`, gregorian.ly commands, MEI NEUMES) are deliberately
@@ -67,6 +67,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from private_carriers import violations  # noqa: E402
 from roundtrip_bytes import convert  # noqa: E402
 
 
@@ -512,60 +513,6 @@ DUMP_LABELS = (
 )
 LABEL_RE = re.compile(
     r"(?i)(?<![A-Za-z])(?:" + "|".join(DUMP_LABELS) + r"):\s")
-GABC_RE = re.compile(r"(?i)gabc")
-XML_ELEMENT_RE = re.compile(r"<([A-Za-z][\w:-]*)([^>]*)>([^<]*)</\1>")
-XML_ATTR_RE = re.compile(r'\s+(?:label|name|type|value)="[^"]*gabc[^"]*"', re.I)
-ABC_ANNOTATION_RE = re.compile(r'"\^(?:' + "|".join(DUMP_LABELS) + r'):[^"\n]*"|""', re.I)
-LY_ANNOTATION_RE = re.compile(r'\^"(?:(?:' + "|".join(DUMP_LABELS) + r'):[^"\n]*|)"', re.I)
-HEX_RUN = re.compile(r"(?<![0-9A-Za-z])[0-9a-fA-F]{16,}(?![0-9A-Za-z])")
-HEX_DECORATION = re.compile(r"![^!\n]*!")
-HEX_ANNOTATION = re.compile(r'"[\^_<>@][^"\n]*"')
-
-
-def strip_xml_carriers(text: str) -> str:
-    """Supprime les éléments dont le *texte* est un vidage, et les attributs privés.
-
-    Only the attribute is removed from elements such as `<syl label="gabc:…">`:
-    the element itself is a standard carrier (the lyric text) and must stay.
-    """
-    def replace(match: re.Match[str]) -> str:
-        tag, attributes, content = match.groups()
-        if GABC_RE.search(content) or LABEL_RE.search(content):
-            return ""
-        return match.group(0)
-    cleaned = re.sub(
-        r'\s*<annot[^>]*type="gabc-[^"]*"[^>]*>.*?</annot>', "", text, flags=re.S)
-    cleaned = re.sub(r'\s*<annot[^>]*type="gabc-[^"]*"[^>]*/>', "", cleaned)
-    cleaned = XML_ELEMENT_RE.sub(replace, cleaned)
-    return XML_ATTR_RE.sub("", cleaned)
-
-
-def strip_private(destination: str, data: bytes) -> bytes:
-    """Ignored dump carriers: removed and counted as not carried.
-
-    Everything removed here is a copy of the source under a generic syntax
-    (``key: value``, ``gabc`` prefix, empty annotation).  Nothing in the
-    destination specification gives it a meaning, so it cannot be a carrier.
-    """
-    if destination in ("musicxml", "mei"):
-        text = data.decode("utf-8", "replace")
-        text = strip_xml_carriers(text)
-        return text.encode("utf-8")
-    if destination == "abc":
-        text = data.decode("utf-8", "replace")
-        text = ABC_ANNOTATION_RE.sub("", text)
-        # Copies of GABC header/clef fields under generic ABC information
-        # fields (§3.1) are dumps too, unlike a native `K:… clef=C3`.
-        text = re.sub(r"(?m)^N:[^:=\n]+=[^\n]*\n?", "", text)
-        text = re.sub(r"(?m)^I:clef=[^\n]*\n?", "", text)
-        return text.encode("utf-8")
-    if destination == "ly":
-        text = data.decode("utf-8", "replace")
-        text = LY_ANNOTATION_RE.sub("", text)
-        text = re.sub(r'(?m)^\s*(?:chantHeader|gabcHeader)[A-Z]*\s*=\s*"[^\n]*"\n?', "", text)
-        return text.encode("utf-8")
-    return data
-
 
 WORDS_RE = re.compile(r"<words\b([^>]*)>(.*?)</words>", re.S)
 DIRECTION_OR_NOTE_RE = re.compile(r"<(direction|note)\b([^>]*)>(.*?)</\1>", re.S)
@@ -616,38 +563,22 @@ def words_violation(text: str) -> str | None:
 
 
 def private_payload(destination: str, data: bytes) -> str | None:
-    """Décrit un porteur privé résiduel dans la sortie mesurée, ou ``None``.
+    """Décrit un porteur privé dans la sortie *écrite*, ou ``None``.
 
-    L'instrument examine la sortie *mesurée*, c'est-à-dire après
-    [`strip_private`] : tout vidage de la source y a été retiré et n'entre pas
-    dans le numérateur. Un résidu est une erreur de mesure : il modifierait le
-    taux de portage ou salirait la sortie d'un lecteur conforme.
+    Aucun nettoyage n'est appliqué avant la mesure : un vidage du source dans
+    une sortie full-support est une erreur et doit faire échouer l'instrument.
+    La liste des porteurs examinés est celle de `private_carriers.py`.
     """
-    if destination == "midi":
-        return None  # flux SMF binaire, sans texte mesurable
-    text = data.decode("utf-8", "replace")
-    if destination == "musicxml":
+    if destination != "midi":
+        text = data.decode("utf-8", "replace")
         if violation := words_violation(text):
             return violation
-    found = GABC_RE.search(text)
+        found = LABEL_RE.search(text)
+        if found:
+            return f"étiquette de vidage → {found.group(0)[:48]!r}"
+    found = violations(destination, data)
     if found:
-        return f"préfixe gabc → {text[max(0, found.start() - 16):found.start() + 32]!r}"
-    found = LABEL_RE.search(text)
-    if found:
-        return f"étiquette de vidage → {found.group(0)[:48]!r}"
-    if destination in ("abc", "ly"):
-        if destination == "abc" and '""' in text:
-            return "annotation ABC vide"
-        if destination == "ly" and '^""' in text:
-            return "annotation LilyPond vide"
-        patterns = (HEX_DECORATION, HEX_ANNOTATION) if destination == "abc" else (HEX_ANNOTATION,)
-        for pattern in patterns:
-            for found in pattern.finditer(text):
-                content = found.group(0).strip("!\"").lstrip("^_<>@")
-                if re.fullmatch(r"[A-Za-z]{0,2}[0-9a-fA-F]{2,}", content):
-                    return f"code hexadécimal dans {found.group(0)[:48]!r}"
-    elif HEX_RUN.search(text):
-        return f"chaîne hexadécimale → {HEX_RUN.search(text).group(0)[:48]!r}"
+        return "; ".join(found)
     return None
 
 
@@ -655,11 +586,11 @@ def convert_back(cli: Path, data: bytes, destination: str) -> tuple[bytes, str]:
     # Le mode « full support » s'applique aussi à la lecture de retour : sans
     # lui, les porteurs standard écrits (méta-texte SMF, ticks exacts, NEUMES
     # MEI…) seraient ignorés et la mesure pénaliserait le lecteur, pas le format.
-    stripped = strip_private(destination, data)
-    violation = private_payload(destination, stripped)
+    # Aucun porteur privé n'est retiré : sa présence est une erreur de mesure.
+    violation = private_payload(destination, data)
     if violation:
         raise ValueError(f"porteur privé non mesurable en {destination}: {violation}")
-    return convert_from(cli, stripped, destination, "gabc",
+    return convert_from(cli, data, destination, "gabc",
                         FULL_SUPPORT_EXTRA[destination])
 
 

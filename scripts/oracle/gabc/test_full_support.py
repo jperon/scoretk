@@ -16,7 +16,7 @@
 # this program. If not, see the LICENSE file at the root of this repository or
 # <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Tests of the GABC full-support instrument: dump carriers are not facts.
+"""Tests of the GABC full-support instrument: dumps are errors, not facts.
 
 Run the unit tests alone with::
 
@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import full_support as fs  # noqa: E402
+import private_carriers as pc  # noqa: E402
 
 
 FACTUS = (
@@ -46,9 +47,9 @@ FACTUS = (
 
 
 class DumpCarrierTests(unittest.TestCase):
-    """A generic `key: value` carrier is ignored, never counted."""
+    """A source dump inside a full-support output fails the instrument."""
 
-    def test_musicxml_labels_are_stripped_before_measurement(self) -> None:
+    def test_musicxml_private_fields_fail_loudly(self) -> None:
         xml = (b'<score-partwise><note><notations print-object="no">'
                b'<technical><other-technical print-object="no">letter: e'
                b'</other-technical><other-technical print-object="no">'
@@ -56,21 +57,22 @@ class DumpCarrierTests(unittest.TestCase):
                b'<other-technical print-object="no">gabc:note:l=e|g=w'
                b'</other-technical></technical></notations></note></score-partwise>')
         self.assertIsNotNone(fs.private_payload("musicxml", xml))
-        stripped = fs.strip_private("musicxml", xml)
-        self.assertNotIn(b"letter:", stripped)
-        self.assertNotIn(b"glyph:", stripped)
-        self.assertNotIn(b"gabc", stripped)
-        self.assertIsNone(fs.private_payload("musicxml", stripped))
+        self.assertTrue(pc.violations("musicxml", xml))
+
+    def test_hidden_musicxml_text_fails_loudly(self) -> None:
+        xml = (b'<score-partwise><direction print-object="no"><direction-type>'
+               b'<other-direction print-object="no">plain hidden text'
+               b'</other-direction></direction-type></direction></score-partwise>')
+        self.assertTrue(pc.violations("musicxml", xml))
 
     def test_native_musicxml_carriers_survive(self) -> None:
-        xml = (b'<score-partwise><note><pitch><step>E</step><octave>4</octave></pitch>'
+        xml = (b'<score-partwise><identification><miscellaneous-field '
+               b'name="mode">viii</miscellaneous-field></identification>'
+               b'<note><pitch><step>E</step><octave>4</octave></pitch>'
                b'<lyric number="1"><syllabic>single</syllabic><text>FAc</text></lyric>'
                b'<notations><other-notation type="single" smufl="chantQuilisma"/>'
                b'</notations></note></score-partwise>')
-        stripped = fs.strip_private("musicxml", xml)
-        self.assertIn(b"<lyric", stripped)
-        self.assertIn(b"chantQuilisma", stripped)
-        self.assertIsNone(fs.private_payload("musicxml", stripped))
+        self.assertIsNone(fs.private_payload("musicxml", xml))
 
     def test_words_duplicating_a_lyric_fail_loudly(self) -> None:
         xml = (b'<score-partwise><measure><direction><direction-type>'
@@ -102,29 +104,34 @@ class DumpCarrierTests(unittest.TestCase):
                b'</measure></score-partwise>')
         self.assertIsNone(fs.private_payload("musicxml", xml))
 
-    def test_abc_annotations_are_stripped_but_w_lines_survive(self) -> None:
+    def test_abc_annotations_fail_loudly(self) -> None:
         abc = (b'X:1\nT:k\nK:C\nI:chant=gregorian\nI:clef=c3\n'
                b'N:language=latin\nw: FAc\n"^text: FAc"\ng, |\n'
                b'"^glyph: "\nd^"^glyph: virga" |\n')
-        stripped = fs.strip_private("abc", abc)
-        self.assertIn(b"w: FAc", stripped)
-        self.assertNotIn(b"^text:", stripped)
-        self.assertNotIn(b"^glyph:", stripped)
-        self.assertNotIn(b"I:clef=", stripped)
-        self.assertIsNone(fs.private_payload("abc", stripped))
+        self.assertTrue(pc.violations("abc", abc))
 
-    def test_lilypond_annotations_are_stripped_but_lyrics_survive(self) -> None:
+    def test_native_abc_lyrics_survive(self) -> None:
+        abc = b'X:1\nT:k\nK:C clef=C3\nw: FAc\ng, |\n'
+        self.assertIsNone(fs.private_payload("abc", abc))
+
+    def test_lilypond_annotations_fail_loudly(self) -> None:
         ly = (b'\\new VaticanaVoice = "cantus" { g,^"glyph: " } '
               b'\\new VaticanaLyrics \\lyricsto "cantus" { "FAc" _ }')
-        stripped = fs.strip_private("ly", ly)
-        self.assertIn(b"\\lyricsto", stripped)
-        self.assertIn(b'"FAc"', stripped)
-        self.assertNotIn(b'^"glyph:', stripped)
-        self.assertIsNone(fs.private_payload("ly", stripped))
+        self.assertTrue(pc.violations("ly", ly))
 
-    def test_empty_annotation_fails_loudly_when_not_stripped(self) -> None:
-        self.assertIsNotNone(fs.private_payload("ly", b'g,^"glyph: "'))
-        self.assertIsNotNone(fs.private_payload("abc", b'""\ng, |'))
+    def test_native_lilypond_lyrics_survive(self) -> None:
+        ly = (b'\\new VaticanaVoice = "cantus" { g, } '
+              b'\\new VaticanaLyrics \\lyricsto "cantus" { "FAc" _ }')
+        self.assertIsNone(fs.private_payload("ly", ly))
+
+    def test_mei_gabc_labels_fail_loudly(self) -> None:
+        mei = (b'<mei><meiHead label="gabc:layout:4332"/><music><syl '
+               b'label="layout:sep:S|gabc:detail:4c">Po</syl></music></mei>')
+        self.assertTrue(pc.violations("mei", mei))
+
+    def test_smf_private_prefix_fails_loudly(self) -> None:
+        smf = b'MThd\x00\x00\x00\x06\x00\x00\x00\x01\x00\x60MTrk\x00\x00\x00\x0b\x00\xff\x01\x08@ST:hello'
+        self.assertTrue(pc.violations("midi", smf))
 
 
 @unittest.skipUnless(os.environ.get("SCORETK_CLI"), "SCORETK_CLI is not set")
@@ -138,12 +145,13 @@ class FactusEstTests(unittest.TestCase):
     def test_every_destination_uses_a_native_lyric_carrier(self) -> None:
         source = FACTUS.read_bytes()
         native = {
-            "musicxml": (b"<lyric", (b"letter: ", b"glyph: ", b"syllable-text: ")),
-            "abc": (b"\nw:", (b'"^',)),
-            "ly": (b"\\lyricsto", (b'^"',)),
-            "mei": (b"<syl", (b"chantNote",)),
+            "musicxml": b"<lyric",
+            "abc": b"\nw:",
+            "ly": b"\\lyricsto",
+            "mei": b"<syl",
+            "midi": b"\xff\x05",
         }
-        for destination, (marker, forbidden) in native.items():
+        for destination, marker in native.items():
             with self.subTest(destination=destination):
                 written, error = fs.convert_from(
                     self.cli, source, "gabc", destination,
@@ -152,15 +160,9 @@ class FactusEstTests(unittest.TestCase):
                 self.assertEqual(error, "", f"{destination}: {error}")
                 self.assertTrue(written, f"{destination}: empty output")
                 self.assertIn(marker, written, f"{destination}: lyric carrier missing")
-                # The historical private `gabc:` fields of `master` are still
-                # written (default bytes must stay identical); the instrument
-                # strips them. No *new* readable-label dump may be written.
-                for dump in forbidden:
-                    self.assertNotIn(dump, written, f"{destination}: {dump!r} dump")
-                stripped = fs.strip_private(destination, written)
                 self.assertIsNone(
-                    fs.private_payload(destination, stripped),
-                    f"{destination}: dump carrier in the measured output",
+                    fs.private_payload(destination, written),
+                    f"{destination}: private carrier in the measured output",
                 )
 
     def test_factus_est_has_no_disguised_words_carrier(self) -> None:
@@ -177,8 +179,7 @@ class FactusEstTests(unittest.TestCase):
         self.assertNotIn(b'font-style="italic"', written)
         self.assertNotIn(b'color="#FF0000"', written)
         self.assertNotIn(b'color="#0000FF"', written)
-        stripped = fs.strip_private("musicxml", written)
-        self.assertIsNone(fs.private_payload("musicxml", stripped))
+        self.assertIsNone(fs.private_payload("musicxml", written))
 
 
 if __name__ == "__main__":
