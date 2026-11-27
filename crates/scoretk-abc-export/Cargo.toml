@@ -11,3 +11,4 @@ homepage.workspace = true
 [dependencies]
 scoretk-core = { path = "../scoretk-core" }
 scoretk-abc-common = { path = "../scoretk-abc-common" }
+scoretk-gabc-common = { path = "../scoretk-gabc-common" }

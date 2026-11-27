@@ -1336,3 +1336,30 @@ Wasm size measured with `nix build .#wasm` and `result/SIZE`:
 
 The contract of invariant 5 is unchanged; the new LilyPond chant module is
 linked into the wasm package even though the CLI exposes its option separately.
+
+## 22. ABC full support through meaningful ABC 2.1 carriers (2026-11-27)
+
+Step 1 of the campaign after the corrected §21 audit. The old ABC figure was
+**87.06 %** (83 187 / 104 555). It was not a format limit: ABC 2.1 §3.1
+(`N:`/`H:`/`I:` information fields), §4.14 (`!symbol!` decorations), §4.16
+(`U:` user-defined symbols) and §4.19 (`"^…"` annotations) carry those facts.
+The opt-in `--abc-gregorian` dialect (facade `Options::abc_gregorian`,
+`write_abc_with`, `read_abc_with_dialect`) now uses them with readable values:
+one `N:` field per header, `I:clef`, a `U:` definition for the four frequent
+signs and `!quilisma!`/`!spacing!`/… for the other glyph characters, one
+`"^text: …"` annotation per syllable (markup included), and separate
+annotations for attributes, bars, clef changes and signs. `docs/agents/abc.md`
+§59 lists every carrier with its spec clause.
+
+**Rejected alternative.** Hex-encoded payloads in otherwise standard syntax
+(`"^gT<hex>"`, `I:gabc-prefix`) were tried and discarded: no other ABC tool
+understands them and they print as visible garbage. `full_support.py` now
+raises `ValueError` on any hex-looking decoration/annotation or `gabc`-prefixed
+token in the *measured* output, after the historical private carriers are
+stripped. The current tree emits none.
+
+Re-measured on all 261 files, same instrument, same inherent citations:
+**ABC 99.59 %** (109 292 / 109 738; raw 95.82 %), inherent 4 319, residual
+defects 446 (`pitch` 416, `glyph` 16, `custos` 10, `attribute` 2, `clef` 1,
+`text` 1). The other four destinations are unchanged by this step
+(MusicXML 90.89 %, MIDI 95.45 %, LilyPond 92.01 %, MEI 98.90 %).

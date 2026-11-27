@@ -51,6 +51,7 @@
 //! n'en a pas besoin. Voir `docs/agents/abc.md`.
 
 pub mod capabilities;
+mod gregorian;
 mod voice;
 mod writer;
 
@@ -65,5 +66,20 @@ pub use scoretk_abc_common::{Error, Result, Warning};
 /// La sortie est un document complet, reproductible (aucune horloge, aucun
 /// identifiant aléatoire), terminé par un saut de ligne.
 pub fn write_abc(score: &Score) -> Result<String> {
+    write_abc_with(score, false)
+}
+
+/// Écrit une partition ABC, avec le dialecte grégorien optionnel.
+///
+/// `gregorian = true` n'a d'effet que si la partition porte une charge
+/// [`scoretk_core::model::Extension::Gregorian`] ; sinon les octets sont ceux
+/// de [`write_abc`]. Les porteurs utilisés sont ceux de la norme ABC 2.1
+/// (§3.1, §4.14, §4.16, §4.19), sans donnée codée ; voir `docs/agents/gabc.md` §22.
+pub fn write_abc_with(score: &Score, gregorian: bool) -> Result<String> {
+    if gregorian {
+        if let Some(scoretk_core::model::Extension::Gregorian(payload)) = &score.extensions.format {
+            return Ok(gregorian::render(score, payload));
+        }
+    }
     writer::Writer::new(score).render()
 }

@@ -34,11 +34,13 @@
 //!   dont [`pitch::AccidentalState`] (état des altérations d'une mesure) ;
 //! - [`duration`] : multiplicateurs relatifs à `L:` et figures du modèle ;
 //! - [`decorations`] : liste des nuances, articulations et ornements ;
-//! - [`text`] : échappement des annotations et des paroles `w:`.
+//! - [`text`] : échappement des annotations et des paroles `w:` ;
+//! - [`gregorian`] : porteurs ABC 2.1 partagés par le chant grégorien.
 
 pub mod decorations;
 pub mod duration;
 pub mod error;
+pub mod gregorian;
 pub mod pitch;
 pub mod text;
 

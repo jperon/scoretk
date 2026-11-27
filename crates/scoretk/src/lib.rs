@@ -162,12 +162,23 @@ pub fn read_with_report(bytes: &[u8], format: Format) -> Result<(Score, model::C
         Format::Mxl => hooks::read_mxl(bytes)?,
         Format::Mei => hooks::read_mei(bytes)?,
         Format::Ly => hooks::read_lilypond(bytes)?,
-        Format::Abc => hooks::read_abc(bytes)?,
+        Format::Abc => hooks::read_abc(bytes, false)?,
         Format::Midi => hooks::read_midi(bytes)?,
         Format::Gabc => hooks::read_gabc(bytes)?,
     };
     let report = score.report.clone();
     Ok((score, report))
+}
+
+/// Lit un ABC avec le dialecte grégorien additif.
+///
+/// Sans `gregorian`, l'appel est identique à [`read`]. Avec `gregorian`, un
+/// document portant `I:chant=gregorian` est reconstruit en charge L6 ; les
+/// autres documents ABC suivent le lecteur ordinaire. Sans la feature
+/// `abc-import`, renvoie [`Error::FormatNonPrisEnCharge`].
+#[cfg(feature = "abc-import")]
+pub fn read_abc_with_dialect(bytes: &[u8], gregorian: bool) -> Result<Score> {
+    hooks::read_abc(bytes, gregorian)
 }
 
 /// Lit un MIDI avec des options d'import explicites.
@@ -227,7 +238,7 @@ pub fn write_with_report(
         Format::Mscx => hooks::write_mscx(score)?,
         Format::Mscz => hooks::write_mscz(score)?,
         Format::Ly => hooks::write_lilypond(score, options.ly_gregorian)?,
-        Format::Abc => hooks::write_abc(score)?,
+        Format::Abc => hooks::write_abc(score, options.abc_gregorian)?,
         Format::Gabc => hooks::write_gabc(score)?,
     };
     let mut report = score.report.clone();

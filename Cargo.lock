@@ -633,6 +633,7 @@ version = "0.1.0"
 dependencies = [
  "scoretk-abc-common",
  "scoretk-core",
+ "scoretk-gabc-common",
 ]
 
 [[package]]
@@ -641,6 +642,7 @@ version = "0.1.0"
 dependencies = [
  "scoretk-abc-common",
  "scoretk-core",
+ "scoretk-gabc-common",
 ]
 
 [[package]]

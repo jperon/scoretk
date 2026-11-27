@@ -82,6 +82,11 @@ pub struct Options {
     /// Additive : `false` par défaut, donc les `.ly` non grégoriens restent
     /// octet pour octet identiques.
     pub ly_gregorian: bool,
+    /// Porteurs ABC 2.1 du chant grégorien (`!symbole!` définis par `U:`,
+    /// annotations `"^…"`, champs `N:`/`I:` ; §3.1/§4.14/§4.16/§4.19).
+    /// Additif : `false` par défaut, donc les `.abc` non grégoriens restent
+    /// octet pour octet identiques.
+    pub abc_gregorian: bool,
     /// Porteurs XSD 4.0 standard au-delà de l'exporteur 4.7.4. Additif :
     /// `false` par défaut, donc les octets MusicXML restent conformes aux
     /// références `*.ref.musicxml`; voir `docs/agents/musicxml-export.md` §55.
@@ -115,6 +120,7 @@ impl Default for Options {
             mei_full_support: false,
             gabc_neume_smufl: false,
             ly_gregorian: false,
+            abc_gregorian: false,
             xml_full_support: false,
             xml_lossless_round_trip: false,
         }

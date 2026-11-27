@@ -18,7 +18,7 @@
 //! Facade checks for chant carriers that are in the destination **specification**:
 //! XSD 4.0 `other-notation/@smufl` and LilyPond's ancient-notation contexts.
 
-use scoretk::{read, write, Format, Options};
+use scoretk::{read, read_abc_with_dialect, write, Format, Options};
 
 const GABC: &str =
     "name: Veni Sancte Spiritus;\nlanguage: latin;\nmode: 2;\n%%\n(c3)\nVE(g.)ni(h') (,)\n";
@@ -59,6 +59,37 @@ fn smufl_chant_glyph_is_a_standard_musicxml_carrier() {
         "final bar lost: {text}"
     );
     assert!(!text.contains("gabc:"), "private field invented: {text}");
+}
+
+#[test]
+fn gregorian_abc_carriers_are_readable_and_additive() {
+    let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
+    let default = write(&score, Format::Abc, &Options::default()).expect("default .abc");
+    let default = String::from_utf8(default).expect("UTF-8");
+    assert!(!default.contains("I:chant=gregorian"), "default bytes changed");
+
+    let options = Options {
+        abc_gregorian: true,
+        ..Options::default()
+    };
+    let abc = write(&score, Format::Abc, &options).expect("Gregorian .abc");
+    let abc = String::from_utf8(abc).expect("UTF-8");
+    assert!(abc.contains("I:chant=gregorian"), "{abc}");
+    assert!(abc.contains("I:clef=c3"), "{abc}");
+    assert!(abc.contains("U: H = !fermata!"), "{abc}");
+    assert!(abc.contains("\"^text:"), "{abc}");
+    assert!(abc.contains("N:language=latin"), "{abc}");
+    assert!(!abc.contains("gabc"), "no private prefix: {abc}");
+    // Aucun code hexadécimal dans une décoration ou une annotation.
+    assert!(!abc.contains("!gG"), "{abc}");
+
+    let again = read_abc_with_dialect(abc.as_bytes(), true).expect("Gregorian .abc import");
+    let gabc = write(&again, Format::Gabc, &Options::default()).expect("GABC export");
+    let text = String::from_utf8(gabc).expect("UTF-8");
+    assert!(text.contains("name: Veni Sancte Spiritus"), "{text}");
+    assert!(text.contains("(c3)"), "clef lost: {text}");
+    assert!(text.contains("language: latin"), "header lost: {text}");
+    assert!(text.contains("VE("), "syllable text lost: {text}");
 }
 
 #[test]

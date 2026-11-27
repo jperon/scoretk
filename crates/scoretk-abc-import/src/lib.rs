@@ -45,9 +45,22 @@
 //! ```
 
 pub mod capabilities;
+mod gregorian;
 mod reader;
 
 pub use capabilities::CAPABILITIES;
 
 pub use reader::{read_abc, read_abc_tune, read_abc_with, ReadOptions, ReadOutput};
+
+/// Lit un document ABC portant le dialecte grégorien additif.
+///
+/// Sans le marqueur `I:chant=gregorian`, le résultat est celui de [`read_abc`].
+pub fn read_abc_gregorian(src: &str) -> Result<Score> {
+    reader::read_abc_with(src, &ReadOptions {
+        gregorian: true,
+        ..ReadOptions::default()
+    })
+    .map(|output| output.score)
+}
 pub use scoretk_abc_common::{Error, Result, Warning};
+use scoretk_core::model::Score;

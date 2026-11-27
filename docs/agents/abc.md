@@ -4224,3 +4224,42 @@ avant et après (comparaison des deux listes sur l'arbre de référence
 --workspace`, `clippy -D warnings`, `fmt --check`, `e2e_corpus` 8/8 et le
 build wasm passent. `Q:` avec BPM décimal est accepté par `abc2midi` 5.03 et
 `abcm2ps` 8.14.
+
+## 59. Gregorian chant dialect: opt-in `--abc-gregorian` (2026-11-27)
+
+A new *additive* dialect writes and reads Gregorian chant with the standard
+vocabulary of ABC 2.1. Without the option, every `.abc` byte is unchanged:
+`write_abc` calls `write_abc_with(score, false)`, and the ordinary ABC reader
+never inspects the chant marker. With `Options::abc_gregorian` / the CLI flag
+`--abc-gregorian`, a score carrying `Extension::Gregorian` is written by
+`scoretk-abc-export/src/gregorian.rs` and read back by
+`scoretk-abc-import/src/gregorian.rs`.
+
+### 59.1 Carriers (all defined by the ABC 2.1 specification)
+
+| GABC fact | ABC 2.1 carrier | Spec clause |
+| --- | --- | --- |
+| header field | `N:<name>=<value>`, one field per fact | §3.1.11 (notes) |
+| clef, dialect marker | `I:clef=<token>`, `I:chant=gregorian` | §3.1 (instruction fields) |
+| neume glyph characters | `!quilisma!`, `!spacing!`, `!virga!`, … one decoration per character | §4.14 (decorations) |
+| mora, ictus, episema, quilisma | `U: H = !fermata!`, `U: L = !accent!`, `U: M = !tenuto!`, `U: P = !uppermordent!`, written as `H`, `L`, `M`, `P` | §4.16 (redefinable symbols) |
+| syllable text and `<sp>`/`<sc>` markup | `"^text: <value>"` | §4.19 (annotations) |
+| bracketed attributes, `alt:` text | `"^attribute: <value>"`, `"^above: <value>"` | §4.19 |
+| separation bar, clef change, group sign | `"^bar: <value>"`, `"^clef: <value>"`, `"^sign: <value>"` | §4.19 |
+| custos | `!custos!`, `!custos-up!`, `!custos-zero!` | §4.14 |
+
+The decoration names are human-readable neume and sign names, not encoded
+payloads. No `gabc`-prefixed token and no hexadecimal string is written: the
+oracle `scripts/oracle/gabc/full_support.py` rejects any such residue in the
+measured output. Unknown glyph characters use a readable `"^glyph: <char>"`
+annotation, never a code.
+
+### 59.2 Measured result
+
+On the 261-file GABC lot (nine Gregorio examples and 252 GregoBase files),
+with `--abc-gregorian` enabled on both the write and the return conversion,
+the standard-carrier figure rises from **87.06 %** (83 187 / 104 555) to
+**99.59 %** (109 292 / 109 738). Remaining defects: `pitch` 416, `glyph` 16,
+`custos` 10, `attribute` 2, `clef` 1, `text` 1; the inherent denominator is
+unchanged (4 319). No default `.abc` output changed: `e2e_corpus` 8/8, the ABC
+import/export snapshots and `gabc_standard_carriers` 3/3 pass.

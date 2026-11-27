@@ -56,6 +56,10 @@ pub struct ReadOptions {
     /// Indice du morceau à lire quand la source en contient plusieurs
     /// (base zéro).
     pub tune: usize,
+    /// Lit le dialecte grégorien additif écrit avec les porteurs ABC 2.1
+    /// (§3.1/§4.14/§4.16/§4.19). Faux par défaut : la lecture ordinaire ne
+    /// change pas.
+    pub gregorian: bool,
 }
 
 /// Résultat d'une lecture avec avertissements.
@@ -74,11 +78,24 @@ pub fn read_abc(src: &str) -> Result<Score> {
 
 /// Lit le morceau d'indice `tune` d'une source ABC.
 pub fn read_abc_tune(src: &str, tune: usize) -> Result<Score> {
-    read_abc_with(src, &ReadOptions { tune }).map(|output| output.score)
+    read_abc_with(src, &ReadOptions {
+        tune,
+        ..ReadOptions::default()
+    })
+    .map(|output| output.score)
 }
 
 /// Lit un morceau ABC et renvoie aussi les avertissements.
 pub fn read_abc_with(src: &str, options: &ReadOptions) -> Result<ReadOutput> {
+    if options.gregorian && options.tune == 0 {
+        let mut gregorian_score = Score::default();
+        if crate::gregorian::restore(src, &mut gregorian_score) {
+            return Ok(ReadOutput {
+                score: gregorian_score,
+                warnings: Vec::new(),
+            });
+        }
+    }
     let lines = prepare(src);
     let tunes = split_tunes(&lines);
     let tune = tunes.get(options.tune).ok_or(Error::MorceauHorsLimite {

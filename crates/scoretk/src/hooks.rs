@@ -297,14 +297,19 @@ non_branche!(
 // --- ABC (lecture) --------------------------------------------------------
 
 #[cfg(feature = "abc-import")]
-pub(crate) fn read_abc(bytes: &[u8]) -> Result<Score> {
+pub(crate) fn read_abc(bytes: &[u8], gregorian: bool) -> Result<Score> {
     let text = std::str::from_utf8(bytes).map_err(|error| Error::Abc(error.to_string()))?;
-    scoretk_abc_import::read_abc(text).map_err(|error| Error::Abc(error.to_string()))
+    let score = if gregorian {
+        scoretk_abc_import::read_abc_gregorian(text)
+    } else {
+        scoretk_abc_import::read_abc(text)
+    };
+    score.map_err(|error| Error::Abc(error.to_string()))
 }
 
 non_branche!(
     "abc-import",
-    read_abc(bytes: &[u8]) -> Result<Score>,
+    read_abc(bytes: &[u8], gregorian: bool) -> Result<Score>,
     Format::Abc,
     Lecture
 );
@@ -312,15 +317,15 @@ non_branche!(
 // --- ABC (écriture) -------------------------------------------------------
 
 #[cfg(feature = "abc-export")]
-pub(crate) fn write_abc(score: &Score) -> Result<Vec<u8>> {
-    scoretk_abc_export::write_abc(score)
+pub(crate) fn write_abc(score: &Score, gregorian: bool) -> Result<Vec<u8>> {
+    scoretk_abc_export::write_abc_with(score, gregorian)
         .map(String::into_bytes)
         .map_err(|error| Error::Abc(error.to_string()))
 }
 
 non_branche!(
     "abc-export",
-    write_abc(score: &Score) -> Result<Vec<u8>>,
+    write_abc(score: &Score, gregorian: bool) -> Result<Vec<u8>>,
     Format::Abc,
     Ecriture
 );

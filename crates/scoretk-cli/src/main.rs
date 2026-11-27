@@ -104,6 +104,12 @@ struct Cli {
     #[arg(long)]
     ly_gregorian: bool,
 
+    /// ABC : porteurs 2.1 du chant grégorien (`!symbole!` définis par `U:`,
+    /// annotations `"^…"`, champs `N:`/`I:`, §3.1/§4.14/§4.16/§4.19).
+    /// Additif en lecture et en écriture : le `.abc` par défaut ne change pas.
+    #[arg(long)]
+    abc_gregorian: bool,
+
     /// Export MEI : porteurs 5.1 au-delà de l'export 4.7.4 (module NEUMES,
     /// seconde portée NABC, valeurs dynamiques). Additif : le défaut reste
     /// octet pour octet conforme à MuseScore 4.7.4 pour les sources non
@@ -274,7 +280,7 @@ fn main() -> ExitCode {
             Err(error) => return fail(&format!("{input} : {error}")),
         }
     } else {
-        match read_score(&bytes, from, &input) {
+        match read_score(&bytes, from, &input, cli.abc_gregorian) {
             Ok(score) => score,
             Err(error) if error.is_unsupported() => {
                 return fail_unsupported(&format!("{input} : {error}"));
@@ -293,6 +299,7 @@ fn main() -> ExitCode {
         mei_full_support: cli.mei_full_support,
         xml_full_support: cli.xml_full_support,
         ly_gregorian: cli.ly_gregorian,
+        abc_gregorian: cli.abc_gregorian,
         ..Options::default()
     };
 
@@ -322,10 +329,18 @@ fn read_input(input: &str) -> Result<Vec<u8>, String> {
 
 /// Lit la partition : un fichier `.ly` passe par le résolveur d'inclusions du
 /// disque, les autres formats par la façade.
-fn read_score(bytes: &[u8], from: Format, input: &str) -> scoretk::Result<Score> {
+fn read_score(
+    bytes: &[u8],
+    from: Format,
+    input: &str,
+    abc_gregorian: bool,
+) -> scoretk::Result<Score> {
     if from == Format::Ly && input != "-" {
         let mut resolve = lilypond_resolver(Path::new(input));
         return scoretk::read_lilypond_with_includes(bytes, &mut resolve);
+    }
+    if from == Format::Abc && abc_gregorian {
+        return scoretk::read_abc_with_dialect(bytes, true);
     }
     scoretk::read(bytes, from)
 }

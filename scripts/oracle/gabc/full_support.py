@@ -77,7 +77,7 @@ FULL_SUPPORT_EXTRA: dict[str, tuple[str, ...]] = {
     "midi": ("--midi-full-support",),
     "mei": ("--mei-full-support",),
     "ly": ("--ly-gregorian",),
-    "abc": (),
+    "abc": ("--abc-gregorian",),
 }
 
 # Fact kinds, with the Gregorio rule that makes them a GABC fact.
