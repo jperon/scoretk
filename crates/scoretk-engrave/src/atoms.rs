@@ -1636,24 +1636,18 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 // The demand belongs to the *segment*, not to
                                 // the bar line: `Segment::width` is the
                                 // minimum distance to the next segment
-                                // (`horizontalspacing.cpp:1216-1266`), and
-                                // `stretchSegmentsToWidth` only grows springs
-                                // (`:1087-1111`). Adding the deficit to the
-                                // measure's end would leave two neighbouring
-                                // syllables superposed while the bar line
-                                // moved. Shift this segment (and everything
-                                // after it) so the *previous segment's*
-                                // width carries the requirement.
+                                // (`horizontalspacing.cpp:1216-1266`). Shift
+                                // this segment (and everything after it) so
+                                // the previous segment's width carries the
+                                // requirement.
                                 let deficit = needed - have;
                                 x += deficit;
                                 if let Some(base) = segment_bases.last_mut() {
                                     *base += deficit;
                                 }
-                                // The demand is also recorded as a
-                                // `Spring::widthOffset`, the fixed part of
-                                // this segment's width that justification
-                                // must not shrink (`horizontalspacing.cpp:
-                                // 1073-1082, :1087-1111`).
+                                // `Spring::widthOffset` (`horizontalspacing.cpp:
+                                // 1073-1082`): the extra demand is fixed and
+                                // added back after justification (`:1087-1111`).
                                 if let Some(offset) = segment_offsets.get_mut(segment_number) {
                                     *offset += deficit;
                                 }
@@ -2232,9 +2226,10 @@ mod tests {
         // another.
         assert_eq!(
             with_lyrics[0].segment_offsets[1],
-            (needed - plain_gap).max(0),
-            "the lyric padding must be recorded as fixed segment width"
+            needed - plain_gap,
+            "the extra lyric demand must be recorded as fixed segment width"
         );
+        assert!(needed >= plain_gap);
     }
 
     #[test]

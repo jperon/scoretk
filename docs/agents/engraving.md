@@ -2169,6 +2169,43 @@ figures are unchanged by construction. The private page is the evidence:
 `engrave-img/eng9/step8-p2.png` (whole page inspected) shows the T B lyrics
 below the T B staff with a clear gap, and `step8-p1.png` keeps page 1 intact.
 
+## 26. Review of the private page 2: final bar line past the staff (2026-11-27)
+
+The right-hand end of systems 1 and 2 carried isolated bar-line strokes in
+the margin: the staff lines were clipped at `staff_width` while the end bar
+line was drawn at `left + grid.end()`, which overflowed by 1.0 and 6.2 sp.
+The justification budget and the grid it drives were solving two different
+problems:
+
+* `stretch_budget` summed `segment_span` over the *events* of one staff, but
+  `shared_measures` advances the widest base of every segment over **all**
+  staves. A segment with an event only on another staff was fixed in the
+  budget and a spring in the grid.
+* `merged_measure` kept staff 0's `segment_bases` even when it adopted
+  another staff's events and width.
+
+`stretch_budget` now walks `segment_bases` (the same table `shared_measures`
+uses), with `Spring::widthOffset` as fixed width; `merged_measure` keeps the
+union of the staves' events for the spring flags and the maximum base/offset
+of every segment. The justified bar line then coincides with the staff line
+end (within 0.07 sp) and spans exactly its group: 4 sp for S A and T B, 16–17
+sp for the organ brace, as in `barline.cpp:193-210` (`spanFrom`/`spanTo`).
+Two unit tests pin the budget/grid identity and the lyric offset.
+
+| Metric (`oracle-eng9-p2-step8` → `oracle-eng9-p2-step11`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1747 (386/2 209) | **0.1802** (398/2 209) |
+| Measure widths within 0.1 sp | 91/394 | 90/394 |
+| Measure width mean abs. error, sp | 9.779 | **9.542** |
+| Note x within 0.1 sp | 178/2 209 | 177/2 209 |
+| Note x mean abs. error, sp | 2.499 | **2.466** |
+| Files with identical system breaks | 35/56 | **37/56** |
+| Adjacent-staff gap mean abs. error, sp | 4.708 | **3.491** |
+
+`engrave-img/eng9/step11-p2.png` (whole page inspected) has no stroke outside
+the last measure of a system, and `step11-p1.png` keeps page 1 correct.
+
 | Metric (`oracle-eng9-review-step3` → `oracle-eng9-p2-step6b`) | Before | After |
 | --- | ---: | ---: |
 | Failures / elements | 0 / 2 209 | 0 / 2 209 |

@@ -707,27 +707,53 @@ fn segment_span(atom: &MeasureAtom, index: usize) -> i32 {
 /// `3.5 sp * spring`) accounts for the minimum widths of short notes and
 /// dotted heads, which can otherwise push the system past the right margin.
 pub(crate) fn stretch_budget(atom: &MeasureAtom) -> (i32, i32) {
-    let mut fixed = atom.events.first().map_or(0, |event| event.x);
+    // Walk the *segment table*, not the event list: a staff can omit an event
+    // at a segment that another staff of the same system occupies, and
+    // `shared_measures` still advances the common grid there. Counting only
+    // the events undercounted the stretchable width by exactly the amount a
+    // system's final bar line then spent past the staff lines.
+    let bases = &atom.segment_bases;
+    if bases.is_empty() {
+        let mut fixed = atom.events.first().map_or(0, |event| event.x);
+        let mut stretch = 0;
+        for index in 0..atom.events.len() {
+            let width = segment_span(atom, index);
+            if !atom.events[index].grace
+                && matches!(
+                    atom.events[index].kind,
+                    AtomKind::Chord | AtomKind::Rest { .. }
+                )
+            {
+                stretch += width;
+            } else {
+                fixed += width;
+            }
+        }
+        return (fixed, stretch);
+    }
+    let mut fixed = bases[0];
     let mut stretch = 0;
-    for index in 0..atom.events.len() {
-        let event = &atom.events[index];
-        // The lyric padding is a `Spring::widthOffset` (`horizontalspacing.cpp:
-        // 1073-1082`): justification scales only `width - widthOffset`, so it
-        // belongs to the fixed budget and cannot be shrunk away.
-        let width = segment_span(atom, index);
-        let offset = if width > 0 {
-            atom.segment_offsets
-                .get(usize::from(event.segment) + 1)
-                .copied()
-                .unwrap_or(0)
+    for (segment, &base) in bases.iter().enumerate() {
+        let next = bases.get(segment + 1).copied().unwrap_or(atom.width);
+        // `Spring::widthOffset` (`horizontalspacing.cpp:1073-1082`) is fixed
+        // width and is added back after justification (`:1087-1111`).
+        let offset = atom
+            .segment_offsets
+            .get(segment + 1)
+            .copied()
+            .unwrap_or(0)
+            .min(next - base);
+        let span = next - base - offset;
+        let spring = atom.events.iter().any(|event| {
+            usize::from(event.segment) == segment
+                && !event.grace
+                && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+        });
+        if spring {
+            stretch += span;
+            fixed += offset;
         } else {
-            0
-        };
-        let spring_part = (width - offset).max(0);
-        if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
-            stretch += spring_part;
-        } else {
-            fixed += width;
+            fixed += span + offset;
         }
     }
     (fixed, stretch)
@@ -2470,6 +2496,54 @@ mod tests {
             - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
             - spec.lyrics_dash_width / 2;
         assert_eq!(lines[0].origin().1, expected);
+    }
+
+    #[test]
+    fn stretch_budget_and_shared_grid_measure_the_same_segments() {
+        // The breaking pass budgets one atom per measure, while the page pass
+        // advances the widest base of every segment over all staves. If the
+        // two disagree, the justified bar line misses the staff line end.
+        let chord = |x, segment| Atom::at_segment(x, AtomKind::Chord, segment);
+        let rest = Atom::at_segment(
+            8 * SP,
+            AtomKind::Rest {
+                duration: 4,
+                dots: 0,
+                measure: false,
+            },
+            2,
+        );
+        let mut first = atom(0);
+        first.segment_bases = vec![0, 4 * SP, 8 * SP];
+        first.width = 10 * SP;
+        first.events = vec![chord(0, 0), chord(4 * SP, 1), rest.clone()];
+        let mut second = first.clone();
+        // A staff missing the middle segment still shares its x with the
+        // first staff: the spring exists once for the whole system.
+        second.events = vec![chord(0, 0), Atom::at_segment(8 * SP, AtomKind::Chord, 2)];
+        let merged = MeasureAtom {
+            events: vec![
+                chord(0, 0),
+                chord(4 * SP, 1),
+                rest.clone(),
+                chord(0, 0),
+                Atom::at_segment(8 * SP, AtomKind::Chord, 2),
+            ],
+            ..first.clone()
+        };
+        let (fixed, stretch) = stretch_budget(&merged);
+        let system = crate::breaking::SystemPlan {
+            first: 0,
+            count: 1,
+            scale: 1024,
+            y: 0,
+            page: 0,
+            height: 4 * SP,
+            staff_offsets: vec![0, 0],
+        };
+        let grids = shared_measures(&[vec![first], vec![second]], &system);
+        assert_eq!(fixed + stretch, grids[0].end());
+        assert_eq!(grids[0].end(), 10 * SP);
     }
 
     #[test]

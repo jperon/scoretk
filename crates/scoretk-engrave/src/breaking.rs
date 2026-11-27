@@ -222,10 +222,36 @@ pub fn repaginate(systems: &mut [SystemPlan], spec: &PageSpec) {
 /// once for the whole system (`horizontalspacing.cpp:47-89, 262-327`).
 fn merged_measure(all: &[Vec<MeasureAtom>], measure: usize) -> MeasureAtom {
     let mut merged = all[0][measure].clone();
+    // `shared_measures` gives a segment a spring when *any* staff has a
+    // chord/rest there. Keep the union for the breaking budget too.
+    merged.events.clear();
+    for atoms in all {
+        merged.events.extend(atoms[measure].events.iter().cloned());
+    }
     for atoms in all.iter().skip(1) {
         let atom = &atoms[measure];
         if atom.width > merged.width {
-            merged.events = atom.events.clone();
+            merged.segment_bases = atom.segment_bases.clone();
+            merged.segment_offsets = atom.segment_offsets.clone();
+        }
+        // `shared_measures` adopts the widest base of every segment over all
+        // staves. The merged atom used for breaking must budget that same
+        // grid, otherwise the justification target is too small for it.
+        for (index, base) in merged.segment_bases.iter_mut().enumerate() {
+            *base = all
+                .iter()
+                .filter_map(|atoms| atoms[measure].segment_bases.get(index))
+                .copied()
+                .max()
+                .unwrap_or(*base);
+        }
+        for (index, offset) in merged.segment_offsets.iter_mut().enumerate() {
+            *offset = all
+                .iter()
+                .filter_map(|atoms| atoms[measure].segment_offsets.get(index))
+                .copied()
+                .max()
+                .unwrap_or(*offset);
         }
         merged.width = merged.width.max(atom.width);
         merged.spring = merged.spring.max(atom.spring);
