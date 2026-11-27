@@ -101,6 +101,18 @@ pub fn read_lilypond_reporting(src: &str) -> Result<(Score, Vec<Warning>)> {
     read_lilypond_with_includes(src, &mut |_, _| None)
 }
 
+/// Lit une source LilyPond en choisissant explicitement le dialecte grégorien.
+///
+/// Le dialecte d'ancienne notation est **additif** : il n'est activé que par
+/// `gregorian = true` (option `--ly-gregorian` de la CLI, même option qu'à
+/// l'écriture). La lecture ordinaire continue d'interpréter un
+/// `\new VaticanaVoice` avec le parseur général, comme avant l'ajout du
+/// dialecte.
+pub fn read_lilypond_with_dialect(src: &str, gregorian: bool) -> Result<Score> {
+    read_lilypond_with_includes_and_dialect(src, &mut |_, _| None, gregorian)
+        .map(|(score, _)| score)
+}
+
 /// Lit une source LilyPond en résolvant ses `\include`.
 ///
 /// `resolve(chemin_demandé, chemin_du_fichier_qui_inclut)` renvoie le texte du
@@ -124,10 +136,22 @@ pub fn read_lilypond_with_includes(
     src: &str,
     resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
 ) -> Result<(Score, Vec<Warning>)> {
+    read_lilypond_with_includes_and_dialect(src, resolve, false)
+}
+
+/// Variante de [`read_lilypond_with_includes`] avec dialecte grégorien
+/// explicitement activé ou non (voir [`read_lilypond_with_dialect`]).
+pub fn read_lilypond_with_includes_and_dialect(
+    src: &str,
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+    gregorian: bool,
+) -> Result<(Score, Vec<Warning>)> {
     let mut warnings = warnings::Warnings::new();
-    let mut gregorian_score = Score::default();
-    if gregorian::restore(src, &mut gregorian_score) {
-        return Ok((gregorian_score, Vec::new()));
+    if gregorian {
+        let mut gregorian_score = Score::default();
+        if gregorian::restore(src, &mut gregorian_score) {
+            return Ok((gregorian_score, Vec::new()));
+        }
     }
     let document = parser::parse(src, resolve, &mut warnings);
     if document.score.is_none() {

@@ -98,9 +98,10 @@ struct Cli {
     #[arg(long)]
     xml_full_support: bool,
 
-    /// Export LilyPond : notation grégorienne d'ancien style
-    /// (VaticanaVoice/VaticanaStaff, `\[ … \]`, articulations et divisiones,
-    /// Notation Reference §17.4). Additif : le `.ly` par défaut ne change pas.
+    /// LilyPond : notation grégorienne d'ancien style en lecture et en
+    /// écriture (VaticanaVoice/VaticanaStaff, `\[ … \]`, articulations et
+    /// divisiones, Notation Reference §17.4). Additif : le `.ly` par défaut ne
+    /// change pas.
     #[arg(long)]
     ly_gregorian: bool,
 
@@ -284,7 +285,7 @@ fn main() -> ExitCode {
             Err(error) => return fail(&format!("{input} : {error}")),
         }
     } else {
-        match read_score(&bytes, from, &input, cli.abc_gregorian) {
+        match read_score(&bytes, from, &input, cli.ly_gregorian, cli.abc_gregorian) {
             Ok(score) => score,
             Err(error) if error.is_unsupported() => {
                 return fail_unsupported(&format!("{input} : {error}"));
@@ -338,11 +339,19 @@ fn read_score(
     bytes: &[u8],
     from: Format,
     input: &str,
+    ly_gregorian: bool,
     abc_gregorian: bool,
 ) -> scoretk::Result<Score> {
     if from == Format::Ly && input != "-" {
         let mut resolve = lilypond_resolver(Path::new(input));
-        return scoretk::read_lilypond_with_includes(bytes, &mut resolve);
+        return scoretk::read_lilypond_with_includes_and_dialect(
+            bytes,
+            &mut resolve,
+            ly_gregorian,
+        );
+    }
+    if from == Format::Ly && ly_gregorian {
+        return scoretk::read_lilypond_with_dialect(bytes, true);
     }
     if from == Format::Abc && abc_gregorian {
         return scoretk::read_abc_with_dialect(bytes, true);

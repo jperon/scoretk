@@ -278,6 +278,45 @@ non_branche!(
     Lecture
 );
 
+/// Lit un `.ly` avec le dialecte grégorien explicitement activé ou non.
+#[cfg(feature = "lilypond-import")]
+pub(crate) fn read_lilypond_with_dialect(bytes: &[u8], gregorian: bool) -> Result<Score> {
+    let source = std::str::from_utf8(bytes).map_err(|error| Error::LilyPond(error.to_string()))?;
+    scoretk_lilypond_import::read_lilypond_with_dialect(source, gregorian)
+        .map_err(|error| Error::LilyPond(error.to_string()))
+}
+
+non_branche!(
+    "lilypond-import",
+    read_lilypond_with_dialect(bytes: &[u8], gregorian: bool) -> Result<Score>,
+    Format::Ly,
+    Lecture
+);
+
+/// Lit un `.ly` avec résolveur d'`\include` et dialecte grégorien choisi.
+#[cfg(feature = "lilypond-import")]
+pub(crate) fn read_lilypond_with_includes_and_dialect(
+    bytes: &[u8],
+    resolve: &mut LilypondResolver<'_>,
+    gregorian: bool,
+) -> Result<Score> {
+    let source = std::str::from_utf8(bytes).map_err(|error| Error::LilyPond(error.to_string()))?;
+    scoretk_lilypond_import::read_lilypond_with_includes_and_dialect(source, resolve, gregorian)
+        .map(|(score, _)| score)
+        .map_err(|error| Error::LilyPond(error.to_string()))
+}
+
+non_branche!(
+    "lilypond-import",
+    read_lilypond_with_includes_and_dialect(
+        bytes: &[u8],
+        resolve: &mut LilypondResolver<'_>,
+        gregorian: bool
+    ) -> Result<Score>,
+    Format::Ly,
+    Lecture
+);
+
 // --- LilyPond (écriture) --------------------------------------------------
 
 #[cfg(feature = "lilypond-export")]

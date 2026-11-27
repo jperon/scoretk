@@ -215,6 +215,25 @@ pub fn read_lilypond_with_includes(
     hooks::read_lilypond_with_includes(bytes, resolve)
 }
 
+/// Lit un `.ly` en activant explicitement le dialecte grégorien à la lecture.
+///
+/// Additif : [`read`] et [`read_lilypond_with_includes`] gardent le dialecte
+/// ordinaire ; l'option de lecture suit celle de l'écriture
+/// (`Options::ly_gregorian`, `--ly-gregorian` de la CLI).
+pub fn read_lilypond_with_dialect(bytes: &[u8], gregorian: bool) -> Result<Score> {
+    hooks::read_lilypond_with_dialect(bytes, gregorian)
+}
+
+/// Variante de [`read_lilypond_with_includes`] avec dialecte grégorien
+/// explicitement choisi, pour les appelants qui résolvent les `\include`.
+pub fn read_lilypond_with_includes_and_dialect(
+    bytes: &[u8],
+    resolve: &mut dyn FnMut(&str, Option<&str>) -> Option<String>,
+    gregorian: bool,
+) -> Result<Score> {
+    hooks::read_lilypond_with_includes_and_dialect(bytes, resolve, gregorian)
+}
+
 /// Écrit le modèle pivot dans le format demandé.
 ///
 /// MusicXML et `.mxl` passent par `scoretk-musicxml-export` ; `.mxl` réutilise
