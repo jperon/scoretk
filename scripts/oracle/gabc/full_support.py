@@ -361,6 +361,13 @@ INHERENT_VALUES: dict[str, dict[str, list[tuple[str, str]]]] = {
         "mora": [(r"^\.{2,}|^\.[0-9]", "notation-big-page.html §17.4.6 'Augmentum dots (morae)': `\\augmentum` has no placement-digit argument")],
         "episema": [(r"^_", "notation-big-page.html §17.4.5 'Gregorian articulation signs': `\\episemInitium`/`\\episemFinis` have no placement-digit argument")],
         "bar": [(r"^[,;][1-8]$", "notation-big-page.html §17.4.4 'Divisiones': `\\divisioMinima`…`\\finalis` have no Dominican-digit variant")],
+        # §17.4.7 : « There is limited support for Gregorian square neumes
+        # notation […] essential issues for serious typesetting are still
+        # lacking, such as […] horizontal alignment of multiple ligatures »
+        # and the ligature shape « is not directly dictated by the input
+        # commands ». GABC's spacing/fusion characters (/ ! * - @) therefore
+        # have no command that a third-party LilyPond reader could interpret.
+        "glyph": [(r"^[/!*@\-]+$", "notation-big-page.html §17.4.7 'Gregorian square neume ligatures' (:44630-44675): ligature spacing is not dictated by input commands ('limited support', 'horizontal alignment of multiple ligatures … lacking'); no command carries GABC / ! * - @ spacing/fusion spelling")],
     },
     "abc": {
         "mora": [(r"^\.{2,}|^\.[0-9]", "abc-standard-v2.1.wiki.txt §4.3 'Note lengths': dot is a duration modifier, not a mora placement digit")],
