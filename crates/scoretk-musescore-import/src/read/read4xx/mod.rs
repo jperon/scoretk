@@ -129,16 +129,20 @@ impl TieLocation {
     /// relative dans la mesure cible est la même que dans la mesure de départ
     /// (`<measures>1</measures><fractions>-3/4</fractions>` vise le début de la
     /// mesure suivante depuis le troisième quart).
-    fn absolute_tick(self, tick: Tick, measures: &[scoretk_core::model::Measure]) -> Tick {
-        let Some(current) = measure_index_at(measures, tick) else {
+    /// `starts` est la liste compacte des `Measure::start_tick`, construite
+    /// une fois par passe d'appariement : cloner toutes les mesures pour ce
+    /// seul calcul coûtait plus de 12 Mo sur une partition de 88 pages.
+    fn absolute_tick(self, tick: Tick, starts: &[Tick]) -> Tick {
+        let Some(current) = measure_index_at(starts, tick) else {
             return tick + self.fractions;
         };
-        let current_base = measures[current].start_tick;
+        let current_base = starts[current];
         let target = current as i64 + self.measures;
         let base = usize::try_from(target)
             .ok()
-            .and_then(|index| measures.get(index))
-            .map_or(current_base, |measure| measure.start_tick);
+            .and_then(|index| starts.get(index))
+            .copied()
+            .unwrap_or(current_base);
         base + (tick - current_base) + self.fractions
     }
 
@@ -203,9 +207,10 @@ fn read_instrument_channel(node: &Element) -> scoretk_core::model::InstrumentCha
     channel
 }
 
-fn measure_index_at(measures: &[scoretk_core::model::Measure], tick: Tick) -> Option<usize> {
-    let index = measures.partition_point(|measure| measure.start_tick <= tick);
-    index.checked_sub(1).filter(|index| *index < measures.len())
+/// Index de la mesure contenant un tick, d'après ses seuls ticks de départ.
+fn measure_index_at(starts: &[Tick], tick: Tick) -> Option<usize> {
+    let index = starts.partition_point(|&start| start <= tick);
+    index.checked_sub(1).filter(|index| *index < starts.len())
 }
 
 /// Extrémité d'une liaison de prolongation en attente d'appariement.
@@ -1917,13 +1922,13 @@ impl Reader {
     /// les deux extrémités d'une même liaison.
     fn resolve_ties(&mut self) {
         let mut used = vec![false; self.ties.len()];
-        let measures = self.score.measures.clone();
+        let starts: Vec<Tick> = self.score.measures.iter().map(|m| m.start_tick).collect();
         for index in 0..self.ties.len() {
             if !self.ties[index].is_start || used[index] {
                 continue;
             }
             let start = self.ties[index].clone();
-            let start_other_tick = start.other.absolute_tick(start.tick, &measures);
+            let start_other_tick = start.other.absolute_tick(start.tick, &starts);
             let start_other_track = start.other.absolute_track(start.track);
             let partner = (0..self.ties.len()).find(|&other| {
                 let candidate = &self.ties[other];
@@ -1933,7 +1938,7 @@ impl Reader {
                     && candidate.pitch == start.pitch
                     && candidate.tick == start_other_tick
                     && candidate.other.absolute_track(candidate.track) == start.track
-                    && candidate.other.absolute_tick(candidate.tick, &measures) == start.tick
+                    && candidate.other.absolute_tick(candidate.tick, &starts) == start.tick
             });
             if let Some(partner) = partner {
                 used[index] = true;

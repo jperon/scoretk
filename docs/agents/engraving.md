@@ -1679,8 +1679,8 @@ device (P7 gate), **not met by the current baseline**:
 
 | Metric | Budget | Current host figure |
 | --- | --- | --- |
-| Peak heap, full engraving of a page | ≤ 32 MB | 63.1 MB (private), 6.8 MB (moonlight) |
-| Time to first page on ARMv7 | ≤ 1 s | ≈ 10 s extrapolated (1.06 s × 10) |
+| Peak heap, full engraving of a page | ≤ 32 MB | baseline 63.1 MB → **29.5 MB** after §15.6 (private); 6.8 MB (moonlight) |
+| Time to first page on ARMv7 | ≤ 1 s | baseline ≈ 10 s → ≈ 8 s extrapolated (0.79 s × 10); **not met** |
 | Heap of one engraved page once the score is loaded | ≤ 2 MB | ≤ 11 MB today (with the whole score live) |
 
 **Rule for agents.** Port algorithms faithfully, choose compact data: no
@@ -1696,3 +1696,22 @@ largest single item); (b) share text bytes instead of copying per XML node
 (d) re-use the per-page display-list and skyline arenas (10 MB). Leads (a)
 and (b) are reader work; (c) and (d) touch the engraver but not the layout
 algorithms.
+
+### 16.6 Quick wins applied (2026-11-27)
+
+Two reader-side changes clear the ≥ 10 % peak-heap gate; neither touches a
+layout file. Each was measured with the script above and checked byte for byte
+against the same 121 SVGs (all engraved pages of the 56 corpus files plus the
+6 pages of the private score): SHA-256 manifests identical after each commit.
+
+| Step | Peak heap | Allocations | Max RSS | Wall (private) |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline (§15.2) | 63.06 MB | 577 053 | 76.1 MB | 1.06 s |
+| (b) `read4xx::dom`: rebuild `raw_inner` only for elements whose mixed content is read as markup (`text`, `beginText`, `endText`, `name`, `shortName`, `longName`) and their descendants | 41.79 MB (−33.7 %) | 349 998 (−39.3 %) | 58.7 MB | 0.85 s |
+| (b′) `resolve_ties`: precompute the compact `Vec<Tick>` of measure starts instead of cloning the whole `Vec<Measure>` (12.6 MB in one call) | **29.47 MB (−29.5 %)** | 336 812 (−3.8 %) | 46.7 MB | 0.79 s |
+
+The corpus numbers are unchanged (dhat 6.77 MB peak on `moonlight` before and
+after), because the 4.x-only paths are not exercised by the bare `.mscx`
+files. The heap budget of §15.5 is now met on the host for the private score;
+the time budget is not (≈ 8 s extrapolated for page 1), and the next step is
+lead (a): incremental parsing/engraving rather than a whole-score pass.
