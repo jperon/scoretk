@@ -496,11 +496,62 @@ def strip_private(destination: str, data: bytes) -> bytes:
     return data
 
 
+# Un fait n'est porté que par le vocabulaire *signifiant* de la destination.
+# Une chaîne hexadécimale ou un jeton préfixé `gabc` glissé dans une syntaxe
+# standard (`"^gT…"` ABC, `I:gabc-prefix`, `^"…"` LilyPond, xs:string libre)
+# reste un porteur privé : aucun autre outil ne le comprend et il s'imprime
+# comme du texte visible. Ces motifs sont donc rejetés dans la sortie mesurée,
+# après retrait des porteurs privés historiques déjà exclus (`strip_private`).
+GABC_MARKER = re.compile(
+    r"(?i)\bgabc:(?:prefix|clef|detail|layout|header|note|g[gsactb]|t|b|a|s|c)\b"
+    r"|\bgabc-(?:prefix|clef|detail|layout|header|note|g[gsactb])\b")
+HEX_RUN = re.compile(r"(?<![0-9A-Za-z])[0-9a-fA-F]{16,}(?![0-9A-Za-z])")
+# Décorations et annotations ABC/LilyPond dont le contenu n'est qu'un code
+# hexadécimal (éventuellement précédé d'une lettre de préfixe privé).
+HEX_DECORATION = re.compile(r"![^!\n]*!")
+HEX_ANNOTATION = re.compile(r'"[\^_<>@][^"\n]*"')
+
+
+def private_payload(destination: str, data: bytes) -> str | None:
+    """Décrit un porteur privé résiduel dans la sortie mesurée, ou ``None``.
+
+    L'instrument examine la sortie *mesurée*, c'est-à-dire après
+    [`strip_private`] : les annotations MEI `gabc-*` et les champs MusicXML
+    `gabc:` historiques sont déjà retirés et ne sont pas des faits comptés.
+    Tout autre résidu est une erreur de mesure : il ne peut pas entrer dans
+    le numérateur du taux de portage.
+    """
+    if destination == "midi":
+        return None  # flux SMF binaire, sans texte mesurable
+    text = data.decode("utf-8", "replace")
+    found = GABC_MARKER.search(text)
+    if found:
+        return f"préfixe gabc → {found.group(0)[:48]!r}"
+    # En ABC, `C2D2E2…` est une suite de hauteurs et de durées, pas un code :
+    # seules les décorations et annotations sont examinées plus bas.
+    if destination != "abc":
+        found = HEX_RUN.search(text)
+        if found:
+            return f"chaîne hexadécimale → {found.group(0)[:48]!r}"
+    if destination in ("abc", "ly"):
+        patterns = (HEX_DECORATION, HEX_ANNOTATION) if destination == "abc" else (HEX_ANNOTATION,)
+        for pattern in patterns:
+            for found in pattern.finditer(text):
+                content = found.group(0).strip("!\"").lstrip("^_<>@")
+                if re.fullmatch(r"[A-Za-z]{0,2}[0-9a-fA-F]{2,}", content):
+                    return f"code hexadécimal dans {found.group(0)[:48]!r}"
+    return None
+
+
 def convert_back(cli: Path, data: bytes, destination: str) -> tuple[bytes, str]:
     # Le mode « full support » s'applique aussi à la lecture de retour : sans
     # lui, les porteurs standard écrits (méta-texte SMF, ticks exacts, NEUMES
     # MEI…) seraient ignorés et la mesure pénaliserait le lecteur, pas le format.
-    return convert_from(cli, strip_private(destination, data), destination, "gabc",
+    stripped = strip_private(destination, data)
+    violation = private_payload(destination, stripped)
+    if violation:
+        raise ValueError(f"porteur privé non mesurable en {destination}: {violation}")
+    return convert_from(cli, stripped, destination, "gabc",
                         FULL_SUPPORT_EXTRA[destination])
 
 
