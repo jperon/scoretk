@@ -2642,3 +2642,17 @@ lyricist style by `font_size = 10 * lyric_size / 4.5`. It changes only
 `PageSpec::lyric_font_size`, hence the Edwin em of lyric glyphs and their
 verse baselines; note and staff magnitudes are untouched. A test checks that
 9.0 doubles the lyric em while every staff mag stays 1.0.
+
+### 33.4 Hide empty staves (step 4)
+
+`hide_empty_staves` follows MuseScore's style behaviour and cantus'
+`condense: "auto"`, with `condenseFirstPage: false`: a staff whose system
+contains no note is skipped on later systems, but the first system keeps every
+staff. `atoms::staff_has_notes` decides from the compact atoms; the page pass
+remaps bar-line groups, brackets, instrument names, skylines and staff offsets
+onto the remaining staves (`SystemLayout::layoutSystem`,
+`systemlayout.cpp:2477-2582`), and the breaking pass estimates each system's
+height from its sounding staves. The option is explicit: scores carrying
+`hideEmptyStaves` in their `<Style>` keep the previous rendering by default,
+so the compliance corpus stays byte-identical. The test score has two staves
+and two systems; the second system keeps one staff instead of two.

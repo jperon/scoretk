@@ -133,7 +133,44 @@ impl Engraver {
         let (_, height) = staffs::system_geometry(&staffs, &spec);
         // One height per system: spacers are not modelled yet, but the
         // skylines below can widen each staff and system independently.
-        let heights = alloc::vec![height; atoms.first().map_or(0, Vec::len)];
+        // With `condense`, a measure's height only counts its sounding staves
+        // (the first measure keeps them all, like `condenseFirstPage: false`).
+        let measure_count = atoms.first().map_or(0, Vec::len);
+        let heights: Vec<i32> = if spec.hide_empty_staves {
+            (0..measure_count)
+                .map(|measure| {
+                    let visible: Vec<usize> = (0..staffs.len())
+                        .filter(|&index| {
+                            measure == 0
+                                || atoms[index].get(measure).is_some_and(|atom| {
+                                    atom.events.iter().any(|event| {
+                                        event
+                                            .chord
+                                            .as_ref()
+                                            .is_some_and(|chord| !chord.notes.is_empty())
+                                    })
+                                })
+                        })
+                        .collect();
+                    let subset: Vec<StaffInfo> = visible
+                        .iter()
+                        .filter_map(|&index| staffs.get(index).cloned())
+                        .collect();
+                    if subset.is_empty() {
+                        height
+                    } else {
+                        let positions: Vec<usize> = (0..subset.len()).collect();
+                        let offsets = crate::staffs::system_offsets(&subset, &positions, &spec);
+                        offsets.last().copied().unwrap_or(0)
+                            + subset
+                                .last()
+                                .map_or(crate::style::STAFF_HEIGHT, StaffInfo::height)
+                    }
+                })
+                .collect()
+        } else {
+            alloc::vec![height; measure_count]
+        };
         let (mut systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
         let mut spec = spec;
         // A preliminary layout gives the shapes of every drawn item; their
@@ -397,6 +434,73 @@ mod tests {
         assert!(adjusted.spec().page_height < print.spec().page_height);
         assert!(adjusted.spec().page_height >= 2 * adjusted.spec().margin_top);
         assert_eq!(adjusted.page_count(), print.page_count());
+    }
+
+    fn two_staff_score_with_an_empty_second_system() -> Score {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let first = score.add_staff_with(part, Staff::new(part));
+        let second = score.add_staff(part);
+        for measure_index in 0..2 {
+            let mut measure = Measure::new(
+                measure_index,
+                Fraction::new(measure_index as i64, 1),
+                Fraction::new(1, 1),
+            );
+            for staff in [first, second] {
+                let track = Track::new(staff, 0);
+                let mut clef = Segment::new(SegmentType::HeaderClef, Fraction::ZERO, 1);
+                clef.set_element(track, SegmentItem::Clef(Clef::new(ClefType::G)));
+                measure.add_segment(clef);
+                let mut time = Segment::new(SegmentType::TimeSig, Fraction::ZERO, 1);
+                time.set_element(track, SegmentItem::TimeSig(TimeSig::new(4, 4)));
+                measure.add_segment(time);
+            }
+            for voice in 0..2 {
+                let track = Track::new(if voice == 0 { first } else { second }, 0);
+                let kind = if voice == 0 || measure_index == 0 {
+                    let note = score.add_note(Note::new(67, 14));
+                    let mut chord = Chord::default();
+                    chord.notes.push(note);
+                    scoretk_core::model::ChordRestKind::Chord(chord)
+                } else {
+                    scoretk_core::model::ChordRestKind::Rest(scoretk_core::model::Rest::default())
+                };
+                let mut rest = ChordRest::chord(Duration::whole());
+                rest.kind = kind;
+                let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+                segment.set_element(track, SegmentItem::ChordRest(rest));
+                measure.add_segment(segment);
+            }
+            if measure_index == 0 {
+                measure.line_break = true;
+            }
+            score.add_measure(measure);
+        }
+        score
+    }
+
+    #[test]
+    fn an_empty_staff_is_hidden_on_later_systems_but_not_the_first() {
+        let score = two_staff_score_with_an_empty_second_system();
+        let plain = Engraver::from_score(&score).unwrap();
+        let options = EngraveOptions {
+            hide_empty_staves: true,
+            ..EngraveOptions::default()
+        };
+        let condensed = Engraver::from_score_with_options(&score, &options).unwrap();
+        let staff_lines = |engraver: &Engraver| {
+            (0..engraver.page_count())
+                .flat_map(|page| engraver.page(page).items)
+                .filter(|item| item.kind == ItemKind::StaffLine)
+                .count()
+        };
+        assert_eq!(staff_lines(&plain), 4 * 5, "two staves on two systems");
+        assert_eq!(
+            staff_lines(&condensed),
+            3 * 5,
+            "the first system keeps both staves, the second keeps one"
+        );
     }
 
     #[test]

@@ -38,6 +38,7 @@ use scoretk_smufl::{anchor, glyph, text_advance, text_glyph, units_to_fixed, UPE
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, LyricAtom, MeasureAtom};
 use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
 use crate::skyline::Skyline;
+use crate::staffs::StaffInfo;
 use crate::style::*;
 
 /// Page geometry in fixed 1/1024 staff-space units.
@@ -132,6 +133,9 @@ pub struct PageSpec {
     /// geometry keeps 1.0; a small screen scales credit runs down to its own
     /// printable width so a 22 pt title cannot overrun a 600 px page.
     pub text_scale: f64,
+    /// Verovio `condense: "auto"` / MuseScore `hideEmptyStaves`: hide staves
+    /// with no note in a system, except the first system.
+    pub hide_empty_staves: bool,
 }
 
 impl Default for PageSpec {
@@ -180,6 +184,7 @@ impl Default for PageSpec {
             lyrics_melisma_pad: LYRIC_MELISMA_PAD,
             lyric_font_size: 10.0,
             text_scale: 1.0,
+            hide_empty_staves: false,
         }
     }
 }
@@ -205,6 +210,8 @@ impl PageSpec {
             && options.page_height_px.is_none()
             && options.scale == 1.0
             && options.lyric_size == crate::options::VEROVIO_LYRIC_SIZE
+            && !options.hide_empty_staves
+            && options.transpose_semitones == 0
         {
             return Self::from_score_plain(score);
         }
@@ -234,6 +241,7 @@ impl PageSpec {
             spec.lyric_font_size =
                 print.lyric_font_size * options.lyric_size / crate::options::VEROVIO_LYRIC_SIZE;
         }
+        spec.hide_empty_staves = options.hide_empty_staves;
         spec.title_frame_height = print.title_frame_height;
         spec.text_scale = (spec.printable_width.max(1) as f64
             / print.printable_width.max(1) as f64)
@@ -309,6 +317,7 @@ impl PageSpec {
                     height + (style.frame_system_distance_sp * SP as f64) as i32
                 }),
             text_scale: 1.0,
+            hide_empty_staves: false,
         }
     }
 
@@ -2372,6 +2381,48 @@ pub fn build_page_with_skylines(
         .enumerate()
     {
         let sy = system.y;
+        // // Port of Verovio's `condense: "auto"` with
+        // `condenseFirstPage: false`: skip staves with no note in this
+        // system, but never on the first system and never all of them.
+        let visible: Vec<usize> = if spec.hide_empty_staves && system.first != 0 {
+            let kept: Vec<usize> = (0..atoms.len())
+                .filter(|&index| {
+                    crate::atoms::staff_has_notes(&atoms[index], system.first, system.count)
+                })
+                .collect();
+            if kept.is_empty() {
+                (0..atoms.len()).collect()
+            } else {
+                kept
+            }
+        } else {
+            (0..atoms.len()).collect()
+        };
+        let hidden = visible.len() != atoms.len();
+        let subset: Vec<crate::staffs::StaffInfo> = if hidden {
+            visible
+                .iter()
+                .filter_map(|&index| staffs.get(index).cloned())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let staff_offsets_local: Vec<i32> = if hidden {
+            let positions: Vec<usize> = (0..subset.len()).collect();
+            crate::staffs::system_offsets(&subset, &positions, spec)
+        } else {
+            system.staff_offsets.clone()
+        };
+        let decor_system = if hidden {
+            Some(crate::breaking::SystemPlan {
+                staff_offsets: staff_offsets_local.clone(),
+                ..system.clone()
+            })
+        } else {
+            None
+        };
+        let system_for_decor = decor_system.as_ref().unwrap_or(system);
+        let decor_staffs: &[crate::staffs::StaffInfo] = if hidden { &subset } else { staffs };
         // Source identity of every item pushed from now on: the system index
         // is the one used by `data-system` in the SVG backend.
         out.set_system(system_index);
@@ -2403,37 +2454,51 @@ pub fn build_page_with_skylines(
                 1,
             );
         }
-        let groups = crate::decor::barline_groups(staffs);
-        crate::decor::place_brackets(&mut out, staffs, system, left);
+        let groups = crate::decor::barline_groups(decor_staffs);
+        crate::decor::place_brackets(&mut out, decor_staffs, system_for_decor, left);
         crate::decor::place_instrument_names(
             &mut out,
             spec,
-            staffs,
-            system,
+            decor_staffs,
+            system_for_decor,
             left,
             system.first == 0 && system.page == 0,
         );
-        crate::decor::place_initial_barline(&mut out, staffs, &groups, system, left);
+        crate::decor::place_initial_barline(
+            &mut out,
+            decor_staffs,
+            &groups,
+            system_for_decor,
+            left,
+        );
         // // Port of `SystemLayout::layoutSystem` (`systemlayout.cpp:2477-2582`):
         // each visible staff of the system is laid out in turn, with its own
         // clef/key/time and its own events at the shared segment x positions.
-        for (staff_index, staff_atoms) in atoms.iter().enumerate() {
+        for (position, &staff_index) in visible.iter().enumerate() {
+            let staff_atoms = &atoms[staff_index];
             let span = groups
                 .iter()
-                .find(|&&(first, last)| staff_index >= first && staff_index <= last);
+                .find(|&&(first, last)| position >= first && position <= last);
             let (bar_height, draw_end_bar) = match span {
                 Some(&(first, last)) => {
-                    let top = system.staff_offsets.get(first).copied().unwrap_or(0);
-                    let bottom =
-                        system.staff_offsets.get(last).copied().unwrap_or(0) + STAFF_HEIGHT;
-                    (bottom - top, staff_index == first)
+                    let top = staff_offsets_local.get(first).copied().unwrap_or(0);
+                    let bottom = staff_offsets_local.get(last).copied().unwrap_or(0)
+                        + visible
+                            .get(last)
+                            .and_then(|&index| staffs.get(index))
+                            .map_or(STAFF_HEIGHT, StaffInfo::height);
+                    (bottom - top, position == first)
                 }
-                None => (STAFF_HEIGHT, true),
+                None => (
+                    staffs
+                        .get(staff_index)
+                        .map_or(STAFF_HEIGHT, StaffInfo::height),
+                    true,
+                ),
             };
             let y = sy
-                + system
-                    .staff_offsets
-                    .get(staff_index)
+                + staff_offsets_local
+                    .get(position)
                     .copied()
                     .or_else(|| staff_y.get(staff_index).copied())
                     .unwrap_or(0);
@@ -2574,15 +2639,15 @@ pub fn build_page_with_skylines(
             }
         }
         let system_end = out.items.len();
-        for (staff_index, &start) in staff_starts.iter().enumerate() {
+        for (position, &start) in staff_starts.iter().enumerate() {
             let end = staff_starts
-                .get(staff_index + 1)
+                .get(position + 1)
                 .copied()
                 .unwrap_or(system_end);
-            let staff_y = sy + system.staff_offsets.get(staff_index).copied().unwrap_or(0);
+            let staff_y = sy + staff_offsets_local.get(position).copied().unwrap_or(0);
             // The skyline now includes the verse-aligned lyrics with their
             // `lyricsMinBottomDistance` padding (`lyricslayout.cpp:704-742`).
-            skylines[system_index][staff_index] =
+            skylines[system_index][position] =
                 skyline_from_items(&out.items[start..end], &out, staff_y, spec, true);
         }
         if let (Some(&first_start), Some(first)) =

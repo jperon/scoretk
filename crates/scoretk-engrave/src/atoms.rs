@@ -2174,6 +2174,22 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 /// over all staves at each tick, then assigns that x to every staff. The
 /// pivot model shares its segments between staves, so the segment index is
 /// the alignment key.
+/// Whether a staff has any note in the given measure range. A staff holding
+/// only rests is the one Verovio's `condense: "auto"` hides (apart from the
+/// first system when `condenseFirstPage` is false).
+pub fn staff_has_notes(atoms: &[MeasureAtom], first: usize, count: usize) -> bool {
+    atoms[first..(first + count).min(atoms.len())]
+        .iter()
+        .any(|measure| {
+            measure.events.iter().any(|event| {
+                event
+                    .chord
+                    .as_ref()
+                    .is_some_and(|chord| !chord.notes.is_empty())
+            })
+        })
+}
+
 pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
     compute_with_options(score, &EngraveOptions::default())
 }

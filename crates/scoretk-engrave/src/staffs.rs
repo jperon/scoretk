@@ -124,28 +124,29 @@ impl StaffInfo {
 /// belongs to the same part, `staffHeight + staffDistance` otherwise. The
 /// skyline and spacer corrections are not yet ported (P4); `userDist` is.
 pub fn system_geometry(staffs: &[StaffInfo], spec: &PageSpec) -> (Vec<i32>, i32) {
-    let mut ys = Vec::with_capacity(staffs.len());
-    let mut y = 0;
-    for staff in staffs {
-        ys.push(y);
-        y += staff.height();
-    }
-    // Turn the offsets into positions including the intervening distances;
-    // `SystemLayout::minDistance` multiplies the distance by the next staff's
-    // mag (`systemlayout.cpp:2488-2582`).
+    let indices: Vec<usize> = (0..staffs.len()).collect();
+    let ys = system_offsets(staffs, &indices, spec);
+    let height =
+        ys.last().copied().unwrap_or(0) + staffs.last().map_or(STAFF_HEIGHT, StaffInfo::height);
+    (ys, height)
+}
+
+/// Top-line y of a subset of the system's staves (used when empty staves are
+/// condensed). Distances stay the style's staff/akkolade distance times the
+/// *next visible* staff's mag (`systemlayout.cpp:2488-2582`).
+pub fn system_offsets(staffs: &[StaffInfo], indices: &[usize], spec: &PageSpec) -> Vec<i32> {
+    let mut ys = Vec::with_capacity(indices.len());
     let mut cursor = 0;
-    for (index, position) in ys.iter_mut().enumerate() {
-        *position += cursor;
-        if let Some(next) = staffs.get(index + 1) {
-            let distance = if staffs[index].part == next.part {
+    for (position, &index) in indices.iter().enumerate() {
+        ys.push(cursor);
+        if let (Some(staff), Some(&next)) = (staffs.get(index), indices.get(position + 1)) {
+            let distance = if staff.part == staffs[next].part {
                 spec.akkolade_distance
             } else {
                 spec.staff_distance
             };
-            cursor += distance * next.mag / 1024;
+            cursor += staff.height() + distance * staffs[next].mag / 1024;
         }
     }
-    let height =
-        ys.last().copied().unwrap_or(0) + staffs.last().map_or(STAFF_HEIGHT, StaffInfo::height);
-    (ys, height)
+    ys
 }
