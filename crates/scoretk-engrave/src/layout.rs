@@ -1238,7 +1238,13 @@ pub fn build_page(
         // each visible staff of the system is laid out in turn, with its own
         // clef/key/time and its own events at the shared segment x positions.
         for (staff_index, staff_atoms) in atoms.iter().enumerate() {
-            let y = sy + staff_y.get(staff_index).copied().unwrap_or(0);
+            let y = sy
+                + system
+                    .staff_offsets
+                    .get(staff_index)
+                    .copied()
+                    .or_else(|| staff_y.get(staff_index).copied())
+                    .unwrap_or(0);
             // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
             // system's last bar line. A short final system (below
             // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not

@@ -60,6 +60,7 @@ pub mod display;
 pub mod layout;
 pub mod staffs;
 pub mod style;
+pub mod vertical;
 
 pub use atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
 pub use breaking::SystemPlan;
@@ -111,7 +112,7 @@ impl Engraver {
         // One height per system: staff distances are the same on every
         // system (spacers/skylines are P4 work).
         let heights = alloc::vec![height; atoms.first().map_or(0, Vec::len)];
-        let (systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &heights);
+        let (systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
         Ok(Self {
             atoms,
             systems,

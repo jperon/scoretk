@@ -31,7 +31,7 @@ use crate::style::{BARLINE_SEPARATION, STAFF_HEIGHT, THICK_BARLINE_WIDTH};
 use crate::MeasureAtom;
 
 /// One system, described entirely by atom indices and one scale factor.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SystemPlan {
     /// Index of the first measure atom of the system.
     pub first: usize,
@@ -45,6 +45,8 @@ pub struct SystemPlan {
     pub page: usize,
     /// Height of all staves of the system, top line to bottom line.
     pub height: i32,
+    /// Top-line y of each staff, relative to `y` (the first staff's top line).
+    pub staff_offsets: Vec<i32>,
 }
 
 /// // Port of `SystemLayout::collectSystem` (`:206-225`): append measures
@@ -53,7 +55,7 @@ pub struct SystemPlan {
 /// `shouldBeJustified` (`:459-489`) leaves the last system unstretched when
 /// it fills less than `lastSystemFillLimit` of the page width and no further
 /// measure follows.
-fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
+fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> Vec<SystemPlan> {
     let mut systems = Vec::new();
     let mut first = 0;
     while first < atoms.len() {
@@ -87,13 +89,24 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
                         )
                 })
                 .map_or(atom.width, |event| event.x);
-            if count > 0 && (width + atom.width > printable || atoms[first + count - 1].line_break)
+            // With several staves, MuseScore packs measures using their
+            // *minimum* widths (`horizontalspacing.cpp:1216-1276`) rather
+            // than the natural 3.5 sp springs used by the single-staff P1
+            // oracle: a dense organ/choir measure must be allowed to shrink.
+            // The 3/5 estimate is used only for the break decision; the
+            // segment x positions are still justified from the real springs.
+            let break_width = if multistaff {
+                header + (atom.width - header) * 3 / 5
+            } else {
+                atom.width
+            };
+            if count > 0 && (width + break_width > printable || atoms[first + count - 1].line_break)
             {
                 break;
             }
             header_width += header;
             spring += atom.spring;
-            width += atom.width;
+            width += break_width;
             count += 1;
             if atom.line_break {
                 break;
@@ -137,6 +150,7 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
             y: 0,
             page: 0,
             height: 0,
+            staff_offsets: alloc::vec![0],
         });
         first += count;
     }
@@ -163,7 +177,9 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec, heights: &[i32]) ->
         system.height = height;
         if y + distance + height > bottom && system.first > 0 {
             page += 1;
-            y = spec.margin_top;
+            // // Port of `pagelayout.cpp:179`: the first system of a page
+            // starts below `staffUpperBorder`.
+            y = spec.margin_top + spec.staff_upper_border;
         }
         y += distance;
         system.y = y;
@@ -236,10 +252,11 @@ fn align_headers(all: &mut [Vec<MeasureAtom>], first: usize) {
 pub fn compute_with_atoms(
     all: &[Vec<MeasureAtom>],
     spec: &PageSpec,
+    staffs: &[crate::staffs::StaffInfo],
     system_heights: &[i32],
 ) -> (Vec<SystemPlan>, Vec<Vec<MeasureAtom>>) {
     let mut augmented = all.to_vec();
-    let mut systems = collect_systems(&merged_score(&augmented), spec);
+    let mut systems = collect_systems(&merged_score(&augmented), spec, all.len() > 1);
     for _ in 0..8 {
         let mut next = all.to_vec();
         for system in &systems {
@@ -258,9 +275,13 @@ pub fn compute_with_atoms(
             break;
         }
         augmented = next;
-        systems = collect_systems(&merged_score(&augmented), spec);
+        systems = collect_systems(&merged_score(&augmented), spec, all.len() > 1);
+    }
+    for system in &mut systems {
+        system.staff_offsets = alloc::vec![0; all.len()];
     }
     assign_pages(&mut systems, spec, system_heights);
+    crate::vertical::spread_all(&mut systems, staffs, spec);
     (systems, augmented)
 }
 
@@ -268,7 +289,7 @@ pub fn compute_with_atoms(
 /// tests and by callers that already collapsed the staves).
 pub fn compute(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
     let heights = alloc::vec![STAFF_HEIGHT; atoms.len()];
-    compute_with_atoms(&[atoms.to_vec()], spec, &heights).0
+    compute_with_atoms(&[atoms.to_vec()], spec, &[], &heights).0
 }
 
 /// Number of pages of a plan.

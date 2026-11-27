@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Portable fixed-point engraving of a single staff into a display list"
+description = "Portable fixed-point engraving of visible staves into a display list"
 repository.workspace = true
 homepage.workspace = true
 
