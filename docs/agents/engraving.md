@@ -213,3 +213,53 @@ page, library size; for each corpus lot, worst case and median.
    and the wasm budget.
 4. **First-phase notation scope**: the corpus' common notation only, or
    Gregorian square notation early because of GABC?
+
+## 9. Phase P0: survey and spike (2026-11-27)
+
+Decisions now closed: MuseScore 4.7.4 layout is the default (a "beautiful" mode
+is an option measured separately), the font is Leland, the first target is the
+Kobo with an SVG backend alongside it (web/wasm later), and Gregorian square
+notation is deferred to P8.
+
+Citations below use `$R` = `~/tmp/scoretk/ref-musescore-474/src/engraving/`,
+a read-only, unversioned extraction of tag `v4.7.4`
+(`7688c005ad963ba09ee715aae53dbc7e8c9d5ef8`, verified with `git rev-parse` and
+`git describe --tags --exact-match` in the already-checked-out
+`~/programmes/musique/musescore/ref-musescore/.474` clone). The files were
+extracted with `git archive v4.7.4 … | tar -xf -`, i.e. data only; nothing was
+compiled or executed from the extraction. It holds
+`rendering/score/` (105 files), `style/` and, as a transitive dependency of
+`SystemLayout`, `infrastructure/skyline.{h,cpp}`: 56 396 lines in total. The
+5.0 snapshot `ref-musescore/` has no `src/engraving/rendering/` directory.
+
+### 9.1 MuseScore layout classes → our stages
+
+Line counts are `.cpp + .h` of the 4.7.4 files. "Dependency to cut" names the
+`EngravingItem`-graph edge that a page-local port must replace by plain data
+(model reads, atoms, skyline intervals); it is not a proposal to port the whole
+class.
+
+| MuseScore class / file | Lines | Stage | Key dependencies to cut |
+| --- | ---: | --- | --- |
+| `HorizontalSpacing` — `rendering/score/{horizontalspacing.cpp,.h}` | 2081 | **atoms** (min width + spring constants) | `HorizontalSpacingContext` holds `System*`, `SegmentPosition` holds `Segment*` (`horizontalspacing.h:62-93`); spacing walks `system->measures()` and `Segment`s (`horizontalspacing.cpp:47-89`, `:262-327`); per-item kerning/padding reads `EngravingItem`/`Note`/`Lyrics` pairs (`:1438-1466`, `:1479-1604`), cross-staff beams read `Segment*` pairs (`:836-1011`). Replace with a per-segment width record and margins derived from glyph metrics |
+| `SystemLayout` — `rendering/score/{systemlayout.cpp,.h}` | 3516 | **breaking** (system boundaries; vertical distances) then page layout | `collectSystem` mutates `Measure`/`System` via `LayoutContext` (`systemlayout.cpp:95-458`); `getNextSystem` reuses DOM `System*` (`:516-540`); `collectElementsToLayout` walks `measure->el()`, segments and tracks (`:1371-1533`), `collectSpannersToLayout` follows `Spanner`s (`:1534-1608`); `minDistance` reads `VBox*`/`SysStaff` skylines (`:2900-2991`). Replace with atom sequences + an "open spanners" record |
+| `PageLayout` — `rendering/score/{pagelayout.cpp,.h}` | 974 | **breaking** (page boundaries) / **page layout** | `getNextPage` owns `dom.pages()` and `Page*`/`System*` (`pagelayout.cpp:72-118`); `collectPage` consumes whole `page->systems()` (`:119-417`); `layoutCrossStaffElements` reaches across staves (`:418-468`); `layoutPage` positions systems (`:524-613`). Replace with a page geometry computed from system heights only |
+| `MeasureLayout` — `rendering/score/{measurelayout.cpp,.h}` | 3274 | **atoms** → **page layout** | `getNextMeasure`/`layoutMeasure` mutate `Measure*` and its segments (`measurelayout.cpp:1175-1188`, `:951-1129`); courtesy clefs/keys/timesigs and headers/trailers add or remove DOM segments (`:1811-2812`); multi-measure rests clone annotations (`:194-524`, `:525-839`). Replace with flags on the atom record; no DOM insertion |
+| `ChordLayout` — `rendering/score/{chordlayout.cpp,.h}` | 3677 | **page layout** | `layout(Chord*)` and `layoutPitched` read `Chord`/`Note`/`Segment`/`Staff` (`chordlayout.cpp:82-100`, `:101-348`); `layoutSpanners` (`:757-780`), `layoutStem` (`:1234-1275`), chord offsets across `Segment`s (`:1754-1886`), `fillShape` stores shapes on `Chord::LayoutData` (`:3283-3298`, `:3352-3469`). Replace with note-list + staff geometry and plain interval shapes |
+| `BeamLayout` — `rendering/score/{beamlayout.cpp,.h}` | 1533 | **page layout** | `layout(Beam*)` (`beamlayout.cpp:59-125`) and `createBeams` (`:624-809`) build `Beam*` from `ChordRest*`; cross-measure beams break over `Measure*` (`:475-554`); `layoutNonCrossBeams` reads `ChordRest*` stems (`:810-845`). Replace with beam groups from model durations/dots/tuplets and atom ticks |
+| `SlurTieLayout` — `rendering/score/{slurtielayout.cpp,.h}` | 3364 | **page layout** (+ open-spanner atoms at page breaks) | `layoutSystem(Slur*, System*)` (`slurtielayout.cpp:58-327`), `slurPos` (`:356-829`), `layoutTieFor`/`layoutTieBack` (`:1527-1660`) read `Spanner`, `ChordRest*`, `Note*`, `Segment*`; collision shapes are built from `ChordRest*` (`:1124-1321`), `fillShape` writes on `SlurTieSegment` (`:3206-3231`). Replace with a boundary record (start/end tick, staff, anchor) and local bezier geometry |
+| `Skyline` — `infrastructure/{skyline.cpp,.h}` | 459 | **page layout** (vertical collision) | `SkylineLine::add(const RectF&, EngravingItem*)` and `Skyline::add` keep an item pointer (`skyline.h:50-52`, `:102-128`); `SystemLayout::createSkylines` reads `e->shape()` on every item (`systemlayout.cpp:1609-1725`), `updateSkylineForElement` compares item identities (`:3003-3018`). Replace by x-intervals + y-extents with no item pointer |
+| `StemLayout`, `AccidentalsLayout`, `LyricsLayout`, `TupletLayout` — `rendering/score/{stemlayout,accidentalslayout,lyricslayout,tupletlayout}.*` | 609 + 1341 + 957 + 848 | **page layout** | Each takes typed `EngravingItem*`s: `StemLayout::calcDefaultStemLength(Chord*)` (`stemlayout.cpp:42-161`) is reached from `ChordLayout::layoutStem` (`chordlayout.cpp:1234-1275`); `AccidentalsLayout::layoutAccidentals(const std::vector<Chord*>& …)` (`accidentalslayout.cpp:75-109`) operates on `Accidental*`s; lyrics placement consults `SkylineLine` (`lyricslayout.h:33`, `systemlayout.cpp:918-951`); tuplets read `ChordRest*` (`systemlayout.cpp:1745-1760`). Replace with local stem/accidental/lyric/tuplet records |
+| `ScorePageViewLayout`, `ScoreLayout`, `ScoreRenderer` — `rendering/score/{scorepageviewlayout,scorelayout,scorerenderer}.*` | 330 + 139 + 205 | orchestration of **breaking / page layout** (to be replaced, not ported) | `ScoreLayout::layoutRange` creates a `LayoutContext(Score*)` and dispatches by view mode (`scorelayout.cpp:47-99`); `prepareScore` deletes all `System*`/`Page*` (`:133-166` of `scorepageviewlayout.cpp`), `doLayout` loops `PageLayout::getNextPage/collectPage` (`:199-229`); `ScoreRenderer::layoutScore` delegates to it (`scorerenderer.cpp:49-52`). Our handle never owns the whole DOM layout |
+| `TLayout::layoutItem` / `TDraw::drawItem` / `Paint::paintScore` — `rendering/score/{tlayout.cpp,.h,tdraw.cpp,.h,paint.cpp,.h}` | 7182 + 3656 + 295 | **display list** | `TLayout::layoutItem` dispatches on every `EngravingItem` type (`tlayout.cpp:191`); `TDraw::drawItem` dispatches on typed pointers into `muse::draw::Painter` (`tdraw.cpp:177`, `tdraw.h:191-330`); `Paint::paintScore` traverses all `score->pages()` (`paint.cpp:38-70`). Replace by one display-list item type (glyph id, line, filled path) and the two backends |
+| `MStyle`, `StyleDef`, `DefaultStyle`, `PageStyle` — `style/{style,styledef,defaultstyle,pagestyle}.*` | 909 + 4415 + 216 + 305 | all stages (constants) | `MStyle::styleV/styleD/styleMM` (`style.h:40-65`) and the `StyleDef::styleValues` table (`styledef.cpp:40-57`: A4 210×297 mm, printable 180 mm, 15 mm margins, 6.5 sp staff distance, 8.5 sp minimum system distance) give the values to freeze; `DefaultStyle::init` loads `.mss` files from disk (`defaultstyle.cpp:37-41`, `:57-86`) and `pagestyle.cpp:26-41` lists the page keys. A generated constant table replaces `MStyle` and all file I/O |
+
+The fetched `rendering/score/` tree also contains the per-element layout
+families that P3–P5 will consult family by family (e.g.
+`headerfooterlayout.cpp` 527, `boxlayout.cpp` 362, `arpeggiolayout.cpp` 375,
+`tupletlayout.cpp` 792, `dynamicslayout.cpp` 239, `textlayout.cpp` 414,
+`autoplace.cpp` 461, `verticalgapdata.cpp` 257), plus the debug/dump helpers
+(`debugpaint.cpp` 321, `paintdebugger.cpp` 240, `dumplayoutdata.cpp` 45) which
+are not part of the port. The full 4.7.4 `tlayout.cpp` (6 781 lines) is the
+measure of the work to avoid: our stage 4 emits a small display list instead of
+an `EngravingItem`-typed draw dispatch.
