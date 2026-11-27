@@ -3,12 +3,15 @@
 // Copyright (C) 2026 jperon
 //
 // Port of `src/engraving/rendering/score/pagelayout.cpp:614-820`
-// (`PageLayout::distributeStaves`) and
+// (`PageLayout::distributeStaves`),
 // `src/engraving/rendering/score/verticalgapdata.cpp:33-232`
-// (`VerticalGapData`, `VerticalGapDataList`) of MuseScore Studio 4.7.4 (tag
-// v4.7.4), Copyright (C) MuseScore Limited and others, modified (rewritten
-// in Rust) in 2026: gaps are plain fixed-point numbers, with no `System*`,
-// `SysStaff*` or skyline object graph.
+// (`VerticalGapData`, `VerticalGapDataList`),
+// `src/engraving/rendering/score/systemlayout.cpp:2485-2581, 2900-2989`
+// (skyline distances between staves and systems) and
+// `src/engraving/infrastructure/skyline.cpp:198-216` (`Skyline::minDistance`)
+// of MuseScore Studio 4.7.4 (tag v4.7.4), Copyright (C) MuseScore Limited
+// and others, modified (rewritten in Rust) in 2026: gaps are plain
+// fixed-point numbers, with no `System*`, `SysStaff*` or item graph.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -34,6 +37,7 @@ use alloc::vec::Vec;
 
 use crate::breaking::SystemPlan;
 use crate::layout::PageSpec;
+use crate::skyline::Skyline;
 use crate::staffs::StaffInfo;
 use crate::style::STAFF_HEIGHT;
 
@@ -64,15 +68,19 @@ impl Gap {
         self.normalised + self.added
     }
 
+    /// `VerticalGapData::isFixedHeight` (`verticalgapdata.cpp:177-180`): a
+    /// gap at or above its maximum cannot grow. A skyline-forced gap may be
+    /// larger than the nominal maximum; it must not be shrunk back to it.
+    fn is_fixed(&self) -> bool {
+        self.fixed || self.normalised >= self.maximum
+    }
+
     fn add(&mut self, step: i32) -> i32 {
-        if self.fixed {
+        if self.is_fixed() {
             return 0;
         }
         let mut step = step;
-        if self.normalised >= self.maximum {
-            self.normalised = self.maximum;
-            step = 0;
-        } else if self.normalised + self.added + step >= self.maximum {
+        if self.normalised + self.added + step >= self.maximum {
             step = self.maximum - self.normalised - self.added;
         }
         self.added += step;
@@ -89,7 +97,7 @@ impl Gap {
 
     fn sum_factors(gaps: &[Gap]) -> i32 {
         gaps.iter()
-            .filter(|gap| !gap.fixed)
+            .filter(|gap| !gap.is_fixed())
             .map(|gap| gap.factor)
             .sum()
     }
@@ -98,7 +106,7 @@ impl Gap {
     fn smallest(gaps: &[Gap], limit: i32) -> i32 {
         let mut best: Option<i32> = None;
         for gap in gaps {
-            if gap.fixed || (limit + 1023) / 1024 == (gap.spacing() + 1023) / 1024 {
+            if gap.is_fixed() || (limit + 1023) / 1024 == (gap.spacing() + 1023) / 1024 {
                 continue;
             }
             best = Some(best.map_or(gap.spacing(), |value| value.min(gap.spacing())));
@@ -115,7 +123,6 @@ fn page_gaps(
     page: usize,
 ) -> Vec<Gap> {
     let mut gaps = Vec::new();
-    let spread = spec.enable_vertical_spread;
     let on_page: Vec<&SystemPlan> = systems
         .iter()
         .filter(|system| system.page == page)
@@ -142,32 +149,18 @@ fn page_gaps(
                 });
                 continue;
             }
-            let staff = staffs.get(staff_index);
-            let bracket = staff.and_then(StaffInfo::bracket_span);
+            let bracket = staffs.get(staff_index).and_then(StaffInfo::bracket_span);
+            // The gap is the *measured* one, after the skyline pass. Spreading
+            // only ever adds space: a skyline-forced distance is never shrunk
+            // back to the nominal style distance (`verticalgapdata.cpp:35-54`).
             let (normalised, factor, maximum) = if staff_index == 0 {
-                // `VerticalGapData::addSpaceBetweenSections`
-                // (`verticalgapdata.cpp:73-79`) uses `minSystemSpread`,
-                // which is 8.5 sp, not `minStaffSpread`.
+                let previous = on_page[index - 1];
                 (
-                    spec.min_system_distance,
+                    system.y - previous.y - previous.height,
                     spec.spread_system,
                     spec.max_system_spread * 1024 / spec.spread_system.max(1),
                 )
             } else {
-                let same_part = staffs
-                    .get(staff_index.saturating_sub(1))
-                    .is_some_and(|previous| staff.is_some_and(|s| s.part == previous.part));
-                let distance = if same_part {
-                    if spread {
-                        spec.min_staff_spread
-                    } else {
-                        spec.akkolade_distance
-                    }
-                } else if spread {
-                    spec.min_staff_spread
-                } else {
-                    spec.staff_distance
-                };
                 let (factor, max_spacing) = match bracket {
                     Some((1, _)) => (
                         spec.spread_curly_bracket,
@@ -176,7 +169,13 @@ fn page_gaps(
                     Some((0 | 3, _)) => (spec.spread_square_bracket, spec.max_staff_spread),
                     _ => (1024, spec.max_staff_spread),
                 };
-                (distance, factor, max_spacing * 1024 / factor.max(1))
+                (
+                    system.staff_offsets[staff_index]
+                        - system.staff_offsets[staff_index - 1]
+                        - STAFF_HEIGHT,
+                    factor,
+                    max_spacing * 1024 / factor.max(1),
+                )
             };
             gaps.push(Gap {
                 normalised,
@@ -217,7 +216,7 @@ fn spread(gaps: &mut [Gap], mut remaining: i32, spec: &PageSpec) {
         let mut added = 0;
         let mut modified: Vec<usize> = Vec::new();
         for (index, gap) in gaps.iter_mut().enumerate() {
-            if gap.fixed || gap.spacing() != smallest {
+            if gap.is_fixed() || gap.spacing() != smallest {
                 continue;
             }
             let step = gap.add(next - gap.spacing());
@@ -254,11 +253,16 @@ fn spread(gaps: &mut [Gap], mut remaining: i32, spec: &PageSpec) {
         let step = remaining * 1024 / sum;
         let mut added = 0;
         for gap in gaps.iter_mut() {
-            if gap.fixed {
+            if gap.is_fixed() {
                 continue;
             }
-            let fill_step = if (step + gap.fill / gap.factor) > spec.max_page_fill_spread {
-                spec.max_page_fill_spread - gap.fill / gap.factor
+            // `factor` is fixed point (1024 = 1.0): convert the fill already
+            // spent in *actual* units back to staff spaces before comparing
+            // it with `maxPageFillSpread`. The old division by 1024-scaled
+            // factor let a single gap absorb the whole page's free space.
+            let fill_spent = gap.fill * 1024 / gap.factor.max(1);
+            let fill_step = if (step + fill_spent) > spec.max_page_fill_spread {
+                (spec.max_page_fill_spread - fill_spent).max(0)
             } else {
                 step
             };
@@ -267,6 +271,69 @@ fn spread(gaps: &mut [Gap], mut remaining: i32, spec: &PageSpec) {
             added += step * gap.factor / 1024;
         }
         remaining -= added;
+    }
+}
+
+/// // Port of the vertical part of `SystemLayout::layoutSystem`
+/// (`systemlayout.cpp:2485-2581`) and `SystemLayout::minDistance`
+/// (`:2900-2989`): the style distance is a floor, and any item protruding
+/// past the staff lines adds `minVerticalDistance` to it.
+fn system_gap(upper: &Skyline, lower: &Skyline, spec: &PageSpec) -> i32 {
+    // `sld -= sysStaff->bbox().height() - minVerticalDistance`
+    // (`systemlayout.cpp:2954-2955`). Both skylines are staff-local, so the
+    // upper one's south already includes the staff height.
+    let skyline_gap =
+        upper.south().max() - STAFF_HEIGHT + spec.min_vertical_distance - lower.north().max();
+    spec.min_system_distance.max(skyline_gap)
+}
+
+/// Applies the skylines measured on a preliminary layout: widens the offsets
+/// between adjacent staves and the distances between consecutive systems.
+/// Nothing here can reduce a style distance (`systemlayout.cpp:2574, 2989`).
+pub fn apply_skylines(
+    systems: &mut [SystemPlan],
+    skylines: &[Vec<Vec<Skyline>>],
+    staffs: &[StaffInfo],
+    spec: &PageSpec,
+) {
+    for (page, page_skylines) in skylines.iter().enumerate() {
+        let mut previous: Option<(i32, i32, Skyline)> = None;
+        let on_page = systems.iter_mut().filter(|system| system.page == page);
+        for (system, staff_skylines) in on_page.zip(page_skylines.iter()) {
+            let mut top = 0;
+            for staff_index in 1..system.staff_offsets.len().min(staff_skylines.len()) {
+                let same_part = staffs
+                    .get(staff_index)
+                    .zip(staffs.get(staff_index - 1))
+                    .is_some_and(|(staff, previous)| staff.part == previous.part);
+                let style_distance = if same_part {
+                    spec.akkolade_distance
+                } else {
+                    spec.staff_distance
+                };
+                // `dist = staffHeight + distance` then
+                // `dist = max(dist, d + minVerticalDistance)`: top-line to
+                // top-line, hence `STAFF_HEIGHT` is included in the base.
+                let base = top + STAFF_HEIGHT + style_distance;
+                let d = staff_skylines[staff_index - 1]
+                    .south()
+                    .min_distance(staff_skylines[staff_index].north(), spec.skyline_clearance)
+                    .map(|d| d + spec.min_vertical_distance);
+                top = d.map_or(base, |d| base.max(d));
+                system.staff_offsets[staff_index] = top;
+            }
+            system.height = system.staff_offsets.last().copied().unwrap_or(0) + STAFF_HEIGHT;
+            if let Some((previous_y, previous_height, ref previous_skyline)) = previous {
+                if let Some(first_staff) = staff_skylines.first() {
+                    system.y = previous_y
+                        + previous_height
+                        + system_gap(&previous_skyline, first_staff, spec);
+                }
+            }
+            if let Some(last_staff) = staff_skylines.last() {
+                previous = Some((system.y, system.height, last_staff.clone()));
+            }
+        }
     }
 }
 
@@ -306,7 +373,11 @@ pub fn spread_page(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &Page
         for staff_index in 1..system.staff_offsets.len() {
             let gap = gaps[gap_index];
             gap_index += 1;
-            offset += gap.distance();
+            // A gap is measured from the previous staff's *bottom* line to
+            // this staff's top line: the offsets are top-line to top-line,
+            // so the staff height must be added as well. The old code used
+            // the gap alone, putting the staves 4 sp too close.
+            offset += STAFF_HEIGHT + gap.distance();
             system.staff_offsets[staff_index] = offset;
         }
         system.height = offset + STAFF_HEIGHT;
@@ -339,6 +410,60 @@ mod tests {
             height: STAFF_HEIGHT,
             staff_offsets: vec![0],
         }
+    }
+
+    fn plan(y: i32, offsets: Vec<i32>) -> SystemPlan {
+        SystemPlan {
+            first: 0,
+            count: 1,
+            scale: 1024,
+            y,
+            page: 0,
+            height: offsets.last().copied().unwrap_or(0) + STAFF_HEIGHT,
+            staff_offsets: offsets,
+        }
+    }
+
+    fn staff_skyline() -> Skyline {
+        let mut skyline = Skyline::new();
+        skyline.add_staff_line(0, 0, 10 * SP, STAFF_HEIGHT);
+        skyline
+    }
+
+    #[test]
+    fn a_protruding_stem_widens_the_distance_to_the_next_staff() {
+        // `systemlayout.cpp:2564-2575`: `max(styleDistance, d +
+        // minVerticalDistance)`, where `d` includes each staff's own height.
+        let spec = PageSpec {
+            staff_distance: 6 * SP,
+            min_vertical_distance: SP / 2,
+            skyline_clearance: SP / 4,
+            ..PageSpec::default()
+        };
+        let mut systems = vec![plan(0, vec![0, 10 * SP])];
+        let mut upper = staff_skyline();
+        upper.add(SP, STAFF_HEIGHT, SP + 100, 12 * SP, STAFF_HEIGHT, 0);
+        let skylines = vec![vec![upper, staff_skyline()]];
+        apply_skylines(&mut systems, &[skylines], &[], &spec);
+        assert_eq!(systems[0].staff_offsets[1], 25 * SP / 2);
+        assert!(systems[0].height > 12 * SP);
+    }
+
+    #[test]
+    fn a_protruding_item_widens_the_distance_to_the_next_system() {
+        let spec = PageSpec {
+            min_system_distance: 8 * SP,
+            min_vertical_distance: SP / 2,
+            skyline_clearance: SP / 4,
+            ..PageSpec::default()
+        };
+        let mut systems = vec![plan(0, vec![0]), plan(12 * SP, vec![0])];
+        let mut upper = staff_skyline();
+        upper.add(SP, STAFF_HEIGHT, SP + 100, 14 * SP, STAFF_HEIGHT, 0);
+        let skylines = vec![vec![upper], vec![staff_skyline()]];
+        apply_skylines(&mut systems, &[skylines], &[], &spec);
+        // 14 - 4 (staff height) + 0.5 (clearance) = 10.5 sp.
+        assert_eq!(systems[1].y, 14 * SP + SP / 2);
     }
 
     #[test]

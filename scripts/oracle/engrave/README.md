@@ -45,8 +45,12 @@ files and writes SVGs into an unversioned output directory.
    default), unmatched elements included.
    The P5 figures compare the page count, the number of staff systems on
    each page and each system's top-line y (0.5 sp tolerance) across all
-   pages. Failures, missing pages and unmatched systems remain in every
-   denominator.
+   pages. The vertical-spacing figures additionally group the five-line
+   staves of each multi-staff system by their shared x extent and compare
+   the gap between adjacent staves (`next_top - previous_top - 4 sp`),
+   reporting the share within 0.5 sp, the mean absolute error on matched
+   pairs, both mean gaps and the number of overlapping pairs. Failures,
+   missing pages and unmatched systems or gaps remain in every denominator.
 
 ## Usage
 

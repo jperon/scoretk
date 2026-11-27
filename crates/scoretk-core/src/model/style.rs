@@ -174,6 +174,24 @@ pub struct StyleSettings {
     pub frame_system_distance_sp: f64,
     /// Gap between an instrument name and the staff (`Sid::instrumentNameOffset`).
     pub instrument_name_offset_sp: f64,
+    /// Clearance required between two outlines that share an x range
+    /// (`Sid::minVerticalDistance`, 0.5 sp). // `styledef.cpp:749`.
+    pub min_vertical_distance_sp: f64,
+    /// Minimum horizontal overlap for two outlines to constrain each other
+    /// (`Sid::skylineMinHorizontalClearance`, 0.25 sp). // `styledef.cpp:750`.
+    pub skyline_min_horizontal_clearance_sp: f64,
+    /// Offset of the first lyric line below the bottom staff line
+    /// (`Sid::lyricsPosBelow`, 3 sp). // `styledef.cpp:75`.
+    pub lyrics_pos_below_sp: f64,
+    /// Minimum distance from the staff outline to the first lyric line
+    /// (`Sid::lyricsMinTopDistance`, 1 sp). // `styledef.cpp:76`.
+    pub lyrics_min_top_distance_sp: f64,
+    /// Clearance below the last lyric line added to the staff's south skyline
+    /// (`Sid::lyricsMinBottomDistance`, 1.5 sp). // `styledef.cpp:77`.
+    pub lyrics_min_bottom_distance_sp: f64,
+    /// Multiplier of the lyric font's line spacing (`Sid::lyricsLineHeight`,
+    /// 1.0). // `styledef.cpp:79`.
+    pub lyrics_line_height: f64,
 }
 
 impl StyleSettings {
@@ -251,6 +269,13 @@ impl StyleSettings {
             staff_lower_border_sp: 7.0,
             frame_system_distance_sp: 7.0,
             instrument_name_offset_sp: 1.0,
+            // 4.7.4 defaults (`engraving/style/styledef.cpp:75-79,749-750`).
+            min_vertical_distance_sp: 0.5,
+            skyline_min_horizontal_clearance_sp: 0.25,
+            lyrics_pos_below_sp: 3.0,
+            lyrics_min_top_distance_sp: 1.0,
+            lyrics_min_bottom_distance_sp: 1.5,
+            lyrics_line_height: 1.0,
         }
     }
 
@@ -339,6 +364,26 @@ impl StyleSettings {
             "instrumentNameOffset" => {
                 Self::set_positive(&mut self.instrument_name_offset_sp, value);
             }
+            "minVerticalDistance" => {
+                Self::set_positive(&mut self.min_vertical_distance_sp, value);
+            }
+            "skylineMinHorizontalClearance" => {
+                Self::set_positive(&mut self.skyline_min_horizontal_clearance_sp, value);
+            }
+            // `lyricsPosBelow` is a PointF in MuseScore; only its y matters
+            // for the vertical pass (`lyricslayout.cpp:849`).
+            "lyricsPosBelow" => {
+                if let Some(y) = value.split(',').nth(1) {
+                    Self::set_positive(&mut self.lyrics_pos_below_sp, y);
+                }
+            }
+            "lyricsMinTopDistance" => {
+                Self::set_positive(&mut self.lyrics_min_top_distance_sp, value);
+            }
+            "lyricsMinBottomDistance" => {
+                Self::set_positive(&mut self.lyrics_min_bottom_distance_sp, value);
+            }
+            "lyricsLineHeight" => Self::set_positive(&mut self.lyrics_line_height, value),
             _ => {}
         }
     }

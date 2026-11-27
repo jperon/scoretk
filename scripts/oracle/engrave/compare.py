@@ -201,6 +201,20 @@ def parse_svg(path: Path) -> dict:
     # Top line of every five-line staff system, in staff spaces from the
     # page top: the P5 oracle measures page breaks and vertical positions.
     result["systems"] = [system[2] / spatium for system in systems]
+    # A multi-staff system shares one x extent: group its five-line staves
+    # together so the gaps between adjacent staves can be measured. Staves
+    # are five lines one spatium apart (4 sp tall, `STAFF_HEIGHT`). As for
+    # systems, a missing or unmatched staff remains in the denominator.
+    groups: dict[tuple[float, float], list[float]] = {}
+    for x0, x1, top in systems:
+        key = (round(x0 / spatium, 1), round(x1 / spatium, 1))
+        groups.setdefault(key, []).append(top / spatium)
+    result["staff_groups"] = sorted(groups.values(), key=lambda tops: min(tops))
+    result["staff_gaps"] = [
+        round(top - previous - 4.0, 4)
+        for tops in result["staff_groups"]
+        for previous, top in zip(tops, tops[1:])
+    ]
     # One list of bar-line x positions per staff system, in staff spaces.
     # Consecutive positions delimit a measure; the count per system is the
     # system break pattern. MuseScore draws a double/final bar line as two
@@ -279,21 +293,59 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     per_page_equal = 0
     y_total = 0
     y_within = 0
+    y_error = 0.0
+    y_matched = 0
+    gap_total = 0
+    gap_within = 0
+    gap_error = 0.0
+    gap_matched = 0
+    gap_ref_sum = 0.0
+    gap_ours_sum = 0.0
+    overlaps_ref = 0
+    overlaps_ours = 0
+
+    def vertical(ref: dict, our: dict) -> None:
+        nonlocal y_total, y_within, y_error, y_matched
+        nonlocal gap_total, gap_within, gap_error, gap_matched
+        nonlocal gap_ref_sum, gap_ours_sum, overlaps_ref, overlaps_ours
+        ref_systems = ref["systems"]
+        our_systems = our["systems"]
+        y_total += abs(len(ref_systems) - len(our_systems))
+        for top_ref, top_our in zip(ref_systems, our_systems):
+            y_total += 1
+            difference = abs(top_ref - top_our)
+            y_error += difference
+            y_matched += 1
+            if difference <= 0.5:
+                y_within += 1
+        ref_gaps = ref["staff_gaps"]
+        our_gaps = our["staff_gaps"]
+        # Unmatched adjacent-staff pairs count as failures, not as absent
+        # data: a page that fails to engrave cannot improve its own figures.
+        gap_total += abs(len(ref_gaps) - len(our_gaps))
+        for gap_ref, gap_our in zip(ref_gaps, our_gaps):
+            gap_total += 1
+            difference = abs(gap_ref - gap_our)
+            gap_error += difference
+            gap_matched += 1
+            if difference <= 0.5:
+                gap_within += 1
+        gap_ref_sum += sum(ref_gaps)
+        gap_ours_sum += sum(our_gaps)
+        overlaps_ref += sum(gap < 0 for gap in ref_gaps)
+        overlaps_ours += sum(gap < 0 for gap in our_gaps)
+
     for number in range(min(len(reference), len(ours))):
         ref = parse_svg(reference[number])
         our = parse_svg(ours[number])
-        ref_systems = ref["systems"]
-        our_systems = our["systems"]
-        per_page_equal += int(len(ref_systems) == len(our_systems))
-        for top_ref, top_our in zip(ref_systems, our_systems):
-            y_total += 1
-            if abs(top_ref - top_our) <= 0.5:
-                y_within += 1
-        y_total += abs(len(ref_systems) - len(our_systems))
-    # Pages present on only one side count as missing systems: use the
-    # other side's system count as the number of unmatched positions.
+        per_page_equal += int(len(ref["systems"]) == len(our["systems"]))
+        vertical(ref, our)
+    # Pages present on only one side count as missing staff positions and
+    # missing adjacent-staff gaps: use the other side's counts.
     for extra in reference[len(ours):] + ours[len(reference):]:
-        y_total += len(parse_svg(extra)["systems"])
+        parsed = parse_svg(extra)
+        vertical(parsed, {"systems": [], "staff_gaps": []})
+        vertical({"systems": [], "staff_gaps": []}, parsed)
     return {
         "page_count_equal": int(same_count),
         "page_count_ref": len(reference),
@@ -301,6 +353,16 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "breaks_equal": per_page_equal,
         "staff_y_total": y_total,
         "staff_y_within": y_within,
+        "staff_y_error": y_error / y_matched if y_matched else 0.0,
+        "staff_y_matched": y_matched,
+        "staff_gap_total": gap_total,
+        "staff_gap_within": gap_within,
+        "staff_gap_error": gap_error / gap_matched if gap_matched else 0.0,
+        "staff_gap_matched": gap_matched,
+        "staff_gap_ref_mean": gap_ref_sum / gap_total if gap_total else 0.0,
+        "staff_gap_ours_mean": gap_ours_sum / gap_total if gap_total else 0.0,
+        "overlaps_ref": overlaps_ref,
+        "overlaps_ours": overlaps_ours,
     }
 
 
@@ -392,7 +454,10 @@ def main() -> int:
         "stem": 0.0, "x": 0, "y": 0, "widths": 0, "widths_total": 0,
         "systems_equal": 0,
         "page_count": 0, "breaks": 0, "pages_total": 0,
-        "staff_y": 0, "staff_y_total": 0,
+        "staff_y": 0, "staff_y_total": 0, "staff_y_error": 0.0, "staff_y_matched": 0,
+        "staff_gap": 0, "staff_gap_total": 0, "staff_gap_error": 0.0,
+        "staff_gap_matched": 0, "staff_gap_ref": 0.0, "staff_gap_ours": 0.0,
+        "overlaps_ref": 0, "overlaps_ours": 0,
     }
     for source in corpus:
         if not source.strip():
@@ -443,6 +508,16 @@ def main() -> int:
         )
         totals["staff_y"] += page_values["staff_y_within"]
         totals["staff_y_total"] += page_values["staff_y_total"]
+        totals["staff_y_error"] += page_values["staff_y_error"] * page_values["staff_y_matched"]
+        totals["staff_y_matched"] += page_values["staff_y_matched"]
+        totals["staff_gap"] += page_values["staff_gap_within"]
+        totals["staff_gap_total"] += page_values["staff_gap_total"]
+        totals["staff_gap_error"] += page_values["staff_gap_error"] * page_values["staff_gap_matched"]
+        totals["staff_gap_matched"] += page_values["staff_gap_matched"]
+        totals["staff_gap_ref"] += page_values["staff_gap_ref_mean"] * page_values["staff_gap_total"]
+        totals["staff_gap_ours"] += page_values["staff_gap_ours_mean"] * page_values["staff_gap_total"]
+        totals["overlaps_ref"] += page_values["overlaps_ref"]
+        totals["overlaps_ours"] += page_values["overlaps_ours"]
         rows.append(row)
 
     (out / "raw.jsonl").write_text(
@@ -487,6 +562,17 @@ def main() -> int:
         f"{totals['breaks']}/{totals['pages_total']} |",
         f"| Staff system tops within 0.5 sp | "
         f"{totals['staff_y']}/{totals['staff_y_total']} |",
+        f"| Staff top mean abs. error, sp (matched positions) | "
+        f"{totals['staff_y_error'] / totals['staff_y_matched'] if totals['staff_y_matched'] else 0.0:.3f} |",
+        f"| Adjacent-staff gaps within 0.5 sp | "
+        f"{totals['staff_gap']}/{totals['staff_gap_total']} |",
+        f"| Adjacent-staff gap mean abs. error, sp (matched pairs) | "
+        f"{totals['staff_gap_error'] / totals['staff_gap_matched'] if totals['staff_gap_matched'] else 0.0:.3f} |",
+        f"| Mean adjacent-staff gap, sp (reference / ours) | "
+        f"{totals['staff_gap_ref'] / totals['staff_gap_total'] if totals['staff_gap_total'] else 0.0:.3f}"
+        f" / {totals['staff_gap_ours'] / totals['staff_gap_total'] if totals['staff_gap_total'] else 0.0:.3f} |",
+        f"| Overlapping adjacent staves (reference / ours) | "
+        f"{totals['overlaps_ref']} / {totals['overlaps_ours']} |",
         "",
         "## Failures",
         "",

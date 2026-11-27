@@ -36,6 +36,7 @@ use scoretk_smufl::{anchor, glyph, text_advance, text_glyph, units_to_fixed, UPE
 
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, LyricAtom, MeasureAtom};
 use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
+use crate::skyline::Skyline;
 use crate::style::*;
 
 /// Page geometry in fixed 1/1024 staff-space units.
@@ -89,6 +90,19 @@ pub struct PageSpec {
     pub staff_lower_border: i32,
     pub frame_system_distance: i32,
     pub instrument_name_offset: i32,
+    /// // Port of `styledef.cpp:749` (`minVerticalDistance` 0.5 sp): clearance
+    /// added once between two outlines that share an x range.
+    pub min_vertical_distance: i32,
+    /// // Port of `styledef.cpp:750` (`skylineMinHorizontalClearance` 0.25 sp).
+    pub skyline_clearance: i32,
+    /// // Port of `styledef.cpp:75` (`lyricsPosBelow` 3 sp).
+    pub lyrics_pos_below: i32,
+    /// // Port of `styledef.cpp:76` (`lyricsMinTopDistance` 1 sp).
+    pub lyrics_min_top_distance: i32,
+    /// // Port of `styledef.cpp:77` (`lyricsMinBottomDistance` 1.5 sp).
+    pub lyrics_min_bottom_distance: i32,
+    /// // Port of `styledef.cpp:79` (`lyricsLineHeight` 1.0), fixed 1024 = 1.0.
+    pub lyrics_line_height: i32,
     /// Point size of the lyricist text style (`styledef.cpp:878`, default
     /// 10 pt). // Port of `LyricsLayout::layout`.
     pub lyric_font_size: f64,
@@ -122,6 +136,12 @@ impl Default for PageSpec {
             staff_lower_border: 7 * SP,
             frame_system_distance: 7 * SP,
             instrument_name_offset: SP,
+            min_vertical_distance: SP / 2,
+            skyline_clearance: SP / 4,
+            lyrics_pos_below: 3 * SP,
+            lyrics_min_top_distance: SP,
+            lyrics_min_bottom_distance: 3 * SP / 2,
+            lyrics_line_height: 1024,
             lyric_font_size: 10.0,
         }
     }
@@ -171,6 +191,12 @@ impl PageSpec {
             staff_lower_border: (style.staff_lower_border_sp * SP as f64) as i32,
             frame_system_distance: (style.frame_system_distance_sp * SP as f64) as i32,
             instrument_name_offset: (style.instrument_name_offset_sp * SP as f64) as i32,
+            min_vertical_distance: (style.min_vertical_distance_sp * SP as f64) as i32,
+            skyline_clearance: (style.skyline_min_horizontal_clearance_sp * SP as f64) as i32,
+            lyrics_pos_below: (style.lyrics_pos_below_sp * SP as f64) as i32,
+            lyrics_min_top_distance: (style.lyrics_min_top_distance_sp * SP as f64) as i32,
+            lyrics_min_bottom_distance: (style.lyrics_min_bottom_distance_sp * SP as f64) as i32,
+            lyrics_line_height: (style.lyrics_line_height * 1024.0) as i32,
             lyric_font_size: style.lyricist_font_size,
             // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
             // page 1 pushes the first system down by its own height plus
@@ -1419,22 +1445,80 @@ fn place_event(
     }
 }
 
-/// Builds the display list of one page from the atoms and the precomputed
-/// breaking plan. `page(n)` only reads the systems assigned to that page.
-pub fn build_page(
+/// // Port of `SystemLayout::createSkylines` (`systemlayout.cpp:1609-1724`):
+/// one north/south skyline per staff of a system, built from the items that
+/// are actually drawn. Item bounding boxes play the role of MuseScore's
+/// `EngravingItem::shape()`, in coordinates relative to the staff's top line.
+/// The measure number, brackets, instrument names and initial bar line are
+/// attributed to the first staff of the system (`systemlayout.cpp:1285,
+/// :1900-1940`); title-frame credits are not part of any staff skyline.
+fn skyline_from_items(
+    items: &[DisplayItem],
+    list: &DisplayList,
+    staff_y: i32,
+    spec: &PageSpec,
+) -> Skyline {
+    let mut skyline = Skyline::new();
+    for item in items {
+        // Choir brackets, piano braces and instrument names are drawn by
+        // `layoutBracketsVertical`/`layoutInstrumentNames`, after the
+        // skylines are built; MuseScore does not add them to a skyline
+        // (`systemlayout.cpp:1609-1724`, `:2588-2598`).
+        if matches!(item.kind, ItemKind::Bracket | ItemKind::InstrumentName) {
+            continue;
+        }
+        // A bar line spanning several staves is drawn once for the whole
+        // system; it must not count as ink reaching to the bottom of the
+        // grand staff on the first staff's skyline. MuseScore adds the
+        // per-staff bar-line shapes instead (`systemlayout.cpp:1625-1629`).
+        if item.kind == ItemKind::BarLine
+            && matches!(item.geometry, Geometry::Rect { h, .. } if h > STAFF_HEIGHT + SP)
+        {
+            continue;
+        }
+        let Some((x0, y0, x1, y1)) = item.bbox(list) else {
+            continue;
+        };
+        let south_pad = if item.kind == ItemKind::Lyrics {
+            (spec.lyrics_min_bottom_distance - spec.min_vertical_distance).max(0)
+        } else {
+            0
+        };
+        if item.kind == ItemKind::StaffLine {
+            skyline.add_staff_line(x0, y0 - staff_y, x1, y1 - staff_y);
+        } else {
+            skyline.add(x0, y0 - staff_y, x1, y1 - staff_y, STAFF_HEIGHT, south_pad);
+        }
+    }
+    skyline
+}
+
+/// Builds the display list of one page and the skylines of its systems.
+/// `page(n)` only reads the systems assigned to that page.
+pub fn build_page_with_skylines(
     atoms: &[Vec<MeasureAtom>],
     spec: &PageSpec,
     systems: &[crate::breaking::SystemPlan],
     staffs: &[crate::staffs::StaffInfo],
     credits: &[Credit],
     page: usize,
-) -> DisplayList {
+) -> (DisplayList, Vec<Vec<Skyline>>) {
     let mut out = DisplayList::new(page);
+    let on_page = systems.iter().filter(|system| system.page == page).count();
+    let mut skylines = vec![vec![Skyline::new(); staffs.len().max(1)]; on_page];
     place_credits(&mut out, credits, spec, page);
     let (staff_y, _) = crate::staffs::system_geometry(staffs, spec);
     let lyrics_em = text_em(spec, spec.lyric_font_size);
-    for system in systems.iter().filter(|system| system.page == page) {
+    for (system_index, system) in systems
+        .iter()
+        .filter(|system| system.page == page)
+        .enumerate()
+    {
         let sy = system.y;
+        // Items emitted before the first staff (measure number, brackets,
+        // instrument names, initial bar line) belong to that staff's skyline.
+        let system_start = out.items.len();
+        let mut staff_starts = Vec::new();
         // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
         // system after a title frame starts `firstSystemIndentationValue`
         // to the right and ends at the same right margin.
@@ -1496,6 +1580,8 @@ pub fn build_page(
                     .copied()
                     .or_else(|| staff_y.get(staff_index).copied())
                     .unwrap_or(0);
+            let staff_start = out.items.len();
+            staff_starts.push(staff_start);
             // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
             // system's last bar line. A short final system (below
             // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not
@@ -1558,8 +1644,53 @@ pub fn build_page(
                 place_barline(&mut out, start_bar, left, y, bar_height);
             }
         }
+        let system_end = out.items.len();
+        for (staff_index, &start) in staff_starts.iter().enumerate() {
+            let end = staff_starts
+                .get(staff_index + 1)
+                .copied()
+                .unwrap_or(system_end);
+            let staff_y = sy + system.staff_offsets.get(staff_index).copied().unwrap_or(0);
+            skylines[system_index][staff_index] =
+                skyline_from_items(&out.items[start..end], &out, staff_y, spec);
+        }
+        if let (Some(&first_start), Some(first)) =
+            (staff_starts.first(), skylines[system_index].first_mut())
+        {
+            let decorations =
+                skyline_from_items(&out.items[system_start..first_start], &out, sy, spec);
+            first.merge(decorations);
+        }
     }
-    out
+    (out, skylines)
+}
+
+/// Builds the display list of one page from the atoms and the precomputed
+/// breaking plan. `page(n)` only reads the systems assigned to that page.
+pub fn build_page(
+    atoms: &[Vec<MeasureAtom>],
+    spec: &PageSpec,
+    systems: &[crate::breaking::SystemPlan],
+    staffs: &[crate::staffs::StaffInfo],
+    credits: &[Credit],
+    page: usize,
+) -> DisplayList {
+    build_page_with_skylines(atoms, spec, systems, staffs, credits, page).0
+}
+
+/// Skylines of every system of every page, keyed by `(system index on page,
+/// staff index)` within each page's slice. Used once when an engraver is
+/// built, so `page(n)` never rebuilds geometry.
+pub fn all_skylines(
+    atoms: &[Vec<MeasureAtom>],
+    spec: &PageSpec,
+    systems: &[crate::breaking::SystemPlan],
+    staffs: &[crate::staffs::StaffInfo],
+    credits: &[Credit],
+) -> Vec<Vec<Vec<Skyline>>> {
+    (0..crate::breaking::page_count(systems))
+        .map(|page| build_page_with_skylines(atoms, spec, systems, staffs, credits, page).1)
+        .collect()
 }
 
 /// Iterates over all items of a page in deterministic order (used by tests

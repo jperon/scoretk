@@ -280,8 +280,17 @@ pub fn compute_with_atoms(
     for system in &mut systems {
         system.staff_offsets = alloc::vec![0; all.len()];
     }
+    // Before any skyline is known, every staff of a system uses the style
+    // distances (`systemlayout.cpp:2485-2532`). The skyline pass in
+    // `Engraver::new` can only widen these offsets, never narrow them.
+    let (mut offsets, _) = crate::staffs::system_geometry(staffs, spec);
+    if offsets.is_empty() {
+        offsets.push(0);
+    }
+    for system in &mut systems {
+        system.staff_offsets = offsets.clone();
+    }
     assign_pages(&mut systems, spec, system_heights);
-    crate::vertical::spread_all(&mut systems, staffs, spec);
     (systems, augmented)
 }
 
@@ -289,7 +298,9 @@ pub fn compute_with_atoms(
 /// tests and by callers that already collapsed the staves).
 pub fn compute(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
     let heights = alloc::vec![STAFF_HEIGHT; atoms.len()];
-    compute_with_atoms(&[atoms.to_vec()], spec, &[], &heights).0
+    let mut systems = compute_with_atoms(&[atoms.to_vec()], spec, &[], &heights).0;
+    crate::vertical::spread_all(&mut systems, &[], spec);
+    systems
 }
 
 /// Number of pages of a plan.

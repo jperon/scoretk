@@ -43,8 +43,12 @@ pub enum ItemKind {
     Dot,
     Flag,
     Beam,
-    /// Title, subtitle, measure numbers, lyrics and other Edwin text.
+    /// Title, subtitle, measure numbers and other Edwin text.
     Text,
+    /// One Edwin glyph of a lyric syllable or its hyphen/melisma line. Kept
+    /// apart from other text for the south-skyline padding of
+    /// `LyricsLayout::addToSkyline` (`lyricslayout.cpp:704-742`).
+    Lyrics,
     /// Square choir bracket or curved piano brace.
     Bracket,
     /// Short or long instrument name at the left of a system.
@@ -67,6 +71,7 @@ impl ItemKind {
             Self::Flag => "Hook",
             Self::Beam => "Beam",
             Self::Text => "Text",
+            Self::Lyrics => "Lyrics",
             Self::Bracket => "Bracket",
             Self::InstrumentName => "InstrumentName",
         }

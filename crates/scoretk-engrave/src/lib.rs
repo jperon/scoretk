@@ -59,6 +59,7 @@ pub mod breaking;
 pub mod decor;
 pub mod display;
 pub mod layout;
+pub mod skyline;
 pub mod staffs;
 pub mod style;
 pub mod vertical;
@@ -109,17 +110,24 @@ impl Engraver {
             return Err(EngraveError::NoStaff);
         }
         let atoms = atoms::compute(score);
+        let credits = score.engraving.credits.clone();
         let (_, height) = staffs::system_geometry(&staffs, &spec);
-        // One height per system: staff distances are the same on every
-        // system (spacers/skylines are P4 work).
+        // One height per system: spacers are not modelled yet, but the
+        // skylines below can widen each staff and system independently.
         let heights = alloc::vec![height; atoms.first().map_or(0, Vec::len)];
-        let (systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
+        let (mut systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
+        // A preliminary layout gives the shapes of every drawn item; their
+        // skylines then set the minimum staff and system distances before
+        // the final page is laid out (`systemlayout.cpp:2485-2581, 2900-2989`).
+        let skylines = layout::all_skylines(&atoms, &spec, &systems, &staffs, &credits);
+        vertical::apply_skylines(&mut systems, &skylines, &staffs, &spec);
+        vertical::spread_all(&mut systems, &staffs, &spec);
         Ok(Self {
             atoms,
             systems,
             spec,
             staffs,
-            credits: score.engraving.credits.clone(),
+            credits,
         })
     }
 
