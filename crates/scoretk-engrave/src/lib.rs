@@ -504,6 +504,42 @@ mod tests {
     }
 
     #[test]
+    fn transposition_reuses_the_model_tpc_helper() {
+        let score = one_staff_score();
+        let options = EngraveOptions {
+            transpose_semitones: 2,
+            ..EngraveOptions::default()
+        };
+        let plain = crate::atoms::compute(&score);
+        let shifted = crate::atoms::compute_with_options(&score, &options);
+        let lines = |atoms: &[Vec<MeasureAtom>]| {
+            atoms[0][0]
+                .events
+                .iter()
+                .filter_map(|event| event.chord.as_ref())
+                .map(|chord| chord.notes[0].line)
+                .collect::<Vec<_>>()
+        };
+        let plain_lines = lines(&plain);
+        let shifted_lines = lines(&shifted);
+        assert_eq!(plain_lines.len(), 4);
+        // Two semitones are one diatonic step: G4 becomes A4, one line/space
+        // higher (line indices grow downwards).
+        for (before, after) in plain_lines.iter().zip(&shifted_lines) {
+            assert_eq!(*after, before - 1);
+        }
+        // The written key also moves one fifth (G major -> D major).
+        assert!(shifted[0][0]
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, AtomKind::KeySig { fifths: 2, .. })));
+        assert!(plain[0][0]
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, AtomKind::KeySig { fifths: 1, .. })));
+    }
+
+    #[test]
     fn engraves_a_one_staff_score() {
         let score = one_staff_score();
         let engraver = Engraver::new(&score, PageSpec::default()).unwrap();

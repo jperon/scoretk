@@ -32,9 +32,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use scoretk_core::model::{
-    AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
-    Fraction, GraceType, LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId,
-    StemDirection, StyleSettings, Track, Transpose,
+    transpose_tpc, AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType,
+    DurationType, Fraction, GraceType, LyricsSyllabic, NoteHeadType, Score, SegmentItem,
+    SegmentType, StaffId, StemDirection, StyleSettings, Track, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
@@ -1171,6 +1171,7 @@ fn note_atoms(
     duration: DurationType,
     bottom: i32,
     inverse: Option<Transpose>,
+    extra: Option<Transpose>,
     identity: NoteIdentity,
 ) -> Vec<NoteAtom> {
     let mut notes = Vec::new();
@@ -1182,10 +1183,6 @@ fn note_atoms(
             continue;
         }
         let head = head_name(note.head, &note.head_group, duration);
-        let accidental = note
-            .accidental
-            .filter(|a| a.visible)
-            .and_then(|a| accidental_name(a.kind));
         let (written_tpc, written_pitch) = match inverse {
             Some(interval) => {
                 let _ = interval.diatonic;
@@ -1195,6 +1192,31 @@ fn note_atoms(
                 )
             }
             None => (note.tpc, note.pitch),
+        };
+        // `EngraveOptions::transpose_semitones` reuses the model's
+        // `transpose_tpc` (`engraving/dom/transpose.cpp`): the diatonic interval
+        // is the closest letter change (seven steps per twelve semitones),
+        // which fixes the spelling while the pitch moves chromatically.
+        let (written_tpc, written_pitch) = match extra {
+            Some(interval) => (
+                transpose_tpc(written_tpc, interval),
+                (i32::from(written_pitch) + interval.chromatic).clamp(0, 127) as u8,
+            ),
+            None => (written_tpc, written_pitch),
+        };
+        let accidental = if extra.is_some() {
+            let alteration = (i32::from(written_tpc) - 13).div_euclid(7);
+            match alteration {
+                1 => accidental_name(AccidentalType::Sharp),
+                -1 => accidental_name(AccidentalType::Flat),
+                2 => accidental_name(AccidentalType::DoubleSharp),
+                -2 => accidental_name(AccidentalType::DoubleFlat),
+                _ => None,
+            }
+        } else {
+            note.accidental
+                .filter(|a| a.visible)
+                .and_then(|a| accidental_name(a.kind))
         };
         // The exporter's `n{index}` is the rank in `Chord::notes` (model
         // order), not the line-sorted position in this atom.
@@ -1390,7 +1412,7 @@ fn initial_clef(score: &Score, staff_index: usize) -> Option<ClefType> {
 }
 
 /// Computes the measure atoms of the given staff.
-fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
+fn compute_staff(score: &Score, staff_index: usize, extra: Option<Transpose>) -> Vec<MeasureAtom> {
     let staff = &score.staves[staff_index];
     let mut clef = initial_clef(score, staff_index)
         .or_else(|| {
@@ -1400,6 +1422,12 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         .unwrap_or(ClefType::G);
     let mut bottom = bottom_line_note(clef);
     let mut key_fifths = 0i8;
+    // A transposition by `n` semitones moves the key by the closest number of
+    // diatonic steps on the circle of fifths (`transpose.cpp:514-527`).
+    let key_shift = extra.map_or(0, |interval| {
+        let numerator = interval.chromatic * 7 + if interval.chromatic >= 0 { 6 } else { -6 };
+        (numerator / 12).clamp(-7, 7) as i8
+    });
     let mut prev_fifths = 0i8;
     // MuseScore engraves the written pitch by default (`concertPitch` false):
     // transpose the concert pitch of the pivot model by the inverse of the
@@ -1490,6 +1518,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     duration,
                     bottom,
                     inverse,
+                    extra,
                     NoteIdentity::default(),
                 ))
             });
@@ -1527,6 +1556,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     duration,
                     bottom,
                     inverse,
+                    extra,
                     NoteIdentity::default(),
                 ))
             });
@@ -1802,6 +1832,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                     grace.duration.kind,
                                     bottom,
                                     inverse,
+                                    extra,
                                     grace_identity,
                                 );
                                 if !notes.is_empty() {
@@ -1860,6 +1891,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 cr.duration.kind,
                                 bottom,
                                 inverse,
+                                extra,
                                 chord_identity,
                             );
 
@@ -2068,8 +2100,8 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         has_clef = true;
                     }
                     SegmentItem::KeySig(key) if segment.kind == SegmentType::KeySig && !has_key => {
-                        let fifths = key.concert_key.fifths();
-                        let previous = prev_fifths;
+                        let fifths = (key.concert_key.fifths() + key_shift).clamp(-7, 7);
+                        let previous = (prev_fifths + key_shift).clamp(-7, 7);
                         key_fifths = fifths;
                         prev_fifths = fifths;
                         if fifths != 0 || previous != 0 {
@@ -2197,10 +2229,16 @@ pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
 /// Same pass with rendering options. Transposition and other option-driven
 /// changes are applied to the compact atoms, never to the pivot model.
 pub fn compute_with_options(score: &Score, options: &EngraveOptions) -> Vec<Vec<MeasureAtom>> {
-    let _ = options; // reserved for the transposition pass (step 5)
+    let semitones = options.transpose_semitones;
+    let diatonic = if semitones >= 0 {
+        (semitones * 7 + 6) / 12
+    } else {
+        (semitones * 7 - 6) / 12
+    };
+    let extra = (semitones != 0).then(|| Transpose::new(diatonic, semitones));
     let all: Vec<Vec<MeasureAtom>> = visible_staves(score)
         .into_iter()
-        .map(|index| compute_staff(score, index))
+        .map(|index| compute_staff(score, index, extra))
         .collect();
     align_staves(all)
 }
@@ -2388,8 +2426,8 @@ mod tests {
             score.add_measure(measure);
             score
         };
-        let plain = compute_staff(&score_with(false), 0);
-        let with_lyrics = compute_staff(&score_with(true), 0);
+        let plain = compute_staff(&score_with(false), 0, None);
+        let with_lyrics = compute_staff(&score_with(true), 0, None);
         let plain_gap = plain[0].segment_bases[1] - plain[0].segment_bases[0];
         let lyric_gap = with_lyrics[0].segment_bases[1] - with_lyrics[0].segment_bases[0];
         let style = &score_with(true).engraving.style;
@@ -2503,7 +2541,7 @@ mod tests {
         );
         measure.add_segment(segment);
         score.add_measure(measure);
-        let atoms = compute_staff(&score, 0);
+        let atoms = compute_staff(&score, 0, None);
         assert!(
             atoms[0]
                 .events
@@ -2538,7 +2576,7 @@ mod tests {
         }
         measure.add_segment(segment);
         score.add_measure(measure);
-        let atoms = compute_staff(&score, 0);
+        let atoms = compute_staff(&score, 0, None);
         let atom = &atoms[0];
         let right = atom
             .events

@@ -2656,3 +2656,16 @@ height from its sounding staves. The option is explicit: scores carrying
 `hideEmptyStaves` in their `<Style>` keep the previous rendering by default,
 so the compliance corpus stays byte-identical. The test score has two staves
 and two systems; the second system keeps one staff instead of two.
+
+### 33.5 Transposition (step 5)
+
+`transpose_semitones` shifts the written pitch and spelling in the atom pass
+with the model's own `transpose_tpc` (`model/part.rs:159-181`, port of
+`src/engraving/editing/transpose.cpp:718-741`): the diatonic interval is the
+closest letter change (seven steps per twelve semitones), the chromatic part
+moves the MIDI pitch, and the displayed accidental is derived from the new
+tpc. Key signatures move by the same number of fifths
+(`transpose.cpp:514-527`). The pivot model is never mutated, and a zero
+semitone value takes the exact original path. Test: +2 semitones on a G-major
+score moves each note one staff step up and the key to D major while the
+untransposed atoms are unchanged.
