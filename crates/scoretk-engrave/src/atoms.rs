@@ -91,6 +91,10 @@ pub enum AtomKind {
     Rest {
         duration: u8,
         dots: u8,
+        /// The source duration is `DurationType::Measure` (a full-measure
+        /// rest), which MuseScore centres in the measure
+        /// (`measurelayout.cpp:1501-1512`). A plain whole rest is not.
+        measure: bool,
     },
 }
 
@@ -163,6 +167,10 @@ pub struct MeasureAtom {
     /// Key signature in force at this measure, repeated as a system header
     /// when non-C (`measurelayout.cpp:2597-2660`, `genKeysig`).
     pub key_fifths: i8,
+    /// Number of source measures folded into a multi-measure rest (1 when
+    /// this is an ordinary measure). // Port of `Measure::isMMRest` and
+    /// `MeasureLayout::layoutMeasure`'s centring step (`:1486-1491`).
+    pub mm_rest_count: u16,
 }
 
 impl MeasureAtom {
@@ -907,6 +915,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 AtomKind::Rest {
                                     duration,
                                     dots: cr.duration.dots,
+                                    measure: cr.duration.kind == DurationType::Measure,
                                 },
                             );
                             rest.voice = track;
@@ -997,6 +1006,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             line_break,
             clef_name: clef_name(clef),
             key_fifths,
+            mm_rest_count: mm_count.min(u16::MAX as usize) as u16,
         };
         // // Port of `systemlayout.cpp:402-407`
         // (`MeasureLayout::createEndBarLines`): MuseScore generates a final

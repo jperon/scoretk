@@ -814,6 +814,32 @@ and bar lines): in `Beam-CrossM1` the last staff lines end at the final
 thick bar line in both SVGs. `/tmp/Beam-CrossM1-p3b-step2.png` shows the
 result; the before image is `/tmp/Beam-CrossM1-p3b-after.png` from §9.19.
 
+### 9.21 Centred measure rests (eng3b, step 3, 2026-11-27)
+
+A `DurationType::Measure` rest was drawn at its segment's left edge, while
+`MeasureLayout::layoutMeasure` centres it in the free space between the
+previous segment's right edge and the bar line
+(`measurelayout.cpp:1477-1485, 1501-1512`): the `AtomKind::Rest` now carries
+the distinction from a plain whole rest, and `place_event` centres it using
+`barNoteDistance` as the left inset. Multi-measure rests (folded atoms carry
+`mm_rest_count`) are drawn as a bar inset by `multiMeasureRestMargin`
+(1.25 sp), with 2 sp vertical end strokes, centred vertically on the middle
+staff line (`measurelayout.cpp:1486-1492, 2997-3005`; `styledef.cpp:530-533`).
+The MMRest number above the bar is still P4 text work. Two unit tests pin the
+rest centre and the bar geometry.
+
+| Metric | Step 2 | Step 3 | Gate |
+| --- | ---: | ---: | ---: |
+| Stem-length agreement | 0.8076 (319/395) | 0.8076 (319/395) | ≥ 0.90 — failed |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+Rests are not among the oracle's extracted elements, so the change is
+reported from the SVG comparison
+(`/tmp/Beam-CrossM1-p3b-step3b.png` vs `/tmp/Beam-CrossM1-p3b-ref.png`): the
+full-measure rests of the short last system now sit near the centre of their
+measures instead of against the clef. Oracle run: `/tmp/oracle-p3b-step3b`.
+
 ## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,

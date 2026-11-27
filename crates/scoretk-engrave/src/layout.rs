@@ -582,7 +582,9 @@ fn place_measure(
             out,
             event,
             absolute_x,
+            x0 + cursor + segment_width(atom, index, scale),
             system_y,
+            atom.mm_rest_count,
             plan.stems.get(event_offset + index).copied().flatten(),
         );
         cursor += segment_width(atom, index, scale);
@@ -920,7 +922,16 @@ fn place_chord(
     }
 }
 
-fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32, beam: Option<(bool, i32)>) {
+#[allow(clippy::too_many_arguments)] // page-local helper: item, bounds, staff y and beam override
+fn place_event(
+    out: &mut DisplayList,
+    event: &Atom,
+    x: i32,
+    right: i32,
+    y: i32,
+    mm_rest_count: u16,
+    beam: Option<(bool, i32)>,
+) {
     match event.kind {
         AtomKind::Clef { name } => {
             // Leland's clef origin sits near the second staff line; the
@@ -940,20 +951,68 @@ fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32, beam: Option
                 place_chord(out, chord, x, y, beam);
             }
         }
-        AtomKind::Rest { duration, dots } => {
+        AtomKind::Rest {
+            duration,
+            dots,
+            measure,
+        } => {
             // // Port of `RestLayout::computeVoiceOffset`
             // (`restlayout.cpp:694-765`): in a multi-voice measure the rests
             // of voices 2 and 4 move one line space down, those of voices 1
             // and 3 one up, so they do not collide with the other voice.
             let voice_offset = if event.voice.is_multiple_of(2) { 0 } else { SP };
             let name = rest_name(duration);
-            out.glyph(ItemKind::Rest, name, x, y + HALF_SP + voice_offset);
+            let rest_y = y + HALF_SP + voice_offset;
+            // `getMeasureStartEndPos` uses the previous segment's right
+            // edge, i.e. the segment x minus `barNoteDistance`
+            // (`measurelayout.cpp:1477-1485`), not its left edge.
+            let x1 = x - BAR_NOTE_DISTANCE;
+            if mm_rest_count > 1 {
+                // // Port of `MeasureLayout::layoutMeasure`
+                // (`measurelayout.cpp:1477-1492`, `:2997-3005`): an MMRest
+                // is a thick bar centred vertically in the staff, inset by
+                // `multiMeasureRestMargin` (1.25 sp) on both sides, with
+                // vertical strokes of `mmRestHBarVStrokeHeight` (2 sp).
+                let margin = 5 * SP / 4;
+                let left = x1 + margin;
+                let width = (right - x1 - 2 * margin).max(SP / 2);
+                let mid = y + 2 * SP;
+                out.push(DisplayItem::rect(
+                    ItemKind::Rest,
+                    left,
+                    mid - 7 * SP / 20,
+                    width,
+                    7 * SP / 10,
+                ));
+                for end in [left, left + width - SP / 5] {
+                    out.push(DisplayItem::rect(
+                        ItemKind::Rest,
+                        end,
+                        mid - SP,
+                        SP / 5,
+                        2 * SP,
+                    ));
+                }
+                return;
+            }
+            let width = glyph(name)
+                .map(|glyph| units_to_fixed(glyph.bbox[2] - glyph.bbox[0]))
+                .unwrap_or(SP);
+            // // Port of `measurelayout.cpp:1501-1512`: a full-measure rest
+            // is centred in the free space between the preceding segment and
+            // the bar line, not drawn at the segment's left edge.
+            let rest_x = if measure {
+                x1 + ((right - x1 - width) / 2).max(0)
+            } else {
+                x
+            };
+            out.glyph(ItemKind::Rest, name, rest_x, rest_y);
             for index in 0..usize::from(dots) {
                 out.glyph(
                     ItemKind::Dot,
                     "augmentationDot",
-                    x + 2 * SP + index as i32 * DOT_DOT_DISTANCE,
-                    y + HALF_SP + voice_offset,
+                    rest_x + 2 * SP + index as i32 * DOT_DOT_DISTANCE,
+                    rest_y,
                 );
             }
         }
@@ -1106,6 +1165,7 @@ mod tests {
             line_break: false,
             clef_name: "gClef",
             key_fifths: 0,
+            mm_rest_count: 1,
         }
     }
 
@@ -1119,6 +1179,68 @@ mod tests {
         // A plain start bar line is implicit in MuseScore; only the end bar
         // line of the measure is drawn.
         assert_eq!(list.count(ItemKind::BarLine), 1);
+    }
+
+    #[test]
+    fn full_measure_rest_is_centred_and_mmrest_is_a_bar() {
+        let spec = PageSpec {
+            printable_width: 1000 * SP,
+            ..PageSpec::default()
+        };
+        let mut rest = atom(4);
+        rest.events = vec![Atom {
+            x: 4 * SP,
+            kind: AtomKind::Rest {
+                duration: 2,
+                dots: 0,
+                measure: true,
+            },
+            chord: None,
+            voice: 0,
+            measure: 0,
+            beams: 0,
+            beam_mode: BeamMode::Auto,
+            beam_start: false,
+            beam_dir: None,
+            grace: false,
+        }];
+        rest.width = 40 * SP;
+        let list = page(&[rest.clone()], &spec, 0);
+        let glyph = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Rest)
+            .unwrap();
+        let (x0, _, x1, _) = glyph.bbox(&list).unwrap();
+        let bar = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::BarLine)
+            .unwrap()
+            .origin()
+            .0;
+        assert!(
+            ((x0 + x1) / 2 - (4 * SP - BAR_NOTE_DISTANCE + spec.margin_left + bar) / 2).abs()
+                <= SP / 10,
+            "measure rest is not centred in its measure"
+        );
+        // An MMRest is drawn as a centred bar plus two vertical end strokes.
+        rest.mm_rest_count = 3;
+        let list = page(&[rest], &spec, 0);
+        let bars: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Rest)
+            .collect();
+        assert_eq!(bars.len(), 3);
+        let Geometry::Rect { x, w, .. } = bars[0].geometry else {
+            panic!("MMRest bar must be a rectangle");
+        };
+        assert!(w > 10 * SP, "the MMRest bar spans the measure");
+        assert_eq!(
+            x,
+            spec.margin_left + 4 * SP - BAR_NOTE_DISTANCE + 5 * SP / 4
+        );
     }
 
     #[test]
@@ -1238,6 +1360,7 @@ mod tests {
             line_break: false,
             clef_name: "gClef",
             key_fifths: 0,
+            mm_rest_count: 1,
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let header: Vec<_> = list
@@ -1303,6 +1426,7 @@ mod tests {
             line_break: false,
             clef_name: "gClef",
             key_fifths: 0,
+            mm_rest_count: 1,
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let accidental = list

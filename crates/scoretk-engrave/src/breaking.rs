@@ -223,6 +223,7 @@ mod tests {
                     AtomKind::Rest {
                         duration: 4,
                         dots: 0,
+                        measure: false,
                     },
                 ),
                 Atom {
@@ -254,6 +255,7 @@ mod tests {
             line_break: false,
             clef_name: "gClef",
             key_fifths: 0,
+            mm_rest_count: 1,
         }
     }
 
