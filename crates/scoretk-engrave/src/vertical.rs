@@ -322,10 +322,18 @@ pub fn apply_skylines(
                 // `dist = max(dist, d + minVerticalDistance)`: top-line to
                 // top-line, hence `STAFF_HEIGHT` is included in the base.
                 let base = top + STAFF_HEIGHT + style_distance;
+                // // Port of `SystemLayout::layoutSystem`
+                // (`systemlayout.cpp:2567-2574`): `SysStaff` skylines are in
+                // system coordinates, so `minDistance` already contains the
+                // offset of the upper staff's top line. Our skylines are
+                // staff-local; adding `top` here is what lets a low lyric
+                // verse push the *next* staff down instead of intersecting
+                // it. Omitting it left the T B lyrics of the private score
+                // touching the organ staff.
                 let d = staff_skylines[staff_index - 1]
                     .south()
                     .min_distance(staff_skylines[staff_index].north(), spec.skyline_clearance)
-                    .map(|d| d + spec.min_vertical_distance);
+                    .map(|d| d + spec.min_vertical_distance + top);
                 top = d.map_or(base, |d| base.max(d));
                 system.staff_offsets[staff_index] = top;
             }
@@ -555,6 +563,30 @@ mod tests {
         apply_skylines(&mut systems, &[skylines], &[], &spec);
         assert_eq!(systems[0].staff_offsets[1], 25 * SP / 2);
         assert!(systems[0].height > 12 * SP);
+    }
+
+    #[test]
+    fn a_low_verse_pushes_the_following_staff_of_a_three_staff_system() {
+        // `SysStaff` skylines use system coordinates
+        // (`systemlayout.cpp:1609-1724`): `minDistance` already contains the
+        // preceding staffs' offsets. Staff-local skylines must add `top`, or
+        // a lyric verse below staff 2 intersects staff 3.
+        let spec = PageSpec {
+            staff_distance: 6 * SP,
+            min_vertical_distance: SP / 2,
+            skyline_clearance: SP / 4,
+            ..PageSpec::default()
+        };
+        let mut systems = vec![plan(0, vec![0, 10 * SP, 20 * SP])];
+        let mut middle = staff_skyline();
+        middle.add(SP, STAFF_HEIGHT, SP + 100, 16 * SP, STAFF_HEIGHT, 0);
+        let skylines = vec![vec![staff_skyline(), middle, staff_skyline()]];
+        apply_skylines(&mut systems, &[skylines], &[], &spec);
+        assert_eq!(
+            systems[0].staff_offsets[2],
+            10 * SP + 16 * SP + SP / 2,
+            "staff 3 must clear the protrusion of staff 2 in system coordinates"
+        );
     }
 
     #[test]

@@ -2136,6 +2136,39 @@ dash starts at the syllable's shape edge rather than at its advance edge.
 A unit test checks that the dash lies between the rendered ink of "No" and
 "ël".
 
+## 25. Review of the private page 2: low verses push the next staff (2026-11-27)
+
+The T B verses of m.23–24 ("No - ël No", "ël") and m.30–31 ("En cet-te nuit …")
+were drawn immediately on top of the organ staff instead of in the gap below
+their own staff. Their own autoplace was correct: `lyric_verse_moves` kept one
+baseline per verse and cleared the T B outline. The defect was one staff
+lower. MuseScore's `SysStaff` skylines are in **system** coordinates —
+`SystemLayout::createSkylines` translates every shape by `item->pos() + p +
+item->staffOffset()` (`systemlayout.cpp:1609-1724`) — so the
+`minDistance` used by `layoutSystem` (`:2564-2574`) already contains the
+offsets of all preceding staves. Our skylines are staff-local; adding only
+`minVerticalDistance` ignored the 19.35 sp already consumed by S A and T B,
+and the style distance (10.5 sp) won over the 12.65 sp lyric demand.
+
+`apply_skylines` now adds the accumulated `top` to the measured distance
+before comparing it with the style base. On page 2 the organ staff of the
+first system drops by 2.65 sp and all three T B verse lines sit in clear air
+below their staff; the three-system pagination is unchanged. A three-staff
+unit test pins the system-coordinate rule.
+
+| Metric (`oracle-eng9-p2-step6b` → `oracle-eng9-p2-step8`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1747 (386/2 209) | 0.1747 (386/2 209) |
+| Measure widths / system breaks | 91/394 / 35/56 | 91/394 / 35/56 |
+| Staff system tops within 0.5 sp | 19/202 | 19/202 |
+| Adjacent-staff gaps within 0.5 sp | 6/111 | 6/111 |
+
+The corpus has no verse low enough to become the binding constraint, so its
+figures are unchanged by construction. The private page is the evidence:
+`engrave-img/eng9/step8-p2.png` (whole page inspected) shows the T B lyrics
+below the T B staff with a clear gap, and `step8-p1.png` keeps page 1 intact.
+
 | Metric (`oracle-eng9-review-step3` → `oracle-eng9-p2-step6b`) | Before | After |
 | --- | ---: | ---: |
 | Failures / elements | 0 / 2 209 | 0 / 2 209 |
