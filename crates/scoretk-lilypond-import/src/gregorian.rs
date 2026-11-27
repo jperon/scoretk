@@ -91,14 +91,7 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
         }
     }
     let payload = Gregorian {
-        headers: title(src)
-            .map(|value| {
-                vec![GregorianHeader {
-                    name: "name".to_owned(),
-                    value,
-                }]
-            })
-            .unwrap_or_default(),
+        headers: headers(src),
         staff_lines: 4,
         clefs: vec![clef],
         syllables,
@@ -141,20 +134,34 @@ fn braced<'a>(src: &'a str, marker: &str) -> Option<&'a str> {
     None
 }
 
-/// Titre GABC (`name:`) porté par le champ `\header title` (§21.2.3).
-fn title(src: &str) -> Option<String> {
-    let header = braced(src, "\\header")?;
+/// En-têtes GABC portés par les variables `\header` (§21.2.3). Les noms
+/// LilyPond valides remplacent le tiret par un soulignement ; `title` est le
+/// champ natif du titre (`name:` en GABC).
+fn headers(src: &str) -> Vec<GregorianHeader> {
+    let Some(header) = braced(src, "\\header") else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
     for line in header.lines() {
         if let Some((name, value)) = line.trim().split_once('=') {
-            if name.trim() == "title" {
-                let value = value.trim().trim_matches('"');
-                if !value.is_empty() {
-                    return Some(value.replace("\\\"", "\""));
-                }
+            let name = name.trim();
+            let value = value.trim().trim_matches('"');
+            if name.is_empty() || value.is_empty() {
+                continue;
             }
+            let value = value.replace("\\\"", "\"").replace("\\\\", "\\");
+            let name = if name == "title" {
+                "name"
+            } else {
+                name
+            };
+            result.push(GregorianHeader {
+                name: name.replace('_', "-"),
+                value,
+            });
         }
     }
-    None
+    result
 }
 
 #[derive(Default)]

@@ -62,13 +62,28 @@ pub(crate) fn render(score: &Score, gregorian: &Gregorian, version: &str) -> Str
     out
 }
 
-/// Seul le titre a un porteur natif dans `\header` (§21.2.3). Les autres
-/// en-têtes GABC n'ont pas de champ LilyPond correspondant : ils ne sont pas
-/// copiés sous forme `name=value`, qui serait un vidage de la source.
+/// Champs `\header` (Notation Reference §21.2.3, « User-defined field ») :
+/// LilyPond accepte des variables arbitraires dans `\header`. Chaque en-tête
+/// GABC y est un champ *nommé* avec sa valeur littérale — pas une étiquette
+/// `name=value` contenant le jeton source, ni un préfixe privé. Les noms
+/// GABC à tirets deviennent des identifiants LilyPond valides (`office-part`
+/// → `office_part`) ; le lecteur inverse cette transcription.
+fn header_field(name: &str) -> String {
+    if name == "name" {
+        return "title".to_owned();
+    }
+    name.replace('-', "_")
+}
+
 fn write_header(out: &mut String, gregorian: &Gregorian) {
     out.push_str("\\header {\n");
-    if let Some(name) = gregorian.headers.iter().find(|h| h.name == "name") {
-        let _ = writeln!(out, "  title = \"{}\"", escape(&name.value));
+    for header in &gregorian.headers {
+        let _ = writeln!(
+            out,
+            "  {} = \"{}\"",
+            header_field(&header.name),
+            escape(&header.value)
+        );
     }
     out.push_str("}\n\n");
 }
@@ -262,6 +277,31 @@ fn escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gregorian_headers_use_native_user_defined_fields() {
+        // §21.2.3 : `\header` accepte des variables arbitraires. Les valeurs
+        // sont des champs nommés, pas des étiquettes `clé: valeur` de la
+        // source GABC ni un préfixe privé.
+        let gregorian = Gregorian {
+            headers: vec![
+                scoretk_core::model::GregorianHeader {
+                    name: "name".to_owned(),
+                    value: "Veni Sancte Spiritus".to_owned(),
+                },
+                scoretk_core::model::GregorianHeader {
+                    name: "office-part".to_owned(),
+                    value: "Alleluia".to_owned(),
+                },
+            ],
+            ..Gregorian::default()
+        };
+        let ly = render(&Score::default(), &gregorian, "2.24.0");
+        assert!(ly.contains("title = \"Veni Sancte Spiritus\""), "{ly}");
+        assert!(ly.contains("office_part = \"Alleluia\""), "{ly}");
+        assert!(!ly.contains("gabc"), "no private prefix: {ly}");
+        assert!(!ly.contains("office-part:"), "no dump label: {ly}");
+    }
 
     #[test]
     fn gregorian_uses_vaticana_contexts_and_divisiones() {
