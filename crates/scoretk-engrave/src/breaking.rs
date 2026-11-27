@@ -492,3 +492,76 @@ mod tests {
         assert!(systems.iter().any(|s| s.page == 1));
     }
 }
+
+/// Horizontal mode: one system per page. Cantus sets Verovio's
+/// `systemMaxPerPage: 1` when the score has a single system on its first page;
+/// a later, shorter movement must not get two systems on one page.
+pub fn one_system_per_page(systems: &mut [SystemPlan], spec: &PageSpec) {
+    for (page, system) in systems.iter_mut().enumerate() {
+        system.page = page;
+        system.y = spec.margin_top
+            + if page == 0 {
+                spec.title_frame_height
+            } else {
+                spec.staff_upper_border
+            };
+    }
+}
+
+/// Bottom of the last system on the fullest page, including the symmetric
+/// bottom margin. Used by `adjustPageHeight` to shrink the page viewBox to
+/// its content without changing any item coordinate.
+pub fn content_height(systems: &[SystemPlan], spec: &PageSpec) -> i32 {
+    systems
+        .iter()
+        .map(|system| system.y + system.height)
+        .max()
+        .unwrap_or(0)
+        + spec.margin_top
+}
+
+#[cfg(test)]
+mod option_tests {
+    use super::*;
+    use crate::style::SP;
+
+    fn system(index: usize) -> SystemPlan {
+        SystemPlan {
+            first: index,
+            count: 1,
+            scale: 1024,
+            y: 100 * index as i32,
+            page: 0,
+            height: 4 * SP,
+            staff_offsets: alloc::vec![0],
+        }
+    }
+
+    #[test]
+    fn horizontal_mode_gives_each_system_its_own_page() {
+        let mut systems = (0..3).map(system).collect::<Vec<_>>();
+        let spec = PageSpec::default();
+        one_system_per_page(&mut systems, &spec);
+        assert_eq!(breaking_page_count(&systems), 3);
+        for (page, system) in systems.iter().enumerate() {
+            assert_eq!(system.page, page);
+            assert_eq!(
+                system.y,
+                spec.margin_top
+                    + if page == 0 {
+                        spec.title_frame_height
+                    } else {
+                        spec.staff_upper_border
+                    }
+            );
+        }
+        assert_eq!(
+            content_height(&systems, &spec),
+            2 * spec.margin_top + spec.staff_upper_border + 4 * SP
+        );
+    }
+
+    fn breaking_page_count(systems: &[SystemPlan]) -> usize {
+        systems.iter().map(|system| system.page).max().unwrap_or(0) + 1
+    }
+}

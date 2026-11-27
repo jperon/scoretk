@@ -57,7 +57,17 @@ impl PageSpec {
     /// are whole numbers of staff spaces (and therefore a whole number of
     /// pixels at the chosen staff size), which keeps the raster grid stable.
     pub fn for_screen(width_px: u32, height_px: u32) -> Self {
-        let staff_px = screen_staff_px(width_px, height_px);
+        Self::for_px(width_px, height_px, 1.0)
+    }
+
+    /// Same geometry at an explicit zoom. `scale` multiplies the pixels per
+    /// staff space, so a larger zoom fits fewer staff spaces in the same
+    /// displayed pixel page. // Cantus passes `verovio_scale / 40` here: its
+    /// `pageWidth = innerWidth * 100 / scale` compensates the physical page.
+    pub fn for_px(width_px: u32, height_px: u32, scale: f64) -> Self {
+        let base = screen_staff_px(width_px, height_px);
+        let staff_px = (base as f64 * scale.max(1.0 / base as f64)).round() as i32;
+        let staff_px = staff_px.max(1);
         // Pixel coordinates round-trip exactly through the fixed-point grid:
         // fixed * staff_px / 1024 == px. The page therefore keeps the screen's
         // aspect ratio without a whole-staff-space quantisation error.
@@ -129,6 +139,27 @@ mod tests {
             assert!(to_px(spec.margin_top) * 10 >= 34 * px);
             assert!(to_px(spec.margin_left) >= px);
         }
+    }
+
+    #[test]
+    fn zoom_changes_pixels_per_staff_space_not_the_displayed_page() {
+        let normal = PageSpec::for_px(800, 600, 1.0);
+        let zoomed = PageSpec::for_px(800, 600, 2.0);
+        let page_px = |spec: &PageSpec, fixed: i32| {
+            let staff_px = (spec.spatium_mm / SCREEN_PIXEL_PITCH_MM) as i32;
+            fixed * staff_px / SP
+        };
+        assert!(
+            (page_px(&normal, normal.printable_width + 2 * normal.margin_left) - 800).abs() <= 2
+        );
+        assert!(
+            (page_px(&zoomed, zoomed.printable_width + 2 * zoomed.margin_left) - 800).abs() <= 2
+        );
+        // A doubled staff is twice as many millimetres, hence half as many
+        // staff spaces fit the same 800 px.
+        assert_eq!(zoomed.spatium_mm, normal.spatium_mm * 2.0);
+        let ratio = zoomed.printable_width as f64 / normal.printable_width as f64;
+        assert!(ratio > 0.45 && ratio <= 0.5, "width ratio {ratio}");
     }
 
     #[test]

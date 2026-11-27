@@ -201,8 +201,37 @@ impl PageSpec {
         score: &Score,
         options: &crate::options::EngraveOptions,
     ) -> Self {
-        let _ = options;
-        Self::from_score_plain(score)
+        if options.page_width_px.is_none()
+            && options.page_height_px.is_none()
+            && options.scale == 1.0
+        {
+            return Self::from_score_plain(score);
+        }
+        let print = Self::from_score_plain(score);
+        let mut spec = match (options.page_width_px, options.page_height_px) {
+            (Some(width), Some(height)) => Self::for_px(width, height, options.scale),
+            (width, height) => {
+                // A single pixel dimension keeps the other one's physical
+                // size; zoom scales the page in fixed staff spaces.
+                let divisor = options.scale.max(1.0 / 1024.0);
+                let width_sp = width.map_or(print.printable_width + 2 * print.margin_left, |px| {
+                    (px as f64 * SP as f64 / (14.0 * options.scale).max(1.0)) as i32
+                });
+                let height_sp =
+                    height.map_or((print.page_height as f64 / divisor) as i32, |px| px as i32);
+                Self {
+                    spatium_mm: print.spatium_mm * divisor,
+                    printable_width: (width_sp as f64 / divisor) as i32 - 2 * print.margin_left,
+                    page_height: height_sp,
+                    ..print
+                }
+            }
+        };
+        spec.title_frame_height = print.title_frame_height;
+        spec.text_scale = (spec.printable_width.max(1) as f64
+            / print.printable_width.max(1) as f64)
+            .clamp(0.0, 1.0);
+        spec
     }
 
     fn from_score_plain(score: &Score) -> Self {

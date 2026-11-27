@@ -2614,3 +2614,23 @@ in the default path and no per-item memory is added.
 how cantus feeds small staves today. Tests: a two-staff score with one staff at
 70 % has noteheads 0.7×; an option override changes only that part and leaves
 the model untouched; the MusicXML reader maps 70 and 55.5.
+
+### 33.2 Zoom, page pixels and page modes (step 2)
+
+`PageSpec::for_px(width_px, height_px, scale)` generalises `for_screen`: the
+pixels per staff space are `screen_staff_px(short side) * scale`, so the same
+displayed page holds fewer staff spaces when the user zooms in. `scale` is
+`verovio_scale / 40` (1.0 at cantus' 40 % default); the caller passes the
+*displayed* pixel size, since cantus computes `pageWidth = innerWidth * 100 /
+scale`. With no pixel size, `scale` alone divides the page's fixed dimensions
+and multiplies its spatium, keeping the physical print page. `from_score_with_options`
+additionally copies the score's title frame and fits frame text to the new
+printable width. `EngraveOptions::from_verovio` performs the conversion from
+cantus' four option values in one call.
+
+`one_system_per_page` reassigns one page per system after the vertical pass,
+the equivalent of `systemMaxPerPage: 1`; `adjust_page_height` shrinks the page
+viewBox to `content_height = max(system.y + system.height) + margin_top`,
+clamped to the original height. Neither moves a drawn item. Tests cover the
+pixel/zoom round trip, one page per system and the shortened page height;
+both flags default to `false`, so the print SVG is untouched.

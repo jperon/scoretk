@@ -135,6 +135,7 @@ impl Engraver {
         // skylines below can widen each staff and system independently.
         let heights = alloc::vec![height; atoms.first().map_or(0, Vec::len)];
         let (mut systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
+        let mut spec = spec;
         // A preliminary layout gives the shapes of every drawn item; their
         // skylines then set the minimum staff and system distances before
         // the final page is laid out (`systemlayout.cpp:2485-2581, 2900-2989`).
@@ -142,6 +143,13 @@ impl Engraver {
         vertical::apply_skylines(&mut systems, &skylines, &staffs, &spec);
         breaking::repaginate(&mut systems, &spec);
         vertical::distribute_all(&mut systems, &staffs, &spec);
+        if options.one_system_per_page {
+            breaking::one_system_per_page(&mut systems, &spec);
+        }
+        if options.adjust_page_height {
+            spec.page_height = breaking::content_height(&systems, &spec)
+                .clamp(spec.margin_top * 2, spec.page_height);
+        }
         Ok(Self {
             atoms,
             systems,
@@ -338,6 +346,38 @@ mod tests {
             item.geometry,
             crate::display::Geometry::Path { mag, .. } if mag == EngraveOptions::mag_fixed(70)
         )));
+    }
+
+    #[test]
+    fn zoom_and_page_pixels_change_the_spec_not_the_default() {
+        let score = one_staff_score();
+        let print = Engraver::from_score(&score).unwrap();
+        let options = EngraveOptions {
+            scale: 2.0,
+            page_width_px: Some(800),
+            page_height_px: Some(600),
+            ..EngraveOptions::default()
+        };
+        let zoomed = Engraver::from_score_with_options(&score, &options).unwrap();
+        assert_eq!(print.spec().spatium_mm, 1.75);
+        assert!(zoomed.spec().spatium_mm > print.spec().spatium_mm);
+        assert_eq!(zoomed.page_count(), print.page_count());
+        // The default page still derives from the score style.
+        assert!(print.spec().printable_width > 0 && print.spec().page_height > 0);
+    }
+
+    #[test]
+    fn adjust_page_height_shrinks_the_viewbox_to_the_content() {
+        let score = one_staff_score();
+        let print = Engraver::from_score(&score).unwrap();
+        let options = EngraveOptions {
+            adjust_page_height: true,
+            ..EngraveOptions::default()
+        };
+        let adjusted = Engraver::from_score_with_options(&score, &options).unwrap();
+        assert!(adjusted.spec().page_height < print.spec().page_height);
+        assert!(adjusted.spec().page_height >= 2 * adjusted.spec().margin_top);
+        assert_eq!(adjusted.page_count(), print.page_count());
     }
 
     #[test]
