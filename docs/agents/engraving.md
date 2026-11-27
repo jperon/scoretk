@@ -875,6 +875,38 @@ subtitle, measure numbers and the shifted first system; the same image
 before this step is `/tmp/Beam-CrossM1-p3b-step3b.png`. Oracle run:
 `/tmp/oracle-p3b-step4b`.
 
+### 9.23 Edwin text widths: measurement before enabling (eng3b, step 5, 2026-11-27)
+
+The Edwin subset of step 4 provides **real** advance widths. The P4
+groundwork now computes them for lyrics (all verses),
+harmony symbols and tempo text from the pivot model
+(`atoms::attached_text_widths`, `horizontalspacing.cpp:1438-1604`), with the
+font point sizes of `styledef.cpp`. Unlike the earlier character-count
+estimate, no width is guessed. Seven integration variants were measured on
+the same 44 files; the oracle directory and its per-file `raw.jsonl` are kept
+for each (`/tmp/oracle-p3b-step5{,...,j}`).
+
+| Variant | Breaks | Widths ≤ 0.1 sp | Both axes ≤ 0.1 sp |
+| --- | ---: | ---: | ---: |
+| Baseline (step 4) | 34/44 | 69/192 | 365/1261 |
+| All texts added to segment width | 26/44 | 49/185 | 239/1261 |
+| Lyrics + harmony + tempo added | 26/44 | 57/191 | 257/1260 |
+| Lyrics added | 31/44 | 63/192 | 331/1261 |
+| Overlap rule, 0.25 sp margin | 33/44 | 68/192 | 333/1261 |
+| Overlap rule, no margin | 33/44 | 68/192 | 334/1261 |
+| Overlap on short notes, event x shifted | 34/44 | 68/192 | 344/1261 |
+| Overlap on short notes, break width only | 34/44 | 68/192 | 350/1261 |
+| **`TEXT_WIDTH_SPACING = false` (kept)** | **34/44** | **69/192** | **365/1261** |
+
+The best faithful variant kept the break count but still moved two files
+away from the oracle: `copypastesymbollist-lyrics` fell from 35 to 26
+elements within 0.1 sp and `testExcludeInvisibleElements` from 49 to 43 (one
+measure width lost). Although the primary gates do not degrade, the
+per-file x figures do, so the switch is left **off** and the measured helper
+is ready for the full `computePadding`/`Skyline` port in P4. This is the
+same decision as for the character-count estimate of §9.18, now with
+measured font advances instead of a guess.
+
 ## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,

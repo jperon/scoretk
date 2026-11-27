@@ -31,12 +31,12 @@
 use alloc::vec::Vec;
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType, NoteHeadType,
-    Score, SegmentItem, SegmentType, StemDirection, Transpose,
+    AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
+    NoteHeadType, Score, SegmentItem, SegmentType, StemDirection, StyleSettings, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
-use scoretk_smufl::{anchor, glyph, units_to_fixed};
+use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
@@ -686,6 +686,57 @@ pub(crate) fn cancellation_count(previous: i8, next: i8) -> u8 {
     removed_sharps.min(7) + removed_flats.min(7)
 }
 
+/// Whether measured text shapes widen a measure's break width. Disabled
+/// after the P4 measurement campaign (§9.23 of `docs/agents/engraving.md`):
+/// with the faithful Edwin advances the best variant kept 34/44 system breaks
+/// but reduced within-0.1-sp positions from 365 to 350. The widths and the
+/// helper are ready for the full `computePadding`/`Skyline` port in P4.
+pub const TEXT_WIDTH_SPACING: bool = false;
+
+/// Font em in fixed staff spaces for a point size (`styledef.cpp:1209-1223`).
+fn text_em(style: &StyleSettings, font_size: f64) -> i32 {
+    let spatium = style.spatium_mm.max(0.1);
+    ((font_size * 25.4 / 72.0) / spatium * SP as f64) as i32
+}
+
+/// Widths of the three text families attached to a chord/rest segment:
+/// lyrics, harmony symbols and tempo. Index 0/1/2 respectively; zero means
+/// the segment carries none of that family.
+///
+/// // Port of `horizontalspacing.cpp:1438-1604` (`computePadding`): the real
+/// Edwin advances give each item's shape width. A character-count estimate
+/// previously moved 17 of 44 system breaks away from the oracle; even adding
+/// the measured full width to the segment still moved 3 of 44, because
+/// MuseScore only separates *neighbouring* shapes that would overlap.
+fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSettings) -> [i32; 3] {
+    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0));
+    let mut widths = [0; 3];
+    if segment.kind == SegmentType::ChordRest {
+        for (_, item) in segment.iter_elements() {
+            let SegmentItem::ChordRest(chord_rest) = item else {
+                continue;
+            };
+            for lyrics in &chord_rest.lyrics {
+                widths[0] = widths[0].max(text_width(&lyrics.text, lyric_em, false));
+            }
+        }
+    }
+    let harmony_em = text_em(style, 12.0);
+    let tempo_em = text_em(style, 12.0);
+    for annotation in &segment.annotations {
+        let index = match &annotation.annotation {
+            Annotation::Harmony(_) => Some(1),
+            Annotation::Tempo(_) => Some(2),
+            _ => None,
+        };
+        if let Some(index) = index {
+            let em = if index == 1 { harmony_em } else { tempo_em };
+            widths[index] = widths[index].max(text_width(annotation.text(), em, false));
+        }
+    }
+    widths
+}
+
 /// Computes all measure atoms of a score (single staff only).
 pub fn compute(score: &Score) -> Vec<MeasureAtom> {
     let staff = &score.staves[0];
@@ -769,6 +820,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             }
         }
         let multi_voice = used_tracks.len() > 1;
+        // (x of the last segment carrying this text family, shape width).
+        let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
+        let mut text_extra = 0;
 
         for segment in &measure.segments {
             if segment.kind == SegmentType::ChordRest {
@@ -792,6 +846,36 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 // stretch comes from its duration; `minNoteDistance` and the
                 // notehead/accidental/dot widths give the lower bound.
                 let mut segment_width = SEGMENT_WIDTH;
+                let text_widths = if TEXT_WIDTH_SPACING {
+                    attached_text_widths(segment, style)
+                } else {
+                    [0; 3]
+                };
+                let short_notes = segment.iter_elements().any(|(_, item)| {
+                    matches!(item, SegmentItem::ChordRest(chord_rest)
+                        if duration_code(chord_rest.duration.kind) >= 5)
+                });
+                // `minDistance` between neighbouring text shapes of the same
+                // family: only an actual overlap widens the segment, as in
+                // `HorizontalSpacing::computePadding` (not the full width).
+                for (index, &width) in text_widths.iter().enumerate() {
+                    if width == 0 || last_text[index].1 == 0 || (index == 0 && !short_notes) {
+                        continue;
+                    }
+                    let needed = (last_text[index].1 + width) / 2;
+                    let have = x - last_text[index].0;
+                    if have < needed {
+                        // MuseScore records this as extra free space in the
+                        // measure (affecting its break width), but keeps the
+                        // chord segments themselves at their spring positions.
+                        text_extra += needed - have;
+                    }
+                }
+                for (index, &width) in text_widths.iter().enumerate() {
+                    if width > 0 && (index != 0 || short_notes) {
+                        last_text[index] = (x, width);
+                    }
+                }
                 // (voice, staff line) pairs already placed in this segment,
                 // used to shift noteheads of colliding voices.
                 let mut used_lines: alloc::vec::Vec<(u32, i32)> = alloc::vec::Vec::new();
@@ -998,7 +1082,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
 
         let mut atom = MeasureAtom {
             number: measure.number,
-            width: x,
+            width: x + text_extra,
             spring,
             events,
             start_bar: bar_code(measure.start_bar_line),
