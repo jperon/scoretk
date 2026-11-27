@@ -59,6 +59,7 @@ pub mod breaking;
 pub mod decor;
 pub mod display;
 pub mod layout;
+pub mod screen;
 pub mod skyline;
 pub mod spacing;
 pub mod staffs;
@@ -69,6 +70,7 @@ pub use atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
 pub use breaking::SystemPlan;
 pub use display::{DisplayItem, DisplayList, Geometry, ItemKind};
 pub use layout::PageSpec;
+pub use screen::screen_staff_px;
 pub use staffs::StaffInfo;
 pub use style::SP;
 

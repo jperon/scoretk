@@ -24,6 +24,7 @@
 #![no_std]
 
 pub mod display;
+pub mod stride;
 
 extern crate alloc;
 
@@ -150,6 +151,9 @@ pub struct Gray8<'a> {
     buf: &'a mut [u8],
     width: usize,
     height: usize,
+    /// Distance in bytes between two rows. `new` sets it to `width`; the FFI
+    /// sets it from KOReader's `BlitBuffer8` (`new_with_stride`).
+    stride: usize,
 }
 
 impl<'a> Gray8<'a> {
@@ -157,7 +161,12 @@ impl<'a> Gray8<'a> {
         if width == 0 || height == 0 || buf.len() < width.saturating_mul(height) {
             return None;
         }
-        Some(Self { buf, width, height })
+        Some(Self {
+            buf,
+            width,
+            height,
+            stride: width,
+        })
     }
 
     pub fn width(&self) -> usize {
@@ -168,12 +177,17 @@ impl<'a> Gray8<'a> {
         self.height
     }
 
+    /// The first `width * height` backing bytes. For a strided buffer this is
+    /// *not* a tightly packed image; use [`Self::stride`] to walk its rows.
     pub fn as_slice(&self) -> &[u8] {
         &self.buf[..self.width * self.height]
     }
 
     pub fn clear(&mut self, grey: u8) {
-        self.buf[..self.width * self.height].fill(grey);
+        for row in 0..self.height {
+            let start = row * self.stride;
+            self.buf[start..start + self.width].fill(grey);
+        }
     }
 
     /// Fills a pixel-snapped integer rectangle with `ink` darkness.
@@ -186,8 +200,8 @@ impl<'a> Gray8<'a> {
             return;
         }
         for row in y0..y1 {
-            let start = (row as usize) * self.width + x0 as usize;
-            let end = (row as usize) * self.width + x1 as usize;
+            let start = (row as usize) * self.stride + x0 as usize;
+            let end = (row as usize) * self.stride + x1 as usize;
             for px in &mut self.buf[start..end] {
                 *px = blend(*px, ink, 255);
             }
@@ -234,7 +248,7 @@ impl<'a> Gray8<'a> {
                     }
                 }
             }
-            let row = (py as usize) * self.width;
+            let row = (py as usize) * self.stride;
             for (offset, units) in coverage.iter().enumerate() {
                 if *units == 0 {
                     continue;

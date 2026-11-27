@@ -1,0 +1,34 @@
+[package]
+name = "scoretk-engrave-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Persistent engraving helper for the KOReader score plugin"
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "scoretk-engrave-serve"
+path = "src/main.rs"
+
+[features]
+default = []
+# Measuring allocator for examples/heap_cycle.rs, never in the delivered
+# binary (see docs/agents/engraving.md, "Resource budget (Kobo Mini)").
+memory-report = ["dep:dhat"]
+
+[dependencies]
+# Import-only facade: no writer, no MIDI playback, no SVG backend.
+scoretk = { path = "../scoretk", default-features = false, features = [
+    "musescore-import",
+    "musicxml-import",
+    "midi-import",
+    "lilypond-import",
+    "abc-import",
+    "mei-import",
+    "gabc-import",
+] }
+scoretk-engrave = { path = "../scoretk-engrave" }
+scoretk-render-raster = { path = "../scoretk-render-raster" }
+dhat = { version = "0.3.2", optional = true }
