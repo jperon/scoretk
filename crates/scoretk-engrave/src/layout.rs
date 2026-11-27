@@ -377,18 +377,15 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             };
             let start_line = anchor_line(first);
             let end_line = anchor_line(last);
-            // The anchor is the stem tip with the chord's own direction,
-            // before the beam is attached (quarter-space grid).
+            // The anchor is the stem tip in the group's direction, before
+            // the beam is attached (quarter-space grid). Using the chord's
+            // own direction here made an explicit down beam anchor above
+            // its notes: `Beam::layout1` applies one direction to the whole
+            // group (`beamlayout.cpp:169-199`).
             let anchor = |index: usize| {
                 let chord = events[index].1.chord.as_ref().unwrap();
-                let own_up = chord.stem_up;
-                let line = if own_up {
-                    chord.notes.iter().map(|note| note.line).max().unwrap_or(4)
-                } else {
-                    chord.notes.iter().map(|note| note.line).min().unwrap_or(4)
-                };
-                let note_y = line * HALF_SP;
-                let tip = if own_up {
+                let note_y = anchor_line(index) * HALF_SP;
+                let tip = if up {
                     note_y - chord.stem_len
                 } else {
                     note_y + chord.stem_len
