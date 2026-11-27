@@ -109,13 +109,13 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      # Native CLI release uses the host [profile.release] (lto = false,
-      # codegen-units = 16, opt-level = 1). This does not affect cross builds:
-      # the musl, macOS and Windows binaries all share the same profile.
+      # Published archives use [profile.dist] (LTO, one codegen unit,
+      # opt-level = "s", strip = true) so the downloaded binary stays compact.
+      # Cargo writes it to target/<target>/dist/, not target/<target>/release/.
       - name: Build the CLI
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --locked -p scoretk-cli --target "$TARGET"
+        run: cargo build --profile dist --locked -p scoretk-cli --target "$TARGET"
 
       # GPL §5/§6 obligations: licence, notices, README and the address of the
       # corresponding source for the exact version (tag or nightly commit).
@@ -129,7 +129,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging dist
-          cp "target/$TARGET/release/scoretk$EXT" staging/
+          cp "target/$TARGET/dist/scoretk$EXT" staging/
           cp LICENSE NOTICE README.md staging/
           {
             printf 'scoretk %s (%s)\n' "$VERSION" "$TARGET"

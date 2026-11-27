@@ -204,12 +204,13 @@ binary, not as the inner development loop.
 
 ### Cargo profiles
 
-Two profiles share the same source tree:
+Three profiles share the same source tree:
 
 | Profile | Settings | Used by |
 | --- | --- | --- |
-| `release` | `lto = false`, `codegen-units = 16`, `opt-level = 1` | host CLI (`nix build .#scoretk`, `nix run .`) and the native release archives |
-| `wasm` | inherits `release`, then `lto = true`, `codegen-units = 1`, `opt-level = "z"` | `nix build .#wasm`, `wasmCargoArtifacts`, `wasm32Build` and the `wasm32-unknown-unknown` check |
+| `release` | `lto = false`, `codegen-units = 16`, `opt-level = 1` | local/nix host build (`nix build .#scoretk`, `nix run .`): fastest incremental rebuild |
+| `dist` | inherits `release`, then `lto = true`, `codegen-units = 1`, `opt-level = "s"`, `strip = true` | published CLI binaries: `cargo build --profile dist`, all targets of `.github/workflows/release.yml` |
+| `wasm` | inherits `release`, then `lto = true`, `codegen-units = 1`, `opt-level = "z"` | browser package: `nix build .#wasm`, `wasmCargoArtifacts`, `wasm32Build` and the `wasm32-unknown-unknown` check |
 
 The wasm derivations set `CARGO_PROFILE = "wasm"` and read the cdylib from
 `target/wasm32-unknown-unknown/wasm/`. The size profile keeps the settings of
@@ -260,6 +261,32 @@ output (SHA-256 `c39effc0…`). The D binary is larger (11 200 312 vs
 `nix flake check` works offline (crane vendors the crates from
 `Cargo.lock`, `CARGO_NET_OFFLINE`): any dependency change requires an up-to-date
 `Cargo.lock` and a documented entry in `docs/licences-tierces.md`.
+
+#### Published-binary profile measurement (2026-11-27)
+
+Goal: keep the downloaded CLI compact without a runtime penalty. Build command:
+`cargo build --locked --profile dist -p scoretk-cli` (via `nix develop -c`,
+`CARGO_BUILD_JOBS=2`, `CARGO_TARGET_DIR=…/target-nixspeed`, `nice -n 10`). Each
+variant was measured on 6 interleaved batches of 500 conversions of the largest
+v4 score (`tests/corpus/v4/voiceswitching.mscx`, 30 868 bytes,
+`--to musicxml --encoding-date 2026-11-27`). All variants produced the same
+MusicXML (SHA-256 `c39effc0…`). Times are medians in ms per conversion; the
+load average was 3–9, so CPU time (unaffected by scheduler waits) is given
+alongside wall time.
+
+| `[profile.dist]` variant | CLI binary | CPU | Wall |
+| --- | ---: | ---: | ---: |
+| `opt-level = 3` | 7 603 664 B | 3.52 ms | 3.64 ms |
+| `opt-level = "s"` | 6 005 360 B | 3.98 ms | 3.94 ms |
+| `opt-level = 3`, `strip = true` | 6 938 376 B | 3.79 ms | 3.87 ms |
+| **`opt-level = "s"`, `strip = true` (kept)** | **5 162 552 B** | 4.10 ms | 4.30 ms |
+
+For reference, the `[profile.release]` binary measured 11 200 312 B. The kept
+variant is 54 % smaller than that, 32 % smaller than plain `opt-level = 3` and
+26 % smaller than `opt-level = 3` plus `strip`, for roughly 0.6 ms more CPU per
+conversion — negligible for a CLI run on a score and within the run-to-run
+spread (3.2–4.8 ms for the same binary). Archived files, archive names and the
+wasm package are unchanged.
 
 ## 7. Compliance tests: two levels
 
@@ -328,7 +355,8 @@ Nix (same toolchain as `nix develop -c`):
   `tests/corpus` corpus is versioned; the only test reading a file outside the repository
   (`change_dans_beam_cross_staff` of `scoretk-lilypond-import`) silently returns
   when that file is absent, hence has no effect on CI.
-- `release.yml` — native CLI archives use the host `release` profile (fast);
+- `release.yml` — native CLI archives are built with `cargo build --profile
+  dist` and copied from `target/<target>/dist/` (compact published binaries);
   the wasm job calls `nix build .#wasm`, i.e. the size-oriented `wasm`
   profile. See below.
 

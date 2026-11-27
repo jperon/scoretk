@@ -57,6 +57,16 @@ lto = false
 opt-level = 1
 codegen-units = 16
 
+# Published binaries: the CLI is downloaded from GitHub releases, so size
+# wins here (measured in docs/agents/developpement.md). Selected explicitly
+# with `--profile dist` in .github/workflows/release.yml.
+[profile.dist]
+inherits = "release"
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+
 # Identical to the former release profile: the wasm binary is downloaded by
 # the PWA, so it keeps the size settings (and stays byte-identical).
 [profile.wasm]
