@@ -1861,9 +1861,9 @@ On the private page the verse separation from §18 is unchanged: verse 0 is
 the top line below the staff, verse 1 (`Ou`) the lower one; no syllable is
 placed per measure or per word. `engrave-img/eng9/after.png` is rendered
 from the committed tree.
-## 16. Resource budget (Kobo Mini)
+## 20. Resource budget (Kobo Mini)
 
-### 16.1 Method
+### 20.1 Method
 
 `scripts/measure-engrave-memory.sh [--build] [--out DIR] FILE…` builds the CLI
 with the **feature-gated** `memory-report` dependency (`dhat` 0.3.3, never in
@@ -1875,7 +1875,7 @@ outside the repository; the private score is read from its absolute path and
 never copied into the worktree. Host: the shared Intel U300 machine of
 `performance.md` §2, `release` profile (`opt-level = 1`, no LTO).
 
-### 16.2 Measured baseline
+### 20.2 Measured baseline
 
 The three corpus files are the largest by `<Note>` count in `tests/corpus`
 (1 180, 63 and 56 notes). All figures are for one engraved page (page 0);
@@ -1892,7 +1892,7 @@ The RSS floor of ~10 MB is binary, static glyph/Edwin tables and libc, not
 heap. Repeats of the private measurement gave 1.06–1.25 s wall and the same
 dhat figures to within 0.01 %; the corpus wall times vary by ±0.02 s.
 
-### 16.3 Breakdown at peak
+### 20.3 Breakdown at peak
 
 Cumulative bytes per subsystem from the dhat backtraces (a single allocation
 belongs to one family; the "peak live" column is the largest live set seen in
@@ -1920,7 +1920,7 @@ the intermediate XML text), `Reader::read_voice` (second site) 13.7 MB. On
 the model; the engraver itself is ≤ 11 MB even on the 88-page score, and no
 glyph data is allocated per page.
 
-### 16.4 ARMv7 build and size
+### 20.4 ARMv7 build and size
 
 Cross-compilation to `armv7-unknown-linux-gnueabihf` **works** with the
 std artifact present in `/nix/store` (1.100.0) and the Nixpkgs GCC wrapper as
@@ -1946,7 +1946,7 @@ measurement). The private score's 1.06 s host pass would therefore take
 roughly 10 s for page 1 on the Kobo, and its 63 MB peak leaves no margin in
 249 MB shared with KOReader.
 
-### 16.5 Proposed budget and rule for agents
+### 20.5 Proposed budget and rule for agents
 
 Target budgets for the 1.7 MB / 88-page class of score, to be verified on the
 device (P7 gate), **not met by the current baseline**:
@@ -1962,7 +1962,7 @@ per-element boxing when a `Vec` of POD works, layout system by system and
 emit pages incrementally where upstream allows, only used glyphs. Measure
 with `scripts/measure-engrave-memory.sh` before and after any change
 claiming a memory gain; check SVG byte identity on the oracle corpus and the
-private score. Leads, with ceilings from §16.3 and `performance.md` §4/6:
+private score. Leads, with ceilings from §20.3 and `performance.md` §4/6:
 (a) stream/parse the 4.x DOM instead of materialising it (up to 21 MB, the
 largest single item); (b) share text bytes instead of copying per XML node
 (20.9 MB cumulative on the private score; 3.x `push_text` is the known lead
@@ -1971,7 +1971,7 @@ largest single item); (b) share text bytes instead of copying per XML node
 and (b) are reader work; (c) and (d) touch the engraver but not the layout
 algorithms.
 
-### 16.6 Quick wins applied (2026-11-27)
+### 20.6 Quick wins applied (2026-11-27)
 
 Two reader-side changes clear the ≥ 10 % peak-heap gate; neither touches a
 layout file. Each was measured with the script above and checked byte for byte
