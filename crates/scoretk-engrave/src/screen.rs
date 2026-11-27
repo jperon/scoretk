@@ -22,6 +22,8 @@
 //! **integer number of pixels**; the rasteriser then snaps lines and stems to
 //! that grid. The page keeps the screen's aspect ratio in both orientations.
 
+use scoretk_core::model::Score;
+
 use crate::layout::PageSpec;
 use crate::style::SP;
 
@@ -81,11 +83,30 @@ impl PageSpec {
             ..Self::default()
         }
     }
+
+    /// Screen geometry that also carries the score's title frame and a text
+    /// scale fitted to the screen (`Engraver::new` does not read the `Score`).
+    ///
+    /// `for_screen` alone leaves `title_frame_height` at zero: credits were
+    /// then drawn over the first system. The frame height comes from the same
+    /// computation as the print page (`from_score`), while frame text is
+    /// scaled by the ratio of the screen's printable width to the score's.
+    /// A 22 pt title that fits an A4 page therefore fits a 600 px screen
+    /// without changing any layout algorithm.
+    pub fn for_screen_with_score(width_px: u32, height_px: u32, score: &Score) -> Self {
+        let mut spec = Self::for_screen(width_px, height_px);
+        let print = Self::from_score(score);
+        spec.title_frame_height = print.title_frame_height;
+        spec.text_scale =
+            (spec.printable_width as f64 / print.printable_width.max(SP) as f64).clamp(0.0, 1.0);
+        spec
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scoretk_core::model::{Credit, CreditStyle, Part, RichText, Score, Staff};
 
     #[test]
     fn a_staff_space_is_a_whole_number_of_pixels_in_both_orientations() {
@@ -108,6 +129,36 @@ mod tests {
             assert!(to_px(spec.margin_top) * 10 >= 34 * px);
             assert!(to_px(spec.margin_left) >= px);
         }
+    }
+
+    #[test]
+    fn a_screen_page_fits_the_score_title_frame() {
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        score.add_staff_with(part, Staff::new(part));
+        let mut credit = Credit::new(
+            RichText::new("A rather long title with several words"),
+            CreditStyle::Title,
+        );
+        credit.page = 1;
+        credit.vbox_height = 10.0;
+        score.add_credit(credit);
+
+        let print = PageSpec::from_score(&score);
+        let screen = PageSpec::for_screen_with_score(600, 800, &score);
+        assert_eq!(screen.title_frame_height, print.title_frame_height);
+        assert!(screen.title_frame_height > 0);
+        assert!(screen.text_scale > 0.0 && screen.text_scale < 1.0);
+        // The scaled title must be narrower than the screen's printable
+        // width, unlike the unscaled print-size credit run.
+        let font_size = CreditStyle::Title.default_font_size();
+        let em = (font_size * 25.4 / 72.0 / screen.spatium_mm * SP as f64) as i32;
+        let scaled = (em as f64 * screen.text_scale) as i32;
+        let title = "A rather long title with several words";
+        assert!(
+            crate::layout::text_run_width(title, scaled, false) < screen.printable_width,
+            "title still wider than the screen"
+        );
     }
 
     #[test]

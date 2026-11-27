@@ -26,6 +26,7 @@
 //! Page-local placement from precomputed atoms. `page(n)` never touches the
 //! `Score` and never recomputes an atom.
 
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -127,6 +128,10 @@ pub struct PageSpec {
     /// Point size of the lyricist text style (`styledef.cpp:878`, default
     /// 10 pt). // Port of `LyricsLayout::layout`.
     pub lyric_font_size: f64,
+    /// Screen-only scale of frame text (titles, composer, subtitle). Print
+    /// geometry keeps 1.0; a small screen scales credit runs down to its own
+    /// printable width so a 22 pt title cannot overrun a 600 px page.
+    pub text_scale: f64,
 }
 
 impl Default for PageSpec {
@@ -174,6 +179,7 @@ impl Default for PageSpec {
             lyrics_dash_width: LYRIC_LINE_WIDTH,
             lyrics_melisma_pad: LYRIC_MELISMA_PAD,
             lyric_font_size: 10.0,
+            text_scale: 1.0,
         }
     }
 }
@@ -252,6 +258,7 @@ impl PageSpec {
                 .map_or(0, |height| {
                     height + (style.frame_system_distance_sp * SP as f64) as i32
                 }),
+            text_scale: 1.0,
         }
     }
 
@@ -1271,6 +1278,40 @@ fn lyric_line_offset(verse: usize, em: i32, spec: &PageSpec) -> i32 {
     verse as i32 * spec.lyrics_line_height * text_line_height(em) / 1024
 }
 
+/// Predefined XML entities are kept escaped in the pivot model so that a
+/// `.mscx` round trip stays byte-identical (`RichText`), but the engraver
+/// must draw the characters: MuseScore 4.7.4's own MusicXML reference for
+/// `moonlight.mscx` holds a real `"` in `<credit-words>` (`&quot;` in the
+/// XML source). Decoding here leaves the model and every writer untouched.
+fn display_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find('&') {
+        out.push_str(&rest[..index]);
+        let after = &rest[index + 1..];
+        let decoded = after.find(';').and_then(|end| {
+            match &after[..end] {
+                "quot" => Some('"'),
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "apos" => Some('\''),
+                _ => None,
+            }
+            .map(|character| (character, end + 1))
+        });
+        if let Some((character, end)) = decoded {
+            out.push(character);
+            rest = &after[end..];
+        } else {
+            out.push('&');
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Emits one Edwin glyph per character. `align` is 0 (left), 1 (centre) or
 /// 2 (right); the pen starts at `x` with a top at `y` (not the baseline).
 pub(crate) fn place_text(
@@ -1298,6 +1339,8 @@ pub(crate) fn place_text_kind(
     bold: bool,
     align: u8,
 ) {
+    let text = display_text(text);
+    let text = text.as_str();
     let width = text_run_width(text, em, bold);
     let mut pen = match align {
         1 => x - width / 2,
@@ -1540,6 +1583,10 @@ fn plan_lyric_lines(
     items
 }
 
+fn frame_text_em(spec: &PageSpec, font_size: f64) -> i32 {
+    (text_em(spec, font_size) as f64 * spec.text_scale) as i32
+}
+
 /// Title-frame texts (`VBox` in the .mscx, `score.engraving.credits` in the
 /// pivot model), laid out at the top of the page.
 /// // Port of `boxlayout.cpp` and `textlayout.cpp`, with the style defaults
@@ -1556,7 +1603,7 @@ fn place_credits(out: &mut DisplayList, credits: &[Credit], spec: &PageSpec, pag
         .iter()
         .find(|credit| matches!(credit.style, CreditStyle::Title))
         .map(|credit| {
-            text_em(
+            frame_text_em(
                 spec,
                 credit
                     .font_size
@@ -1569,7 +1616,7 @@ fn place_credits(out: &mut DisplayList, credits: &[Credit], spec: &PageSpec, pag
         let size = credit
             .font_size
             .unwrap_or_else(|| credit.style.default_font_size());
-        let em = text_em(spec, size);
+        let em = frame_text_em(spec, size);
         let (x, align) = match credit.justify {
             CreditJustify::Left => (spec.margin_left, 0),
             CreditJustify::Right => (spec.margin_left + spec.printable_width, 2),
@@ -3856,5 +3903,31 @@ mod tests {
             .unwrap();
         let (_, y) = head.origin();
         assert_eq!(y, spec.margin_top + 8 * HALF_SP);
+    }
+
+    #[test]
+    fn named_entities_are_drawn_as_characters() {
+        let glyphs = |text: &str| {
+            let mut list = DisplayList::new(0);
+            place_text(&mut list, text, 0, 0, 1024, false, 0);
+            list.items
+                .iter()
+                .filter_map(|item| match item.geometry {
+                    Geometry::Text { codepoint, .. } => Some(codepoint),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let encoded = glyphs("a &quot;b&quot; &amp; c");
+        assert!(encoded.contains(&(b'"' as u16)), "the quotes must be drawn");
+        assert!(
+            encoded.contains(&(b'&' as u16)),
+            "the ampersand must be drawn"
+        );
+        assert!(
+            !encoded.contains(&(b'q' as u16)),
+            "&quot; must not be spelled out"
+        );
+        assert_eq!(encoded, glyphs("a \"b\" & c"));
     }
 }

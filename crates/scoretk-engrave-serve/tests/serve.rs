@@ -30,6 +30,21 @@ fn corpus(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+/// Longest continuous run of dark pixels in one image row.
+fn longest_dark_run(row: &[u8]) -> usize {
+    let mut run = 0;
+    let mut longest = 0;
+    for value in row {
+        if *value < 128 {
+            run += 1;
+            longest = longest.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    longest
+}
+
 struct Peer {
     child: Child,
     stdin: ChildStdin,
@@ -132,19 +147,7 @@ fn page_zero_has_staff_lines_stems_and_margins() {
         .as_chunks::<WIDTH>()
         .0
         .iter()
-        .filter(|row| {
-            let mut run = 0;
-            let mut longest = 0;
-            for value in *row {
-                if *value < 128 {
-                    run += 1;
-                    longest = longest.max(run);
-                } else {
-                    run = 0;
-                }
-            }
-            longest >= WIDTH * 3 / 5
-        })
+        .filter(|row| longest_dark_run(*row) >= WIDTH * 3 / 5)
         .count();
     assert!(
         staff_rows >= 5,
@@ -159,6 +162,43 @@ fn page_zero_has_staff_lines_stems_and_margins() {
     assert!(
         stem_columns >= 10,
         "expected stems and bar lines, found {stem_columns} tall columns"
+    );
+
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
+#[test]
+fn moonlight_page_zero_has_a_title_frame_and_no_clipped_credits() {
+    let mut peer = Peer::start();
+    let path = corpus("v3/moonlight.mscx");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {}", path.to_str().unwrap()));
+    let answer = peer.line();
+    assert!(answer.starts_with("ok "), "{answer}");
+    let bytes = peer.page(0);
+
+    // A scaled-down title fits inside the screen: no ink on the outermost
+    // rows or columns, even though the 3.x VBox holds long credit texts.
+    for x in 0..WIDTH {
+        assert_eq!(bytes[x], 255, "ink on the first row at x={x}");
+        assert_eq!(bytes[(HEIGHT - 1) * WIDTH + x], 255, "ink on the last row");
+    }
+    for y in 0..HEIGHT {
+        assert_eq!(bytes[y * WIDTH], 255, "ink on the first column at y={y}");
+        assert_eq!(bytes[y * WIDTH + WIDTH - 1], 255, "ink on the last column");
+    }
+
+    // The VBox pushes the first system below the credits: the staff lines
+    // can no longer run through the title.
+    let first_staff_row = bytes
+        .as_chunks::<WIDTH>()
+        .0
+        .iter()
+        .position(|row| longest_dark_run(row) >= WIDTH * 3 / 5)
+        .expect("at least one staff line");
+    assert!(
+        first_staff_row > 200,
+        "first staff line at row {first_staff_row}: title frame was ignored"
     );
 
     peer.send("quit");
