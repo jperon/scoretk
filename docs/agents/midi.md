@@ -404,6 +404,13 @@ Headline: **99.75 % → 99.79 %**; `L3 text` 173/174 → 174/174. The residual
 `note`/`channel` losses are the same five harmony-channel attacks counted on
 both kinds. Refs remain `MIDI : 21/21 identiques`.
 
+| `channel` | 1 / 68 | 0 / 68 | Channel status nibble of `[MIDI §Channel Voice]`. `NotePlayback::midi_channel` stores it per note in full support, the writer restores it as the Note On status nibble, and both SMF oracles read it. The five `note` items with the harmony channel are recovered by the same carrier: `note` 2 279/2 284 → 2 284/2 284. |
+
+Headline: **99.79 % → 100.00 %**; `L2 events` 2 279/2 284 → 2 284/2 284,
+`L4 playback` 241/242 → 242/242. The default MIDI bytes are unchanged
+(`MIDI : 21/21 identiques`); the field is `None` for every score from a format
+without per-note channels.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)

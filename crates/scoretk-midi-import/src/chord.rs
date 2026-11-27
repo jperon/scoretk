@@ -54,6 +54,8 @@ pub struct MidiNote {
     pub pitch: i32,
     /// Vélocité.
     pub velocity: i32,
+    /// Canal MIDI de l'attaque (nibble de statut du Note On).
+    pub channel: u8,
     /// Fin de la note.
     pub off_time: Fraction,
     /// Indice de la note liée précédente, si cette note prolonge une liaison.
@@ -77,6 +79,7 @@ impl MidiNote {
         Self {
             pitch,
             velocity,
+            channel: 0,
             off_time,
             tie: None,
             staccato: false,

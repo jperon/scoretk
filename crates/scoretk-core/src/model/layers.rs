@@ -251,6 +251,12 @@ pub struct NotePlayback {
     pub user_velocity: Option<i32>,
     /// Interpretation of `user_velocity` (`Pid::VELO_TYPE`).
     pub velo_type: Option<VeloType>,
+    /// Channel status nibble of the SMF Note On that carried this note.
+    ///
+    /// A part has one main MIDI channel, but an SMF can play a note on another
+    /// channel of the same part (MuseScore's harmony channel is the corpus
+    /// example). `None` for scores from formats without per-note channels.
+    pub midi_channel: Option<u8>,
 }
 
 impl NotePlayback {
@@ -261,6 +267,7 @@ impl NotePlayback {
         velocity: None,
         user_velocity: None,
         velo_type: None,
+        midi_channel: None,
     };
 }
 

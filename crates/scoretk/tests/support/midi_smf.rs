@@ -172,7 +172,9 @@ pub fn model_notes(score: &Score) -> Vec<NoteKey> {
             tick.ticks(UNITS_PER_WHOLE),
             duration.ticks(UNITS_PER_WHOLE).max(1),
             note.playback.velocity.unwrap_or(0),
-            channel,
+            // The channel status nibble is carried per Note On, not per part:
+            // full-support import records it on the note itself.
+            note.playback.midi_channel.unwrap_or(channel),
         ));
     }
     result.sort();
@@ -368,6 +370,15 @@ pub fn model_kind_values(score: &Score) -> KindValues {
                     SegmentItem::ChordRest(chord_rest) => {
                         for lyric in &chord_rest.lyrics {
                             insert(&mut values, "lyric", lyric.text.trim_end().to_owned());
+                        }
+                        // Per-note channel from the Note On status nibble.
+                        if let ChordRestKind::Chord(chord) = &chord_rest.kind {
+                            for id in &chord.notes {
+                                if let Some(channel) = score.notes[id.index()].playback.midi_channel
+                                {
+                                    insert(&mut values, "channel", channel.to_string());
+                                }
+                            }
                         }
                     }
                     _ => {}

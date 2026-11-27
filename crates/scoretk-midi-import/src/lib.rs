@@ -336,8 +336,9 @@ fn create_mtrack_list(
                         midi.division,
                         midi.is_division_in_tps,
                     );
-                    let note =
+                    let mut note =
                         MidiNote::new(i32::from(*pitch), i32::from(*velocity), tick + length, tick);
+                    note.channel = raw.channel;
                     let chord = MidiChord {
                         notes: vec![note],
                         ..MidiChord::default()
@@ -1039,7 +1040,14 @@ fn process_pending_notes(
                 let mut done = !midi_chord.notes.is_empty();
                 for note_index in 0..midi_chord.notes.len() {
                     let note = midi_chord.notes[note_index].clone();
-                    let note_id = add_note(score, chord_model, &note, tick, transpose);
+                    let note_id = add_note(
+                        score,
+                        chord_model,
+                        &note,
+                        tick,
+                        transpose,
+                        options.full_support,
+                    );
                     if note.off_time - tick <= len {
                         // Dernière note de la chaîne de liaisons.
                     } else {
@@ -1080,6 +1088,7 @@ fn add_note(
     midi_note: &MidiNote,
     tick: Fraction,
     transpose: Option<scoretk_core::model::Transpose>,
+    full_support: bool,
 ) -> scoretk_core::model::NoteId {
     let key = chord_key_at(score, tick);
     let tpc = pitch_to_tpc(midi_note.pitch, key);
@@ -1099,6 +1108,12 @@ fn add_note(
         }
     }
     note.playback.velocity = u8::try_from(midi_note.velocity.clamp(0, 127)).ok();
+    // `[MIDI §Channel Voice]` puts the channel in the status nibble of each
+    // Note On. Full support keeps that per-note fact instead of collapsing it
+    // onto the part's main channel; the 4.7.4 path is unchanged.
+    if full_support {
+        note.playback.midi_channel = Some(midi_note.channel);
+    }
     note.tie_back = midi_note.tie.map(scoretk_core::model::NoteId::from_index);
     let note_id = score.add_note(note);
     if let Some(previous) = midi_note.tie {

@@ -1643,6 +1643,10 @@ fn render_chord(
         if !note.playback.play {
             continue;
         }
+        // `[MIDI §Channel Voice]` carries the channel in the Note On status
+        // nibble. A note read from an SMF in full support restores that nibble
+        // instead of falling back to the part's single main channel.
+        let channel = note.playback.midi_channel.unwrap_or(channel);
         if note.tie_back.is_some() && !trilled {
             // Note déjà tenue par le début de la liaison : pas de nouvelle
             // attaque, la durée a été ajoutée à la note de départ. Un trille
