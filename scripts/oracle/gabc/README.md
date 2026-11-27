@@ -62,6 +62,27 @@ At most two workers (`--jobs`, default `min(2, os.cpu_count())`); never run
 two measurements at once. The scoretk writer is involved only when `--writer`
 is given; the Gregorio reference is unchanged in both modes.
 
+## Full-support carriers
+
+`full_support.py` measures the GABC → destination → GABC fact round trip in
+the full-support mode of every destination. It audits the **written** output:
+a `gabc:` field, a hidden extension text, a private MEI label or an `@…` SMF
+text prefix makes it fail instead of being stripped and silently discounted.
+
+`private_carriers.py` is the corresponding inventory. With `--check` it exits
+non-zero on the first private carrier; without it, it reports occurrences per
+format and per kind (private and native carriers are counted separately):
+
+```sh
+python3 scripts/oracle/gabc/private_carriers.py \
+  --cli target/debug/scoretk --out /tmp/gabc-private \
+  --dir tests/corpus/gabc \
+  --dir /home/jacques/programmes/musique/specs/gabc/lot/corpus --check
+```
+
+`test_full_support.py` unit-tests the audit and, with `SCORETK_CLI` set,
+checks the native lyric carrier of every destination on FactusEst.
+
 ## Outputs
 
 `<out>/travail/<id>/ref.dump` and `again.dump` (Gregorio), `<out>/mesure.jsonl`

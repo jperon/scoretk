@@ -1152,10 +1152,12 @@ Every destination is measured in its **full-support mode on both sides**:
 
 Using the option only when writing would penalise the reader for standard
 carriers the format does have (notably SMF text metas and exact ticks), so the
-same mode is enabled on the return conversion. Private carriers are still
-removed before the return conversion: every MusicXML element containing
-`gabc:`, MEI `<annot type="gabc-*">` and `gabc:layout:` / `layout:` `@label`
-values. **No private carrier is counted in any headline.** The new standard
+same mode is enabled on the return conversion. In the state described here,
+private carriers were still removed before the return conversion: every
+MusicXML element containing `gabc:`, MEI `<annot type="gabc-*">` and
+`gabc:layout:` / `layout:` `@label` values. **No private carrier is counted in
+any headline.** §29 removes those carriers from the full-support writers and
+the strip step from the instrument. The new standard
 carriers (SMuFL names, `miscellaneous-field`, `other-technical`, LilyPond
 user-defined `\header` fields) are *not* stripped: they are part of the
 destination specifications.
@@ -1536,7 +1538,8 @@ The branch now:
 5. Keeps the historical private `gabc:` fields of `master` (they are stripped
    by the oracle, never counted) so that **all default bytes stay identical**:
    455/455 default conversions on the 65 corpus sources (`v3`, `v4`, `gabc`)
-   match a CLI built at `c5b52552` byte for byte.
+   match a CLI built at `c5b52552` byte for byte. §29 suppresses them in
+   full-support mode and removes the oracle's strip step.
 
 ### 26.2 Honest figures, before vs after
 
@@ -1830,3 +1833,109 @@ defects (4 201): `glyph` 3 227, `attribute` 332, `rubric` 283, `pitch` 158,
 `text` 74, `shape` 52, `letter` 36, `custos` 22, `ictus` 9, `clef` 8. The other
 destinations are unchanged (MIDI 95.45 %, LilyPond 97.58 %, ABC 98.07 %, MEI
 96.09 %).
+
+## 29. No private carrier in full-support outputs (2026-11-27, branch `gabcclean`)
+
+§26 removed the readable-label dumps but kept the historical `gabc:` fields
+and the MEI `layout:`/`gabc:` labels so that default bytes would not move;
+`full_support.py` stripped them before measuring. This campaign removes those
+carriers from the **full-support writers**, deletes the strip step and audits
+the written bytes. Every default byte stays identical to `master` (`d58dc3c1`):
+261/261 GABC round trips, 260/260 headerless bodies, 6/6 NABC bodies and
+1 305/1 305 default conversions to the other four formats on the 261-file lot.
+
+### 29.1 Inventory before removal
+
+`scripts/oracle/gabc/private_carriers.py` converts the 261 sources with the
+same full-support options as the instrument and counts private and native
+carriers separately. Baseline (`master`, 0 conversion failures):
+
+| Destination | Private kind | Occurrences | Files |
+| --- | --- | ---: | ---: |
+| MusicXML | `gabc:` fields (`header`, `clef`, `syllable`, `note`, `sign`, `alter`) | 59 528 | 261 |
+| MusicXML | hidden `print-object="no"` extension text | 25 684 | 261 |
+| MEI | `gabc` substrings (`gabc:layout:`, `gabc:detail:`, `type="gabc-*"`, `gabc-i` styles) | 21 680 | 261 |
+| MEI | private `gabc:`/`layout:` `@label` values | 18 450 | 261 |
+| MIDI | `@ST:`/`@SY:`/`@TK:` prefixes | 0 | 0 |
+| LilyPond | `^"…"` annotations / comments carrying GABC | 0 | 0 |
+| ABC | dump annotations / `%%` directives carrying GABC | 0 | 0 |
+
+On `gregorio_PopulusSion.gabc` alone, `--xml-full-support` produced 303 hidden
+`gabc:` fields (167 `note`, 85 `syllable`, 42 `sign`, 8 `header`, 1 `clef`).
+Native carriers are counted but never flagged: 1 576 `miscellaneous-field`,
+210 printed `<words>` (MusicXML); 287 `FF 01`, 522 `FF 03`, 15 132 `FF 05`
+(MIDI); 773 user-defined `\header` fields (LilyPond).
+
+### 29.2 Writer, reader and oracle changes
+
+- MusicXML: the `chant` writers take a `private` flag equal to
+  `!Options::full_support`. The default mode keeps the historical fields;
+  full support emits no `<other-direction>` text, no `<other-notation>` text
+  and no hidden `<other-technical>`, only the XSD 4.0 carriers (`<lyric>`,
+  `<work>`, `miscellaneous-field`, `smufl` names, `<words>` for printed
+  rubrics). On PopulusSion the full-support `gabc:` count drops from 303 to 0
+  while 212 `smufl` names, 11 `miscellaneous-field` and 75 `<lyric>` remain.
+- MEI: `MeiOptions::gabc_private` defaults to `true`; the CLI sets it to
+  `!mei_full_support`. Full support omits `gabc:layout:`/`gabc:detail:` labels,
+  `gabc-*` `@type` tokens (spacing, fusion, NABC, styles), the private
+  `signifLet` elements and the `<annot>` extensions. Style markup is flattened
+  to plain `<syl>` text so the lyric stays in its native carrier; no hex or
+  neutral-looking flag was introduced. The reader keeps its documented
+  defaults when a `@label` is absent.
+- LilyPond, ABC and MIDI: the inventory found **no private carrier** in their
+  full-support outputs (0 `^"…"` annotation, 0 dump `%%` directive, 0 `@ST:` /
+  `@SY:` / `@TK:` SMF prefix, 0 `gabc` substring in any carrier). Their writers
+  were left untouched; 773 LilyPond `\header` variables, 287 SMF `FF 01`, 522
+  `FF 03` and 15 132 `FF 05` are native carriers and were kept.
+- Readers in full-support round trips therefore reconstruct the L6 payload
+  from native carriers only (`chant_smufl` for MusicXML, the NEUMES elements
+  for MEI). No reader was taught a new private syntax.
+- `full_support.py` no longer strips anything: `private_payload` audits the
+  written output and `convert_back` raises on any `gabc:` token, hidden
+  extension text, private label, dump annotation or `@…` SMF prefix.
+  `test_full_support.py` tests the audit and the native lyric carrier.
+
+### 29.3 Measured result
+
+Same 261 sources, same fact reader and citations, 0 conversion failures.
+`main` is `carried / (total − inherent)`:
+
+| Destination | Before | After | Carried / headline total | Inherent | Defects |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MusicXML 4.0 | 96.21 % | **96.21 %** | 106 580 / 110 781 | 3 276 | 4 201 |
+| MIDI SMF | 95.45 % | **95.45 %** | 79 638 / 83 438 | 30 619 | 3 800 |
+| LilyPond `--ly-gregorian` | 97.58 % | **97.58 %** | 105 464 / 108 084 | 5 973 | 2 620 |
+| ABC 2.1 | 98.07 % | **98.07 %** | 107 564 / 109 676 | 4 381 | 2 112 |
+| MEI 5.1 NEUMES | 96.09 % | **96.14 %** | 108 845 / 113 213 | 844 | 4 368 |
+
+The instrument's destination audit after the change reports **0 private
+carriers** in all five formats. MusicXML, MIDI, LilyPond and ABC keep exactly
+the same carried, inherent and defect counts: the removed fields were already
+discounted. MEI moves from 108 637 to 108 845 carried facts and its inherent
+total falls from 1 004 to 844, because the returned GABC no longer reconstructs
+160 private source-layout strings; those 160 are **not** added to the carried
+count, and no inherent citation was changed.
+
+Byte-level `GABC → X → GABC` comparison against the canonical GABC of each
+source (261 files, 0 failures):
+
+| Destination | Byte-identical before | Byte-identical after |
+| --- | ---: | ---: |
+| MusicXML | 0/261 | 0/261 |
+| MIDI | 0/261 | 0/261 |
+| LilyPond | 0/261 | 0/261 |
+| ABC | 0/261 | 0/261 |
+| MEI | 239/261 | **0/261** |
+
+The MEI loss is the honest cost of removing the private layout/snippet
+carriers; the other four destinations had no byte-identical round trip before
+this campaign either.
+
+### 29.4 Non-regression
+
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk
+--test e2e_corpus -- --nocapture`, `cargo build -p scoretk-wasm --target
+wasm32-unknown-unknown`, `test_full_support.py` (15/15 with `SCORETK_CLI`) and
+the two instruments (261 sources each, 0 failures) are the final checks. New
+files were added by path; no build directory is versioned.
