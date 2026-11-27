@@ -1841,8 +1841,10 @@ and the MEI `layout:`/`gabc:` labels so that default bytes would not move;
 `full_support.py` stripped them before measuring. This campaign removes those
 carriers from the **full-support writers**, deletes the strip step and audits
 the written bytes. Every default byte stays identical to `master` (`d58dc3c1`):
-261/261 GABC round trips, 260/260 headerless bodies, 6/6 NABC bodies and
-1 305/1 305 default conversions to the other four formats on the 261-file lot.
+261/261 GABC round trips, 260/260 headerless bodies, 6/6 NABC bodies,
+1 305/1 305 default conversions to the other four formats on the 261-file lot,
+and 1 409/1 409 default conversions over the whole 336-source corpus (24
+unsupported conversions fail on both CLIs).
 
 ### 29.1 Inventory before removal
 
@@ -1941,5 +1943,6 @@ this campaign either.
 warnings`, `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk
 --test e2e_corpus -- --nocapture`, `cargo build -p scoretk-wasm --target
 wasm32-unknown-unknown`, `test_full_support.py` (15/15 with `SCORETK_CLI`) and
-the two instruments (261 sources each, 0 failures) are the final checks. New
-files were added by path; no build directory is versioned.
+the two instruments (261 sources each, 0 failures) are the final checks. All
+passed on this branch. New files were added by path; no build directory is
+versioned.
