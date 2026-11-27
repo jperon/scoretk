@@ -320,7 +320,7 @@ fn stem_up(lines: &[i32], explicit: StemDirection, multi_voice: bool, track: u32
         StemDirection::Down => false,
         StemDirection::Auto => {
             if multi_voice {
-                track % 2 == 0
+                track.is_multiple_of(2)
             } else {
                 auto_stem_up(lines)
             }

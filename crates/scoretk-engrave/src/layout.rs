@@ -553,8 +553,8 @@ mod tests {
             for right in header.iter().skip(index + 1) {
                 let (ax0, ay0, ax1, ay1) = left.bbox(&list).unwrap();
                 let (bx0, by0, bx1, by1) = right.bbox(&list).unwrap();
-                let overlap_x = ax0.min(bx1) - bx0.max(ax0);
-                let overlap_y = ay0.min(by1) - by0.max(ay0);
+                let overlap_x = ax1.min(bx1) - ax0.max(bx0);
+                let overlap_y = ay1.min(by1) - ay0.max(by0);
                 assert!(
                     overlap_x <= 0 || overlap_y <= 0,
                     "{:?} and {:?} overlap by {overlap_x},{overlap_y}",
