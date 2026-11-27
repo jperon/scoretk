@@ -807,6 +807,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-engrave-ffi"
+version = "0.1.0"
+dependencies = [
+ "dhat",
+ "scoretk",
+ "scoretk-core",
+ "scoretk-engrave",
+ "scoretk-render-raster",
+]
+
+[[package]]
 name = "scoretk-gabc-common"
 version = "0.1.0"
 dependencies = [

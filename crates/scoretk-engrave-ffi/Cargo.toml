@@ -1,0 +1,33 @@
+[package]
+name = "scoretk-engrave-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "C ABI of the e-ink engraver for KOReader (LuaJIT FFI)"
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Measuring allocator for examples/heap_cycle.rs, never in a delivered .so.
+memory-report = ["dep:dhat"]
+
+[dependencies]
+# Import-only facade: no writer, no MIDI playback, no SVG backend.
+scoretk = { path = "../scoretk", default-features = false, features = [
+    "musescore-import",
+    "musicxml-import",
+    "midi-import",
+    "lilypond-import",
+    "abc-import",
+    "mei-import",
+    "gabc-import",
+] }
+scoretk-core = { path = "../scoretk-core" }
+scoretk-engrave = { path = "../scoretk-engrave" }
+scoretk-render-raster = { path = "../scoretk-render-raster" }
+dhat = { version = "0.3.2", optional = true }

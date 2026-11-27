@@ -29,6 +29,7 @@ members = [
     "crates/scoretk-smufl",
     "crates/scoretk-engrave",
     "crates/scoretk-render-svg",
+    "crates/scoretk-engrave-ffi",
 ]
 
 [workspace.package]
@@ -74,3 +75,10 @@ inherits = "release"
 lto = true
 opt-level = "z"
 codegen-units = 1
+
+# Delivered ARM cdylib for the Kobo. `dist` already gives LTO, `opt-level = "s"`
+# and stripping; `panic = "unwind"` is explicit because the C ABI relies on
+# `catch_unwind` at every entry point (never let a panic cross into LuaJIT).
+[profile.kobo]
+inherits = "dist"
+panic = "unwind"
