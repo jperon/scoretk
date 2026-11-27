@@ -963,6 +963,7 @@ fn place_measure(
     spec: &PageSpec,
     grid: &SharedMeasure,
     multi_voice: bool,
+    rest_offsets: &[i32],
 ) -> i32 {
     for (index, event) in atom.events.iter().enumerate() {
         let absolute_x = events
@@ -987,6 +988,7 @@ fn place_measure(
             lyrics_em,
             spec,
             multi_voice,
+            rest_offsets.get(event_offset + index).copied().unwrap_or(0),
         );
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
@@ -1787,6 +1789,163 @@ fn place_chord(
     }
 }
 
+/// Vertical extent of a rest glyph at its natural line, in staff-local
+/// coordinates. // Port of `RestLayout::fillShape` (`restlayout.cpp:145-149`):
+/// collision resolution uses the glyph's shape, not its origin.
+fn rest_shape(event: &Atom, centre: i32) -> Option<(i32, i32)> {
+    let AtomKind::Rest { duration, .. } = event.kind else {
+        return None;
+    };
+    let glyph = glyph(rest_name(duration))?;
+    Some((
+        centre + units_to_fixed(glyph.bbox[1]),
+        centre + units_to_fixed(glyph.bbox[3]),
+    ))
+}
+
+/// Vertical extent of a chord's noteheads and stem, staff-local.
+/// // Port of `Chord::shape()` as used by `RestLayout::resolveRestVSChord`
+/// (`restlayout.cpp:230-240`): invisible elements and arpeggios are removed;
+/// the head and stem are the parts that overlap a neighbouring voice's rest.
+fn chord_shape(event: &Atom, staff_y: i32, stem: Option<(bool, i32)>) -> Option<(i32, i32)> {
+    let chord = event.chord.as_ref()?;
+    let mut top = i32::MAX;
+    let mut bottom = i32::MIN;
+    for note in &chord.notes {
+        let head = glyph(note.head)?;
+        let centre = staff_y + note.line * HALF_SP;
+        top = top.min(centre + units_to_fixed(head.bbox[1]));
+        bottom = bottom.max(centre + units_to_fixed(head.bbox[3]));
+    }
+    if let Some((up, length)) = stem {
+        let anchor = if up {
+            staff_y + chord.notes.first()?.line * HALF_SP
+        } else {
+            staff_y + chord.notes.last()?.line * HALF_SP
+        };
+        if up {
+            top = top.min(anchor - length);
+        } else {
+            bottom = bottom.max(anchor + length);
+        }
+    }
+    (top <= bottom).then_some((top, bottom))
+}
+
+/// Rest offsets from `RestLayout::resolveVerticalRestConflicts`
+/// (`restlayout.cpp:178-199`): a rest first moves away from the chords of the
+/// other voice (`:201-270`) and then away from the other voice's rest
+/// (`:278-362`). `computeVoiceOffset` has already put the two voices on
+/// opposite sides of their natural line; these are the remaining collision
+/// corrections, indexed like the system's event list.
+fn plan_rest_offsets(
+    events: &[(i32, &Atom)],
+    staff_y: i32,
+    multi_voice: bool,
+    stems: &[Option<(bool, i32)>],
+) -> alloc::vec::Vec<i32> {
+    let voice_offset = |voice: u32| {
+        if multi_voice {
+            if voice.is_multiple_of(2) {
+                -SP
+            } else {
+                SP
+            }
+        } else {
+            0
+        }
+    };
+    let mut offsets = alloc::vec![0; events.len()];
+    let rests: alloc::vec::Vec<usize> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, event))| matches!(event.kind, AtomKind::Rest { .. }))
+        .map(|(index, _)| index)
+        .collect();
+    for &index in &rests {
+        let (rx, event) = events[index];
+        let centre = staff_y + HALF_SP + voice_offset(event.voice);
+        let AtomKind::Rest { duration, .. } = event.kind else {
+            continue;
+        };
+        let whole_or_half = matches!(duration, 1 | 2);
+        let min_clearance = if whole_or_half {
+            55 * SP / 100
+        } else {
+            35 * SP / 100
+        };
+        for (other, (cx, chord_event)) in events.iter().enumerate() {
+            if other == index || chord_event.chord.is_none() || chord_event.voice == event.voice {
+                continue;
+            }
+            // The upstream pass is per segment (`collectChordsAndRest`,
+            // `restlayout.cpp:178`); our events share one x per segment.
+            if (cx - rx).abs() > SP / 4 {
+                continue;
+            }
+            let Some((top, bottom)) =
+                chord_shape(chord_event, staff_y, stems.get(other).copied().flatten())
+            else {
+                continue;
+            };
+            let (rest_top, rest_bottom) =
+                rest_shape(event, centre + offsets[index]).unwrap_or((centre, centre));
+            let rest_above = event.voice < chord_event.voice;
+            let clearance = if rest_above {
+                top - rest_bottom
+            } else {
+                rest_top - bottom
+            };
+            let margin = clearance - min_clearance;
+            if margin >= 0 {
+                continue;
+            }
+            let up_sign = if rest_above { -1 } else { 1 };
+            // Half-space steps once the rest leaves the staff
+            // (`restlayout.cpp:255-266`).
+            let outside = if rest_above {
+                rest_bottom + margin < min_clearance
+            } else {
+                rest_top - margin > 3 * SP - min_clearance
+            };
+            let step = if outside { SP / 2 } else { SP };
+            let steps = (-margin + step - 1) / step;
+            offsets[index] += steps * step * up_sign;
+        }
+    }
+    // Two rests of the same segment also move apart (`resolveRestVSRest`).
+    for (position, &first) in rests.iter().enumerate() {
+        for &second in rests.iter().skip(position + 1) {
+            if (events[first].0 - events[second].0).abs() > SP / 4 {
+                continue;
+            }
+            let first_event = events[first].1;
+            let second_event = events[second].1;
+            let first_above = first_event.voice < second_event.voice;
+            let first_y = staff_y + HALF_SP + voice_offset(first_event.voice) + offsets[first];
+            let second_y = staff_y + HALF_SP + voice_offset(second_event.voice) + offsets[second];
+            let (Some((a0, a1)), Some((b0, b1))) = (
+                rest_shape(first_event, first_y),
+                rest_shape(second_event, second_y),
+            ) else {
+                continue;
+            };
+            let clearance = if first_above { b0 - a1 } else { a0 - b1 };
+            let margin = clearance - 55 * SP / 100;
+            if margin >= 0 {
+                continue;
+            }
+            let steps = (-margin + SP - 1) / SP;
+            let first_steps = steps / 2;
+            let second_steps = steps - first_steps;
+            let sign = if first_above { -1 } else { 1 };
+            offsets[first] += first_steps * SP * sign;
+            offsets[second] -= second_steps * SP * sign;
+        }
+    }
+    offsets
+}
+
 #[allow(clippy::too_many_arguments)] // page-local helper: item, bounds, staff y and beam override
 fn place_event(
     out: &mut DisplayList,
@@ -1801,6 +1960,7 @@ fn place_event(
     _lyrics_em: i32,
     _spec: &PageSpec,
     multi_voice: bool,
+    rest_offset: i32,
 ) {
     match event.kind {
         AtomKind::Clef { name } => {
@@ -1842,7 +2002,7 @@ fn place_event(
                 0
             };
             let name = rest_name(duration);
-            let rest_y = y + HALF_SP + voice_offset;
+            let rest_y = y + HALF_SP + voice_offset + rest_offset;
             // The MMRest branch keeps the header exception of
             // `getMeasureStartEndPos` (`measurelayout.cpp:1435-1440`): x1 is
             // the first chord/rest segment x minus `barNoteDistance`.
@@ -2123,6 +2283,7 @@ pub fn build_page_with_skylines(
             }
             let multi_voice = voices.len() > 1;
             let plan = plan_beams(&events, multi_voice, y);
+            let rest_offsets = plan_rest_offsets(&events, y, multi_voice, &plan.stems);
             for item in &plan.items {
                 out.push(*item);
             }
@@ -2146,6 +2307,7 @@ pub fn build_page_with_skylines(
                     spec,
                     &grids[measure],
                     multi_voice,
+                    &rest_offsets,
                 );
                 x += grids[measure].end();
                 event_offset += atom.events.len();
@@ -2824,6 +2986,60 @@ mod tests {
     }
 
     #[test]
+    fn a_rest_moves_away_from_the_other_voices_chord() {
+        // `RestLayout::resolveRestVSChord` (`restlayout.cpp:201-270`): a rest
+        // above a chord of a higher voice moves up in whole-space steps until
+        // `minRestToChordClearance` (0.35 sp) is met. The organ's two-voice
+        // measures put a voice-2 rest on the voice-1 chord otherwise.
+        let note = |line| crate::atoms::NoteAtom {
+            line,
+            head: "noteheadBlack",
+            accidental: None,
+        };
+        let chord_atom = ChordAtom {
+            duration: 4,
+            dots: 0,
+            grace: false,
+            stem_up: true,
+            stem_len: 0,
+            notes: alloc::vec![note(2), note(4)],
+        };
+        let rest = Atom {
+            voice: 0,
+            ..Atom::at_segment(
+                0,
+                AtomKind::Rest {
+                    duration: 4,
+                    dots: 0,
+                    measure: false,
+                },
+                0,
+            )
+        };
+        let chord = Atom {
+            voice: 1,
+            chord: Some(chord_atom),
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let events = vec![(4 * SP, &rest), (4 * SP, &chord)];
+        let offsets = plan_rest_offsets(&events, 5 * SP, true, &[None, None]);
+        let (_, rest_shape) = rest_shape(&rest, 5 * SP + SP / 2 - SP + offsets[0]).unwrap();
+        let (chord_top, _) = chord_shape(&chord, 5 * SP, None).unwrap();
+        assert!(
+            offsets[0] < 0,
+            "the upper voice's rest must move up, got {}",
+            offsets[0]
+        );
+        assert!(
+            chord_top - rest_shape >= 35 * SP / 100,
+            "rest and chord must clear each other by 0.35 sp"
+        );
+        // With one voice only, no collision correction is applied.
+        let offsets = plan_rest_offsets(&events[..1], 5 * SP, false, &[None]);
+        assert_eq!(offsets, vec![0]);
+    }
+
+    #[test]
     fn multi_voice_rests_move_in_opposite_directions() {
         // `RestLayout::computeVoiceOffset` (`restlayout.cpp:694-765`):
         // voices 0/2 move one line up, voices 1/3 one line down, and a
@@ -2855,6 +3071,7 @@ mod tests {
             0,
             &PageSpec::default(),
             true,
+            0,
         );
         place_event(
             &mut out,
@@ -2869,6 +3086,7 @@ mod tests {
             0,
             &PageSpec::default(),
             true,
+            0,
         );
         let first = out.items[0].origin().1;
         let second = out.items[1].origin().1;
@@ -2888,6 +3106,7 @@ mod tests {
             0,
             &PageSpec::default(),
             false,
+            0,
         );
         assert_eq!(mono.items[0].origin().1, y + SP / 2);
     }

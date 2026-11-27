@@ -2307,3 +2307,33 @@ Lyrics lines are not extracted by the geometric oracle, so the unchanged
 figures are expected. `engrave-img/eng9/fix2-p3.png` (whole page inspected)
 shows "le Ré-dem-pteur." with centred hyphens and one separator in
 "No - ël … No -ël".
+
+## 30. Review of the private page 3: rest/chord collisions (2026-11-27)
+
+The organ's two-voice measures still drew a voice-2 rest on the voice-1
+noteheads: §27 only ported `RestLayout::computeVoiceOffset`
+(`restlayout.cpp:694-765`), not the collision pass that follows it.
+`RestLayout::resolveVerticalRestConflicts` (`:178-199`) first calls
+`resolveRestVSChord` (`:201-270`) and then `resolveRestVSRest` (`:278-362`).
+`plan_rest_offsets` now reproduces both passes with the display-list geometry:
+a rest's shape is its glyph bounding box (`fillShape`, `:145-149`), a chord's
+shape its noteheads plus stem, and a rest moves away from another voice's
+chord by `ceil(margin / lineDistance)` staff spaces (half spaces when it
+leaves the staff), with `minRestToChordClearance` 0.35 sp (0.55 sp for whole
+and half rests). Two rests of one segment are then pushed apart by 0.55 sp,
+splitting the steps between them. A test pins the chord case and the
+monophonic no-op.
+
+| Metric (`oracle-eng9-p3-fix2` → `oracle-eng9-p3-fix3`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1802 (398/2 209) | 0.1802 (398/2 209) |
+| Measure widths / system breaks | 90/394 / 37/56 | 90/394 / 37/56 |
+| Staff top mean abs. error, sp | 11.288 | 11.366 |
+
+The single changed figure is the staff-top mean: a rest moved outside a staff
+changes its skyline and therefore a system distance by 0.08 sp on average.
+Rests are not extracted by the geometric oracle. The private page
+(`engrave-img/eng9/fix3-p3.png`, whole page inspected) now separates the two
+eighth rests of the organ treble at m.27 start and clears the voice-2 rests
+from the voice-1 notes at m.26/28.
