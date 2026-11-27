@@ -40,7 +40,7 @@
 //! (`gabc-score-determination.y:870-907`) et ordre exact des barres à
 //! l'intérieur d'un groupe.
 
-use scoretk_core::model::{Gregorian, GregorianNote, NoteSource, SignKind};
+use scoretk_core::model::{Gregorian, GregorianNote, NeumeSign, NoteSource, SignKind};
 
 use crate::exportmusicxml::Out;
 
@@ -293,29 +293,65 @@ pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
 
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,
 /// `complexType other-technical`).
-/// Glyphe SMuFL d'une note grégorienne (`smufl-glyph-name`, XSD 4.0).
+/// Noms SMuFL 1.4 d'un signe du glyphe GABC, dans l'ordre source.
 ///
-/// Les noms `chant*` sont ceux du registre SMuFL officiel (`glyphnames.json`,
-/// range chant). Un seul glyph par note est émis : le plus caractéristique.
-fn smufl_neume(note: &GregorianNote) -> &'static str {
-    let has = |kind| note.signs.iter().any(|sign| sign.kind == kind);
-    if has(SignKind::Quilisma) {
-        "chantQuilisma"
-    } else if has(SignKind::Oriscus) {
-        "chantOriscusAscending"
-    } else if has(SignKind::Virga) {
-        "chantPunctumVirga"
-    } else if has(SignKind::Liquescentia) {
-        "chantDeminutumLower"
-    } else if has(SignKind::HorizontalEpisema) {
-        "chantEpisema"
-    } else if has(SignKind::Ictus) {
-        "chantIctusAbove"
-    } else if note.glyph.is_empty() {
-        "chantPunctum"
-    } else {
-        "chantPunctumInclinatum"
+/// Le registre officiel (`glyphnames.json`, ranges
+/// `medievalAndRenaissancePlainchant{SingleNote,MultipleNote,Articulation}`)
+/// donne un nom canonique à chaque forme : `chantQuilisma`, `chantStrophicus`,
+/// `chantAuctumDesc`, `chantAugmentum`, `accidentalFlat`, … Un élément
+/// `<other-notation>` porte **un** de ces noms (XSD 4.0 `:5361-5375`,
+/// `maxOccurs="unbounded"`) : la séquence complète est donc lisible par un
+/// tiers sans champ privé. Les chiffres de position GABC (`.0`, `_502`) et
+/// les caractères d'espacement/fusion (`/`, `!`, `*`) n'ont aucun nom SMuFL :
+/// ils ne sont pas simulés ici et restent des défauts mesurés.
+fn smufl_signs(sign: &NeumeSign) -> Vec<&'static str> {
+    if sign.raw.chars().any(|c| c.is_ascii_digit()) {
+        return Vec::new();
     }
+    match sign.kind {
+        SignKind::Quilisma => vec!["chantQuilisma"; sign.raw.chars().count()],
+        SignKind::Virga => vec![if sign.raw.starts_with('V') {
+            "chantPunctumVirgaReversed"
+        } else {
+            "chantPunctumVirga"
+        }],
+        SignKind::Stropha => vec!["chantStrophicus"; sign.raw.chars().count()],
+        SignKind::Oriscus => vec![if sign.raw.starts_with('O') {
+            "chantOriscusDescending"
+        } else {
+            "chantOriscusAscending"
+        }],
+        SignKind::Liquescentia => match sign.raw.chars().next() {
+            Some('<') => vec!["chantAuctumAsc"],
+            Some('>') => vec!["chantAuctumDesc"],
+            _ => vec!["chantPunctumDeminutum"],
+        },
+        SignKind::Linea => vec!["chantPunctumLinea"],
+        SignKind::Cavum => vec!["chantPunctumCavum"],
+        SignKind::PunctumMora => vec!["chantAugmentum"; sign.raw.matches('.').count()],
+        SignKind::Ictus => vec!["chantIctusAbove"; sign.raw.matches('\'').count()],
+        SignKind::HorizontalEpisema => vec!["chantEpisema"; sign.raw.matches('_').count()],
+        SignKind::Alteration => match sign.raw.chars().next() {
+            Some('x' | 'X') => vec!["accidentalFlat"; sign.raw.chars().count()],
+            Some('#') => vec!["accidentalSharp"; sign.raw.matches('#').count()],
+            Some('y' | 'Y') => vec!["accidentalNatural"],
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// Séquence SMuFL complète d'une note chantée : le nom de tête, puis un nom
+/// par signe de son glyphe, dans l'ordre exact du source (`Gabc.tex:452-797`).
+fn smufl_neumes(note: &GregorianNote) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for sign in &note.signs {
+        names.extend(smufl_signs(sign));
+    }
+    if names.is_empty() {
+        names.push("chantPunctum");
+    }
+    names
 }
 
 /// Contexte d'une note grégorienne pour l'écriture de ses porteurs standard.
@@ -337,12 +373,18 @@ pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
         // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
         // **interopérabilité applicative** (« allowing application
         // interoperability »), contrairement aux champs privés `gabc:`.
+        // `other-notation` est `maxOccurs="unbounded"` : un neume composé est
+        // une séquence de noms canoniques, pas une étiquette contenant le
+        // jeton source.
+        let names = smufl_neumes(note);
         out.xml.start_element("notations", &[]);
-        out.xml.tag_with(
-            "other-notation",
-            &[("type", "single"), ("smufl", smufl_neume(note))],
-            "",
-        );
+        for name in names {
+            out.xml.tag_with(
+                "other-notation",
+                &[("type", "single"), ("smufl", name)],
+                "",
+            );
+        }
         out.xml.end_element();
     }
     // Un `other-technical` dont le texte est `letter: e`, `glyph: …` ou

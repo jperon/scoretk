@@ -785,8 +785,10 @@ fn gabc_to_formats_reference_is_the_derived_view() {
 
 /// Port SMuFL optionnel des neumes (XSD 4.0 `other-notation/@smufl`).
 ///
-/// Mesure : un glyph `chant*` par lettre chantée, sans champ privé supplémentaire.
-/// L'option est additive : la sortie par défaut ne change pas.
+/// Mesure : au moins un glyph `chant*` par lettre chantée, sans champ privé
+/// supplémentaire. Un neume composé porte une *séquence* de noms SMuFL
+/// (`other-notation/@smufl` est `maxOccurs="unbounded"`), donc plus d'un nom
+/// par note. L'option est additive : la sortie par défaut ne change pas.
 #[test]
 fn musicxml_smufl_neume_carrier_is_opt_in() {
     let options = Options {
@@ -834,10 +836,14 @@ fn musicxml_smufl_neume_carrier_is_opt_in() {
             glyphs.len(),
             distinct.len()
         );
-        assert_eq!(glyphs.len(), notes, "one SMuFL glyph per sung letter");
+        assert!(
+            glyphs.len() >= notes,
+            "at least one SMuFL glyph per sung note: {notes} notes, {} glyphs",
+            glyphs.len()
+        );
         assert!(xml.contains("chantPunctum"), "plain puncta must be carried");
     }
     assert!(total_notes > 0);
-    assert_eq!(total_notes, total_glyphs);
+    assert!(total_glyphs >= total_notes);
     println!("total: {total_glyphs}/{total_notes} glyphs\n");
 }

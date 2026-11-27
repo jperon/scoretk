@@ -154,6 +154,7 @@ impl Reader {
                         }
                     }
                 }
+
                 // Aucun `technical` n'est lu ici : un `other-technical` est
                 // soit un champ privé `gabc:` (lu par `super::chant`), soit un
                 // vidage étiqueté sans porteur dans la norme. Dans les deux cas
@@ -244,8 +245,12 @@ impl Reader {
 }
 
 /// Nom SMuFL officiel du registre « Medieval and Renaissance » → jeton GABC.
-/// Un seul glyphe est porté par note (`scoretk-musicxml-export/src/chant.rs`) ;
-/// les formes composées restent donc hors de portée de ce seul attribut.
+///
+/// L'exporteur écrit une *séquence* de `<other-notation>` par note
+/// (`scoretk-musicxml-export/src/chant.rs`) : le lecteur concatène les jetons
+/// dans l'ordre pour retrouver le glyphe source. Les noms `accidental*`
+/// appartiennent au registre SMuFL des accidentels (XSD 4.0 les accepte
+/// tous), et portent les alterations `x`/`y`/`#` du glyphe GABC.
 fn glyph_from_smufl(name: &str) -> Option<(&'static str, bool)> {
     match name {
         "chantQuilisma" | "chantQuilismaAscending" | "chantQuilismaDescending" => {
@@ -253,11 +258,22 @@ fn glyph_from_smufl(name: &str) -> Option<(&'static str, bool)> {
         }
         "chantIctusAbove" | "chantIctusBelow" => Some(("'", false)),
         "chantEpisema" => Some(("_", false)),
+        "chantAugmentum" => Some((".", false)),
         "chantPunctumVirga" | "chantVirga" => Some(("v", false)),
-        "chantOriscusAscending" | "chantOriscusDescending" => Some(("o", false)),
-        "chantDeminutumLower" | "chantDeminutumUpper" => Some(("~", false)),
-        "chantCavum" => Some(("r", false)),
-        "chantLinea" => Some(("=", false)),
+        "chantPunctumVirgaReversed" => Some(("V", false)),
+        "chantStrophicus" => Some(("s", false)),
+        "chantOriscusAscending" => Some(("o", false)),
+        "chantOriscusDescending" => Some(("O", false)),
+        "chantDeminutumLower" | "chantDeminutumUpper" | "chantPunctumDeminutum" => {
+            Some(("~", false))
+        }
+        "chantAuctumAsc" => Some(("<", false)),
+        "chantAuctumDesc" => Some((">", false)),
+        "chantPunctumCavum" | "chantCavum" => Some(("r", false)),
+        "chantPunctumLinea" | "chantLinea" => Some(("=", false)),
+        "accidentalFlat" => Some(("x", false)),
+        "accidentalSharp" => Some(("#", false)),
+        "accidentalNatural" => Some(("y", false)),
         "chantPunctumInclinatum" => Some(("", true)),
         "chantPunctum" => Some(("", false)),
         _ => None,
@@ -291,6 +307,33 @@ mod tests {
         assert_eq!(glyph_from_smufl("chantIctusAbove"), Some(("'", false)));
         assert_eq!(glyph_from_smufl("chantPunctumInclinatum"), Some(("", true)));
         assert_eq!(glyph_from_smufl("pianoPedalPed"), None);
+    }
+
+    #[test]
+    fn smufl_sequence_restores_a_compound_glyph() {
+        // XSD 4.0 `other-notation` est unbounded : une séquence de noms
+        // SMuFL canoniques porte les signes dans l'ordre du source, sans
+        // étiquette contenant le jeton GABC brut.
+        let xml = r#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><clef><sign>C</sign><line>3</line></clef></attributes>
+    <note><pitch><step>G</step><octave>3</octave></pitch><type>quarter</type>
+      <notations>
+        <other-notation type="single" smufl="chantPunctumVirga"/>
+        <other-notation type="single" smufl="chantAugmentum"/>
+        <other-notation type="single" smufl="accidentalFlat"/>
+      </notations>
+    </note>
+  </measure></part>
+</score-partwise>"#;
+        let root = scoretk_xml_common::parse(xml.as_bytes()).expect("XML");
+        let mut score = Score::default();
+        assert!(restore(&root, &mut score));
+        let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
+            panic!("payload");
+        };
+        assert_eq!(payload.syllables[0].notes[0].glyph, "v.x");
     }
 
     #[test]
