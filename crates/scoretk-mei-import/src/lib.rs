@@ -272,6 +272,26 @@ mod tests {
         assert_eq!(score.measures[1].start_tick, tick + tick);
     }
 
+    /// MEI 5.1 RNG `mei_score` (:27789) : la partition est sous
+    /// `<music>/<body>/<mdiv>`. Un `<score>` dans un `<incip>` d'en-tête n'est
+    /// pas la partition (`meiimporter.cpp:1011` lit `./music//score`).
+    #[test]
+    fn reads_the_music_score_not_the_header_incipit() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <meiHead><music><body><mdiv><score><section><measure n="1">
+            <staff><layer><note dur="4" pname="c" oct="2"/></layer></staff>
+          </measure></section></score></mdiv></body></music></meiHead>
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="4" pname="e" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with an incipit score");
+        assert_eq!(score.notes.len(), 1);
+        assert_eq!(score.notes[0].pitch, 64);
+    }
+
     /// MEI 5.1 : la durée d'un `<chord>` peut être portée par ses `<note>`
     /// enfants (`format-ref/mei.md` §8, piège 5).
     #[test]

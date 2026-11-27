@@ -100,7 +100,17 @@ pub(crate) struct Reader<'a> {
 impl<'a> Reader<'a> {
     /// `MeiImporter::read` → `readScore`.
     pub(crate) fn read(root: &'a Element) -> Result<scoretk_core::model::Score, Error> {
-        let Some(score_node) = first_descendant(root, "score") else {
+        // `MeiImporter::readScore` (`meiimporter.cpp:1011-1047`) cherche
+        // `./music//score`. Un `<incip>` du `<meiHead>` contient lui aussi un
+        // `<score>` (exemple officiel `Beethoven_Hymn_to_joy`) : le prendre
+        // donnait une partition sans `<staff@n>`, donc sans portées, et tous
+        // ses événements disparaissaient à l'écriture. MEI 5.1 RNG :27789
+        // définit `<score>` sous `<mdiv>` dans `<body>`/`<music>`.
+        let music = first_music(root);
+        let Some(score_node) = music
+            .and_then(|music| first_descendant(music, "score"))
+            .or_else(|| first_descendant(root, "score"))
+        else {
             return Err(Error::NoScore);
         };
         let mut reader = Self {
@@ -1304,6 +1314,26 @@ fn note_head_group(node: &Element) -> Option<scoretk_core::model::NoteHeadGroup>
 /// (`Convert::durFromMEI` + `AttAugmentDots`).
 pub(crate) fn duration_of(node: &Element) -> Duration {
     duration_of_opt(node).unwrap_or(Duration::quarter())
+}
+
+/// First `<music>` outside a `<meiHead>` (whose `<incip>` may contain a
+/// `<score>` that is not the encoded work, RNG `mei_score` :27789).
+fn first_music(root: &Element) -> Option<&Element> {
+    if root.name == "music" {
+        return Some(root);
+    }
+    for child in &root.children {
+        if child.name == "meiHead" {
+            continue;
+        }
+        if child.name == "music" {
+            return Some(child);
+        }
+        if let Some(found) = first_music(child) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// First musical event with an `@dur` below `node`, beam wrappers included.
