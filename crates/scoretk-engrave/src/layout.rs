@@ -56,6 +56,9 @@ pub struct PageSpec {
     pub page_height: i32,
     /// // Port of `styledef.cpp:2931` (`minSystemDistance` 8.5 sp).
     pub min_system_distance: i32,
+    /// // Port of `styledef.cpp:66` (`minSystemSpread` 8.5 sp): floor between
+    /// systems when vertical spreading is enabled (`systemlayout.cpp:2932`).
+    pub min_system_spread: i32,
     /// // Port of `styledef.cpp:2933` (`maxSystemDistance` 15 sp).
     pub max_system_distance: i32,
     /// // Port of `styledef.cpp:279` (`lastSystemFillLimit` 0.3).
@@ -116,6 +119,7 @@ impl Default for PageSpec {
             margin_top: 9 * SP,
             page_height: 170 * SP,
             min_system_distance: 8704, // styledef.cpp:58 (8.5 sp)
+            min_system_spread: 8704,   // styledef.cpp:66 (8.5 sp)
             max_system_distance: 15 * SP,
             last_system_fill_limit: 307,
             first_system_indent: 0,
@@ -177,6 +181,7 @@ impl PageSpec {
             staff_distance: (style.staff_distance_sp * SP as f64) as i32,
             akkolade_distance: (style.akkolade_distance_sp * SP as f64) as i32,
             min_system_distance: (style.min_system_distance_sp * SP as f64) as i32,
+            min_system_spread: (style.min_system_spread_sp * SP as f64) as i32,
             max_system_distance: (style.max_system_distance_sp * SP as f64) as i32,
             enable_vertical_spread: style.enable_vertical_spread,
             spread_system: (style.spread_system * SP as f64) as i32,

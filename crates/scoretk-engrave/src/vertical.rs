@@ -284,7 +284,14 @@ fn system_gap(upper: &Skyline, lower: &Skyline, spec: &PageSpec) -> i32 {
     // upper one's south already includes the staff height.
     let skyline_gap =
         upper.south().max() - STAFF_HEIGHT + spec.min_vertical_distance - lower.north().max();
-    spec.min_system_distance.max(skyline_gap)
+    // `minDistance` picks `minSystemSpread` when vertical spreading is on
+    // (`systemlayout.cpp:2932`).
+    let style_gap = if spec.enable_vertical_spread {
+        spec.min_system_spread
+    } else {
+        spec.min_system_distance
+    };
+    style_gap.max(skyline_gap)
 }
 
 /// Applies the skylines measured on a preliminary layout: widens the offsets
@@ -337,6 +344,86 @@ pub fn apply_skylines(
     }
 }
 
+/// // Port of `PageLayout::layoutPage` (`pagelayout.cpp:524-613`) for the
+/// case `enableVerticalSpread == false`: normalise the distances between
+/// systems with the free page height, but never exceed `maxSystemDistance`.
+/// Systems with a VBox or a fixed down distance are left untouched
+/// (`pagelayout.cpp:542-545`); neither occurs in this page-local model yet.
+fn distribute_without_spread(systems: &mut [SystemPlan], spec: &PageSpec, page: usize) {
+    let on_page: alloc::vec::Vec<usize> = systems
+        .iter()
+        .enumerate()
+        .filter(|(_, system)| system.page == page)
+        .map(|(index, _)| index)
+        .collect();
+    if on_page.len() < 2 {
+        return;
+    }
+    let mut distances: alloc::vec::Vec<i32> = on_page
+        .windows(2)
+        .map(|pair| systems[pair[1]].y - systems[pair[0]].y)
+        .collect();
+    let heights: alloc::vec::Vec<i32> =
+        on_page.iter().map(|&index| systems[index].height).collect();
+    let last = *on_page.last().unwrap();
+    let bottom = spec.page_height - spec.margin_top - spec.staff_lower_border;
+    let mut remaining = bottom
+        - (systems[last].y
+            + systems[last].staff_offsets.last().copied().unwrap_or(0)
+            + STAFF_HEIGHT);
+    if remaining <= 0 {
+        return;
+    }
+    // `pagelayout.cpp:564`: shortest bottom-to-top gap first.
+    let mut order: alloc::vec::Vec<usize> = (0..distances.len()).collect();
+    order.sort_by_key(|&index| distances[index] - heights[index]);
+    for position in 1..order.len() {
+        let (shortest, taller) = (order[position - 1], order[position]);
+        let normal = distances[shortest] - heights[shortest];
+        let next = distances[taller] - heights[taller];
+        if next <= normal {
+            continue;
+        }
+        let mut fill = next - normal;
+        let wanted = fill * position as i32;
+        if wanted > remaining {
+            fill = remaining / position as i32;
+        }
+        let total = (fill * position as i32).min(remaining);
+        for &index in order.iter().take(position) {
+            let candidate = distances[index] + fill;
+            distances[index] = if candidate - heights[index] > spec.max_system_distance {
+                (spec.max_system_distance + heights[index]).max(distances[index])
+            } else {
+                candidate
+            };
+        }
+        remaining -= total;
+        if remaining <= 0 {
+            break;
+        }
+    }
+    if remaining > 0 {
+        let step = remaining / distances.len() as i32;
+        for index in 0..distances.len() {
+            let candidate = distances[index] + step;
+            distances[index] = if candidate - heights[index] > spec.max_system_distance {
+                (spec.max_system_distance + heights[index]).max(distances[index])
+            } else {
+                candidate
+            };
+        }
+    }
+    // `pagelayout.cpp:604-611`: every y is the accumulated distance.
+    let mut y = systems[on_page[0]].y;
+    for (index, &system_index) in on_page.iter().enumerate() {
+        systems[system_index].y = y;
+        if index < distances.len() {
+            y += distances[index];
+        }
+    }
+}
+
 /// Rewrites the system positions and per-staff offsets of one page, filling
 /// the page instead of packing every system against the top margin.
 pub fn spread_page(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &PageSpec, page: usize) {
@@ -385,12 +472,33 @@ pub fn spread_page(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &Page
     }
 }
 
-/// Applies [`spread_page`] to every page of a breaking plan.
-pub fn spread_all(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &PageSpec) {
+/// Page filling, dispatching on `enableVerticalSpread` as
+/// `PageLayout::layoutPage` does (`pagelayout.cpp:548-558`).
+pub fn distribute_page(
+    systems: &mut [SystemPlan],
+    staffs: &[StaffInfo],
+    spec: &PageSpec,
+    page: usize,
+) {
+    if spec.enable_vertical_spread {
+        spread_page(systems, staffs, spec, page);
+    } else {
+        distribute_without_spread(systems, spec, page);
+    }
+}
+
+/// Applies page filling to every page of a breaking plan.
+pub fn distribute_all(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &PageSpec) {
     let pages = systems.last().map_or(1, |system| system.page + 1);
     for page in 0..pages {
-        spread_page(systems, staffs, spec, page);
+        distribute_page(systems, staffs, spec, page);
     }
+}
+
+/// Kept for callers using the spreading entry point directly; with spread
+/// disabled it now follows the `maxSystemDistance` path as well.
+pub fn spread_all(systems: &mut [SystemPlan], staffs: &[StaffInfo], spec: &PageSpec) {
+    distribute_all(systems, staffs, spec);
 }
 
 #[cfg(test)]
@@ -464,6 +572,30 @@ mod tests {
         apply_skylines(&mut systems, &[skylines], &[], &spec);
         // 14 - 4 (staff height) + 0.5 (clearance) = 10.5 sp.
         assert_eq!(systems[1].y, 14 * SP + SP / 2);
+    }
+
+    #[test]
+    fn without_spread_the_system_distance_is_capped() {
+        // `pagelayout.cpp:561-602`: when spreading is off, free space is
+        // shared up to `maxSystemDistance`, never beyond it.
+        let spec = PageSpec {
+            enable_vertical_spread: false,
+            max_system_distance: 15 * SP,
+            ..PageSpec::default()
+        };
+        let mut systems = vec![
+            plan(0, vec![0]),
+            plan(12 * SP, vec![0]),
+            plan(24 * SP, vec![0]),
+        ];
+        for system in &mut systems {
+            system.page = 0;
+        }
+        distribute_page(&mut systems, &[], &spec, 0);
+        for pair in systems.windows(2) {
+            assert!(pair[1].y - pair[0].y - pair[0].height <= spec.max_system_distance);
+        }
+        assert!(systems[1].y > 12 * SP);
     }
 
     #[test]

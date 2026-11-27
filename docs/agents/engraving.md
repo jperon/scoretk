@@ -1296,3 +1296,36 @@ The per-file causes are unchanged from §13.5 (`copypastesymbollist-lyrics`
 35→26, `testExcludeInvisibleElements` one measure width). The switch stays
 off; the visual lyric overlap of the private page remains a P2 debt of the
 incomplete `HorizontalSpacing::computePadding`/`Skyline` port.
+
+## 14. eng8: vertical spacing without collisions (2026-11-27)
+
+The private choral score is still read from its absolute path only; the
+before/after/reference page-1 images are in `engrave-img/eng8/`
+(`before.png`, `after.png`, `ref.png`, 1000 px wide). All three were rendered
+from binaries built from the tree at the corresponding commit (the earlier
+stale-image mistake is avoided). The 56-file oracle baseline is
+`/tmp/.../scratchpad/oracle-eng8-base`: 0 failures, 2 771 elements,
+384 within 0.1 sp, 0.6579 stem-length agreement, 69/399 measure widths,
+34/56 system breaks, 53/56 page counts, 48/58 page-break patterns,
+19/230 staff tops, 6/134 adjacent-staff gaps, mean staff top error 8.589 sp
+and mean adjacent-staff gap 6.148 sp against 8.379 in the 4.7.4 reference.
+Failures and unmatched elements, systems, pages and gaps stay in every
+denominator. New oracle columns report staff y per five-line staff of each
+system, the gaps between adjacent staves and lyric glyphs overlapping a
+staff band (the latter compared by glyph count on both sides).
+
+| Step | Port | Oracle before → after |
+| --- | --- | --- |
+| 1 | `skyline.rs`: per-staff north/south skylines of all drawn items, without item pointers; `systemlayout.cpp:2485-2581, 2900-2989` and `skyline.cpp:40-91, 117-143, 192-226`. `apply_skylines` takes `max(style distance, skyline clearance + minVerticalDistance)`; style values for `minVerticalDistance` and `skylineMinHorizontalClearance` come from `styledef.cpp:749-750` | Staff top mean abs. error 8.589 → 7.368 sp; mean adjacent-staff gap 6.148 → 7.346 sp (reference 8.379); staff tops within 0.5 sp 19 → 20/232; gaps within 0.5 sp 6 → 5/134 |
+| 2 | Lyrics emitted as their own class at `lyricsPosBelow`/`lyricsLineHeight` (`styledef.cpp:75-79`, `lyricslayout.cpp:581-614`), moved down by `lyricsMinTopDistance` against the staff skyline (`:616-702`) and padded by `lyricsMinBottomDistance - minVerticalDistance` on that skyline (`:704-742`) | Staff top error 7.368 → 7.376 sp; gap error 5.949 → 5.906 sp; lyric/staff collisions 0 → 0 (128 lyric glyphs drawn, 30 in the reference) |
+| 3 | Honest page breaks from measured skyline gaps and heights (`pagelayout.cpp:140-265`), `minSystemSpread`/`minSystemDistance` floors and `maxSystemDistance`/`layoutPage` equalisation when spreading is off (`pagelayout.cpp:524-613`) | Gap mean abs. error 5.906 → 3.537 sp; staff top error 7.376 → 9.604 sp; staff tops 20/232 → 20/216; page counts 53/56 unchanged; page-break patterns 48/58 → 48/59 |
+
+The final 56-file run (`oracle-eng8-final`) has 0 failures, 384/2 771
+elements within 0.1 sp, 0.9543 vertical pitch, 0.6447 stem length, 69/394
+measure widths, 34/56 system breaks, 53/56 page counts, 48/59 page-break
+patterns, 20/216 staff tops, 5/123 adjacent-staff gaps and 0 lyric/staff
+collisions. On the private page the staves no longer collide with the lyrics
+or with each other and the organ brace spans the right staves, but only two
+systems fit where 4.7.4 fits four: the remaining height debt comes from
+upstream stem directions and measure-number skylines, not from the skyline
+pass itself. The P3/P2/P5 gates quoted above are not redefined by this work.

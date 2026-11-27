@@ -121,7 +121,8 @@ impl Engraver {
         // the final page is laid out (`systemlayout.cpp:2485-2581, 2900-2989`).
         let skylines = layout::all_skylines(&atoms, &spec, &systems, &staffs, &credits);
         vertical::apply_skylines(&mut systems, &skylines, &staffs, &spec);
-        vertical::spread_all(&mut systems, &staffs, &spec);
+        breaking::repaginate(&mut systems, &spec);
+        vertical::distribute_all(&mut systems, &staffs, &spec);
         Ok(Self {
             atoms,
             systems,

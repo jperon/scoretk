@@ -152,6 +152,9 @@ pub struct StyleSettings {
     pub min_system_distance_sp: f64,
     /// Maximum distance between systems when spread is off (15 sp).
     pub max_system_distance_sp: f64,
+    /// Minimum distance between systems when spread is on
+    /// (`Sid::minSystemSpread`, 8.5 sp). // `styledef.cpp:66`.
+    pub min_system_spread_sp: f64,
     /// Whether MuseScore spreads the gaps of a page (`Sid::enableVerticalSpread`).
     pub enable_vertical_spread: bool,
     /// Stretch factor of an inter-system gap (`Sid::spreadSystem`, 2.5).
@@ -256,6 +259,7 @@ impl StyleSettings {
             akkolade_distance_sp: 6.5,
             min_system_distance_sp: 8.5,
             max_system_distance_sp: 15.0,
+            min_system_spread_sp: 8.5,
             enable_vertical_spread: true,
             spread_system: 2.5,
             spread_square_bracket: 1.2,
@@ -347,6 +351,7 @@ impl StyleSettings {
             "akkoladeDistance" => Self::set_positive(&mut self.akkolade_distance_sp, value),
             "minSystemDistance" => Self::set_positive(&mut self.min_system_distance_sp, value),
             "maxSystemDistance" => Self::set_positive(&mut self.max_system_distance_sp, value),
+            "minSystemSpread" => Self::set_positive(&mut self.min_system_spread_sp, value),
             "enableVerticalSpread" => self.enable_vertical_spread = flag(value),
             "spreadSystem" => Self::set_positive(&mut self.spread_system, value),
             "spreadSquareBracket" => Self::set_positive(&mut self.spread_square_bracket, value),

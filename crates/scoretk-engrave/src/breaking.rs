@@ -189,6 +189,38 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec, heights: &[i32]) ->
     page + 1
 }
 
+/// // Port of `PageLayout::collectPage`'s page-break loop
+/// (`pagelayout.cpp:140-265`): decide whether the next system still fits
+/// using the *measured* distance from the skyline pass and the system's
+/// actual height, not the nominal style distance. Page breaks stay honest:
+/// a system moved to a new page starts below `staffUpperBorder`.
+pub fn repaginate(systems: &mut [SystemPlan], spec: &PageSpec) {
+    if systems.is_empty() {
+        return;
+    }
+
+    let gaps: alloc::vec::Vec<i32> = systems
+        .windows(2)
+        .map(|pair| (pair[1].y - pair[0].y - pair[0].height).max(spec.min_system_distance))
+        .collect();
+    let bottom = spec.page_height - spec.margin_top - spec.staff_lower_border;
+    let mut page = 0;
+    let mut y = spec.margin_top + spec.title_frame_height;
+    for (index, system) in systems.iter_mut().enumerate() {
+        if index > 0 {
+            let gap = gaps[index - 1];
+            if y + gap + system.height > bottom {
+                page += 1;
+                y = spec.margin_top + spec.staff_upper_border;
+            }
+            y += gap;
+        }
+        system.y = y;
+        system.page = page;
+        y += system.height;
+    }
+}
+
 /// Computes the systems and pages, together with the atoms augmented with
 /// the clef/key headers generated at every system start.
 ///
@@ -312,6 +344,7 @@ pub fn page_count(systems: &[SystemPlan]) -> usize {
 mod tests {
     use super::*;
     use crate::atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
+    use crate::style::SP;
     use alloc::vec;
 
     fn quarter(at: i32) -> MeasureAtom {
@@ -409,6 +442,27 @@ mod tests {
         assert_eq!(systems.len(), 4);
         assert!(systems[..3].iter().all(|system| system.scale > 1024));
         assert_eq!(systems[3].scale, 1024);
+    }
+
+    #[test]
+    fn page_breaks_use_the_measured_system_heights() {
+        // `pagelayout.cpp:248-265`: a tall system can force a page break
+        // even when the nominal `minSystemDistance` would still fit.
+        let spec = PageSpec::default();
+        let system = |y: i32, height: i32| SystemPlan {
+            first: 0,
+            count: 1,
+            scale: 1024,
+            y,
+            page: 0,
+            height,
+            staff_offsets: vec![0],
+        };
+        let mut systems = vec![system(spec.margin_top, 20 * SP), system(200 * SP, 4 * SP)];
+        repaginate(&mut systems, &spec);
+        assert_eq!(systems[0].page, 0);
+        assert_eq!(systems[1].page, 1);
+        assert!(systems[1].y >= spec.margin_top + spec.staff_upper_border);
     }
 
     #[test]
