@@ -451,6 +451,22 @@ pub(crate) fn write_svg(score: &Score, page: usize) -> Result<Vec<u8>> {
     Ok(scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes())
 }
 
+/// Description compacte d'une page gravée (JSON, coordonnées en 1/1024 sp).
+#[cfg(feature = "engrave")]
+pub(crate) fn write_layout(score: &Score, page: usize) -> Result<Vec<u8>> {
+    let engraver = scoretk_engrave::Engraver::from_score(score)
+        .map_err(|error| Error::Engrave(error.to_string()))?;
+    Ok(engraver.page_layout(page).to_json().into_bytes())
+}
+
+/// Page contenant un identifiant stable, équivalent de `getPageWithElement`.
+#[cfg(feature = "engrave")]
+pub(crate) fn page_of_element(score: &Score, id: &str) -> Result<Option<usize>> {
+    let engraver = scoretk_engrave::Engraver::from_score(score)
+        .map_err(|error| Error::Engrave(error.to_string()))?;
+    Ok(engraver.page_of_element(id))
+}
+
 non_branche!(
     "engrave",
     write_svg(score: &Score, page: usize) -> Result<Vec<u8>>,

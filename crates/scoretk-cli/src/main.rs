@@ -177,6 +177,10 @@ struct Cli {
     /// Sortie SVG : page à graver, à partir de 0 (par défaut : la première)
     #[arg(long, value_name = "N")]
     page: Option<usize>,
+
+    /// Gravure : écrit la description JSON de la page au lieu du SVG
+    #[arg(long)]
+    layout_json: bool,
 }
 
 /// Valeur de quantification MIDI acceptée : une puissance de deux ≥ 4.
@@ -217,9 +221,14 @@ fn main() -> ExitCode {
         Ok(format) => format,
         Err(message) => return fail(&message),
     };
-    let to = match output_format(cli.to, cli.output.as_deref()) {
-        Ok(format) => format,
-        Err(message) => return fail(&message),
+    let to = if cli.layout_json {
+        // `--layout-json` chooses its own output; `-o` may end in `.json`.
+        None
+    } else {
+        match output_format(cli.to, cli.output.as_deref()) {
+            Ok(format) => Some(format),
+            Err(message) => return fail(&message),
+        }
     };
 
     // Options d'import MIDI explicites (`MidiOperations`) : la CLI les
@@ -320,6 +329,19 @@ fn main() -> ExitCode {
         ..Options::default()
     };
 
+    if cli.layout_json {
+        let page = cli.page.unwrap_or(0);
+        let output = match scoretk::write_layout(&score, page) {
+            Ok(output) => output,
+            Err(error) => return fail(&format!("{input} → layout JSON : {error}")),
+        };
+        return match cli.output.as_deref() {
+            None | Some("-") => write_stdout(&output),
+            Some(path) => write_file(path, &output),
+        };
+    }
+
+    let to = to.expect("format de sortie exigé hors --layout-json");
     let output = match scoretk::write(&score, to, &options) {
         Ok(output) => output,
         Err(error) => return fail(&format!("{input} → {to} : {error}")),

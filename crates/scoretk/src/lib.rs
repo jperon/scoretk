@@ -285,6 +285,21 @@ pub fn write_svg(score: &Score, _options: &Options, page: usize) -> Result<Vec<u
     hooks::write_svg(score, page)
 }
 
+/// Décrit la page gravée en JSON : taille de page, systèmes, mesures et
+/// notes (identifiant stable, boîte, page). Les coordonnées sont des entiers
+/// en 1/1024 d'espace de portée, sans dépendance de sérialisation.
+#[cfg(feature = "engrave")]
+pub fn write_layout(score: &Score, page: usize) -> Result<Vec<u8>> {
+    hooks::write_layout(score, page)
+}
+
+/// Renvoie l'index de la page (0-based) contenant la note d'identifiant `id`,
+/// ou `None`. Équivalent de `getPageWithElement` de Verovio.
+#[cfg(feature = "engrave")]
+pub fn page_of_element(score: &Score, id: &str) -> Result<Option<usize>> {
+    hooks::page_of_element(score, id)
+}
+
 /// Ajoute au rapport les blocs que l'écrivain de `format` ne peut pas rendre.
 ///
 /// L5 n'est pas transporté par tous les formats : les pertes sont comptées

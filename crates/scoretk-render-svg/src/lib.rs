@@ -33,8 +33,10 @@
 
 extern crate alloc;
 
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::fmt::Write;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use scoretk_engrave::display::{DisplayItem, DisplayList, Geometry, ItemKind};
 use scoretk_engrave::layout::PageSpec;
@@ -193,8 +195,115 @@ fn write_item(out: &mut String, item: &DisplayItem) {
     }
 }
 
-/// Renders one page. The output keeps one element per display item so the
-/// geometric oracle can extract noteheads, stems and bar lines.
+/// Class of the group wrapping a note-level item.
+fn note_class(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Rest => "rest",
+        ItemKind::Lyrics => "lyric",
+        _ => "note",
+    }
+}
+
+fn is_note_level(kind: ItemKind) -> bool {
+    matches!(
+        kind,
+        ItemKind::Notehead
+            | ItemKind::Rest
+            | ItemKind::Stem
+            | ItemKind::Accidental
+            | ItemKind::Dot
+            | ItemKind::Flag
+            | ItemKind::Lyrics
+    )
+}
+
+/// Writes items in **display-list order**, opening and closing the
+/// system/measure/staff/note group stack around them. Since no item moves,
+/// the painter order (and hence the rasterised pixels) is unchanged.
+fn write_grouped_items(out: &mut String, list: &DisplayList, items: &[&DisplayItem]) {
+    let mut measure: Option<(usize, usize)> = None; // (ordinal, part)
+    let mut staff: Option<usize> = None;
+    let mut note: Option<(String, &'static str)> = None;
+    let mut emitted_measures = BTreeSet::new();
+    let mut emitted_notes = BTreeSet::new();
+    for item in items {
+        let new_measure = item.source.measure_ordinal().zip(item.source.part());
+        let new_staff = item.source.staff();
+        let new_note = if is_note_level(item.kind) {
+            item.source
+                .xml_id(&list.sources)
+                .map(|id| (id, note_class(item.kind)))
+        } else {
+            None
+        };
+        if new_measure != measure {
+            if note.is_some() {
+                out.push_str("</g>");
+                note = None;
+            }
+            if staff.is_some() {
+                out.push_str("</g>");
+                staff = None;
+            }
+            if measure.is_some() {
+                out.push_str("</g>");
+            }
+            measure = new_measure;
+            if let Some((ordinal, part)) = new_measure {
+                // Some parts repeat a measure group across staves: the
+                // `id` appears only on the first group, XML ids stay unique.
+                if emitted_measures.insert((part, ordinal)) {
+                    let _ = write!(
+                        out,
+                        "<g class=\"measure\" id=\"p{part}-m{ordinal}\" data-ordinal=\"{ordinal}\">"
+                    );
+                } else {
+                    let _ = write!(out, "<g class=\"measure\" data-ordinal=\"{ordinal}\">");
+                }
+            }
+        }
+        if new_staff != staff {
+            if note.is_some() {
+                out.push_str("</g>");
+                note = None;
+            }
+            if staff.is_some() {
+                out.push_str("</g>");
+            }
+            staff = new_staff;
+            if let Some(value) = new_staff {
+                let _ = write!(out, "<g class=\"staff\" data-staff=\"{value}\">");
+            }
+        }
+        if new_note != note {
+            if note.is_some() {
+                out.push_str("</g>");
+            }
+            note = new_note.clone();
+            if let Some((id, class)) = &new_note {
+                if emitted_notes.insert(id.clone()) {
+                    let _ = write!(out, "<g class=\"{class}\" id=\"{id}\" data-note=\"{id}\">");
+                } else {
+                    let _ = write!(out, "<g class=\"{class}\" data-note=\"{id}\">");
+                }
+            }
+        }
+        write_item(out, item);
+    }
+    if note.is_some() {
+        out.push_str("</g>");
+    }
+    if staff.is_some() {
+        out.push_str("</g>");
+    }
+    if measure.is_some() {
+        out.push_str("</g>");
+    }
+}
+
+/// Renders one page. The output keeps one path/rect per display item so the
+/// geometric oracle can extract noteheads, stems and bar lines; groups and
+/// identifiers are added around them without changing any coordinate.
 pub fn render_page(list: &DisplayList, spec: &PageSpec) -> String {
     let width = spec.printable_width + 2 * spec.margin_left;
     let height = spec.page_height;
@@ -211,8 +320,19 @@ pub fn render_page(list: &DisplayList, spec: &PageSpec) -> String {
         out,
         "<rect class=\"Page\" x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"#fff\"/>"
     );
+    // Group without reordering any item inside a (system, measure, staff)
+    // bucket: the paths/rects and their coordinates stay byte-identical.
+    let mut systems: BTreeMap<usize, Vec<&DisplayItem>> = BTreeMap::new();
     for item in &list.items {
-        write_item(&mut out, item);
+        match item.source.system_index() {
+            Some(system) => systems.entry(system).or_default().push(item),
+            None => write_item(&mut out, item),
+        }
+    }
+    for (system, items) in systems {
+        let _ = write!(out, "<g class=\"system\" data-system=\"{system}\">");
+        write_grouped_items(&mut out, list, &items);
+        out.push_str("</g>");
     }
     out.push_str("\n</svg>\n");
     out
@@ -272,5 +392,25 @@ mod tests {
         let svg = render_page(&list, &PageSpec::default());
         let bar = svg.split("class=\"BarLine\"").nth(1).unwrap();
         assert!(bar.starts_with(" x="));
+    }
+
+    #[test]
+    fn structured_groups_carry_stable_identifiers() {
+        let mut list = DisplayList::new(0);
+        list.set_system(2);
+        list.set_staff(2, 1, 0);
+        list.push(DisplayItem::rect(ItemKind::StaffLine, 0, 0, 100, 1));
+        list.set_measure(7, 0);
+        list.set_note(Some(scoretk_engrave::NoteIdentity::note(7, 1, 0, 4, 0)));
+        list.path(ItemKind::Notehead, "noteheadBlack", 30, 40);
+        list.set_note(None);
+        list.set_note(Some(scoretk_engrave::NoteIdentity::note(7, 1, 0, 5, 0)));
+        list.push(DisplayItem::rect(ItemKind::Rest, 50, 20, 10, 10));
+        let svg = render_page(&list, &PageSpec::default());
+        assert!(svg.contains("<g class=\"system\" data-system=\"2\">"));
+        assert!(svg.contains("<g class=\"measure\" id=\"p0-m7\" data-ordinal=\"7\">"));
+        assert!(svg.contains("<g class=\"staff\" data-staff=\"1\">"));
+        assert!(svg.contains("<g class=\"note\" id=\"m7-s1-v0-c4-n0\""));
+        assert!(svg.contains("<g class=\"rest\" id=\"m7-s1-v0-c5-n0\""));
     }
 }

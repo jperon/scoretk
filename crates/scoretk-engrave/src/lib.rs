@@ -60,6 +60,7 @@ pub mod decor;
 pub mod display;
 pub mod identity;
 pub mod layout;
+pub mod layout_data;
 pub mod screen;
 pub mod skyline;
 pub mod spacing;
@@ -72,6 +73,7 @@ pub use breaking::SystemPlan;
 pub use display::{DisplayItem, DisplayList, Geometry, ItemKind};
 pub use identity::{GraceIdentity, NoteIdentity, NoteSourceRange, SourceRef};
 pub use layout::PageSpec;
+pub use layout_data::{BBox, MeasureLayout, NoteLayout, PageLayout, SystemLayout};
 pub use screen::screen_staff_px;
 pub use staffs::StaffInfo;
 pub use style::SP;
@@ -178,6 +180,17 @@ impl Engraver {
 
     pub fn spec(&self) -> &PageSpec {
         &self.spec
+    }
+
+    /// Compact layout description of one page (boxes in 1/1024 staff space).
+    pub fn page_layout(&self, page: usize) -> layout_data::PageLayout {
+        layout_data::PageLayout::from_list(&self.page(page), &self.spec)
+    }
+
+    /// Page containing a stable note id, or `None` if it is not engraved.
+    /// Equivalent of Verovio's `getPageWithElement`.
+    pub fn page_of_element(&self, id: &str) -> Option<usize> {
+        layout_data::page_of_element(self, id)
     }
 }
 

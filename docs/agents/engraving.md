@@ -2467,3 +2467,106 @@ glibc symbol dependency. This is above the 1.5 MB library budget of §1, which
 was written for a `cdylib`; the static process carries its own libc and Rust
 runtime. No Kobo run was performed here: the device test belongs to the
 orchestrator.
+
+## 32. Element identity and structured output (engid, 2026-11-27)
+
+Goal: let cantus link a drawn element to the pivot score **and** to a playback
+tick, without keeping a string per drawn item. No wasm wiring in this step;
+the facade and CLI expose the data, step 4 will decide the JS surface.
+
+### 32.1 Identity in the display list
+
+`crates/scoretk-engrave/src/identity.rs` defines two integer-only records:
+
+- `NoteIdentity` (atom side) holds `measure` (0-based index in
+  `Score::measures`, i.e. `timeline.measures[].ordinal`), `staff`
+  (`StaffId::raw()`), `voice`, `chord` (rank of the `ChordRest` in its voice,
+  rests included), `note` (index in `Chord::notes`) and the optional grace
+  fields (`index`, `note`, `before`) and textual-source offsets. It is filled
+  in `atoms::compute_staff` using the same rank traversal as
+  `writeMeasureTracks` in the MusicXML exporter; no string is built there.
+- `SourceRef` (display side) is two `u64` words: placement = system (10 bits),
+  measure (20), staff (10), part (8); identity = kind (2), voice (2), chord
+  (14), note (10), grace index (10), before (1) and an index (11) into a
+  page-local, de-duplicated table of source ranges. Every `DisplayItem`
+  inherits the placement from `DisplayList::push` and optionally one note
+  identity set by `layout::place_chord`, `place_event` and the lyric pass.
+  The string id is derived **only** by `SourceRef::xml_id` when a backend
+  serialises: exactly `stable_note_id` / `stable_grace_note_id` from
+  `scoretk_core::model::stable_ids` (with the additive `-o/-e` suffix when
+  the source is textual). No new Cargo dependency.
+
+`crates/scoretk/tests/engrave_identity.rs` reads three corpus files, engraves
+all their pages and checks that every `ItemKind::Notehead` id is a `<note id>`
+of `write_playback`'s MusicXML and that every timemap attack has a notehead.
+Unit tests cover the packing/unpacking and the GABC-style source suffix.
+
+### 32.2 Structured SVG
+
+`scoretk-render-svg` now wraps the unchanged item stream in:
+
+```xml
+<g class="system" data-system="i">
+  <g class="measure" id="p{part}-m{ordinal}" data-ordinal="n">
+    <g class="staff" data-staff="s">
+      <g class="note" id="m{m}-s{s}-v{v}-c{c}-n{n}" data-note="…">…</g>
+```
+
+Rests use `class="rest"`, lyrics `class="lyric"` (both with the same stable
+`id`), and hyphen/melisma lines stay plain items in their staff group.
+Groups are opened/closed **around** items in display-list order: no path,
+rect, coordinate or painter order changes. When a measure or a note group
+reopens (a second staff of a part, a stem after another head, a later lyric
+verse), only the first group carries the XML `id`; every group carries
+`data-ordinal` / `data-note`. The old item classes (`Note`, `StaffLines`, …)
+are unchanged, so the geometric oracle and raster output are unaffected.
+
+Check: for all 728 generated corpus pages (56 files × up to 13 pages),
+removing the `<g>` tags leaves the previous SVG **byte for byte**, element
+order included; all groups are balanced. Default size growth is **+7.2 %** on
+the 56 page-0 files (1 867 200 → 2 002 438 bytes) and **+8.2 %** over all 728
+pages (2 871 007 → 3 106 696 bytes); the extra bytes are the group tags and
+attributes only. The geometric oracle of §6 was rerun once at the end: 56
+files, 0 failures, 0.1802 within 0.1 sp (398/2 209). These figures describe the
+current branch's layout; the byte-for-byte element comparison above is the
+evidence that the grouping did not change any drawn geometry.
+
+### 32.3 Layout JSON and `getPageWithElement`
+
+`crates/scoretk-engrave/src/layout_data.rs` builds `PageLayout` (plain Rust
+structs, `no_std` + `alloc`) from one page's display list and serialises it
+to compact JSON with a hand-written formatter:
+
+```json
+{"page":0,"unit":"1/1024 staff space","size":[122880,173744],
+ "systems":[{"index":0,"bbox":[x,y,w,h]}],
+ "measures":[{"ordinal":0,"part":0,"bbox":[x,y,w,h]}],
+ "notes":[{"id":"m0-s0-v0-c0-n0","bbox":[x,y,w,h],"page":0,"system":0,"staff":0}]}
+```
+
+Boxes are `[x, y, width, height]` in 1/1024 staff space with the SVG
+viewBox origin; measure `ordinal` and note `id` are the timemap keys.
+`Engraver::page_layout(page)`, `Engraver::page_of_element(id)` (equivalent of
+Verovio's `getPageWithElement`) and the facade's `write_layout(score, page)`
+/ `page_of_element(score, id)` expose them under the existing `engrave`
+feature. CLI: `scoretk in.mscx -o out.json --layout-json [--page N]`.
+
+### 32.4 Resource budget (same method as §20)
+
+`scripts/measure-engrave-memory.sh`, feature-gated `memory-report` build,
+release profile, one engraved page, host x86-64. "Peak heap" is dhat's
+`t-gmax`; RSS includes the ~10 MB static/libc floor.
+
+| File | Before: peak heap / RSS / total alloc. | After: peak heap / RSS / total alloc. |
+| --- | ---: | ---: |
+| `v3/moonlight.mscx` | 6.774 MB / 15.63 MB / 14.18 MB | **6.774 MB** / 15.76 MB / 16.09 MB |
+| `v4/voiceswitching.mscx` | 0.297 MB / 10.36 MB / 0.72 MB | **0.297 MB** / 10.28 MB / 0.91 MB |
+| `v4/testExcludeInvisibleElements.mscx` | 0.375 MB / 10.23 MB / 0.89 MB | **0.375 MB** / 10.41 MB / 0.98 MB |
+
+Peak heap is unchanged to the byte on all three files, so the 16 extra bytes
+per `DisplayItem` and the compact atom identities fit inside the existing
+peak allocations. Total allocations grow by 1.91 MB on `moonlight` (larger
+atom vectors, +1 004 blocks) and RSS moves by at most 0.18 MB, i.e. within
+run-to-run noise. The SVG grouping adds no allocation: ids are formatted
+into the output string only. The Kobo budget of §20 is therefore not
+regressed by this step; no device measurement was made.
