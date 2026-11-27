@@ -74,11 +74,24 @@ pub struct ChordAtom {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AtomKind {
-    Clef { name: &'static str },
-    KeySig { fifths: i8 },
-    TimeSig { numerator: u8, denominator: u8 },
+    Clef {
+        name: &'static str,
+    },
+    KeySig {
+        fifths: i8,
+        /// Previous key, used to draw cancellation naturals
+        /// (`measurelayout.cpp:2597-2660`, `keysig.cpp`).
+        prev_fifths: i8,
+    },
+    TimeSig {
+        numerator: u8,
+        denominator: u8,
+    },
     Chord,
-    Rest { duration: u8, dots: u8 },
+    Rest {
+        duration: u8,
+        dots: u8,
+    },
 }
 
 /// One event of a measure atom.
@@ -181,6 +194,7 @@ impl MeasureAtom {
                 key_x,
                 AtomKind::KeySig {
                     fifths: self.key_fifths,
+                    prev_fifths: self.key_fifths,
                 },
             ));
             header_width += self.key_fifths.unsigned_abs().min(7) as i32
@@ -644,6 +658,26 @@ fn note_atoms(
     notes
 }
 
+/// Number of naturals MuseScore draws to cancel the previous key before a
+/// new one (`KeySig::layout`, `measurelayout.cpp:2597-2660`).
+pub(crate) fn cancellation_count(previous: i8, next: i8) -> u8 {
+    let removed_sharps = if previous > 0 && next < previous {
+        (previous - next.max(0)).unsigned_abs()
+    } else if previous < 0 && next > 0 {
+        previous.unsigned_abs()
+    } else {
+        0
+    };
+    let removed_flats = if previous < 0 && next > previous {
+        (next.min(0) - previous).unsigned_abs()
+    } else if previous > 0 && next < 0 {
+        previous.unsigned_abs()
+    } else {
+        0
+    };
+    removed_sharps.min(7) + removed_flats.min(7)
+}
+
 /// Computes all measure atoms of a score (single staff only).
 pub fn compute(score: &Score) -> Vec<MeasureAtom> {
     let staff = &score.staves[0];
@@ -653,6 +687,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
     }
     let mut bottom = bottom_line_note(clef);
     let mut key_fifths = 0i8;
+    let mut prev_fifths = 0i8;
     // MuseScore engraves the written pitch by default (`concertPitch` false):
     // transpose the concert pitch of the pivot model by the inverse of the
     // instrument's transposition (`engraving/dom/transpose.cpp`).
@@ -749,6 +784,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 // stretch comes from its duration; `minNoteDistance` and the
                 // notehead/accidental/dot widths give the lower bound.
                 let mut segment_width = SEGMENT_WIDTH;
+                // (voice, staff line) pairs already placed in this segment,
+                // used to shift noteheads of colliding voices.
+                let mut used_lines: alloc::vec::Vec<(u32, i32)> = alloc::vec::Vec::new();
                 for (track, cr) in chord_rests {
                     let duration = duration_code(cr.duration.kind);
                     let stretch = if mm_stretch > 0 && matches!(cr.kind, ChordRestKind::Rest(_)) {
@@ -772,8 +810,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             // advance its x.
                             let head_w = glyph_width("noteheadBlack");
                             let grace_w = head_w * 7 / 10;
-                            let mut grace_x =
-                                x - head_w - MIN_NOTE_DISTANCE - grace_w;
+                            let mut grace_x = x - head_w - MIN_NOTE_DISTANCE - grace_w;
                             for grace in chord.grace_chords.iter().rev() {
                                 let notes = note_atoms(
                                     &grace.chord,
@@ -794,8 +831,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                     // anchor and minimum-length corrections
                                     // (`stemlayout.cpp:60-161`, intrinsicMag
                                     // 0.7 with a different middle-line rule).
-                                    let stem_len = stem_length(&lines, &heads, g_up, g_duration)
-                                        * 82 / 100;
+                                    let stem_len =
+                                        stem_length(&lines, &heads, g_up, g_duration) * 82 / 100;
                                     events.push(Atom {
                                         x: grace_x,
                                         kind: AtomKind::Chord,
@@ -820,6 +857,24 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             }
                             let notes = note_atoms(chord, score, cr.duration.kind, bottom, inverse);
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
+                            // // Port of `ChordLayout::layoutChords3`
+                            // (`chordlayout.cpp:2060-2140`): when two voices
+                            // put notes on the same line, the later voice's
+                            // head is shifted right by a notehead width plus
+                            // 0.15 sp (`conflictUnison` offset).
+                            let collision = lines.iter().any(|line| {
+                                used_lines
+                                    .iter()
+                                    .any(|(voice, used)| *voice != track && used == line)
+                            });
+                            let chord_x = if collision {
+                                x + glyph_width("noteheadBlack") + 154
+                            } else {
+                                x
+                            };
+                            for &line in &lines {
+                                used_lines.push((track, line));
+                            }
                             let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
                             let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
                             let chord_atom = ChordAtom {
@@ -831,7 +886,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 notes,
                             };
                             events.push(Atom {
-                                x,
+                                x: chord_x,
                                 kind: AtomKind::Chord,
                                 chord: Some(chord_atom),
                                 voice: track,
@@ -881,9 +936,17 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     }
                     SegmentItem::KeySig(key) if segment.kind == SegmentType::KeySig && !has_key => {
                         let fifths = key.concert_key.fifths();
+                        let previous = prev_fifths;
                         key_fifths = fifths;
-                        if fifths != 0 {
-                            events.push(Atom::simple(x, AtomKind::KeySig { fifths }));
+                        prev_fifths = fifths;
+                        if fifths != 0 || previous != 0 {
+                            events.push(Atom::simple(
+                                x,
+                                AtomKind::KeySig {
+                                    fifths,
+                                    prev_fifths: previous,
+                                },
+                            ));
                             // // Port of `styledef.cpp:241` (`keysigAccidentalDistance`):
                             // consecutive accidentals are one glyph width plus
                             // 0.3 sp apart; `keyTimesigDistance` follows them.
@@ -893,7 +956,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 "accidentalFlat"
                             };
                             let count = fifths.unsigned_abs().min(7) as i32;
-                            x += count * (glyph_width(accidental) + KEYSIG_ACCIDENTAL_DISTANCE)
+                            let cancelled = cancellation_count(previous, fifths);
+                            x += (count + cancelled as i32)
+                                * (glyph_width(accidental) + KEYSIG_ACCIDENTAL_DISTANCE)
                                 + KEY_TIME_DISTANCE;
                         }
                         has_key = true;

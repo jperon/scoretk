@@ -730,3 +730,60 @@ were unmatched before); 316 agree, against 288 before. The slight fall of
 the both-axes share is those grace noteheads/stems, whose x is still
 approximate. Before/after/reference PNGs of `Beam-CrossM1`:
 `/tmp/beam-before.png`, `/tmp/beam-after.png`, `/tmp/beam-ref.png`.
+
+### 9.18 Voices, chords and key cancellations (steps 3–4, 2026-11-27)
+
+The remaining P3 items are ported as follows:
+- voice-2 rests move one line space down (`restlayout.cpp:694-765`);
+- noteheads of colliding voices shift right by a head width + 0.15 sp
+  (`chordlayout.cpp:2060-2140`);
+- seconds mirror the head on the stem side (`chordlayout.cpp:2309-2410`);
+- key changes cancel the previous key's accidentals with naturals before
+  drawing the new ones (`measurelayout.cpp:2597-2660`):
+  `copypaste_parts` measure 3 now shows the four naturals missing before
+  this step (9 accidentals instead of 5 in the page SVG).
+
+An attempt to estimate lyrics/harmony/tempo text widths from character
+counts made 17/44 systems break like the oracle instead of 34/44: the
+rough estimate inflated atoms enough to move breaks. It was reverted. A
+faithful port needs real text glyph metrics (P4), so attached-element
+spacing remains debt here. Courtesy clefs/keys at system ends are not
+triggered by any single-staff corpus file and are likewise deferred.
+
+| Metric | Before steps 3–4 | After | Gate |
+| --- | ---: | ---: | --- |
+| Stem-length agreement | 0.8000 (316/395) | 0.8000 (316/395) | ≥ 0.90 — failed |
+| Within 0.1 sp, both axes | 0.2871 (362/1261) | 0.2895 (365/1261) | — |
+| Vertical pitch/ledger agreement | 0.9618 (523) | 0.9618 (523) | ≥ 0.95 — met |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+Before/after/reference PNGs of `copypaste_parts`:
+`/tmp/copypaste_parts-p3-before.png`, `/tmp/copypaste_parts-after.png`,
+`/tmp/copypaste_parts-ref.png`.
+
+## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
+
+Final oracle on the 44 single-staff corpus files (44 files, 0 failures,
+1 261 elements; failures and unmatched elements stay in every denominator):
+
+| Metric | P1 baseline | After eng3 | Gate | Result |
+| --- | ---: | ---: | ---: | --- |
+| Stem-length agreement | 0.0711 | **0.8000** (316/395) | ≥ 0.90 | not met |
+| Measure widths within 0.1 sp | — | **0.3594** (69/192) | ≥ 0.90 | not met |
+| Files with identical system breaks | — | **34/44** (0.773) | ≥ 0.90 | not met |
+| Within 0.1 sp, both axes | 0.0083 | 0.2895 (365/1261) | — | reported |
+| Vertical pitch/ledger agreement | 0.5138 | 0.9618 (523) | ≥ 0.95 | met |
+
+Complementary figures, reported alongside the primary ones and never in
+their place: short last-system bar line at the oracle x 1/6 after step 0
+against 0/6 before; stem length on the 352 stems outside the three
+beam-heavy files 0.7727 at step 8 (the figure now includes the beams and
+grace stems, so it is no longer comparable).
+
+The P3 gate is **not met**: the remaining 0.20 stem-length deficit is
+mostly automatically grouped beams (tuplets) and 0.25–0.5 sp shortening
+differences. The P2 gate is **not met**: 123 measure widths and 10 system
+breaks still differ, largely from text-driven segment widths (needs text
+metrics, P4), multi-voice collisions and courtesy headers. Both remain
+open work, not a redefinition of the gate.

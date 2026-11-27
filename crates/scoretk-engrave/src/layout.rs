@@ -185,7 +185,12 @@ fn beam_groups(events: &[(i32, &Atom)], voice: u32) -> Vec<Vec<usize>> {
             close(&mut current, &mut groups);
             continue;
         }
-        if event.beam_start || matches!(mode, BeamMode::Begin | BeamMode::Begin16 | BeamMode::Begin32) {
+        if event.beam_start
+            || matches!(
+                mode,
+                BeamMode::Begin | BeamMode::Begin16 | BeamMode::Begin32
+            )
+        {
             close(&mut current, &mut groups);
             current.push(index);
             continue;
@@ -200,7 +205,8 @@ fn beam_groups(events: &[(i32, &Atom)], voice: u32) -> Vec<Vec<usize>> {
         if crosses_measure && !beam_mode_mid(mode) {
             close(&mut current, &mut groups);
         }
-        if event.beams == 0 && !matches!(event.kind, AtomKind::Rest { .. }) && !beam_mode_mid(mode) {
+        if event.beams == 0 && !matches!(event.kind, AtomKind::Rest { .. }) && !beam_mode_mid(mode)
+        {
             close(&mut current, &mut groups);
             continue;
         }
@@ -240,8 +246,7 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             // pass does not yet reproduce. Only groups anchored by an
             // explicit `<Beam>` or `BeamMode` are ported (P3 debt).
             let anchored = group.first().is_some_and(|&index| {
-                events[index].1.beam_start
-                    || !matches!(events[index].1.beam_mode, BeamMode::Auto)
+                events[index].1.beam_start || !matches!(events[index].1.beam_mode, BeamMode::Auto)
             });
             if !anchored {
                 continue;
@@ -279,7 +284,7 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             }
             let line_of = |index: usize| {
                 let chord = events[index].1.chord.as_ref().unwrap();
-                let mut lines = chord.notes.iter().map(|note| note.line);
+                let lines = chord.notes.iter().map(|note| note.line);
                 if up {
                     lines.min().unwrap_or(4)
                 } else {
@@ -340,11 +345,12 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             let mut pointer = if start_dictator { end_y } else { start_y };
             let dictator_is_start = start_dictator;
             let ascending = start_line > end_line;
-            let backwards = (dictator > pointer) != if dictator_is_start {
-                ascending
-            } else {
-                !ascending
-            };
+            let backwards = (dictator > pointer)
+                != if dictator_is_start {
+                    ascending
+                } else {
+                    !ascending
+                };
             if backwards {
                 dictator = pointer - slant * 256;
             } else {
@@ -352,7 +358,8 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             }
             let y1 = if start_dictator { dictator } else { pointer };
             let y2 = if start_dictator { pointer } else { dictator };
-            let beam_y = |x: i32| y1 + (i64::from(y2 - y1) * i64::from(x - x1) / i64::from(x2 - x1)) as i32;
+            let beam_y =
+                |x: i32| y1 + (i64::from(y2 - y1) * i64::from(x - x1) / i64::from(x2 - x1)) as i32;
             let max_beams = group
                 .iter()
                 .map(|&index| usize::from(events[index].1.beams))
@@ -383,7 +390,7 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                         BEAM_WIDTH,
                     ));
                     for &index in run.iter() {
-                        if let Some(chord) = &events[index].1.chord {
+                        if events[index].1.chord.is_some() {
                             let line = line_of(index);
                             let note_y = line * HALF_SP;
                             // `place_chord` measures the stem from the note
@@ -433,13 +440,12 @@ fn system_events<'a>(
             } else {
                 atom.width - event.x
             };
-            let stretched = if !event.grace
-            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
-        {
-                width * system.scale / 1024
-            } else {
-                width
-            };
+            let stretched =
+                if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+                    width * system.scale / 1024
+                } else {
+                    width
+                };
             cursor += stretched;
         }
         measure_x += cursor;
@@ -452,6 +458,7 @@ fn system_events<'a>(
 /// // Port of `horizontalspacing.cpp:214-219` and `:1087-1111`: chord/rest
 /// segment widths are stretched by the system's spring force; the header
 /// segments keep their style-derived widths.
+#[allow(clippy::too_many_arguments)] // page-local helper: out, atom, origin, scale and precomputed events
 fn place_measure(
     out: &mut DisplayList,
     atom: &MeasureAtom,
@@ -466,20 +473,27 @@ fn place_measure(
     // loop below then advances by the gap to the following event.
     let mut cursor = atom.events.first().map_or(0, |event| event.x);
     for (index, event) in atom.events.iter().enumerate() {
-        let absolute_x = events.get(event_offset + index).map_or(x0 + cursor, |item| item.0);
-        place_event(out, event, absolute_x, system_y, plan.stems.get(event_offset + index).copied().flatten());
+        let absolute_x = events
+            .get(event_offset + index)
+            .map_or(x0 + cursor, |item| item.0);
+        place_event(
+            out,
+            event,
+            absolute_x,
+            system_y,
+            plan.stems.get(event_offset + index).copied().flatten(),
+        );
         let width = if index + 1 < atom.events.len() {
             atom.events[index + 1].x - event.x
         } else {
             atom.width - event.x
         };
-        let stretched = if !event.grace
-            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
-        {
-            width * scale / 1024
-        } else {
-            width
-        };
+        let stretched =
+            if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+                width * scale / 1024
+            } else {
+                width
+            };
         cursor += stretched;
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
@@ -549,9 +563,33 @@ fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: 
 const SHARP_LINES: [i32; 7] = [0, 3, -1, 2, 5, 1, 4];
 const FLAT_LINES: [i32; 7] = [4, 1, 5, 2, 6, 3, 0];
 
-fn place_key_sig(out: &mut DisplayList, fifths: i8, x: i32, y: i32) {
-    let count = fifths.unsigned_abs().min(7) as usize;
+fn place_key_sig(out: &mut DisplayList, fifths: i8, prev_fifths: i8, x: i32, y: i32) {
     let mut gx = x;
+    // // Port of `KeySig::layout` / `measurelayout.cpp:2597-2660`: when the
+    // key changes, naturals cancel the accidentals that are no longer in
+    // force before the new ones are drawn. `copypaste_parts` measure 3 goes
+    // from four sharps back to C, so four naturals are required.
+    let cancel_sharps = if prev_fifths > 0 {
+        (prev_fifths - fifths.max(0)).clamp(0, 7) as usize
+    } else {
+        0
+    };
+    for index in (fifths.max(0) as usize)..(fifths.max(0) as usize + cancel_sharps) {
+        let width = cancel_glyph(out, SHARP_LINES[index.min(6)], gx, y);
+        gx += width + KEYSIG_ACCIDENTAL_DISTANCE;
+    }
+    let cancel_flats = if prev_fifths < 0 {
+        (fifths.min(0) - prev_fifths).clamp(0, 7) as usize
+    } else {
+        0
+    };
+    for index in (fifths.min(0).unsigned_abs() as usize)
+        ..(fifths.min(0).unsigned_abs() as usize + cancel_flats)
+    {
+        let width = cancel_glyph(out, FLAT_LINES[index.min(6)], gx, y);
+        gx += width + KEYSIG_ACCIDENTAL_DISTANCE;
+    }
+    let count = fifths.unsigned_abs().min(7) as usize;
     for index in 0..count {
         let (line, name) = if fifths > 0 {
             (SHARP_LINES[index], "accidentalSharp")
@@ -566,6 +604,14 @@ fn place_key_sig(out: &mut DisplayList, fifths: i8, x: i32, y: i32) {
             .unwrap_or(SP);
         gx += width + KEYSIG_ACCIDENTAL_DISTANCE;
     }
+}
+
+fn cancel_glyph(out: &mut DisplayList, line: i32, x: i32, y: i32) -> i32 {
+    let name = "accidentalNatural";
+    out.glyph(ItemKind::Accidental, name, x, y + line * HALF_SP);
+    glyph(name)
+        .map(|g| units_to_fixed(g.bbox[2] - g.bbox[0]))
+        .unwrap_or(SP)
 }
 
 /// // Port of `timesig.cpp` / `tdraw.cpp:3137`: digits are stacked in the
@@ -657,7 +703,30 @@ fn place_chord(
     y: i32,
     beam: Option<(bool, i32)>,
 ) {
-    for note in &chord.notes {
+    // // Port of `ChordLayout::layoutChords2` (`chordlayout.cpp:2309-2410`):
+    // notes on the same or an adjacent line conflict, so the head on the
+    // stem side alternates to the opposite side of the stem ("seconds").
+    let up = beam.map_or(chord.stem_up, |(up, _)| up);
+    let mut mirror = false;
+    let mut mirrored: alloc::vec::Vec<bool> = alloc::vec::Vec::new();
+    for (index, note) in chord.notes.iter().enumerate() {
+        if index > 0 && note.line - chord.notes[index - 1].line <= 1 {
+            mirror = !mirror;
+        }
+        mirrored.push(mirror);
+    }
+    for (note_index, note) in chord.notes.iter().enumerate() {
+        let head = glyph(note.head).unwrap();
+        let head_width = units_to_fixed(head.bbox[2]);
+        let head_x = if mirrored[note_index] {
+            if up {
+                x - head_width
+            } else {
+                x + head_width
+            }
+        } else {
+            x
+        };
         let ny = y + note.line * HALF_SP;
         // // Port of `accidentalslayout.cpp:286-305` (`stackAccidental`) and
         // `:745-767` (`minAccidentalToChordDistance`): the accidental's right
@@ -672,16 +741,15 @@ fn place_chord(
             out.glyph(
                 ItemKind::Accidental,
                 name,
-                x - width - ACCIDENTAL_DISTANCE,
+                head_x - width - ACCIDENTAL_DISTANCE,
                 ny,
             );
         }
-        let head = glyph(note.head).unwrap();
-        let head_w = units_to_fixed(head.bbox[2]);
+        let head_w = head_width;
         // // Port of `tlayout.cpp`/`tdraw.cpp`: the notehead origin is at the
         // left edge of the head, vertically centred on its staff line.
-        out.path(ItemKind::Notehead, note.head, x, ny);
-        place_ledger_lines(out, x, head_w, note.line, y);
+        out.path(ItemKind::Notehead, note.head, head_x, ny);
+        place_ledger_lines(out, head_x, head_w, note.line, y);
 
         // Dots: // Port of `chordlayout.cpp:2490-2562` (`placeDots`) — a note
         // on a line moves its dot into the adjacent space, up for an up stem.
@@ -696,7 +764,7 @@ fn place_chord(
                 0
             };
             for index in 0..usize::from(chord.dots) {
-                let dx = x + head_w + DOT_NOTE_DISTANCE + index as i32 * DOT_DOT_DISTANCE;
+                let dx = head_x + head_w + DOT_NOTE_DISTANCE + index as i32 * DOT_DOT_DISTANCE;
                 let dy = y + (note.line + dot_offset) * HALF_SP;
                 out.glyph(ItemKind::Dot, "augmentationDot", dx, dy);
             }
@@ -710,7 +778,6 @@ fn place_chord(
     let bottom = chord.notes.iter().map(|n| n.line).max().unwrap();
     let head = glyph(chord.notes[0].head).unwrap();
     let head_w = units_to_fixed(head.bbox[2]);
-    let up = beam.map_or(chord.stem_up, |(up, _)| up);
     let stem_len = beam.map_or(chord.stem_len, |(_, length)| length);
     let anchor_line = if up { bottom } else { top };
     let ny = y + anchor_line * HALF_SP;
@@ -729,13 +796,14 @@ fn place_chord(
     } else {
         chord.notes.last()
     };
-    let anchor_y = stem_anchor_offset(
-        anchor_head.map_or("noteheadBlack", |note| note.head),
-        up,
-    );
+    let anchor_y = stem_anchor_offset(anchor_head.map_or("noteheadBlack", |note| note.head), up);
     // `graceNoteMag` 0.7 scales the head and its stem anchor
     // (`beamlayout.cpp:339-341`, `styledef.cpp:474`).
-    let anchor_y = if chord.grace { anchor_y * 7 / 10 } else { anchor_y };
+    let anchor_y = if chord.grace {
+        anchor_y * 7 / 10
+    } else {
+        anchor_y
+    };
     // The far end stays at `note ± stemLength`; only the notehead end moves
     // to the anchor (`tlayout.cpp:5198-5201` computes y2 independently).
     let (sy, ey) = if up {
@@ -761,20 +829,17 @@ fn place_chord(
     }
 }
 
-fn place_event(
-    out: &mut DisplayList,
-    event: &Atom,
-    x: i32,
-    y: i32,
-    beam: Option<(bool, i32)>,
-) {
+fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32, beam: Option<(bool, i32)>) {
     match event.kind {
         AtomKind::Clef { name } => {
             // Leland's clef origin sits near the second staff line; the
             // horizontal margin is `clefLeftMargin` (styledef.cpp:174).
             out.glyph(ItemKind::Clef, name, x, y + 2 * SP);
         }
-        AtomKind::KeySig { fifths } => place_key_sig(out, fifths, x, y),
+        AtomKind::KeySig {
+            fifths,
+            prev_fifths,
+        } => place_key_sig(out, fifths, prev_fifths, x, y),
         AtomKind::TimeSig {
             numerator,
             denominator,
@@ -785,14 +850,19 @@ fn place_event(
             }
         }
         AtomKind::Rest { duration, dots } => {
+            // // Port of `RestLayout::computeVoiceOffset`
+            // (`restlayout.cpp:694-765`): in a multi-voice measure the rests
+            // of voices 2 and 4 move one line space down, those of voices 1
+            // and 3 one up, so they do not collide with the other voice.
+            let voice_offset = if event.voice.is_multiple_of(2) { 0 } else { SP };
             let name = rest_name(duration);
-            out.glyph(ItemKind::Rest, name, x, y + HALF_SP);
+            out.glyph(ItemKind::Rest, name, x, y + HALF_SP + voice_offset);
             for index in 0..usize::from(dots) {
                 out.glyph(
                     ItemKind::Dot,
                     "augmentationDot",
                     x + 2 * SP + index as i32 * DOT_DOT_DISTANCE,
-                    y + HALF_SP,
+                    y + HALF_SP + voice_offset,
                 );
             }
         }
@@ -846,7 +916,16 @@ pub fn build_page(
         let mut x = left;
         let mut event_offset = 0;
         for atom in &atoms[system.first..system.first + system.count] {
-            x += place_measure(&mut out, atom, x, sy, system.scale, &events, event_offset, &plan);
+            x += place_measure(
+                &mut out,
+                atom,
+                x,
+                sy,
+                system.scale,
+                &events,
+                event_offset,
+                &plan,
+            );
             event_offset += atom.events.len();
         }
         // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
@@ -912,13 +991,13 @@ mod tests {
                         accidental: None,
                     }],
                 }),
-                    voice: 0,
+                voice: 0,
                 measure: 0,
-                    beams: 0,
-                    beam_mode: scoretk_core::model::BeamMode::Auto,
-                    beam_start: false,
-                    beam_dir: None,
-                    grace: false,
+                beams: 0,
+                beam_mode: scoretk_core::model::BeamMode::Auto,
+                beam_start: false,
+                beam_dir: None,
+                grace: false,
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
@@ -980,7 +1059,13 @@ mod tests {
             spring: 1024,
             events: vec![
                 Atom::simple(clef_x, AtomKind::Clef { name: "gClef" }),
-                Atom::simple(key_x, AtomKind::KeySig { fifths: 4 }),
+                Atom::simple(
+                    key_x,
+                    AtomKind::KeySig {
+                        fifths: 4,
+                        prev_fifths: 4,
+                    },
+                ),
                 Atom::simple(
                     time_x,
                     AtomKind::TimeSig {
@@ -1003,13 +1088,13 @@ mod tests {
                             accidental: None,
                         }],
                     }),
-                        voice: 0,
-                measure: 0,
-                        beams: 0,
-                        beam_mode: scoretk_core::model::BeamMode::Auto,
+                    voice: 0,
+                    measure: 0,
+                    beams: 0,
+                    beam_mode: scoretk_core::model::BeamMode::Auto,
                     beam_start: false,
-                        beam_dir: None,
-                        grace: false,
+                    beam_dir: None,
+                    grace: false,
                 },
             ],
             start_bar: crate::atoms::BarCode(1),
@@ -1069,13 +1154,13 @@ mod tests {
                         accidental: Some("accidentalSharp"),
                     }],
                 }),
-                    voice: 0,
+                voice: 0,
                 measure: 0,
-                    beams: 0,
-                    beam_mode: scoretk_core::model::BeamMode::Auto,
-                    beam_start: false,
-                    beam_dir: None,
-                    grace: false,
+                beams: 0,
+                beam_mode: scoretk_core::model::BeamMode::Auto,
+                beam_start: false,
+                beam_dir: None,
+                grace: false,
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),

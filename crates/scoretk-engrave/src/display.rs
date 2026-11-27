@@ -72,9 +72,22 @@ impl ItemKind {
 /// ledger, bar lines) are pixel-snapped rectangles, not paths (plan §4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Geometry {
-    Glyph { glyph: u16, x: i32, y: i32 },
-    Path { glyph: u16, x: i32, y: i32 },
-    Rect { x: i32, y: i32, w: i32, h: i32 },
+    Glyph {
+        glyph: u16,
+        x: i32,
+        y: i32,
+    },
+    Path {
+        glyph: u16,
+        x: i32,
+        y: i32,
+    },
+    Rect {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+    },
     /// A slanted beam: the top edge runs `(x1,y1) → (x2,y2)`, the bottom
     /// edge is `beamWidth` lower (`beamlayout.cpp:1215-1216`,
     /// `createBeamSegment`). // Port of `tdraw.cpp`'s beam polygon.
@@ -151,12 +164,7 @@ impl DisplayItem {
                 x2,
                 y2,
                 width,
-            } => Some((
-                x1.min(x2),
-                y1.min(y2),
-                x1.max(x2),
-                y1.max(y2) + width,
-            )),
+            } => Some((x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2) + width)),
             Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => {
                 let g = list.glyph_name(self).and_then(scoretk_smufl::glyph)?;
                 let b = g.bbox;
