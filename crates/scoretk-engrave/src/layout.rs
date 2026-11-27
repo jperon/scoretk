@@ -399,6 +399,7 @@ mod tests {
         MeasureAtom {
             number: 0,
             width: 8 * SEGMENT_WIDTH,
+            spring: 8 * 1024,
             events: vec![Atom {
                 x: 4 * SP,
                 kind: AtomKind::Chord,
@@ -466,6 +467,7 @@ mod tests {
         let atom = MeasureAtom {
             number: 0,
             width: note_x + SEGMENT_WIDTH,
+            spring: 1024,
             events: vec![
                 Atom::simple(clef_x, AtomKind::Clef { name: "gClef" }),
                 Atom::simple(key_x, AtomKind::KeySig { fifths: 4 }),

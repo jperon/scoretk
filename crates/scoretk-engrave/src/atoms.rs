@@ -39,7 +39,8 @@ use scoretk_smufl::{glyph, units_to_fixed};
 
 use crate::style::{
     BAR_NOTE_DISTANCE, CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEY_TIME_DISTANCE,
-    KEYSIG_ACCIDENTAL_DISTANCE, SEGMENT_WIDTH, SYSTEM_HEADER_MIN_START,
+    KEYSIG_ACCIDENTAL_DISTANCE, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH,
+    SYSTEM_HEADER_MIN_START,
 };
 
 /// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
@@ -105,7 +106,11 @@ pub struct BarCode(pub u8);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeasureAtom {
     pub number: usize,
+    /// Minimum width from the natural spring lengths of `HorizontalSpacing`.
     pub width: i32,
+    /// Sum of the segments' duration stretches (1/1024); each segment's
+    /// spring constant is `1 / stretch` (`horizontalspacing.cpp:204`).
+    pub spring: i32,
     pub events: Vec<Atom>,
     pub start_bar: BarCode,
     pub end_bar: BarCode,
@@ -243,6 +248,21 @@ pub fn rest_name(duration: u8) -> &'static str {
 /// True for the duration codes that carry a stem (whole and breve do not).
 pub fn has_stem(duration: u8) -> bool {
     duration >= 3
+}
+
+/// // Port of `horizontalspacing.cpp:805-812` (`durationStretchForTicks`):
+/// `measureSpacing^log2(ticks / quarter)` with the 4.7.4 default slope 1.5.
+/// The values below are that formula in 1/1024, precomputed for power-of-two
+/// durations; `dots` multiplies the ratio by `2 - 2^-dots` (`:206-215` of
+/// `durationtype.cpp`). No floating point is needed in the `no_std` crate.
+pub fn duration_stretch(duration: u8, dots: u8) -> i32 {
+    const BASE: [i32; 13] = [
+        3456, 2304, 2304, 1536, 1024, 683, 455, 303, 202, 135, 90, 60, 40,
+    ];
+    const DOT: [i32; 4] = [1024, 1298, 1421, 1479];
+    let base = BASE.get(usize::from(duration)).copied().unwrap_or(1024);
+    let factor = DOT[usize::from(dots.min(3))];
+    (base * factor) / 1024
 }
 
 pub fn flag_name(duration: u8, up: bool) -> Option<&'static str> {
@@ -412,6 +432,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         let first = atoms.is_empty();
         let mut x = BAR_NOTE_DISTANCE.max(SYSTEM_HEADER_MIN_START);
         let mut events = Vec::new();
+        let mut spring = 0;
         let mut has_clef = false;
         let mut has_key = false;
         let mut has_time = false;
@@ -454,8 +475,20 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     x += SEGMENT_WIDTH;
                     continue;
                 }
+                // // Port of `horizontalspacing.cpp:730-745`: the natural
+                // width of a chord/rest segment is `3.5 sp * stretch`, where
+                // stretch comes from its duration; `minNoteDistance` and the
+                // notehead/accidental/dot widths give the lower bound.
+                let mut segment_width = SEGMENT_WIDTH;
                 for (track, cr) in chord_rests {
                 let duration = duration_code(cr.duration.kind);
+                let stretch = duration_stretch(duration, cr.duration.dots);
+                spring += stretch;
+                let mut min_width = glyph_width("noteheadBlack") + MIN_NOTE_DISTANCE;
+                if cr.duration.dots > 0 {
+                    min_width += cr.duration.dots as i32 * glyph_width("augmentationDot");
+                }
+                segment_width = (QUARTER_NOTE_SPACE * stretch / 1024).max(min_width);
                 match &cr.kind {
                     ChordRestKind::Chord(chord) => {
                         let mut notes = Vec::new();
@@ -518,7 +551,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     }
                 }
                 }
-                x += SEGMENT_WIDTH;
+                x += segment_width;
                 continue;
             }
 
@@ -571,7 +604,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
 
         atoms.push(MeasureAtom {
             number: measure.number,
-            width: x + SEGMENT_WIDTH,
+            width: x,
+            spring,
             events,
             start_bar: bar_code(measure.start_bar_line),
             end_bar: bar_code(measure.end_bar_line),
@@ -613,6 +647,16 @@ mod tests {
         // Two voices: even tracks up, odd tracks down (`chordlayout.cpp:1586`).
         assert!(stem_up(&[0], StemDirection::Auto, true, 0));
         assert!(!stem_up(&[0], StemDirection::Auto, true, 1));
+    }
+
+    #[test]
+    fn duration_stretch_follows_the_4_7_4_spacing_slope() {
+        // `horizontalspacing.cpp:805-812`: 1.5^log2(ticks/quarter).
+        assert_eq!(duration_stretch(4, 0), 1024); // quarter
+        assert_eq!(duration_stretch(3, 0), 1536); // half
+        assert_eq!(duration_stretch(5, 0), 683); // eighth
+        assert_eq!(duration_stretch(2, 0), 2304); // whole
+        assert_eq!(duration_stretch(4, 1), 1298); // dotted quarter
     }
 
     #[test]

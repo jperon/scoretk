@@ -505,3 +505,26 @@ notehead boxes do not intersect.
 | Within 0.1 sp, y only | 0.5246 | 0.5269 |
 | Vertical pitch / ledger agreement | 0.9652 | 0.9652 |
 | Stem-length agreement | 0.6967 | 0.6967 |
+
+### 9.9 Horizontal springs (step 2, 2026-11-27)
+
+Each chord/rest atom now carries the spring of `HorizontalSpacing`: natural
+width `3.5 sp * measureSpacing^log2(ticks / quarter)` (`horizontalspacing.cpp:
+730-812`), bounded below by notehead + accidental + dot widths plus
+`minNoteDistance` 0.35 sp (`:1216-1276`, `styledef.cpp:219`). The slope-1.5
+values are precomputed in 1/1024 so the `no_std` crate needs no `libm`;
+`MeasureAtom::spring` is the sum of segment stretches (spring constant
+`1 / stretch`, `horizontalspacing.cpp:204`).
+
+The oracle's x figures do not improve yet: MuseScore **justifies** a system
+by stretching its springs to the printable width, which arrives in step 3.
+For `measure-4`, reference quarters are 6.8 sp apart against our unstretched
+3.5 sp.
+
+| Metric | After step 1 | After step 2 |
+| --- | ---: | ---: |
+| Within 0.1 sp, both axes | 0.0174 | 0.0175 (23/1318) |
+| Within 0.1 sp, x only | 0.0273 | 0.0273 |
+| Within 0.1 sp, y only | 0.5269 | 0.5303 |
+| Vertical pitch / ledger agreement | 0.9652 | 0.9571 (513 noteheads) |
+| Stem-length agreement | 0.6967 | 0.7013 (385 stems) |
