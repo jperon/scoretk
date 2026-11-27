@@ -111,7 +111,7 @@ pub(super) fn write_score_def(xml: &mut XmlWriter, gregorian: &Gregorian, initia
 /// la RNG et la contrainte Schematron `staffDef-Check_staffDefn`
 /// (`mei.md` §12.3.1). Les lecteurs tiers et le MWE historique sans ce
 /// `<staffDef>` restent acceptés par le lecteur de ce port.
-pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
+pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian, private: bool) {
     xml.start_element("staff", &[("n", "2")]);
     xml.tag_empty(
         "staffDef",
@@ -132,26 +132,26 @@ pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
         xml.tag_with("syl", &[("con", "s")], &syllable.text);
         for snippet in &syllable.nabc {
             for descriptor in nabc::parse(&snippet.text) {
-                write_descriptor(xml, &descriptor);
+                write_descriptor(xml, &descriptor, private);
             }
-            // Le texte NABC atomique est le porteur exact du round trip ;
-            // `@n` garde l'ordre des snippets dans la syllabe. Le slash qui
-            // ouvre le segment carré après la contre-coupure est un espacement
-            // source : `@label` (attribut MEI standard) le transporte sans
-            // annotation privée.
-            let notes_before = snippet.notes_before.to_string();
-            let mut attributes = vec![
-                ("type", "gabc-nabc"),
-                // `@n` porte le nombre de notes carrées avant la coupure :
-                // c'est la donnée nécessaire pour reconstruire
-                // l'interleavage GABC exact à la lecture.
-                ("n", notes_before.as_str()),
-            ];
-            let resume = neumes::layout_label("resume", &snippet.resume);
-            if !snippet.resume.is_empty() {
-                attributes.push(("label", resume.as_str()));
+            // Le texte NABC atomique est le porteur exact du round trip en
+            // mode privé ; en full-support il est retiré (aucun lecteur tiers
+            // ne lui donne de sens) et la perte est mesurée comme un défaut.
+            if private {
+                let notes_before = snippet.notes_before.to_string();
+                let mut attributes = vec![
+                    ("type", "gabc-nabc"),
+                    // `@n` porte le nombre de notes carrées avant la coupure :
+                    // c'est la donnée nécessaire pour reconstruire
+                    // l'interleavage GABC exact à la lecture.
+                    ("n", notes_before.as_str()),
+                ];
+                let resume = neumes::layout_label("resume", &snippet.resume);
+                if !snippet.resume.is_empty() {
+                    attributes.push(("label", resume.as_str()));
+                }
+                xml.tag_with("signifLet", &attributes, &snippet.text);
             }
-            xml.tag_with("signifLet", &attributes, &snippet.text);
         }
         xml.end_element();
     }
@@ -159,7 +159,7 @@ pub(super) fn write_staff(xml: &mut XmlWriter, gregorian: &Gregorian) {
     xml.end_element();
 }
 
-fn write_descriptor(xml: &mut XmlWriter, descriptor: &nabc::Descriptor) {
+fn write_descriptor(xml: &mut XmlWriter, descriptor: &nabc::Descriptor, private: bool) {
     if !descriptor.spacing.is_empty() {
         // L'espacement horizontal NABC n'a pas d'élément MEI dédié : il est
         // porté par le texte du snippet, pas simulé par un `<space>` qui
@@ -220,6 +220,9 @@ fn write_descriptor(xml: &mut XmlWriter, descriptor: &nabc::Descriptor) {
         }
     }
     for (shorthand, position) in &descriptor.letters {
+        if !private {
+            continue;
+        }
         let mut attributes = vec![("type", "gabc-nabc-letter".to_owned())];
         if let Some(place) = nabc::place(*position) {
             attributes.push(("place", place.to_owned()));
@@ -258,14 +261,14 @@ mod tests {
     #[test]
     fn the_cut_resumption_uses_a_standard_label_not_a_private_annotation() {
         let mut xml = XmlWriter::new();
-        write_staff(&mut xml, &chant_with_resume("/"));
+        write_staff(&mut xml, &chant_with_resume("/"), true);
         let output = xml.finish();
         assert!(output
             .contains("type=\"gabc-nabc\" n=\"1\" label=\"layout:resume:U002F\">ds-</signifLet>"));
         assert!(!output.contains("<annot"));
 
         let mut xml = XmlWriter::new();
-        write_staff(&mut xml, &chant_with_resume(""));
+        write_staff(&mut xml, &chant_with_resume(""), true);
         let output = xml.finish();
         assert!(!output.contains("layout:resume"));
     }

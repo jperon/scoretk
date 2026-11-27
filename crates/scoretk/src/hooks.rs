@@ -352,6 +352,7 @@ pub(crate) fn write_mei(score: &Score, options: &Options) -> Result<Vec<u8>> {
         score,
         &scoretk_mei_export::MeiOptions {
             full_support: options.mei_full_support,
+            gabc_private: !options.mei_full_support,
             ..Default::default()
         },
     )

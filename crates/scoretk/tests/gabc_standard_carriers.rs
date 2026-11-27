@@ -19,6 +19,8 @@
 //! XSD 4.0 `other-notation/@smufl`, ABC 2.1 §5 `w:`/§4.6 `K:` and LilyPond's
 //! ancient-notation contexts. A `key: value` dump is not a carrier.
 
+use std::path::Path;
+
 use scoretk::{read, read_abc_with_dialect, write, Format, Options};
 
 const GABC: &str =
@@ -82,6 +84,37 @@ fn xml_full_support_writes_no_private_or_hidden_carrier() {
     let default = write(&score, Format::MusicXml, &Options::default()).expect("default MusicXML");
     assert!(
         String::from_utf8_lossy(&default).contains("gabc:syllable"),
+        "default private carrier removed"
+    );
+}
+
+#[test]
+fn mei_full_support_writes_no_private_carrier() {
+    let source = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tests")
+            .join("corpus")
+            .join("gabc")
+            .join("gregorio_PopulusSion.gabc"),
+    )
+    .expect("Gregorio example");
+    let score = read(&source, Format::Gabc).expect("GABC import");
+    let options = Options {
+        mei_full_support: true,
+        ..Options::default()
+    };
+    let mei = String::from_utf8(write(&score, Format::Mei, &options).expect("full-support MEI"))
+        .expect("UTF-8");
+    assert!(mei.contains("<syl"), "native NEUMES carrier missing: {mei}");
+    for dump in ["gabc", "layout:"] {
+        assert!(!mei.contains(dump), "{dump} is a private carrier: {mei}");
+    }
+    // The default MEI still carries the exact source layout through @label.
+    let default = write(&score, Format::Mei, &Options::default()).expect("default MEI");
+    assert!(
+        String::from_utf8_lossy(&default).contains("gabc:layout:"),
         "default private carrier removed"
     );
 }

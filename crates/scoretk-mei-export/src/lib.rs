@@ -47,6 +47,12 @@ pub struct MeiOptions {
     /// restent ceux de MuseScore 4.7.4 (voir `mei_conformity`). Avec `true`,
     /// la même partition conserve plus de faits du modèle au aller-retour.
     pub full_support: bool,
+    /// Émet les porteurs source-privés `gabc:` / `layout:` (`@label`,
+    /// `@type="gabc-*"`, jetons NABC). Le mode `full_support` du CLI les
+    /// désactive : les faits qui n'ont pas de porteur MEI 5.1 deviennent des
+    /// défauts mesurés, jamais un vidage caché. Le défaut reste `true` pour
+    /// que les octets MEI des sources grégoriennes ne changent pas.
+    pub gabc_private: bool,
     /// Émet les `<annot type="gabc-*">` qui dupliquent les jetons atomiques
     /// du `.gabc` (orthographe des glyphes, signes, barres, clés, en-têtes).
     /// Extension scoretk, **désactivée par défaut** : le module NEUMES 5.1
@@ -60,6 +66,7 @@ impl Default for MeiOptions {
             layout: true,
             encoding_date: "2026-01-01T00:00:00".to_owned(),
             full_support: false,
+            gabc_private: true,
             gabc_tokens: false,
         }
     }

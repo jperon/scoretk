@@ -57,11 +57,13 @@ pub(super) fn write(
             ("meiversion", neumes::NEUMES_VERSION),
         ],
     );
+    let private = options.gabc_private;
     write_head(
         &mut xml,
         gregorian,
         &options.encoding_date,
-        options.gabc_tokens,
+        options.gabc_tokens && private,
+        private,
     );
 
     xml.start_element("music", &[]);
@@ -91,8 +93,10 @@ pub(super) fn write(
     // syllabe n'a pas d'élément MEI dédié : il est porté par `@label`, attribut
     // standard (`att.labelled`) et non par une annotation privée.
     let mut layer_attributes = vec![("n".to_owned(), "1".to_owned())];
-    if let Some(separator) = &gregorian.opening_separator {
-        layer_attributes.push(("label".to_owned(), neumes::layout_label("open", separator)));
+    if private {
+        if let Some(separator) = &gregorian.opening_separator {
+            layer_attributes.push(("label".to_owned(), neumes::layout_label("open", separator)));
+        }
     }
     let layer_refs: Vec<(&str, &str)> = layer_attributes
         .iter()
@@ -100,7 +104,7 @@ pub(super) fn write(
         .collect();
     xml.start_element("layer", &layer_refs);
 
-    if options.gabc_tokens {
+    if options.gabc_tokens && private {
         for (index, token) in gregorian.clefs.iter().take(initial).enumerate() {
             annot(
                 &mut xml,
@@ -120,7 +124,8 @@ pub(super) fn write(
                 syllable_index,
                 gregorian,
                 initial_clefs: initial,
-                private: options.gabc_tokens,
+                private,
+                tokens: options.gabc_tokens && private,
                 linked: two_staves,
             },
         );
@@ -129,7 +134,7 @@ pub(super) fn write(
     xml.end_element();
     xml.end_element();
     if two_staves {
-        nabc::write_staff(&mut xml, gregorian);
+        nabc::write_staff(&mut xml, gregorian, private);
     }
     // section, score, mdiv, body, music, mei
     for _ in 0..6 {
@@ -143,13 +148,22 @@ pub(super) fn write(
 /// `sourceDesc/source/bibl/p` (*Guidelines* ch. 3, structure validée par
 /// `mei-all-5.1.rng`). `@n` garde l'ordre des champs GABC pour la lecture
 /// inverse ; aucun `<annot type="gabc-header">` n'est nécessaire.
-fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str, private: bool) {
+fn write_head(
+    xml: &mut XmlWriter,
+    gregorian: &Gregorian,
+    date: &str,
+    tokens: bool,
+    private: bool,
+) {
     // `@label` est un attribut MEI standard (`att.labelled`, `data.string`) :
     // il transporte les commentaires, lignes vides, terminateurs `;;` et le
-    // préfixe de notation sans ajouter d'annotation privée au document.
+    // préfixe de notation. En `full_support` il est retiré : l'en-tête n'a pas
+    // de porteur MEI pour ces détails et la perte est mesurée comme telle.
     let mut head_attributes = Vec::new();
-    if let Some(label) = scoretk_mei_common::gabc_layout::header_label(gregorian) {
-        head_attributes.push(("label".to_owned(), label));
+    if private {
+        if let Some(label) = scoretk_mei_common::gabc_layout::header_label(gregorian) {
+            head_attributes.push(("label".to_owned(), label));
+        }
     }
     let head_refs: Vec<(&str, &str)> = head_attributes
         .iter()
@@ -217,7 +231,7 @@ fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str, private: b
         xml.end_element();
         xml.end_element();
     }
-    if private {
+    if tokens {
         xml.start_element("notesStmt", &[]);
         for header in &gregorian.headers {
             annot(xml, neumes::HEADER_ANNOT, &header.name, &header.value, None);
@@ -314,7 +328,10 @@ struct SyllableContext<'a> {
     syllable_index: usize,
     gregorian: &'a Gregorian,
     initial_clefs: usize,
+    /// Porteurs source-privés (`@label`, `@type="gabc-*"`, jetons NABC).
     private: bool,
+    /// Annotations strictement privées (`<annot type="gabc-*">`).
+    tokens: bool,
     linked: bool,
 }
 
@@ -325,6 +342,7 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
         gregorian,
         initial_clefs,
         private,
+        tokens,
         linked,
     } = *context;
     let elision = syllable.text.contains('~');
@@ -333,14 +351,22 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
     // spelling sans ajouter d'annotation `gabc-*` au document. Il est porté
     // par `<syl>` et non par `<syllable>` pour laisser intacte la structure
     // neumatique attendue par les lecteurs du module NEUMES.
-    let mut separator_label = syllable
-        .separator_after
-        .as_ref()
-        .map(|separator| neumes::layout_label("sep", separator));
+    let mut separator_label = if private {
+        syllable
+            .separator_after
+            .as_ref()
+            .map(|separator| neumes::layout_label("sep", separator))
+    } else {
+        None
+    };
     // Le détail GABC (attributs `[…]`, jetons de groupe, espace avant `(`)
     // partage le même `@label` standard, après le séparateur de §19 : le
     // `<syllable>` reste exactement `<syllable>` pour les lecteurs tiers.
-    let detail = scoretk_mei_common::gabc_layout::attributes_label(syllable);
+    let detail = if private {
+        scoretk_mei_common::gabc_layout::attributes_label(syllable)
+    } else {
+        None
+    };
     if let Some(detail) = &detail {
         match &mut separator_label {
             Some(label) => {
@@ -376,20 +402,34 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
     xml.start_element("syllable", &link_refs);
-    if let Some(above) = &syllable.above_text {
-        xml.tag_with(
-            "signifLet",
-            &[("type", "gabc-above"), ("place", "above")],
-            above,
-        );
+    if private {
+        if let Some(above) = &syllable.above_text {
+            xml.tag_with(
+                "signifLet",
+                &[("type", "gabc-above"), ("place", "above")],
+                above,
+            );
+        }
     }
     // `tag_with` garde le texte sur une seule ligne : l'indentation de
     // `end_element` deviendrait un texte de syllable et décalerait les paroles.
     // Les styles réversibles passent par `<rend>` (`Guidelines` §6.4.10).
+    // En mode full-support les `@type="gabc-i"` sont des vidages : le texte
+    // chanté reste dans `<syl>` sans balisage source, la perte de style est
+    // comptée comme un défaut.
     let pieces = neumes::syl_pieces(&syllable.text);
+    let plain_text: String = pieces
+        .iter()
+        .map(|piece| match piece {
+            neumes::SylPiece::Plain(text) => text.as_str(),
+            neumes::SylPiece::Styled { text, .. } => text.as_str(),
+        })
+        .collect();
     let plain_only = pieces.is_empty()
         || matches!(pieces.as_slice(), [neumes::SylPiece::Plain(plain)] if plain == &syllable.text);
-    if plain_only {
+    if !private {
+        xml.tag_with("syl", &syl_attributes, &plain_text);
+    } else if plain_only {
         xml.tag_with("syl", &syl_attributes, &syllable.text);
     } else {
         xml.start_element("syl", &syl_attributes);
@@ -423,7 +463,7 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
             }
             xml.tag_empty("clef", &attributes);
         }
-        if private {
+        if tokens {
             let change_index = initial_clefs
                 + gregorian
                     .syllables
@@ -474,10 +514,10 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
                     ],
                 );
             }
-            write_nc(xml, note, &current_clef, index > 0 && !starts[index]);
+            write_nc(xml, note, &current_clef, index > 0 && !starts[index], private);
         }
         xml.end_element();
-        if private {
+        if tokens {
             for (note_index, note) in syllable.notes.iter().enumerate() {
                 let token = format!("{}{}", note.letter, note.glyph);
                 annot(
@@ -510,7 +550,7 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
 
     for (bar_index, bar) in syllable.bars.iter().enumerate() {
         xml.tag_empty("divLine", &[("form", neumes::bar_form(*bar))]);
-        if private {
+        if tokens {
             annot(
                 xml,
                 neumes::BAR_ANNOT,
@@ -529,11 +569,11 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
             };
             xml.tag_empty("episema", &[("form", form), ("place", place)]);
         }
-        if private {
+        if tokens {
             write_sign_annot(xml, neumes::GROUP_SIGN_ANNOT, &sign_index.to_string(), sign);
         }
     }
-    if private {
+    if tokens {
         if let Some(rubric) = &syllable.rubric {
             annot(
                 xml,
@@ -556,7 +596,13 @@ fn has_space(glyph: &str) -> bool {
     })
 }
 
-fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str, connected: bool) {
+fn write_nc(
+    xml: &mut XmlWriter,
+    note: &GregorianNote,
+    clef: &str,
+    connected: bool,
+    private: bool,
+) {
     let (pname, oct) = neumes::nc_position(note.letter, clef);
     let mut attributes = vec![
         ("pname".to_owned(), pname.to_string()),
@@ -586,6 +632,17 @@ fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str, connected: bo
         .collect();
     xml.start_element("nc", &refs);
     for part in neumes::glyph_parts(&note.glyph) {
+        // `gabc-space`, `gabc-fusion`, `gabc-nabc` encode a source spelling
+        // no MEI reader can interpret. Full support omits them; the exact
+        // glyph remains a measured defect instead of a hidden dump.
+        if !private
+            && part
+                .attributes
+                .iter()
+                .any(|(key, value)| key == &"type" && value.starts_with("gabc-"))
+        {
+            continue;
+        }
         let attrs: Vec<(&str, String)> = part.attributes;
         let refs: Vec<(&str, &str)> = attrs
             .iter()
