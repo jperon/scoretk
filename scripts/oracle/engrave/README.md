@@ -39,6 +39,9 @@ files and writes SVGs into an unversioned output directory.
      matched pairs, and the mean absolute per-measure width error (a measure
      present on only one side contributes its whole width and fails the
      tolerance);
+   - noteheads that cross the next bar line of their staff (notehead bounding
+     boxes against the bar lines of the same five-line staff), reported on
+     both sides: this is the "notes beyond the barline" defect;
    - measure widths from consecutive bar lines and the per-system measure
      counts (system breaks). Bar lines are grouped by **absolute** y: their
      local y repeats on every system of the page, so grouping by local y

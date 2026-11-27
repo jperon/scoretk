@@ -198,6 +198,21 @@ def parse_svg(path: Path) -> dict:
                     raw_barlines.append((position[1], local[0], local[1]))
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
+    # Absolute notehead boxes and bar-line positions, used by the horizontal
+    # collision check: a head (or an accidental/dot attached to it) that
+    # crosses the next bar line is counted on both sides of the comparison.
+    result["note_boxes_abs"] = []
+    for element in elements:
+        if element.get("class", "") != "Note" or element.tag != SVG + "path":
+            continue
+        box = bbox_of_path(element.get("d", ""))
+        if box is None:
+            continue
+        sx, sy, tx, ty = transform_of(element)
+        result["note_boxes_abs"].append(
+            (sx * box[0] + tx, sy * box[1] + ty, sx * box[2] + tx, sy * box[3] + ty)
+        )
+    result["barlines_abs"] = [(x, y) for y, x, _ in raw_barlines]
     # Lyrics are paths in both SVGs; their bounding box is used to detect
     # collisions with a staff's five-line band (the user-visible defect of
     # step 2). Elements that fail to parse are not silently dropped: the
@@ -323,6 +338,30 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     lyrics_ours = 0
     lyric_hits_ref = 0
     lyric_hits_ours = 0
+    barline_hits_ref = 0
+    barline_hits_ours = 0
+
+    def barline_crossings(parsed: dict) -> int:
+        """Noteheads whose right edge passes the next bar line of their staff.
+
+        Only heads on the same five-line staff as the bar line are compared;
+        a bar line of a grand staff is assigned to its nearest staff system.
+        """
+        spatium = parsed.get("spatium", 1.0)
+        systems = parsed.get("system_boxes", [])
+        bars = parsed.get("barlines_abs", [])
+        hits = 0
+        for nx0, ny0, nx1, ny1 in parsed.get("note_boxes_abs", []):
+            for x0, x1, top in systems:
+                if not (ny1 > top and ny0 < top + 4 * spatium):
+                    continue
+                hits += sum(
+                    1 for bx, by in bars
+                    if abs(by - (top + 2 * spatium)) < 2 * spatium
+                    and bx >= (nx0 + nx1) / 2 - spatium / 2
+                    and bx < nx1 - spatium / 4
+                )
+        return hits
 
     def lyric_collisions(parsed: dict) -> tuple[int, int]:
         """(number of lyric glyphs, number intersecting a staff band)."""
@@ -343,6 +382,9 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         nonlocal gap_total, gap_within, gap_error, gap_matched
         nonlocal gap_ref_sum, gap_ours_sum, overlaps_ref, overlaps_ours
         nonlocal lyrics_ref, lyrics_ours, lyric_hits_ref, lyric_hits_ours
+        nonlocal barline_hits_ref, barline_hits_ours
+        barline_hits_ref += barline_crossings(ref)
+        barline_hits_ours += barline_crossings(our)
         ref_lyrics, ref_hits = lyric_collisions(ref)
         our_lyrics, our_hits = lyric_collisions(our)
         lyrics_ref += ref_lyrics
@@ -408,6 +450,8 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "lyrics_ours": lyrics_ours,
         "lyric_hits_ref": lyric_hits_ref,
         "lyric_hits_ours": lyric_hits_ours,
+        "barline_hits_ref": barline_hits_ref,
+        "barline_hits_ours": barline_hits_ours,
     }
 
 
@@ -529,6 +573,7 @@ def main() -> int:
         "overlaps_ref": 0, "overlaps_ours": 0,
         "lyrics_ref": 0, "lyrics_ours": 0,
         "lyric_hits_ref": 0, "lyric_hits_ours": 0,
+        "barline_hits_ref": 0, "barline_hits_ours": 0,
     }
     for source in corpus:
         if not source.strip():
@@ -597,6 +642,8 @@ def main() -> int:
         totals["lyrics_ours"] += page_values["lyrics_ours"]
         totals["lyric_hits_ref"] += page_values["lyric_hits_ref"]
         totals["lyric_hits_ours"] += page_values["lyric_hits_ours"]
+        totals["barline_hits_ref"] += page_values["barline_hits_ref"]
+        totals["barline_hits_ours"] += page_values["barline_hits_ours"]
         rows.append(row)
 
     (out / "raw.jsonl").write_text(
@@ -664,6 +711,8 @@ def main() -> int:
         f"{totals['lyrics_ref']} / {totals['lyrics_ours']} |",
         f"| Lyric glyphs overlapping a staff (reference / ours) | "
         f"{totals['lyric_hits_ref']} / {totals['lyric_hits_ours']} |",
+        f"| Noteheads crossing a bar line (reference / ours) | "
+        f"{totals['barline_hits_ref']} / {totals['barline_hits_ours']} |",
         "",
         "## Failures",
         "",

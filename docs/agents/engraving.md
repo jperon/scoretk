@@ -1587,6 +1587,43 @@ is reported, not excluded. The oracle script and its README document the new
 columns. The private score's before/after/reference page-1 PNGs are in
 `engrave-img/eng9`; the page count is still measured separately in §15.4.
 
+### 15.2 Notes beyond the bar line (2026-11-27)
+
+The private score's measures 3, 7 and 11 had chords drawn through an end bar
+line. The cause was not `barNoteDistance`: the earlier attempt to add that
+padding to every segment was reverted because it inflated all measure widths.
+The actual cause is shape geometry that the atom width did not contain:
+
+- `ChordLayout::layoutChords2` (`chordlayout.cpp:2309-2410`) mirrors a note on
+  the same or adjacent line, extending the chord one head width to the left
+  (up stem) or right (down stem). A chord of seconds starting a measure
+  therefore reached back onto its bar line. `compute_staff` now reserves one
+  head width before the first chord with seconds and one after the last.
+- `calculateChordOffsets` (`chordlayout.cpp:1887-2130`) shifts a colliding
+  voice's head right; `fillShape` (`:3283-3298, 3352-3469`) records the shifted
+  head. The segment now grows by the largest collision offset, so a shifted
+  final head stays inside its measure.
+
+A bbox unit test asserts that a shifted voice head clears the bar line; the
+oracle gained a "noteheads crossing a bar line" column (notehead boxes against
+the bar lines of the same five-line staff), reported on both sides. On the
+private score's page 1 the two full-head-width crossings disappear (4 → 3
+crossings, the three remaining ones overlapping by at most 0.03 sp except one
+1.27 sp case at the first organ measure); the corpus oracle has none.
+
+| Metric | Step 1 | After step 2 |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 490 | 0 / 2 490 |
+| Within 0.1 sp, both axes | 0.1486 (370/2 490) | 0.1478 (368/2 490) |
+| Note x within 0.1 sp | 172/2 490 | 171/2 490 |
+| Note x mean abs. error, sp | 2.716 | 2.713 |
+| Measure widths within 0.1 sp | 66/394 | 66/394 |
+| Measure width mean abs. error, sp | 8.857 | 8.857 |
+| Files with identical system breaks | 37/56 | 37/56 |
+| Pages with identical system breaks | 48/59 | 48/59 |
+
+The two lost element matches are reported, not excluded: this step trades a
+small corpus regression for removing the visible private-score collision.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

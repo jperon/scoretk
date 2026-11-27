@@ -1126,6 +1126,16 @@ fn bar_code(kind: BarLineType) -> BarCode {
 
 /// Note atoms of one chord, with the written pitch (transposed back to the
 /// written spelling) and the SMuFL head for its duration.
+/// Whether a chord has notes on the same or adjacent lines: `layoutChords2`
+/// (`chordlayout.cpp:2309-2410`) mirrors such a head to the other side of the
+/// stem, extending its shape by one head width.
+fn has_seconds(notes: &[NoteAtom]) -> bool {
+    notes
+        .iter()
+        .zip(notes.iter().skip(1))
+        .any(|(previous, note)| (note.line - previous.line).abs() <= 1)
+}
+
 fn note_atoms(
     chord: &scoretk_core::model::Chord,
     score: &Score,
@@ -1385,11 +1395,58 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         };
         let measure_origin = system_x;
         let first = atoms.is_empty();
+        // The first chord's shape can extend one head width to the left when
+        // `layoutChords2` mirrors a second (`chordlayout.cpp:2309-2410`);
+        // `barNoteDistance` alone would put that head on the bar line.
+        let first_seconds = measure
+            .segments
+            .iter()
+            .find(|segment| segment.kind == SegmentType::ChordRest)
+            .and_then(|segment| {
+                segment
+                    .iter_elements()
+                    .filter(|(track, _)| track.staff().index() == staff_index)
+                    .find_map(|(_, item)| match item {
+                        SegmentItem::ChordRest(cr) => match &cr.kind {
+                            ChordRestKind::Chord(chord) => Some((chord, cr.duration.kind)),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+            })
+            .is_some_and(|(chord, duration)| {
+                has_seconds(&note_atoms(chord, score, duration, bottom, inverse))
+            });
         let mut x = if first {
             bar_note_distance.max(SYSTEM_HEADER_MIN_START)
         } else {
             bar_note_distance
         };
+        if first_seconds {
+            x += glyph_width("noteheadBlack");
+        }
+        // The same mirrored second at a measure's last chord extends its
+        // shape one head width to the right when the chord has a down stem.
+        let last_seconds = measure
+            .segments
+            .iter()
+            .rev()
+            .find(|segment| segment.kind == SegmentType::ChordRest)
+            .and_then(|segment| {
+                segment
+                    .iter_elements()
+                    .filter(|(track, _)| track.staff().index() == staff_index)
+                    .find_map(|(_, item)| match item {
+                        SegmentItem::ChordRest(cr) => match &cr.kind {
+                            ChordRestKind::Chord(chord) => Some((chord, cr.duration.kind)),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+            })
+            .is_some_and(|(chord, duration)| {
+                has_seconds(&note_atoms(chord, score, duration, bottom, inverse))
+            });
         let mut events = Vec::new();
         let mut spring = 0;
         let mut has_clef = false;
@@ -1433,6 +1490,10 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
         let mut min_extra = 0;
+        let last_cr_segment = measure
+            .segments
+            .iter()
+            .rposition(|segment| segment.kind == SegmentType::ChordRest);
         let mut segment_bases = Vec::with_capacity(measure.segments.len());
         // Previous chord/rest of each voice in this measure: `baseBeamMode`
         // compares its duration with the current one (`groups.cpp:107-125`).
@@ -1579,6 +1640,9 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         min_width += cr.duration.dots as i32
                             * (glyph_width("augmentationDot")
                                 + (style.dot_note_distance_sp * SP as f64) as i32);
+                    }
+                    if last_seconds && last_cr_segment == Some(segment_number) {
+                        min_width += glyph_width("noteheadBlack");
                     }
                     segment_width = (QUARTER_NOTE_SPACE * stretch
                         / ((style.spacing_density * SP as f64) as i32).max(1))
@@ -1791,9 +1855,17 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     }
                 }
                 let info: alloc::vec::Vec<_> = colliding.iter().map(|&(_, chord)| chord).collect();
+                let mut shape_offset = 0;
                 for ((index, _), offset) in colliding.iter().zip(voice_collision_offsets(&info)) {
                     if offset != 0 {
                         events[*index].x += offset;
+                        // `ChordLayout::fillShape` (`chordlayout.cpp:3283-3298,
+                        // 3352-3469`) stores the *offset* head in the segment
+                        // shape. Widening the segment by the same offset keeps
+                        // the shifted head (and its dot) inside the measure;
+                        // otherwise the last chord of measures 3, 7 and 11 of
+                        // the private score was drawn through the bar line.
+                        shape_offset = shape_offset.max(offset);
                     }
                 }
                 // One spring per segment, as `justifySystem` collects one
@@ -1804,7 +1876,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                 } else {
                     seg_stretch
                 };
-                x += segment_width;
+                x += segment_width + shape_offset;
                 continue;
             }
 
@@ -2010,6 +2082,47 @@ mod tests {
         assert_eq!(
             lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, SP / 4),
             2 * SP + SP / 4
+        );
+    }
+
+    #[test]
+    fn a_shifted_voice_head_stays_inside_its_measure() {
+        // Two voices on one staff with the same note: `calculateChordOffsets`
+        // (`chordlayout.cpp:1887-2130`) shifts one head to the right. The
+        // segment width must grow by that offset, otherwise the head crosses
+        // the end bar line.
+        use scoretk_core::model::{
+            Chord, ChordRest, Duration, Fraction, Measure, Note, Part, Score, Segment, SegmentItem,
+            SegmentType, Staff, Track,
+        };
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("Piano", "Pno."));
+        let staff = score.add_staff_with(part, Staff::new(part));
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(1, 1));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        for voice in 0..2 {
+            let note = score.add_note(Note::new(67, 14));
+            let mut chord = Chord::default();
+            chord.notes.push(note);
+            let mut rest = ChordRest::chord(Duration::quarter());
+            rest.kind = scoretk_core::model::ChordRestKind::Chord(chord);
+            segment.set_element(Track::new(staff, voice), SegmentItem::ChordRest(rest));
+        }
+        measure.add_segment(segment);
+        score.add_measure(measure);
+        let atoms = compute_staff(&score, 0);
+        let atom = &atoms[0];
+        let right = atom
+            .events
+            .iter()
+            .filter(|event| event.kind == AtomKind::Chord)
+            .map(|event| event.x + glyph_width("noteheadBlack"))
+            .max()
+            .unwrap();
+        assert!(
+            right <= atom.width,
+            "a voice-collision head at {right} must clear the bar line at {}",
+            atom.width
         );
     }
 
