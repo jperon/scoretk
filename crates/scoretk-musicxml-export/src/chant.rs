@@ -344,12 +344,18 @@ fn smufl_signs(sign: &NeumeSign) -> Vec<&'static str> {
 /// Séquence SMuFL complète d'une note chantée : le nom de tête, puis un nom
 /// par signe de son glyphe, dans l'ordre exact du source (`Gabc.tex:452-797`).
 fn smufl_neumes(note: &GregorianNote) -> Vec<&'static str> {
-    let mut names = Vec::new();
+    // La tête porte la position exacte sur la portée : `chantPunctum` est le
+    // punctum quadratum (lettre minuscule du GABC), `chantPunctumInclinatum`
+    // le punctum inclinatum (lettre majuscule, `Gabc.tex:452-468`). Clé + tête
+    // + hauteur restaurent donc la lettre source, comme le demande
+    // `musicxml-4.0.xsd` `clef`/`staff-lines`/`pitch/step`.
+    let mut names = vec![if note.letter.is_ascii_uppercase() {
+        "chantPunctumInclinatum"
+    } else {
+        "chantPunctum"
+    }];
     for sign in &note.signs {
         names.extend(smufl_signs(sign));
-    }
-    if names.is_empty() {
-        names.push("chantPunctum");
     }
     names
 }
