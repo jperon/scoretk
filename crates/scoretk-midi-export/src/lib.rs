@@ -53,6 +53,7 @@ mod ornaments;
 mod pause_map;
 mod render;
 pub mod repeat_list;
+mod smf_canonical;
 mod smf_text;
 pub mod timemap;
 mod velocity;
@@ -148,13 +149,19 @@ fn write_midi_impl(
     } else {
         RepeatList::flatten(score)
     };
-    let rendered = render::render(
+    let mut rendered = render::render(
         score,
         &repeat_list,
         capture,
         options.smf_text,
         options.full_support,
     )?;
+    // Full support writes one canonical Note On/Off pair per attack: no
+    // velocity-0 restrike, no duplicate attack at one tick. Default bytes stay
+    // byte-identical to MuseScore 4.7.4 (the option is off by default).
+    if options.full_support {
+        smf_canonical::canonicalize_notes(&mut rendered.performance);
+    }
     let bytes = writer::write_smf(&rendered.performance)?;
     Ok((bytes, rendered.timemap))
 }

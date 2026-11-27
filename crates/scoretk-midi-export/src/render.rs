@@ -381,7 +381,14 @@ pub(crate) fn render(
                     .map_or(last_end, |(next_utick, _, _)| *next_utick);
                 let duration = (next - utick).max(1);
                 let on = pause_map.tick_with_pauses(*utick);
-                let off = pause_map.tick_with_pauses(*utick + duration);
+                let mut off = pause_map.tick_with_pauses(*utick + duration);
+                // `renderHarmony` writes its note-off at the symbol's end,
+                // while written notes use the `end - 1` convention. Full
+                // support uses the same convention for every note so the
+                // format carries one unambiguous played duration.
+                if full_support && off > on {
+                    off -= 1;
+                }
                 for key in pitches {
                     track.events.push(Event {
                         tick: on,

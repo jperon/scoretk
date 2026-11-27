@@ -378,6 +378,21 @@ the private prefixes are confined to the secondary `smf_text` mode and to its
 interoperability row in `midi_smf_capacity.rs` (staff/system text 0 %, title
 50 % once stripped).
 
+### Full-support campaign, per kind (2026-11-27)
+
+All fixes are opt-in (`MidiOptions::full_support` / `ImportOptions::full_support`),
+so the default bytes stay byte-identical to the 21 `*.ref.mid` references.
+No comparator key was relaxed and no declared kind left the denominator.
+
+| Kind | Before | After | Standard carrier and change |
+| --- | ---: | ---: | --- |
+| `note` | 46 / 2 284 | 5 / 2 284 | `[MIDI §Channel Voice; Table II]` Note On/Off. `smf_canonical.rs` writes one attack per `(channel, pitch, tick)` and a real Note Off at the played end minus one tick; restrikes and duplicate Note On are removed. Harmony notes (`render.rs`) use the same `end-1` convention. The five remaining items are the harmony-channel cause counted under `channel`. |
+
+Default bytes: `MIDI : 21/21 identiques` after the change. The `note` row of
+`midi_full_support_capacity_line` went from 2 238/2 284 (97.99 %) to
+2 279/2 284 (99.78 %, five notes still paired with the wrong channel); the
+headline rose from **98.23 %** to **99.68 %**.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)
