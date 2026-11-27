@@ -208,7 +208,7 @@ Two profiles share the same source tree:
 
 | Profile | Settings | Used by |
 | --- | --- | --- |
-| `release` | `lto = "thin"`, `codegen-units = 16`, `opt-level = 3` | host CLI (`nix build .#scoretk`, `nix run .`) and the native release archives |
+| `release` | `lto = false`, `codegen-units = 16`, `opt-level = 1` | host CLI (`nix build .#scoretk`, `nix run .`) and the native release archives |
 | `wasm` | inherits `release`, then `lto = true`, `codegen-units = 1`, `opt-level = "z"` | `nix build .#wasm`, `wasmCargoArtifacts`, `wasm32Build` and the `wasm32-unknown-unknown` check |
 
 The wasm derivations set `CARGO_PROFILE = "wasm"` and read the cdylib from
@@ -217,6 +217,45 @@ the former `release` profile, so the browser binary is byte-identical to the
 one built before the split. `packages.default` is an alias of
 `packages.scoretk`; with `doCheck = false` the CLI derivation no longer
 replays the test suite (`checks.tests` remains the place where it runs).
+
+#### Host profile measurement (2026-11-27)
+
+Goal: minimise the wall time of `nix build .#scoretk` after a one-crate change,
+not runtime. Each run appended a comment to
+`crates/scoretk-abc-export/src/lib.rs` (a new source path for crane) and ran
+`nice -n 10 nix build .#scoretk --no-link --max-jobs 1 --cores 2` with
+`CARGO_BUILD_JOBS = 2`, `nproc = 6`, load average 3.4–7.5 during the measured
+runs, in the order **A B C D A B C D**, then a confirmation pass **D C B A**.
+Variants (load average at the start → end of each run, 1-minute value):
+
+| Variant | `[profile.release]` | Steady-state runs (s) | Load (start → end) | Mean (s) |
+| --- | --- | --- | --- | --- |
+| A (former) | `lto = true`, `opt-level = "z"`, `codegen-units = 1` | 86.9 / 117.8 | 4.60 → 4.16 / 5.33 → 5.30 | 102.3 |
+| B (first split) | `lto = "thin"`, `opt-level = 3`, `codegen-units = 16` | 178.7 / 124.8 | 4.16 → 7.48 / 5.81 → 5.33 | 151.8 |
+| C | `lto = false`, `opt-level = 2`, `codegen-units = 16` | 112.7 / 126.2 | 7.48 → 5.50 / 5.88 → 5.81 | 119.4 |
+| **D (kept)** | `lto = false`, `opt-level = 1`, `codegen-units = 16` | **77.1 / 102.7** | 5.50 → 4.33 / 3.36 → 5.88 | **89.9** |
+
+The first run of each variant had to build a new `cargoArtifacts` set:
+482 s (A), 175 s (B, artefacts already warm from the setup runs), 291 s (C)
+and 751 s (D, load-peaked at 10 min for `buildDepsOnly`). This one-off cost is
+not the day-to-day loop. D is the fastest of the four steady-state variants,
+including in the reverse-order confirmation pass, and is kept.
+
+Crane's `buildDepsOnly` artefacts are keyed by `Cargo.toml`, not by the Rust
+sources: the same store path was reused for runs M1/M5 (A:
+`3yj284cc…`), M2/M6 (B: `3kk7psnp…`), M3/M7 (C: `dikpb6n3…`) and
+M4/M8 (D: `2hy3srbm…`) even though a `.rs` file changed between them.
+Changing the profile settings replaces that path and forces a *single* deps
+rebuild. There is no `CARGO_PROFILE` mismatch on the host side: both
+`cargoArtifacts` and `packages.scoretk` use the default `release` profile;
+the wasm side sets `CARGO_PROFILE = "wasm"` consistently on both its artefacts
+and its build.
+
+For information, runtime is not the selection criterion: 20 alternating
+conversions of the largest v4 score (`voiceswitching.mscx`, 30 868 bytes)
+took on average 7.7 ms with A and 6.8 ms with D, with byte-identical MusicXML
+output (SHA-256 `c39effc0…`). The D binary is larger (11 200 312 vs
+5 861 960 bytes) because it is not LTO-linked.
 
 `nix flake check` works offline (crane vendors the crates from
 `Cargo.lock`, `CARGO_NET_OFFLINE`): any dependency change requires an up-to-date

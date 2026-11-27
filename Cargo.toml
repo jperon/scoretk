@@ -49,11 +49,12 @@ quick-xml = "0.42"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
-# Host CLI and libraries: optimise for build time and runtime speed.
-# The browser package has its own size-oriented profile below.
+# Host CLI and libraries: optimise for build time (measured on 2026-11-27;
+# see docs/agents/developpement.md, "Cargo profiles"). Runtime cost is
+# negligible on the corpus; the browser package has its own profile below.
 [profile.release]
-lto = "thin"
-opt-level = 3
+lto = false
+opt-level = 1
 codegen-units = 16
 
 # Identical to the former release profile: the wasm binary is downloaded by

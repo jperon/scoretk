@@ -862,7 +862,7 @@ no conversion code (`crates/*/src`) was modified. Package built by
 (`./target/release/scoretk`, at that time the same size-tuned `release`
 profile: `opt-level = "z"`, `lto = true`, `codegen-units = 1`). Since
 2026-11-27 the host `release` profile is tuned for build speed
-(`lto = "thin"`, `codegen-units = 16`, `opt-level = 3`) and the wasm package
+(`lto = false`, `codegen-units = 16`, `opt-level = 1`) and the wasm package
 uses `[profile.wasm]`; these native timings are historical and not directly
 comparable with a new native build.
 

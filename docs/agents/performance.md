@@ -47,7 +47,7 @@ Settings: 20 samples, 1 s warm-up, 3 s measurement per data point,
 the campaign the `bench` profile inherited from `[profile.release]`
 (`opt-level = "z"`, `lto = true`, `codegen-units = 1`): the figures apply to
 the delivered binaries, not to a `debug` build. Since 2026-11-27 the host
-`release` profile is `lto = "thin"`, `codegen-units = 16`, `opt-level = 3`
+`release` profile is `lto = false`, `codegen-units = 16`, `opt-level = 1`
 (which `bench` now inherits), while the size settings remain in
 `[profile.wasm]`; these figures are historical, not a new baseline.
 

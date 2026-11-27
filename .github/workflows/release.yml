@@ -109,8 +109,8 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      # Native CLI release uses the host [profile.release] (lto = "thin",
-      # codegen-units = 16, opt-level = 3). This does not affect cross builds:
+      # Native CLI release uses the host [profile.release] (lto = false,
+      # codegen-units = 16, opt-level = 1). This does not affect cross builds:
       # the musl, macOS and Windows binaries all share the same profile.
       - name: Build the CLI
         env:
