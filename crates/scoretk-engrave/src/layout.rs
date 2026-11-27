@@ -2238,7 +2238,10 @@ mod tests {
                 panic!("stem must be a rectangle");
             };
             assert!(h > 0, "both voices must keep visible stems");
-            assert!(y < spec.margin_top + 8 * HALF_SP, "up stems start above the head");
+            assert!(
+                y < spec.margin_top + 8 * HALF_SP,
+                "up stems start above the head"
+            );
         }
     }
 
