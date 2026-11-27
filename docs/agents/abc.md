@@ -4239,27 +4239,31 @@ never inspects the chant marker. With `Options::abc_gregorian` / the CLI flag
 
 | GABC fact | ABC 2.1 carrier | Spec clause |
 | --- | --- | --- |
-| header field | `N:<name>=<value>`, one field per fact | §3.1.11 (notes) |
-| clef, dialect marker | `I:clef=<token>`, `I:chant=gregorian` | §3.1 (instruction fields) |
+| title | `T:<value>` | §3.1 (information fields) |
+| clef | `K:C clef=C3` (native clef parameter, `c3` → `C3`) | §4.6 (clef) |
+| dialect marker | `I:chant=gregorian` (marker, not a source fact) | §3.1 |
 | neume glyph characters | `!quilisma!`, `!spacing!`, `!virga!`, … one decoration per character | §4.14 (decorations) |
 | mora, ictus, episema, quilisma | `U: H = !fermata!`, `U: L = !accent!`, `U: M = !tenuto!`, `U: P = !uppermordent!`, written as `H`, `L`, `M`, `P` | §4.16 (redefinable symbols) |
-| syllable text and `<sp>`/`<sc>` markup | `"^text: <value>"` | §4.19 (annotations) |
-| bracketed attributes, `alt:` text | `"^attribute: <value>"`, `"^above: <value>"` | §4.19 |
-| separation bar, clef change, group sign | `"^bar: <value>"`, `"^clef: <value>"`, `"^sign: <value>"` | §4.19 |
+| syllable text | `w: <syllable>` after the music line, `_` per extra note | §5 (lyrics), §2.1.3 |
+| separation bar | `\|`, `\|\|`, `[\|`, `::` (one bar symbol per GABC bar) | §4.8 |
 | custos | `!custos!`, `!custos-up!`, `!custos-zero!` | §4.14 |
 
-The decoration names are human-readable neume and sign names, not encoded
-payloads. No `gabc`-prefixed token and no hexadecimal string is written: the
-oracle `scripts/oracle/gabc/full_support.py` rejects any such residue in the
-measured output. Unknown glyph characters use a readable `"^glyph: <char>"`
-annotation, never a code.
+A `key: <raw GABC token>` annotation is a **dump**, not a carrier: no ABC tool
+reads `"^text: …"` or `"^glyph: …"` as a fact, and it prints over the notes.
+The writer emits none, and the reader ignores them. The same applies to
+`N:<name>=<value>` copies of source headers and to `I:clef=<token>`; the clef
+is instead carried by the standard `clef=` parameter of `K:`. Unknown glyph
+characters have no ABC decoration and are counted as defects, not copied into
+an annotation. `scripts/oracle/gabc/full_support.py` removes every such dump
+before measurement and fails loudly if one remains in the measured output.
 
-### 59.2 Measured result
+### 59.2 Honest measured result (review correction, §26 of `gabc.md`)
 
-On the 261-file GABC lot (nine Gregorio examples and 252 GregoBase files),
-with `--abc-gregorian` enabled on both the write and the return conversion,
-the standard-carrier figure rises from **87.06 %** (83 187 / 104 555) to
-**99.59 %** (109 292 / 109 738). Remaining defects: `pitch` 416, `glyph` 16,
-`custos` 10, `attribute` 2, `clef` 1, `text` 1; the inherent denominator is
-unchanged (4 319). No default `.abc` output changed: `e2e_corpus` 8/8, the ABC
-import/export snapshots and `gabc_standard_carriers` 3/3 pass.
+On the 261-file GABC lot, with `--abc-gregorian` on both sides, the figure is
+**98.07 %** (107 564 / 109 676; raw 94.31 %). The rejected `"^text:"`/`"^glyph:"`
+figure was 99.59 %. Defects: `header` 783, `pitch` 416, `attribute` 332,
+`rubric` 301, `glyph` 227, `text` 24, `custos` 21, `clef` 8. Native bar symbols
+(§4.8) now carry 2 481 more `bar` facts than the earlier honest run. The
+inherent denominator is unchanged (4 381). No default `.abc` output changed:
+455/455 default conversions match `master`, `e2e_corpus` 8/8, the ABC snapshots
+and `gabc_standard_carriers` 3/3 pass.

@@ -22,10 +22,19 @@ The reference inventory is read from the *canonical GABC* produced by
 scoretk itself from each source (the 261 full files are byte-identical on the
 current tree, see `roundtrip_bytes.py`). The same reader is applied to the GABC
 obtained by `source -> destination -> GABC`, so a fact is counted as carried
-only when a consumer of the destination can reconstruct it. Private carriers
-(`gabc:` fields in MusicXML, `gabc:layout:` / `gabc:detail:` MEI labels and
-`<annot type="gabc-*">`) are removed before the return conversion: they cannot
-be part of the headline figure.
+only when a consumer of the destination can reconstruct it.
+
+A `key: <raw GABC token>` label is a dump of the source, **not** a carrier: no
+other tool gives it a meaning, and in ABC/LilyPond it prints over the notes.
+The same holds for any `gabc` substring in a carrier, for a `N:key=value` /
+`I:clef=` copy of a source field and for an empty annotation. All of them are
+removed before the return conversion and counted as **not carried**. The
+instrument then fails loudly if any of them survives in the measured output:
+a residual private carrier would pad the figure.
+
+Native carriers (ABC `w:`, LilyPond `\\lyricsto`, MusicXML `<lyric>`, SMuFL
+`other-notation/@smufl`, gregorian.ly commands, MEI NEUMES) are deliberately
+kept: they are part of the destination specification.
 
 A loss is **inherent** only when the destination's specification has no
 carrier for that kind and a citation is recorded in `INHERENT`. A loss with no
@@ -377,7 +386,11 @@ def inherent_citation(destination: str, kind: str, value: str) -> str | None:
 # Rows RECLASSIFIED from "inherent" to defect after the spec audit. A row is
 # inherent only if the destination specification has no carrier; "our writer
 # does not use it" is a defect of the writer, not a limit of the format.
-# Kept here as an audit trail and printed with every report.
+# Kept here as an audit trail and printed with every report. A cited carrier
+# must be a *meaningful* one: a `key: <raw GABC token>` label is not a carrier
+# even when its syntax (xs:string, quoted annotation) is standard (review).
+# In particular ABC `"^…"` annotations and MusicXML `other-technical` are not
+# used as GABC dumps; the corresponding facts stay in the defect count.
 RECLASSIFIED: dict[str, dict[str, str]] = {
     "musicxml": {
         "letter": "musicxml-4.0.xsd `complexType clef` (:2930), `staff-lines` (:3136) and `pitch/step` (:5160): clef + pitch give the staff position",
@@ -461,85 +474,102 @@ INHERENT: dict[str, dict[str, str]] = {
 }
 
 
-def strip_private(destination: str, data: bytes) -> bytes:
-    """Remove every private carrier before measuring the return conversion."""
-    if destination == "musicxml":
-        text = data.decode("utf-8")
-        out: list[str] = []
-        rest = text
-        while "gabc:" in rest:
-            at = rest.index("gabc:")
-            open_at = rest.rfind("<", 0, at)
-            if open_at < 0:
-                break
-            tag = rest[open_at + 1:]
-            name_end = len(tag)
-            for index, char in enumerate(tag):
-                if char.isspace() or char == ">":
-                    name_end = index
-                    break
-            name = tag[:name_end]
-            close = f"</{name}>"
-            end = rest.find(close, at)
-            if end < 0:
-                break
-            out.append(rest[:open_at])
-            rest = rest[end + len(close):]
-        out.append(rest)
-        return "".join(out).encode("utf-8")
-    if destination == "mei":
-        text = data.decode("utf-8")
-        text = re.sub(r"\s*<annot type=\"gabc-[^\"]*\"[^>]*>.*?</annot>", "", text, flags=re.S)
-        text = re.sub(r"\s*<annot type=\"gabc-[^\"]*\"[^>]*/>", "", text)
-        text = re.sub(r" label=\"(?:gabc:layout:|layout:)[^\"]*\"", "", text)
-        return text.encode("utf-8")
-    return data
-
-
-# Un fait n'est porté que par le vocabulaire *signifiant* de la destination.
-# Une chaîne hexadécimale ou un jeton préfixé `gabc` glissé dans une syntaxe
-# standard (`"^gT…"` ABC, `I:gabc-prefix`, `^"…"` LilyPond, xs:string libre)
-# reste un porteur privé : aucun autre outil ne le comprend et il s'imprime
-# comme du texte visible. Ces motifs sont donc rejetés dans la sortie mesurée,
-# après retrait des porteurs privés historiques déjà exclus (`strip_private`).
-GABC_MARKER = re.compile(
-    r"(?i)\bgabc:(?:prefix|clef|detail|layout|header|note|g[gsactb]|t|b|a|s|c)\b"
-    r"|\bgabc-(?:prefix|clef|detail|layout|header|note|g[gsactb])\b")
+# Étiquettes dont la valeur est un jeton GABC brut. Quel que soit le porteur
+# syntaxique (``other-technical``, annotation ABC/LilyPond, ``<annot>`` MEI),
+# elles sont un vidage de la source et non un fait transporté. Les noms de
+# neumes (« virga », SMuFL ``chantQuilisma``, commandes gregorian.ly) ne
+# figurent pas ici : ce sont des porteurs significatifs, ils sont conservés.
+DUMP_LABELS = (
+    "letter", "glyph", "syllable-text", "text", "attribute", "above",
+    "sign", "bar", "clef", "custos", "header", "layout", "note", "syllable",
+)
+LABEL_RE = re.compile(
+    r"(?i)(?<![A-Za-z])(?:" + "|".join(DUMP_LABELS) + r"):\s")
+GABC_RE = re.compile(r"(?i)gabc")
+XML_ELEMENT_RE = re.compile(r"<([A-Za-z][\w:-]*)([^>]*)>([^<]*)</\1>")
+XML_ATTR_RE = re.compile(r'\s+(?:label|name|type|value)="[^"]*gabc[^"]*"', re.I)
+ABC_ANNOTATION_RE = re.compile(r'"\^(?:' + "|".join(DUMP_LABELS) + r'):[^"\n]*"|""', re.I)
+LY_ANNOTATION_RE = re.compile(r'\^"(?:(?:' + "|".join(DUMP_LABELS) + r'):[^"\n]*|)"', re.I)
 HEX_RUN = re.compile(r"(?<![0-9A-Za-z])[0-9a-fA-F]{16,}(?![0-9A-Za-z])")
-# Décorations et annotations ABC/LilyPond dont le contenu n'est qu'un code
-# hexadécimal (éventuellement précédé d'une lettre de préfixe privé).
 HEX_DECORATION = re.compile(r"![^!\n]*!")
 HEX_ANNOTATION = re.compile(r'"[\^_<>@][^"\n]*"')
+
+
+def strip_xml_carriers(text: str) -> str:
+    """Supprime les éléments dont le *texte* est un vidage, et les attributs privés.
+
+    Only the attribute is removed from elements such as `<syl label="gabc:…">`:
+    the element itself is a standard carrier (the lyric text) and must stay.
+    """
+    def replace(match: re.Match[str]) -> str:
+        tag, attributes, content = match.groups()
+        if GABC_RE.search(content) or LABEL_RE.search(content):
+            return ""
+        return match.group(0)
+    cleaned = re.sub(
+        r'\s*<annot[^>]*type="gabc-[^"]*"[^>]*>.*?</annot>', "", text, flags=re.S)
+    cleaned = re.sub(r'\s*<annot[^>]*type="gabc-[^"]*"[^>]*/>', "", cleaned)
+    cleaned = XML_ELEMENT_RE.sub(replace, cleaned)
+    return XML_ATTR_RE.sub("", cleaned)
+
+
+def strip_private(destination: str, data: bytes) -> bytes:
+    """Ignored dump carriers: removed and counted as not carried.
+
+    Everything removed here is a copy of the source under a generic syntax
+    (``key: value``, ``gabc`` prefix, empty annotation).  Nothing in the
+    destination specification gives it a meaning, so it cannot be a carrier.
+    """
+    if destination in ("musicxml", "mei"):
+        text = data.decode("utf-8", "replace")
+        text = strip_xml_carriers(text)
+        return text.encode("utf-8")
+    if destination == "abc":
+        text = data.decode("utf-8", "replace")
+        text = ABC_ANNOTATION_RE.sub("", text)
+        # Copies of GABC header/clef fields under generic ABC information
+        # fields (§3.1) are dumps too, unlike a native `K:… clef=C3`.
+        text = re.sub(r"(?m)^N:[^:=\n]+=[^\n]*\n?", "", text)
+        text = re.sub(r"(?m)^I:clef=[^\n]*\n?", "", text)
+        return text.encode("utf-8")
+    if destination == "ly":
+        text = data.decode("utf-8", "replace")
+        text = LY_ANNOTATION_RE.sub("", text)
+        text = re.sub(r'(?m)^\s*(?:chantHeader|gabcHeader)[A-Z]*\s*=\s*"[^\n]*"\n?', "", text)
+        return text.encode("utf-8")
+    return data
 
 
 def private_payload(destination: str, data: bytes) -> str | None:
     """Décrit un porteur privé résiduel dans la sortie mesurée, ou ``None``.
 
     L'instrument examine la sortie *mesurée*, c'est-à-dire après
-    [`strip_private`] : les annotations MEI `gabc-*` et les champs MusicXML
-    `gabc:` historiques sont déjà retirés et ne sont pas des faits comptés.
-    Tout autre résidu est une erreur de mesure : il ne peut pas entrer dans
-    le numérateur du taux de portage.
+    [`strip_private`] : tout vidage de la source y a été retiré et n'entre pas
+    dans le numérateur. Un résidu est une erreur de mesure : il modifierait le
+    taux de portage ou salirait la sortie d'un lecteur conforme.
     """
     if destination == "midi":
         return None  # flux SMF binaire, sans texte mesurable
     text = data.decode("utf-8", "replace")
-    found = GABC_MARKER.search(text)
+    found = GABC_RE.search(text)
     if found:
-        return f"préfixe gabc → {found.group(0)[:48]!r}"
-    # En ABC, `C2D2E2…` est une suite de hauteurs et de durées, pas un code :
-    # seules les décorations et annotations sont examinées plus bas.
-    if destination != "abc":
-        found = HEX_RUN.search(text)
-        if found:
-            return f"chaîne hexadécimale → {found.group(0)[:48]!r}"
+        return f"préfixe gabc → {text[max(0, found.start() - 16):found.start() + 32]!r}"
+    found = LABEL_RE.search(text)
+    if found:
+        return f"étiquette de vidage → {found.group(0)[:48]!r}"
     if destination in ("abc", "ly"):
+        if destination == "abc" and '""' in text:
+            return "annotation ABC vide"
+        if destination == "ly" and '^""' in text:
+            return "annotation LilyPond vide"
         patterns = (HEX_DECORATION, HEX_ANNOTATION) if destination == "abc" else (HEX_ANNOTATION,)
         for pattern in patterns:
             for found in pattern.finditer(text):
                 content = found.group(0).strip("!\"").lstrip("^_<>@")
                 if re.fullmatch(r"[A-Za-z]{0,2}[0-9a-fA-F]{2,}", content):
                     return f"code hexadécimal dans {found.group(0)[:48]!r}"
+    elif HEX_RUN.search(text):
+        return f"chaîne hexadécimale → {HEX_RUN.search(text).group(0)[:48]!r}"
     return None
 
 

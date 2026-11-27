@@ -26,7 +26,6 @@
 //! MEI 5.1 : <https://music-encoding.org>. Les valeurs `@type` préfixées par
 //! `mscore-` sont des extensions de MuseScore, pas du MEI standard.
 
-pub mod chant_labels;
 pub mod convert;
 pub mod error;
 pub mod gabc_layout;

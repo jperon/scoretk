@@ -31,10 +31,10 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, NeumeSign, NoteAttribute, Score,
-    SignKind, Syllable,
+    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, NeumeSign, Score, SignKind,
+    Syllable,
 };
-use scoretk_mei_common::{chant_labels, neumes, Error};
+use scoretk_mei_common::{neumes, Error};
 use scoretk_xml_common::Element;
 
 /// Lit un document MEI 5.1 dont la partition contient des neumes.
@@ -132,17 +132,6 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         let note_anotts = syllable_annot(syllable_node, neumes::NOTE_ANNOT)
             .filter_map(|annot| Some((annot.attribute("n")?.parse::<usize>().ok()?, annot)))
             .collect::<BTreeMap<_, _>>();
-        // Annotations lisibles écrites en mode `full_support` : elles portent
-        // la lettre, le glyphe exact et les attributs crochetés que le module
-        // NEUMES ne nomme pas, sans aucun préfixe privé.
-        let readable_anotts = syllable_annot(syllable_node, chant_labels::NOTE_TYPE)
-            .filter_map(|annot| {
-                Some((
-                    annot.attribute("n")?.parse::<usize>().ok()?,
-                    chant_labels::parse_note_label(&annot.text),
-                ))
-            })
-            .collect::<BTreeMap<_, _>>();
         let source_anotts = syllable_annot(syllable_node, neumes::SOURCE_ANNOT)
             .filter_map(|annot| Some((annot.attribute("n")?.parse::<usize>().ok()?, annot)))
             .collect::<BTreeMap<_, _>>();
@@ -158,12 +147,7 @@ pub(super) fn read(root: &Element) -> Result<Score, Error> {
         {
             for nc in neume.children.iter().filter(|node| node.name == "nc") {
                 let index = syllable.notes.len();
-                let mut note = nc_note(
-                    nc,
-                    &current_clef,
-                    note_anotts.get(&index),
-                    readable_anotts.get(&index),
-                );
+                let mut note = nc_note(nc, &current_clef, note_anotts.get(&index));
                 if note.signs.is_empty() {
                     note.signs = nc_signs(nc, index, &sign_anotts);
                 }
@@ -435,12 +419,7 @@ fn clef_token(clef: &Element) -> String {
 }
 
 /// Note GABC reconstruite depuis `<nc>` et ses modifiers MEI 5.1 standard.
-fn nc_note(
-    nc: &Element,
-    clef: &str,
-    private: Option<&&Element>,
-    readable: Option<&chant_labels::NoteLabel>,
-) -> GregorianNote {
+fn nc_note(nc: &Element, clef: &str, private: Option<&&Element>) -> GregorianNote {
     let letter = if let Some(annot) = private {
         let mut chars = annot.text.chars();
         let letter = chars.next();
@@ -470,28 +449,11 @@ fn nc_note(
     if nc.attribute("type") == Some("punctum-inclinatum") {
         letter = letter.to_ascii_uppercase();
     }
-    let mut note = GregorianNote {
+    GregorianNote {
         letter,
         glyph: element_glyph(nc),
         ..GregorianNote::default()
-    };
-    if let Some(label) = readable {
-        if let Some(exact) = label.letter {
-            note.letter = exact;
-        }
-        if let Some(glyph) = &label.glyph {
-            note.glyph = glyph.clone();
-        }
-        note.attributes = label
-            .attributes
-            .iter()
-            .map(|text| NoteAttribute {
-                after: 0,
-                text: text.clone(),
-            })
-            .collect();
     }
-    note
 }
 
 /// Concatène les jetons GABC déduits des enfants normatifs de `<nc>`.

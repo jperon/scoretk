@@ -30,8 +30,11 @@
 //! - [`error`] : l'erreur unique des deux sens ([`Error`], [`Result`]) ;
 //! - [`pitch`] : la spirale des quintes (`tpc`) et ses conversions ;
 //! - [`clefs`] : la table des clefs, dans les deux sens ;
-//! - [`headers`] : les champs `\header` standards transportant les crédits ;
-//! - [`gregorian`] : noms lisibles des glyphes et annotations du chant grégorien.
+//! - [`headers`] : les champs `\header` standards transportant les crédits.
+//!
+//! Le chant grégorien n'a pas de vocabulaire privé : le dialecte Vaticana est
+//! entièrement décrit par les commandes de la Notation Reference §17.4, dans
+//! les crates de lecture et d'écriture.
 //!
 //! Tout le reste appartient à `scoretk-lilypond-import` (lecture `.ly` →
 //! modèle) ou à `scoretk-lilypond-export` (modèle → `.ly`).
@@ -41,7 +44,6 @@
 
 pub mod clefs;
 mod error;
-pub mod gregorian;
 pub mod headers;
 pub mod midi_instruments;
 pub mod noteheads;

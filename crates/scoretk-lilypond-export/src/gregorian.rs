@@ -28,15 +28,14 @@
 //! la partition porte une charge `Gregorian`. Les porteurs utilisés sont ceux
 //! de la spécification LilyPond, pas des champs privés : clefs vaticanes,
 //! modificateurs de têtes de note, articulations grégoriennes, divisiones,
-//! ligatures `\[ … \]` et paroles `\lyricsto`.
+//! ligatures `\[ … \]` et paroles `\lyricsto`. Une annotation `^"glyph: …"`
+//! ou `^""` serait un vidage de la source imprimé au-dessus des notes : elle
+//! n'est pas écrite.
 
 use std::fmt::Write as _;
 
-use scoretk_core::model::{
-    BarKind, Gregorian, GregorianNote, GroupTokenKind, Score, SignKind, Syllable,
-};
+use scoretk_core::model::{BarKind, Gregorian, GregorianNote, Score, SignKind, Syllable};
 use scoretk_gabc_common::syntax::diatonic_step;
-use scoretk_lilypond_common::gregorian as carrier;
 
 const STEPS: &[u8; 7] = b"cdefgab";
 
@@ -63,39 +62,15 @@ pub(crate) fn render(score: &Score, gregorian: &Gregorian, version: &str) -> Str
     out
 }
 
-/// `\header` accepte des champs définis par l'utilisateur (§21.2.3). Le nom
-/// d'origine est porté dans la valeur pour les en-têtes dont l'identifiant
-/// LilyPond n'est pas disponible (`office-part`, `user-notes`, …).
+/// Seul le titre a un porteur natif dans `\header` (§21.2.3). Les autres
+/// en-têtes GABC n'ont pas de champ LilyPond correspondant : ils ne sont pas
+/// copiés sous forme `name=value`, qui serait un vidage de la source.
 fn write_header(out: &mut String, gregorian: &Gregorian) {
     out.push_str("\\header {\n");
     if let Some(name) = gregorian.headers.iter().find(|h| h.name == "name") {
         let _ = writeln!(out, "  title = \"{}\"", escape(&name.value));
     }
-    for (index, header) in gregorian.headers.iter().enumerate() {
-        // Un identifiant LilyPond ne peut pas finir par un chiffre : on utilise
-        // des lettres (`chantHeaderA`, `chantHeaderB`…), jamais un préfixe
-        // `gabc` réservé au format source.
-        let _ = writeln!(
-            out,
-            "  {} = \"{}\"",
-            header_name(index),
-            escape(&format!("{}={}", header.name, header.value))
-        );
-    }
     out.push_str("}\n\n");
-}
-
-fn header_name(index: usize) -> String {
-    let mut name = String::from("chantHeader");
-    let mut value = index;
-    loop {
-        name.push((b'A' + (value % 26) as u8) as char);
-        value /= 26;
-        if value == 0 {
-            return name;
-        }
-        value -= 1;
-    }
 }
 
 fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
@@ -116,23 +91,13 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
     if ligature {
         out.push_str("      \\[ ");
     }
-    // §"Text annotations" : l'orthographe exacte des glyphes que le style
-    // Vatican ne nomme pas (espacements, fusions), les attributs crochetés,
-    // les custos et les textes au-dessus de la portée sont écrits comme des
-    // annotations de note **lisibles**, jamais comme des codes.
-    let mut suffixes: Vec<Vec<&str>> = vec![Vec::new(); sung.len() + 1];
-    let mut custos: Vec<Vec<&str>> = vec![Vec::new(); sung.len() + 1];
-    for token in &syllable.group_tokens {
-        let at = token.notes_before.min(sung.len());
-        if token.kind == GroupTokenKind::Custos {
-            custos[at].push(&token.text);
-        } else if !matches!(token.kind, GroupTokenKind::Bar | GroupTokenKind::Clef) {
-            suffixes[at].push(&token.text);
-        }
-    }
+    // Les caractères d'espacement/fusion du GABC, les attributs `[…]`, les
+    // custos et les textes au-dessus de la portée n'ont pas de commande dans
+    // le style Vatican (§17.4.7) : ils sont perdus, pas copiés dans une
+    // annotation `^"glyph: …"` qui s'imprimerait au-dessus de la note.
     let mut previous_step = None;
-    for (index, note) in sung.iter().enumerate() {
-        if index > 0 {
+    for note in &sung {
+        if previous_step.is_some() {
             let step = diatonic_step(note.letter, clef);
             let join = match previous_step {
                 Some(before) if step > before => " \\pes ",
@@ -145,42 +110,6 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
         write_prefixes(out, note);
         let _ = write!(out, "{}", pitch_name(diatonic_step(note.letter, clef)));
         write_postfixes(out, note);
-        let mut glyph = note.glyph.clone();
-        for suffix in &suffixes[index] {
-            glyph.push_str(suffix);
-        }
-        let mut facts: Vec<(&str, String)> = Vec::new();
-        facts.push(("glyph", carrier::glyph_label(&glyph)));
-        for attribute in &note.attributes {
-            facts.push(("attribute", attribute.text.clone()));
-        }
-        for raw in &custos[index] {
-            facts.push(("custos", (*raw).to_owned()));
-        }
-        if index + 1 == sung.len() {
-            for attribute in &syllable.leading_attributes {
-                facts.push(("attribute", attribute.clone()));
-            }
-            for suffix in &suffixes[sung.len()] {
-                facts.push(("sign", (*suffix).to_owned()));
-            }
-            for sign in &syllable.signs {
-                facts.push(("sign", sign.raw.clone()));
-            }
-            if let Some(change) = &syllable.clef {
-                facts.push(("clef", change.clone()));
-            }
-            if let Some(above) = &syllable.above_text {
-                facts.push(("above", above.clone()));
-            }
-            for raw in &custos[sung.len()] {
-                facts.push(("custos", (*raw).to_owned()));
-            }
-        }
-        if !facts.is_empty() {
-            let annotation = carrier::annotation(&facts);
-            let _ = write!(out, "{annotation}");
-        }
     }
     if ligature {
         out.push_str(" \\]\n");
@@ -358,6 +287,9 @@ mod tests {
         assert!(ly.contains("\\quilisma"));
         assert!(ly.contains("\\divisioMinima"));
         assert!(ly.contains("Custos_engraver"));
+        assert!(ly.contains("\\lyricsto"));
         assert!(ly.contains("\"San--ctus\""));
+        assert!(!ly.contains("^\""), "no note annotation dump: {ly}");
+        assert!(!ly.contains("glyph:"), "no readable dump: {ly}");
     }
 }

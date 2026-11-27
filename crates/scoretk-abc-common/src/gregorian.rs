@@ -3,8 +3,8 @@
 // Copyright (C) 2026 jperon
 //
 // Ce fichier est original : vocabulaires ABC 2.1 portant les faits du chant
-// grégorien (§3.1 champs d'information, §4.14 décorations, §4.16 symboles
-// redéfinissables, §4.19 annotations), réécrit en Rust en 2026.
+// grégorien (§4.1/§4.6 hauteur et clé, §4.14 décorations, §4.16 symboles
+// redéfinissables, §5 paroles), réécrit en Rust en 2026.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -29,8 +29,10 @@
 //! écrits avec leur raccourci `H`, `L`, `M`, `P`. Aucun code hexadécimal, aucun
 //! préfixe privé : le document ABC reste lisible par un tiers.
 //!
-//! Les champs `N:`/`I:` (§3.1) et les annotations `"^…"` (§4.19) portent les
-//! en-têtes, la clé, les attributs et les paroles avec leur valeur lisible.
+//! Les paroles vont dans les champs `w:` (§5), la clé dans le paramètre
+//! `clef=` du champ `K:` (§4.6) et le titre dans `T:` (§3.1). Une annotation
+//! `"^…"` dont le texte est `letter: …`, `glyph: …` ou `syllable-text: …`
+//! serait un vidage de la source : elle n'est ni écrite ni lue.
 
 /// Un caractère de glyphe GABC et son porteur ABC.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,23 +256,50 @@ pub const GLYPH_SYMBOLS: &[GlyphSymbol] = &[
 /// Marqueur `I:` (§3.1) signalant un document ABC portant un chant grégorien.
 pub const CHANT_MARKER: &str = "I:chant=gregorian";
 
-/// Préfixe du champ `I:` portant la clé GABC d'origine.
-pub const CLEF_FIELD: &str = "I:clef=";
+/// Champ `K:` (§4.6) portant la clé GABC sous forme de clé ABC native.
+///
+/// `c3` → `K:C clef=C3`, `f4` → `K:C clef=F4` : le paramètre `clef=<lettre><ligne>`
+/// est défini par ABC 2.1, contrairement à une copie du jeton source dans `I:`.
+pub fn clef_field(clef: &str) -> String {
+    let first = clef.split('@').next().unwrap_or(clef);
+    let family = first.chars().next().unwrap_or('c').to_ascii_uppercase();
+    let line = first
+        .chars()
+        .last()
+        .and_then(|c| c.to_digit(10))
+        .unwrap_or(4);
+    format!("K:C clef={family}{line}")
+}
 
-/// Préfixe des annotations de texte (§4.19).
-pub const TEXT_ANNOTATION: &str = "^text: ";
-/// Préfixe des annotations d'attribut crocheté.
-pub const ATTRIBUTE_ANNOTATION: &str = "^attribute: ";
-/// Préfixe des annotations de texte au-dessus de la portée.
-pub const ABOVE_ANNOTATION: &str = "^above: ";
-/// Préfixe des annotations de barre de séparation.
-pub const BAR_ANNOTATION: &str = "^bar: ";
-/// Préfixe des annotations de changement de clé.
-pub const CLEF_ANNOTATION: &str = "^clef: ";
-/// Préfixe des annotations de signe de groupe.
-pub const SIGN_ANNOTATION: &str = "^sign: ";
-/// Préfixe des annotations portant un caractère hors table.
-pub const GLYPH_ANNOTATION: &str = "^glyph: ";
+/// Clé GABC relue depuis un champ `K:` (§4.6), ou `None`.
+pub fn clef_from_field(line: &str) -> Option<String> {
+    let value = line.strip_prefix("K:")?;
+    for part in value.split_whitespace() {
+        let Some(raw) = part.strip_prefix("clef=") else {
+            continue;
+        };
+        let mut chars = raw.chars();
+        let family = chars.next()?.to_ascii_lowercase();
+        let line = chars.as_str().parse::<u8>().ok()?;
+        if matches!(family, 'c' | 'f') && (1..=5).contains(&line) {
+            return Some(format!("{family}{line}"));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod clef_tests {
+    use super::*;
+
+    #[test]
+    fn clef_uses_the_native_k_parameter() {
+        assert_eq!(clef_field("c3"), "K:C clef=C3");
+        assert_eq!(clef_field("f4"), "K:C clef=F4");
+        assert_eq!(clef_from_field("K:C clef=C3"), Some("c3".to_owned()));
+        assert_eq!(clef_from_field("K:C"), None);
+    }
+}
 
 /// Décoration d'un custos (`Gabc.tex:872-906`), avec son orthographe source.
 pub fn custos_symbol(raw: &str) -> &'static str {

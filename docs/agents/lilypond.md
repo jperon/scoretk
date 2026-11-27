@@ -10965,25 +10965,21 @@ command at a time, worktree-local `CARGO_TARGET_DIR`, with
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
 
-## Gregorian carrier annotations (opt-in `--ly-gregorian`)
+## Gregorian dialect (opt-in `--ly-gregorian`)
 
 The ancient-notation dialect uses the standard Vatican vocabulary of Notation
 Reference §17.4 (`VaticanaVoice`, `\clef "vaticana-doN"`, `\[ … \]`,
-`\quilisma`, `\ictus`, `\episemInitium`, `\virga`, divisiones,
-`Custos_engraver`). Some GABC facts have no Vatican command: source spacing
-characters, bracketed attributes, custos spelling and `alt:` text. They are
-written as standard note annotations `^"…"` (§"Text annotations") with
-**readable labels**, defined in `scoretk-lilypond-common/src/gregorian.rs`:
+`\quilisma`, `\oriscus`, `\virga`, `\stropha`, `\inclinatum`, `\liquescentia`,
+`\ictus`, `\episemInitium`/`\episemFinis`, `\augmentum`, `\semicirculus`,
+`\circulus`, `\accentus`, divisiones, `Custos_engraver`). Lyrics are carried by
+`\new VaticanaLyrics \lyricsto "cantus" { "syllable" _ -- … }` (§2.1.2): one
+quoted token per syllable, including `""` for a silent group, and `--` for
+word continuation. The only `\header` field is the native `title`.
 
-```
-g,^"glyph: virga augmentum spacing | attribute: [oh:h] | custos: z"
-```
-
-`glyph:` values are neume/sign names separated by spaces (`quilisma`,
-`spacing`, `augmentum`, …), never hex codes; the inverse table is used by the
-reader. `\lyricsto` writes one quoted token per syllable, including `""` for
-a silent group, and `--` for word continuation, which restores the exact
-syllable grouping. The reader recognises both `chantHeader*` (new) and
-`gabcHeader*` (older documents). Without `--ly-gregorian`, nothing changes.
-The measured GABC full-support figure for this dialect is 99.28 %
-(`docs/agents/gabc.md` §23).
+Source spacing characters, bracketed attributes, custos spelling and `alt:`
+text have no Vatican command. They are **not carried**: writing them as
+`^"glyph: …"` / `^""` note annotations would print a GABC dump over the notes
+and no LilyPond tool reads it. The writer emits none and the reader ignores
+them. `scripts/oracle/gabc/full_support.py` strips any such label and fails
+loudly if one remains in the measured output. Without `--ly-gregorian`,
+nothing changes. The honest measured figure is in `docs/agents/gabc.md` §26.

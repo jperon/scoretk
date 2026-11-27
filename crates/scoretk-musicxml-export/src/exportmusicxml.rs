@@ -2227,12 +2227,6 @@ impl Context<'_> {
                                 syllable_index: source.gregorian_syllable,
                                 breath,
                                 smufl: self.options.gabc_neume_smufl,
-                                standard_attributes: self.options.full_support,
-                                first_in_syllable: source.gregorian_note == 0,
-                                syllable_text: gregorian
-                                    .syllables
-                                    .get(source.gregorian_syllable)
-                                    .map_or("", |syllable| syllable.text.as_str()),
                             },
                         );
                         // Un neume est le groupe parenthesé source

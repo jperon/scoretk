@@ -1930,19 +1930,16 @@ without arguments now defaults to the workspace-built `target/debug/scoretk`
 (or `$CARGO_TARGET_DIR/debug/scoretk`), and prints usage with a non-zero exit
 when the binary is missing instead of failing inside Python.
 
-## Readable chant labels in `other-technical` (full-support mode)
+## Chant carriers in `other-notation` (full-support mode)
 
-`--xml-full-support` adds standard `xs:string` technical indications beside
-the SMuFL chant glyph on each sung note:
-
-```
-<other-technical>letter: e</other-technical>
-<other-technical>glyph: virga augmentum spacing</other-technical>
-<other-technical>syllable-text: <sp>Ve</sp></other-technical>
-```
-
-These are MusicXML's own `other-placement-text` field (XSD 4.0 `:5625`):
-a human sees neume names and staff letters, not an encoded payload. The
-reader restores the exact GABC fact from them without any private `gabc:`
-element. Default MusicXML is byte-identical to MuseScore 4.7.4. See
-`docs/agents/gabc.md` §24 for the measured gain (90.89 % → 98.05 %).
+`--xml-full-support` writes the normative SMuFL chant glyph in
+`<other-notation type="single" smufl="chantQuilisma"/>` (XSD 4.0 `:5361-5375`,
+SMuFL 1.4 Medieval and Renaissance plainchant range), headers in
+`identification/miscellaneous-field`, lyrics in `<lyric><syllabic><text>` and
+clefs/barlines in their standard elements. A `<other-technical>` whose text is
+`letter: e`, `glyph: virga augmentum spacing` or `syllable-text: …` is a dump
+of the source: `xs:string` gives those labels no shared meaning, and they
+duplicate what `<pitch>`, the SMuFL name and `<lyric>` already carry. They have
+been removed from the writer and ignored by the reader; the oracle strips any
+such label and fails loudly if one remains. Default MusicXML is byte-identical
+to MuseScore 4.7.4. The honest figure is in `docs/agents/gabc.md` §26.

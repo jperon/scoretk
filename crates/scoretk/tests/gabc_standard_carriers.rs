@@ -16,7 +16,8 @@
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 //! Facade checks for chant carriers that are in the destination **specification**:
-//! XSD 4.0 `other-notation/@smufl` and LilyPond's ancient-notation contexts.
+//! XSD 4.0 `other-notation/@smufl`, ABC 2.1 §5 `w:`/§4.6 `K:` and LilyPond's
+//! ancient-notation contexts. A `key: value` dump is not a carrier.
 
 use scoretk::{read, read_abc_with_dialect, write, Format, Options};
 
@@ -78,20 +79,24 @@ fn gregorian_abc_carriers_are_readable_and_additive() {
     let abc = write(&score, Format::Abc, &options).expect("Gregorian .abc");
     let abc = String::from_utf8(abc).expect("UTF-8");
     assert!(abc.contains("I:chant=gregorian"), "{abc}");
-    assert!(abc.contains("I:clef=c3"), "{abc}");
+    assert!(abc.contains("K:C clef=C3"), "{abc}");
     assert!(abc.contains("U: H = !fermata!"), "{abc}");
-    assert!(abc.contains("\"^text:"), "{abc}");
-    assert!(abc.contains("N:language=latin"), "{abc}");
-    assert!(!abc.contains("gabc"), "no private prefix: {abc}");
-    // Aucun code hexadécimal dans une décoration ou une annotation.
-    assert!(!abc.contains("!gG"), "{abc}");
+    assert!(abc.contains("w: VE"), "{abc}");
+    for dump in [
+        "^text:",
+        "^glyph:",
+        "N:language=",
+        "I:clef=",
+        "gabc",
+        "\"\"",
+    ] {
+        assert!(!abc.contains(dump), "{dump} is a dump: {abc}");
+    }
 
     let again = read_abc_with_dialect(abc.as_bytes(), true).expect("Gregorian .abc import");
     let gabc = write(&again, Format::Gabc, &Options::default()).expect("GABC export");
     let text = String::from_utf8(gabc).expect("UTF-8");
-    assert!(text.contains("name: Veni Sancte Spiritus"), "{text}");
     assert!(text.contains("(c3)"), "clef lost: {text}");
-    assert!(text.contains("language: latin"), "header lost: {text}");
     assert!(text.contains("VE("), "syllable text lost: {text}");
 }
 
@@ -113,10 +118,13 @@ fn gregorian_lilypond_option_is_additive_and_round_trips() {
     assert!(ly.contains("\\clef \"vaticana-do3\""), "{ly}");
     assert!(ly.contains("\\divisioMinima"), "{ly}");
     assert!(ly.contains("Custos_engraver"), "{ly}");
+    assert!(ly.contains("\\lyricsto"), "{ly}");
+    for dump in ["^\"", "chantHeader", "glyph:", "gabc"] {
+        assert!(!ly.contains(dump), "{dump} is a dump: {ly}");
+    }
 
     let again = read(ly.as_bytes(), Format::Ly).expect("Gregorian .ly import");
     let gabc = write(&again, Format::Gabc, &Options::default()).expect("GABC export");
     let text = String::from_utf8(gabc).expect("UTF-8");
-    assert!(text.contains("name: Veni Sancte Spiritus"), "{text}");
     assert!(text.contains("(c3)"), "clef lost: {text}");
 }

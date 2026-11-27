@@ -1337,7 +1337,14 @@ Wasm size measured with `nix build .#wasm` and `result/SIZE`:
 The contract of invariant 5 is unchanged; the new LilyPond chant module is
 linked into the wasm package even though the CLI exposes its option separately.
 
-## 22. ABC full support through meaningful ABC 2.1 carriers (2026-11-27)
+## 22. ABC full support through readable annotations — REJECTED (superseded by §26)
+
+**Rejected by review (2026-11-27).** The `"^text: …"` / `"^glyph: …"` carriers
+described below are `key: <raw GABC token>` dumps: no ABC tool reads them as a
+fact and they print over the notes. The 99.59 % figure is therefore not a
+support rate. The writer now uses `w:` (ABC 2.1 §5) for lyrics and `K:` `clef=`
+(§4.6) for the clef, and the oracle removes the labels instead of counting
+them. See §26 for the honest result; this section is kept as an audit trail.
 
 Step 1 of the campaign after the corrected §21 audit. The old ABC figure was
 **87.06 %** (83 187 / 104 555). It was not a format limit: ABC 2.1 §3.1
@@ -1364,7 +1371,13 @@ defects 446 (`pitch` 416, `glyph` 16, `custos` 10, `attribute` 2, `clef` 1,
 `text` 1). The other four destinations are unchanged by this step
 (MusicXML 90.89 %, MIDI 95.45 %, LilyPond 92.01 %, MEI 98.90 %).
 
-## 23. LilyPond Vaticana: defect inventory, then readable note annotations (2026-11-27)
+## 23. LilyPond Vaticana: readable note annotations — REJECTED (superseded by §26)
+
+**Rejected by review (2026-11-27).** `^"glyph: …"` and the empty `^"glyph: "`
+annotations are GABC dumps printed over the notes. The 99.28 % figure below is
+not a support rate. The writer now keeps only the Vatican vocabulary and
+`\lyricsto`; the oracle strips the annotations. See §26; this section is the
+audit trail.
 
 Step 2 of the campaign. The defects of `--ly-gregorian` were first listed by
 kind with their counts in the corrected instrument (92.01 %, 8 708 defects,
@@ -1399,7 +1412,14 @@ no private carrier is counted. `e2e_corpus` 8/8 and
 No generated `.ly` was compiled outside a bwrap sandbox (none was compiled in
 this step).
 
-## 24. MusicXML standard carriers: readable technical labels (2026-11-27)
+## 24. MusicXML readable technical labels — REJECTED (superseded by §26)
+
+**Rejected by review (2026-11-27).** `<other-technical>letter: e</...>`,
+`glyph: …` and `syllable-text: …` are `key: <raw GABC token>` dumps: `xs:string`
+gives them no shared meaning and they duplicate `<pitch>`, SMuFL and `<lyric>`.
+The 98.05 % figure below is not a support rate. The writer emits none and the
+reader ignores them; the oracle strips them and fails loudly if they remain.
+See §26; this section is the audit trail.
 
 Step 3 of the campaign. The corrected audit left `glyph` 4 093, `letter`
 3 390, `rubric` 795, `shape` 537, `pitch` 427, `ictus` 105 and smaller
@@ -1429,7 +1449,14 @@ writer but stripped by the oracle and never counted. `e2e_corpus` 8/8,
 `gabc_standard_carriers` 3/3, and all MusicXML import/export tests pass;
 default XML bytes are unchanged.
 
-## 25. MEI readable note annotations and the final table (2026-11-27)
+## 25. MEI readable note annotations — REJECTED (superseded by §26)
+
+**Rejected by review (2026-11-27).** `<annot type="chantNote">letter: e | glyph:
+… | attribute: …</annot>` is a GABC dump under a generic MEI element: no MEI
+consumer reads those labels as facts. The 99.94 % figure below is not a support
+rate. The writer and reader no longer use it; the oracle strips it and fails
+loudly if it remains. See §26 for the honest final table; this section is the
+audit trail.
 
 Step 4 of the campaign. MEI was at 98.90 %: `letter` 397, `pitch` 385,
 `attribute` 331, `glyph` 83, `shape` 23, `custos` 22, `bar` 7, `clef` 1.
@@ -1447,7 +1474,10 @@ defect under its spec citations: `pitch` 1 630 (SMF timing/ornament
 realisation), `text` 837, `rubric` 795 and `header` 538 are not notation
 objects; the text metas that SMF does carry are read in full-support mode.
 
-### Final measured table (261 sources, same honest instrument)
+### Measured table at the time (261 sources, superseded by §26)
+
+This table counted the readable-label dumps of §22–§25 as carriers. It is not
+the final figure; see §26.
 
 | Destination | Before | After | Carried / headline total | Inherent | Defects |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -1457,10 +1487,109 @@ objects; the text metas that SMF does carry are read in full-support mode.
 | ABC 2.1 `--abc-gregorian` | 87.06 % | **99.59 %** | 109 292 / 109 738 | 4 319 | 446 |
 | MEI 5.1 NEUMES | 98.90 % | **99.94 %** | 113 146 / 113 213 | 844 | 67 |
 
-Every destination is ≥ 95 %, with no new inherent row and no private carrier
-in any numerator. All conversions succeeded (0 failures on 261 sources). The
+The "every destination ≥ 95 %" conclusion of this section was **rejected by
+review**: the readable labels were GABC dumps, not carriers. All conversions
+succeeded (0 failures on 261 sources). The
 final raw figures are 89.21 % (MusicXML), 69.82 % (MIDI), 96.72 % (LilyPond),
 95.82 % (ABC) and 99.20 % (MEI). MEI's residual 67 defects are `glyph` 25,
 `custos` 22, `bar` 7, `letter` 5, `pitch` 5, `attribute` 2, `clef` 1; the
 844 inherent facts are exact inter-group whitespace, which MEI 5.1 has no
 element for and whose `@label` carrier is stripped as source-private.
+
+## 26. Review correction: dumps are not carriers — honest final figures (2026-11-27)
+
+### 26.1 What was rejected and what changed
+
+The reviewer measured `gregorio_FactusEst.gabc` and found
+`--xml-full-support`: 41 hidden `gabc:` fields, 116 `letter:`, 35 `glyph:`,
+63 `syllable-text:`; `--abc-gregorian`: **0** `w:` lines, `"^text: …"` instead,
+116 `"^glyph: …"`; `--ly-gregorian`: **0** `\lyricmode`/`\addlyrics`, 116
+`^"glyph: …"` including empty `^"glyph: "`. A `key: <raw GABC token>` label is
+a **dump**: no other tool gives it a meaning, and in ABC/LilyPond it prints
+garbage over the notes. Hiding it with `print-object="no"` does not turn it
+into a standard carrier.
+
+The branch now:
+
+1. Writes lyrics in the destination's lyric carrier — ABC `w:` (§5, one `w:`
+   line per sung syllable), LilyPond `\new VaticanaLyrics \lyricsto` (§2.1.2),
+   MusicXML `<lyric><syllabic><text>` — never in annotations.
+2. Carries the pitch letter by the pitch itself (and the GABC clef by ABC's
+   native `K:… clef=C3` parameter and LilyPond's `\clef "vaticana-do3"`), never
+   by a `letter:` label.
+3. Uses only the destination's named neume vocabulary: SMuFL `chant*` glyph
+   names from the SMuFL 1.4 Medieval/Renaissance plainchant ranges, gregorian.ly
+   commands (`\quilisma`, `\oriscus`, `\virga`, `\stropha`, `\inclinatum`,
+   `\liquescentia`, `\ictus`, `\episemInitium`/`\episemFinis`, `\semicirculus`,
+   `\circulus`, `\accentus`, `\augmentum`, …), ABC 2.1 decorations. A fact with
+   no such carrier is a defect, or inherent only with a citation of the
+   destination's norm (the existing `INHERENT` table is unchanged).
+4. Removes the dump carriers from writers and readers and their docs:
+   `chantNote` MEI annotations, `chantHeader*`, `N:key=value`, `I:clef=`,
+   `"^text:"`, `"^glyph:"`, `letter:`/`glyph:`/`syllable-text:` `other-technical`.
+   `scripts/oracle/gabc/full_support.py` strips every such label, every `gabc`
+   substring in a carrier and every empty annotation **before** measurement,
+   and raises `ValueError` if one remains in the measured output.
+   `scripts/oracle/gabc/test_full_support.py` unit-tests the stripper and, with
+   `SCORETK_CLI` set, checks FactusEst in all five destinations: native lyric
+   carrier present, no dump written, no residual after stripping.
+5. Keeps the historical private `gabc:` fields of `master` (they are stripped
+   by the oracle, never counted) so that **all default bytes stay identical**:
+   455/455 default conversions on the 65 corpus sources (`v3`, `v4`, `gabc`)
+   match a CLI built at `c5b52552` byte for byte.
+
+### 26.2 Honest figures, before vs after
+
+Same 261 sources, 114 057 facts per destination, same inherent citations,
+0 conversion failures. "Before" is the rejected branch figure of §22–§25;
+"After" is the current tree. "Main" is `carried / (total − inherent)`, "raw"
+is `carried / total`.
+
+| Destination | Before (padded) | After (honest) | Carried / headline total | Raw | Inherent | Defects |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MusicXML 4.0 | 98.05 % | **90.57 %** | 93 664 / 103 418 | 82.12 % | 10 639 | 9 754 |
+| MIDI SMF | 95.45 % | **95.45 %** | 79 638 / 83 438 | 69.82 % | 30 619 | 3 800 |
+| LilyPond `--ly-gregorian` | 99.28 % | **94.48 %** | 104 668 / 110 789 | 91.77 % | 3 268 | 6 121 |
+| ABC 2.1 `--abc-gregorian` | 99.59 % | **98.07 %** | 107 564 / 109 676 | 94.31 % | 4 381 | 2 112 |
+| MEI 5.1 NEUMES | 99.94 % | **96.09 %** | 108 637 / 113 053 | 95.25 % | 1 004 | 4 416 |
+
+Three destinations reach the 95 % target; **LilyPond (94.48 %) and MusicXML
+(90.57 %) do not**, and the honest number is reported rather than padded.
+
+### 26.3 Residual defects by fact (what blocks 95 %)
+
+| Destination | Defects, largest first |
+| --- | --- |
+| MusicXML | `glyph` 4 093, `letter` 3 390, `rubric` 795, `shape` 537, `pitch` 427, `attribute` 332, `ictus` 105, `text` 29, `custos` 22, `mora` 16, `clef` 8 |
+| MIDI | `pitch` 1 630, `text` 837, `rubric` 795, `header` 538 |
+| LilyPond | `glyph` 3 878, `header` 783, `pitch` 411, `shape` 357, `attribute` 332, `rubric` 303, `custos` 22, `text` 11, `ictus` 9, `clef` 8, `letter` 7 |
+| ABC | `header` 783, `pitch` 416, `attribute` 332, `rubric` 301, `glyph` 227, `text` 24, `custos` 21, `clef` 8 |
+| MEI | `glyph` 2 877, `letter` 397, `pitch` 385, `attribute` 332, `nabc` 190, `rubric` 142, `text` 39, `shape` 23, `custos` 22, `bar` 9 |
+
+**LilyPond is blocked by `glyph` 3 878**: the Vatican style (Notation Reference
+§17.4.7) names neume shapes but has no command for the exact GABC spacing and
+fusion spelling (`/`, `!`, `*`, digits); copying that spelling into a
+`^"glyph: …"` annotation was the rejected padding. Source headers (`header`
+783) have no native `\header` field beyond `title`, which is carried. The
+`header`/`rubric`/`attribute` rows of §21.3 remain defects wherever no
+destination-specific carrier was implemented.
+
+**MusicXML is blocked by `glyph` 4 093 and `letter` 3 390**: one SMuFL name per
+note cannot spell a multi-character GABC glyph, and the clef+pitch projection
+does not restore every staff position; `rubric` 795 markup is not emitted in
+`<words>`. All three are genuine absences of a *usable* standard carrier, not
+reclassified inherent rows.
+
+ABC regained **2481 bar facts** through real ABC bar symbols (`|`, `||`, `[|`,
+`::`, §4.8) instead of `"^bar: ,"` annotations, and the native `T:`/`K:`
+carriers restored 261 title facts in ABC and LilyPond. MEI's former `text`
+14 990 apparent loss was an instrument bug (a private `label` attribute caused
+the whole `<syl>` to be stripped); it is fixed — only the attribute is removed.
+
+### 26.4 Non-regression
+
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk --test
+e2e_corpus -- --nocapture` (8/8), `cargo build -p scoretk-wasm --target
+wasm32-unknown-unknown` and the instrument test (6/6 with `SCORETK_CLI`) all
+pass. New files are added by path; no build directory is versioned.

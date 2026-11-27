@@ -24,14 +24,15 @@
 //! Restauration du payload grégorien **sans aucun champ privé `gabc:`**.
 //!
 //! En mode `full_support`, l'exporteur écrit un `smufl="chant…"` par note
-//! chantée, les en-têtes dans `<miscellaneous-field>` et les attributs `[…]`
-//! dans `<other-technical>`. Ce module les relit : un consommateur qui ignore
-//! scoretk peut donc retrouver les mêmes faits que le lecteur des extensions
-//! privées de [`super::chant`]. Aucun document sans glyphe SMuFL de chant
-//! n'est modifié.
+//! chantée et les en-têtes dans `<miscellaneous-field>`. Ce module les relit :
+//! un consommateur qui ignore scoretk peut donc retrouver les faits portés par
+//! la norme. Les `other-technical` dont le texte est une étiquette
+//! `letter:`/`glyph:`/`syllable-text:` sont ignorés : ce sont des vidages de la
+//! source, pas des porteurs. Aucun document sans glyphe SMuFL de chant n'est
+//! modifié.
 
 use scoretk_core::model::{
-    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, NoteAttribute, Score, Syllable,
+    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, Score, Syllable,
 };
 use scoretk_gabc_common::syntax::{clef_key, parse_signs};
 use scoretk_xml_common::Element;
@@ -133,12 +134,8 @@ impl Reader {
             }
             let mut glyph = String::new();
             let mut inclinatum = false;
-            let mut attributes = Vec::new();
             let mut mora = false;
             let mut episema = false;
-            let mut exact_glyph: Option<String> = None;
-            let mut exact_letter: Option<char> = None;
-            let mut syllable_text: Option<String> = None;
             for duration_type in note.children_named("type") {
                 // XSD 4.0 `note/type` : une figure doublée est un punctum mora
                 // projection `Gabc.tex:742-755`.
@@ -157,30 +154,10 @@ impl Reader {
                         }
                     }
                 }
-                for technical in notations.children_named("technical") {
-                    for other in technical.children_named("other-technical") {
-                        let text = other.text_trimmed();
-                        if text.starts_with('[') && text.ends_with(']') {
-                            attributes.push(NoteAttribute {
-                                after: glyph.chars().count(),
-                                text: text.to_owned(),
-                            });
-                            self.found = true;
-                        } else if let Some(value) = text.strip_prefix("glyph: ") {
-                            exact_glyph = Some(glyph_from_label(value));
-                            self.found = true;
-                        } else if let Some(value) = text.strip_prefix("letter: ") {
-                            exact_letter = value.chars().next();
-                            self.found = true;
-                        } else if let Some(value) = text.strip_prefix("syllable-text: ") {
-                            syllable_text = Some(value.to_owned());
-                            self.found = true;
-                        }
-                    }
-                }
-            }
-            if let Some(exact) = &exact_glyph {
-                glyph = exact.clone();
+                // Aucun `technical` n'est lu ici : un `other-technical` est
+                // soit un champ privé `gabc:` (lu par `super::chant`), soit un
+                // vidage étiqueté sans porteur dans la norme. Dans les deux cas
+                // il ne doit pas décider de la restauration du payload.
             }
             if glyph.is_empty() {
                 if mora {
@@ -204,9 +181,6 @@ impl Reader {
             if inclinatum {
                 letter = letter.to_ascii_uppercase();
             }
-            if let Some(exact) = exact_letter {
-                letter = exact;
-            }
             if self.syllables.is_empty()
                 || self.syllables.last().is_some_and(|s| !s.notes.is_empty())
             {
@@ -220,7 +194,6 @@ impl Reader {
                     letter,
                     signs: parse_signs(&glyph),
                     glyph,
-                    attributes,
                     ..GregorianNote::default()
                 });
                 for lyric in note.children_named("lyric") {
@@ -242,11 +215,6 @@ impl Reader {
                         syllable.text = text;
                     }
                     ends_syllable |= matches!(syllabic, "single" | "end");
-                }
-                if let Some(text) = &syllable_text {
-                    // Le texte source, balises `<sp>` comprises, est porté par
-                    // `other-technical` (xs:string) et relu sans préfixe privé.
-                    syllable.text = text.clone();
                 }
             }
             if ends_syllable {
@@ -273,58 +241,6 @@ impl Reader {
         }
         let _ = index;
     }
-}
-
-/// Nom lisible d'un caractère de glyphe GABC → caractère source.
-fn glyph_char(name: &str) -> Option<char> {
-    const NAMES: &[(&str, char)] = &[
-        ("augmentum", '.'),
-        ("ictus", '\''),
-        ("episema", '_'),
-        ("quilisma", 'w'),
-        ("spacing", '/'),
-        ("zero-space", '!'),
-        ("deminutum", '~'),
-        ("virga", 'v'),
-        ("flat", 'x'),
-        ("asterisk", '*'),
-        ("diminutum", '>'),
-        ("oriscus", 'o'),
-        ("one", '1'),
-        ("zero", '0'),
-        ("natural", 'y'),
-        ("virga-reversa", 'V'),
-        ("stropha", 's'),
-        ("oriscus-scampus", 'O'),
-        ("two", '2'),
-        ("cavum", 'r'),
-        ("virgula", '`'),
-        ("hyphen", '-'),
-        ("plus", '+'),
-        ("colon", ':'),
-        ("brace-open", '{'),
-        ("brace-close", '}'),
-        ("fusion", '@'),
-        ("three", '3'),
-        ("auctum", '<'),
-        ("u", 'u'),
-        ("quote", '"'),
-        ("dagger", '†'),
-        ("sharp", '#'),
-        ("linea", '='),
-    ];
-    NAMES
-        .iter()
-        .find(|(label, _)| *label == name)
-        .map(|(_, gabc)| *gabc)
-}
-
-/// Relit une orthographe de glyphe écrite en noms lisibles.
-fn glyph_from_label(label: &str) -> String {
-    label
-        .split_whitespace()
-        .map(|word| glyph_char(word).map_or_else(|| word.to_owned(), |gabc| gabc.to_string()))
-        .collect()
 }
 
 /// Nom SMuFL officiel du registre « Medieval and Renaissance » → jeton GABC.
@@ -378,11 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn readable_technical_labels_restore_exact_letter_and_glyph() {
+    fn technical_dump_labels_are_not_carriers() {
+        // `letter:`, `glyph:` and `syllable-text:` are dumps of the source
+        // under a generic xs:string. They must not override what the standard
+        // carriers (pitch, SMuFL name, lyric) actually say.
         let xml = r#"<score-partwise version="4.0">
-  <identification><miscellaneous>
-    <miscellaneous-field name="language">latin</miscellaneous-field>
-  </miscellaneous></identification>
   <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
   <part id="P1"><measure number="1">
     <attributes><clef><sign>C</sign><line>3</line></clef></attributes>
@@ -403,10 +319,9 @@ mod tests {
         let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
             panic!("payload");
         };
-        assert_eq!(payload.syllables[0].notes[0].letter, 'e');
-        assert_eq!(payload.syllables[0].notes[0].glyph, "v./");
-        assert_eq!(payload.syllables[0].text, "<sp>Ve</sp>");
-        assert!(!xml.contains("gabc:"), "no private carrier in the source");
+        assert_eq!(payload.syllables[0].notes[0].letter, 'e'); // clef + pitch
+        assert_eq!(payload.syllables[0].notes[0].glyph, "w");
+        assert_eq!(payload.syllables[0].text, "Ve");
     }
 
     #[test]

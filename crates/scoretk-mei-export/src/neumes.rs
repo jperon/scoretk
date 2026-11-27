@@ -121,7 +121,6 @@ pub(super) fn write(
                 gregorian,
                 initial_clefs: initial,
                 private: options.gabc_tokens,
-                readable: options.full_support,
                 linked: two_staves,
             },
         );
@@ -316,7 +315,6 @@ struct SyllableContext<'a> {
     gregorian: &'a Gregorian,
     initial_clefs: usize,
     private: bool,
-    readable: bool,
     linked: bool,
 }
 
@@ -327,7 +325,6 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
         gregorian,
         initial_clefs,
         private,
-        readable,
         linked,
     } = *context;
     let elision = syllable.text.contains('~');
@@ -480,20 +477,6 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
             write_nc(xml, note, &current_clef, index > 0 && !starts[index]);
         }
         xml.end_element();
-        if readable {
-            // `<annot>` est un élément MEI standard : le texte porte des noms
-            // de neumes et la lettre GABC, pas un code. Un lecteur tiers voit
-            // une indication de technique lisible au-dessus de la note.
-            for (note_index, note) in syllable.notes.iter().enumerate() {
-                annot(
-                    xml,
-                    scoretk_mei_common::chant_labels::NOTE_TYPE,
-                    &note_index.to_string(),
-                    &scoretk_mei_common::chant_labels::note_label(note),
-                    None,
-                );
-            }
-        }
         if private {
             for (note_index, note) in syllable.notes.iter().enumerate() {
                 let token = format!("{}{}", note.letter, note.glyph);

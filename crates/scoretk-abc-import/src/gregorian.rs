@@ -3,8 +3,9 @@
 // Copyright (C) 2026 jperon
 //
 // Ce fichier est original : lecture d'un document ABC portant un chant
-// grégorien avec les porteurs signifiants de la norme ABC 2.1 (§3.1, §4.14,
-// §4.16, §4.19), réécrit en Rust en 2026.
+// grégorien avec les porteurs signifiants de la norme ABC 2.1 (§3.1 titre,
+// §4.6 clé, §4.14 décorations, §4.16 symboles redéfinissables, §5 paroles),
+// réécrit en Rust en 2026.
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU General Public License version 3 as published by
@@ -22,14 +23,17 @@
 //! Lecteur additif du dialecte grégorien ABC.
 //!
 //! Il ne remplace pas l'analyseur ABC ordinaire : il ne s'active que sur le
-//! marqueur `I:chant=gregorian` écrit par le writer grégorien, et seulement
-//! quand l'appelant demande explicitement ce mode. Les autres sources passent
-//! par le chemin habituel, octet pour octet inchangé.
+//! marqueur `I:chant=gregorian` écrit par le writer grégorien. Les paroles
+//! viennent des champs `w:` (§5), la clé du paramètre `clef=` de `K:` (§4.6)
+//! et les signes des décorations `!…!` (§4.14). Les annotations étiquetées
+//! (`^text:`, `^glyph:`, …) sont des vidages de la source : elles ne sont pas
+//! lues. Les autres sources passent par le chemin habituel, inchangé.
 
 use scoretk_abc_common::gregorian as carrier;
+use scoretk_abc_common::text::unescape_lyric;
 use scoretk_core::model::{
     BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, GroupToken, GroupTokenKind,
-    NoteAttribute, Score, Syllable,
+    Score, Syllable,
 };
 use scoretk_gabc_common::syntax::{clef_key, parse_signs};
 
@@ -39,28 +43,30 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
     if !src.lines().any(|line| line.trim() == carrier::CHANT_MARKER) {
         return false;
     }
-    let mut clef = None;
-    let mut headers = Vec::new();
-    for line in src.lines() {
-        if let Some(value) = line.strip_prefix(carrier::CLEF_FIELD) {
-            clef = Some(value.trim().to_owned());
-        } else if let Some(field) = line.strip_prefix("N:") {
-            if let Some((name, value)) = field.split_once('=') {
-                headers.push(GregorianHeader {
-                    name: name.to_owned(),
-                    value: value.to_owned(),
-                });
-            }
-        }
-    }
-    let Some(clef) = clef else {
-        return false;
-    };
+    let clef = src
+        .lines()
+        .find_map(carrier::clef_from_field)
+        .unwrap_or_else(|| "c4".to_owned());
+    // §3.1 : `T:` est le porteur natif du titre GABC (`name:`).
+    let headers = src
+        .lines()
+        .find_map(|line| line.strip_prefix("T:"))
+        .filter(|title| !title.trim().is_empty())
+        .map(|title| {
+            vec![GregorianHeader {
+                name: "name".to_owned(),
+                value: title.trim().to_owned(),
+            }]
+        })
+        .unwrap_or_default();
     let mut voice = Voice {
         clef: clef.clone(),
-        syllables: Vec::new(),
-        glyph: String::new(),
-        attributes: Vec::new(),
+        lyrics: src
+            .lines()
+            .filter_map(|line| line.strip_prefix("w:"))
+            .map(lyric_text)
+            .collect(),
+        ..Voice::default()
     };
     voice.read(src);
     if voice.syllables.is_empty() || voice.note_count() == 0 {
@@ -86,15 +92,18 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
 }
 
 /// État de lecture d'une voix grégorienne.
+#[derive(Default)]
 struct Voice {
-    /// Clé GABC annoncée par `I:clef=`.
+    /// Clé GABC annoncée par le paramètre `clef=` de `K:`.
     clef: String,
+    /// Paroles des champs `w:`, une entrée par syllabe chantée.
+    lyrics: Vec<String>,
+    /// Prochaine parole à consommer.
+    lyric_index: usize,
     /// Syllables reconstruites.
     syllables: Vec<Syllable>,
     /// Décorations de glyphe en attente de la prochaine note.
     glyph: String,
-    /// Attributs crochetés en attente de la prochaine note.
-    attributes: Vec<String>,
 }
 
 impl Voice {
@@ -116,7 +125,14 @@ impl Voice {
                 .notes
                 .is_empty()
         {
+            let text = self
+                .lyrics
+                .get(self.lyric_index)
+                .cloned()
+                .unwrap_or_default();
+            self.lyric_index += 1;
             self.syllables.push(Syllable {
+                text,
                 space_after: true,
                 ..Syllable::default()
             });
@@ -141,55 +157,11 @@ impl Voice {
         }
     }
 
-    /// Traite un jeton ABC : annotation, décoration ou hauteur.
+    /// Traite un jeton ABC : décoration ou hauteur.
     fn token(&mut self, token: &str) {
-        if let Some(annotation) = token
-            .strip_prefix('"')
-            .and_then(|rest| rest.strip_suffix('"'))
-        {
-            if let Some(value) = annotation.strip_prefix(carrier::TEXT_ANNOTATION) {
-                self.syllables.push(Syllable {
-                    text: value.to_owned(),
-                    space_after: true,
-                    ..Syllable::default()
-                });
-            } else if let Some(value) = annotation.strip_prefix(carrier::ATTRIBUTE_ANNOTATION) {
-                if self.syllables.is_empty() || self.glyph.is_empty() {
-                    self.current().leading_attributes.push(value.to_owned());
-                } else {
-                    self.attributes.push(value.to_owned());
-                }
-            } else if let Some(value) = annotation.strip_prefix(carrier::ABOVE_ANNOTATION) {
-                self.current().above_text = Some(value.to_owned());
-            } else if let Some(value) = annotation.strip_prefix(carrier::CLEF_ANNOTATION) {
-                let syllable = self.current();
-                syllable.clef = Some(value.to_owned());
-                syllable.group_tokens.push(GroupToken {
-                    notes_before: syllable.notes.len(),
-                    text: value.to_owned(),
-                    kind: GroupTokenKind::Clef,
-                });
-            } else if let Some(value) = annotation.strip_prefix(carrier::BAR_ANNOTATION) {
-                if let Some((bar, _)) = BarKind::parse_prefix(value) {
-                    let syllable = self.current();
-                    syllable.bars.push(bar);
-                    syllable.group_tokens.push(GroupToken {
-                        notes_before: syllable.notes.len(),
-                        text: value.to_owned(),
-                        kind: GroupTokenKind::Bar,
-                    });
-                }
-            } else if let Some(value) = annotation.strip_prefix(carrier::SIGN_ANNOTATION) {
-                // Un signe de groupe est porté par le glyphe de la dernière
-                // note : le writer GABC le réémet après la barre de séparation.
-                if let Some(last) = self.current().notes.last_mut() {
-                    last.glyph.push_str(value);
-                } else {
-                    self.glyph.push_str(value);
-                }
-            } else if let Some(value) = annotation.strip_prefix(carrier::GLYPH_ANNOTATION) {
-                self.glyph.push_str(value);
-            }
+        // Une annotation `"^…"` dont le contenu est une étiquette est un
+        // vidage de la source : elle n'est jamais un porteur.
+        if token.starts_with('"') {
             return;
         }
         if token.starts_with('!') && token.ends_with('!') {
@@ -210,22 +182,40 @@ impl Voice {
             self.glyph.push(glyph);
             return;
         }
+        // §4.8 : les barres ABC natives sont relues telles quelles ; une
+        // annotation `^bar:` ne l'est pas (vidage de la source).
+        let bar = match token {
+            "|" => Some(BarKind::DivisioMinima),
+            "||" => Some(BarKind::DivisioMinor),
+            "[|" => Some(BarKind::DivisioMaior),
+            "::" => Some(BarKind::DivisioFinalis),
+            _ => None,
+        };
+        if let Some(bar) = bar {
+            self.current().bars.push(bar);
+            return;
+        }
         if is_pitch(token) {
             let glyph = std::mem::take(&mut self.glyph);
             let letter = letter_for_height(pitch_step(token) + clef_key(&self.clef) + 5);
-            let attributes = std::mem::take(&mut self.attributes)
-                .into_iter()
-                .map(|text| NoteAttribute { after: 0, text })
-                .collect();
             self.current().notes.push(GregorianNote {
                 letter,
                 signs: parse_signs(&glyph),
                 glyph,
-                attributes,
                 ..GregorianNote::default()
             });
         }
     }
+}
+
+/// Texte d'un champ `w:`, sans les marqueurs de mélisme ajoutés par le writer.
+fn lyric_text(line: &str) -> String {
+    let text = unescape_lyric(line.trim_start());
+    text.trim()
+        .trim_end_matches(|character: char| character == '_' || character.is_whitespace())
+        .trim_end_matches('-')
+        .trim()
+        .to_owned()
 }
 
 /// Orthographe GABC d'une décoration de custos.
@@ -315,18 +305,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn readable_gregorian_abc_builds_a_gregorian_payload() {
-        let src = "X:1\nT:k\nM:4/4\nL:1/8\nK:C\nI:chant=gregorian\nI:clef=c3\n\
-                   N:language=latin\n\n\"^text: Sanctus\"\nP e |\n";
+    fn standard_gregorian_abc_builds_a_gregorian_payload() {
+        let src = "X:1\nT:k\nM:4/4\nL:1/8\nK:C clef=C3\nI:chant=gregorian\n\
+                   U: P = !uppermordent!\n\nP e |\nw: Sanctus\n";
         let mut score = Score::default();
         assert!(restore(src, &mut score));
         let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
             panic!("payload");
         };
         assert_eq!(payload.clefs, vec!["c3"]);
-        assert_eq!(payload.headers[0].value, "latin");
+        assert_eq!(payload.headers[0].value, "k");
         assert_eq!(payload.syllables[0].notes[0].glyph, "w");
         assert_eq!(payload.syllables[0].text, "Sanctus");
+    }
+
+    #[test]
+    fn dump_annotations_are_not_read() {
+        let src = "X:1\nT:k\nK:C\nI:chant=gregorian\n\"^text: Sanctus\"\n\
+                   \"^glyph: virga\"\ne |\n";
+        let mut score = Score::default();
+        assert!(restore(src, &mut score));
+        let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
+            panic!("payload");
+        };
+        assert_eq!(payload.syllables[0].text, "");
+        assert_eq!(payload.syllables[0].notes[0].glyph, "");
     }
 
     #[test]
