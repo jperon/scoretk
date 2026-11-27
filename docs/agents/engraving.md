@@ -1765,6 +1765,44 @@ the faithful name/bracket indent removes printable width from every system;
 this is reported as a regression, not hidden by a metric. The 12 remaining
 clipped glyphs are all from corpus files whose long names still exceed the
 style-derived width; they stay in the denominator.
+
+## 18. Review of the private page: one line per lyric verse (2026-11-27)
+
+The reader already keeps the verse number: `read4xx::read_lyrics`
+(`read/read4xx/mod.rs:2425-2430`) reads `<no>` into `Lyrics::verse`, and the
+private `.mscz` writes `<no>1</no>` for the second verse (`read302/chord.rs:
+430-449` does the same for 3.x). The defect was in the vertical placement:
+`place_lyrics` used `verse * spatium`, while MuseScore's
+`LyricsLayout::setDefaultPositions` (`lyricslayout.cpp:602-613`) uses
+`verse * lyrics->lineSpacing() * lyricsLineHeight`. Edwin's line spacing is
+about 0.906 em (cap `M` 722 + descender 184 font units), which the 4.7.4 SVG
+confirms: 10 pt at spatium 1.3 mm gives 2.46 sp between the two verses.
+`text_line_height(em)` now supplies that value to `place_lyrics`,
+`lyric_verse_moves` and `plan_lyric_lines`, so a hyphen and a melisma dash
+follow their own verse's line. A two-verse unit test pins the baseline and
+dash positions. The oracle gained a "overlapping lyric verse lines" column:
+glyphs are grouped by their baseline, and two verse bands whose baselines
+are more than 0.6 sp apart but whose vertical extents overlap count as one
+defect (both sides).
+
+| Metric (`oracle-eng9-review-base3` → `oracle-eng9-step7`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1689 (373/2 209) | 0.1689 (373/2 209) |
+| Measure widths within 0.1 sp | 89/394 | 89/394 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Files with identical system breaks | 36/56 | 36/56 |
+| Max bar-line x spread, sp (reference / ours) | 2.046 / 2.001 | 2.046 / 2.001 |
+| Overlapping lyric verse lines (reference / ours) | 0 / 0 | 0 / 0 |
+
+The corpus files carry only one verse, so their figure stays at zero on both
+sides; the private score is the evidence: its first-system verse lines
+overlapped once before the port and **0 times** after, with baselines 2.46 sp
+apart instead of 1 sp. The page-1 PNG rendered from this tree
+(`engrave-img/eng9/step7.png`) shows "Ou" on its own line below "Mi-nuit". The
+lyrics now push the following staff further down, so the staff y positions
+change, but the stem-length and bar-line-spread figures above are unchanged:
+the shared-segment-x port did not worsen them.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

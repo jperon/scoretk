@@ -1093,6 +1093,22 @@ pub(crate) fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
         .unwrap_or(em * 3 / 4)
 }
 
+/// Vertical distance between two lyric verses. MuseScore's
+/// `TextBase::lineSpacing()` is the font metric's line spacing in staff
+/// spaces, not one spatium: `LyricsLayout::setDefaultPositions` multiplies it
+/// by `lyricsLineHeight` (`lyricslayout.cpp:602-613`). The 4.7.4 SVG of the
+/// private score puts two 10 pt verses 2.46 sp apart at spatium 1.3 mm;
+/// `em` there is 2.714 sp, and Edwin's cap height (M, 722 units) plus its
+/// descender (comma, 184) gives 906/1000 em.
+pub(crate) fn text_line_height(em: i32) -> i32 {
+    em * 906 / 1000
+}
+
+/// Offset of one lyric verse below the first line.
+fn lyric_line_offset(verse: usize, em: i32, spec: &PageSpec) -> i32 {
+    verse as i32 * spec.lyrics_line_height * text_line_height(em) / 1024
+}
+
 /// Emits one Edwin glyph per character. `align` is 0 (left), 1 (centre) or
 /// 2 (right); the pen starts at `x` with a top at `y` (not the baseline).
 pub(crate) fn place_text(
@@ -1170,7 +1186,7 @@ pub(crate) fn place_lyrics(
         if text.is_empty() {
             continue;
         }
-        let line = lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
+        let line = lyric_line_offset(lyric.verse, em, spec);
         let top = staff_y
             + STAFF_HEIGHT
             + spec.lyrics_pos_below
@@ -1208,7 +1224,7 @@ fn plan_lyric_lines(
                 continue;
             }
             let width = text_run_width(&lyric.text, em, false);
-            let line = lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
+            let line = lyric_line_offset(lyric.verse, em, spec);
             let top = first_line + line + offsets.get(lyric.verse).copied().unwrap_or(0);
             // `place_text_kind` draws the glyphs with their baseline at
             // `top + cap("M")`; the line segment is placed relative to that
@@ -1704,7 +1720,7 @@ fn lyric_verse_moves(
             let top = staff_y
                 + STAFF_HEIGHT
                 + spec.lyrics_pos_below
-                + lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
+                + lyric_line_offset(lyric.verse, em, spec);
             if let Some(south) = skyline.south().max_at(x0, x1) {
                 // The staff outline must clear the top of the syllable by
                 // `lyricsMinTopDistance` (`lyricslayout.cpp:622-650`).
@@ -2096,6 +2112,67 @@ mod tests {
             let (_, y) = item.origin();
             assert!(y >= 5 * SP + 4 * SP, "lyrics must sit below the staff");
         }
+    }
+
+    #[test]
+    fn two_verses_get_separate_lyric_lines() {
+        // `LyricsLayout::setDefaultPositions` (lyricslayout.cpp:602-613):
+        // verse n is `n * lineSpacing() * lyricsLineHeight` below the staff,
+        // where the font's line spacing is about 0.906 em, not one spatium.
+        // At spatium 1.3 mm and 10 pt, 2.46 sp separates the two lines; one
+        // spatium would superpose the glyphs.
+        let spec = PageSpec {
+            spatium_mm: 1.3,
+            ..PageSpec::default()
+        };
+        let em = text_em(&spec, spec.lyric_font_size);
+        let lyric = |verse, text| LyricAtom {
+            verse,
+            text: String::from(text),
+            syllabic: LyricsSyllabic::Single,
+            melisma: false,
+        };
+        let mut out = DisplayList::new(0);
+        place_lyrics(
+            &mut out,
+            &[lyric(0, "Mi"), lyric(1, "Ou")],
+            10 * SP,
+            5 * SP,
+            em,
+            &spec,
+            &[],
+        );
+        let first_line = 5 * SP + STAFF_HEIGHT + spec.lyrics_pos_below;
+        let expected = first_line + em * 906 / 1000;
+        let tops: Vec<i32> = out
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Lyrics)
+            .map(|item| item.origin().1)
+            .collect();
+        let cap = text_cap_height("M", em, false);
+        assert!(tops.contains(&(first_line + cap)), "verse 0: {tops:?}");
+        assert!(
+            tops.contains(&(expected + cap)),
+            "verse 1 must sit one font line height lower: {tops:?}"
+        );
+        assert!(expected - first_line > cap);
+        // The same offset applies to the hyphen of verse 1.
+        let event = Atom {
+            lyrics: vec![LyricAtom {
+                syllabic: LyricsSyllabic::Begin,
+                ..lyric(1, "l'heu")
+            }],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let events = vec![(10 * SP, &event)];
+        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, em, &spec, &[]);
+        assert_eq!(lines.len(), 1);
+        let dash_y = lines[0].bbox(&out).unwrap().1;
+        assert!(
+            (expected..expected + text_cap_height("M", em, false)).contains(&dash_y),
+            "verse 1 dash must sit on its own line: {dash_y} vs {expected}"
+        );
     }
 
     #[test]
