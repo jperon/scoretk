@@ -1457,10 +1457,16 @@ fn plan_lyric_lines(
                 continue;
             }
             // `layoutDashes` needs its end syllable: without one there is no
-            // dash line at all (`lyricslayout.cpp:283-285`). The gap is
-            // measured between the two shapes, each inset by `lyricsDashPad`.
+            // dash line at all (`lyricslayout.cpp:283-285`). `LyricsLine`'s
+            // end element is in the same track as the start one
+            // (`findNextLyrics`, `:365-379`). A following syllable whose text
+            // already starts with a hyphen carries its own literal dash: the
+            // 4.7.4 page prints one separator, not two.
             let Some((next_x, next_text)) =
                 events[index + 1..].iter().find_map(|(next_x, later)| {
+                    if later.voice != event.voice || *next_x <= *x {
+                        return None;
+                    }
                     later
                         .lyrics
                         .iter()
@@ -1470,36 +1476,50 @@ fn plan_lyric_lines(
             else {
                 continue;
             };
+            if next_text.starts_with('-') {
+                continue;
+            }
             let next_ink = text_ink_bounds(next_text, em, false);
             let next_left = next_x + SP / 2 - text_run_width(next_text, em, false) / 2 + next_ink.0;
             let start = text_right + spec.lyrics_dash_pad;
-            let length = next_left - spec.lyrics_dash_pad - start;
-            if length <= 0 {
+            let end = next_left - spec.lyrics_dash_pad;
+            let gap = end - start;
+            if gap <= 0 {
                 continue;
             }
             // `lyricslayout.cpp:315-320`: count by `lyricsDashMaxDistance`,
             // then force at least one dash when `lyricsDashForce` is set or
             // the gap exceeds `lyricsDashMinLength`.
-            let mut count = if length > DASH_MAX_DISTANCE {
-                (length + DASH_MAX_DISTANCE - 1) / DASH_MAX_DISTANCE
+            let mut count = if gap > DASH_MAX_DISTANCE {
+                (gap + DASH_MAX_DISTANCE - 1) / DASH_MAX_DISTANCE
             } else {
-                length / DASH_MAX_DISTANCE
+                gap / DASH_MAX_DISTANCE
             };
-            if length > spec.lyrics_dash_min || spec.lyrics_dash_force {
+            if gap > spec.lyrics_dash_min || spec.lyrics_dash_force {
                 count = count.max(1);
             }
             // `:326-339`: a forced dash on a short gap is widened to
-            // `lyricsDashMinLength`, then capped at `lyricsDashMaxLength`.
-            let length = length.max(spec.lyrics_dash_min);
+            // `lyricsDashMinLength`, extended symmetrically around the gap
+            // centre. The horizontal spacing reserves that room, so the
+            // extension stays inside the two syllables' ink; it never draws
+            // on top of them (`startX -= 0.5 * diff`, `endX += 0.5 * diff`).
+            let shortfall = (spec.lyrics_dash_min - gap).max(0);
+            let left = (start - shortfall / 2).max(text_right);
+            let right = (end + shortfall / 2).min(next_left);
+            let length = right - left;
+            if length <= 0 {
+                continue;
+            }
             let dash_width = length.min(spec.lyrics_dash_max).max(1);
             // `:341-359`: `firstAndLastGapAreHalf` (true by default) leaves
             // half a step at each end and centres every dash in its step.
             let step = length / count;
+            let mut x_dash = 0;
             for dash in 0..count {
-                let centre = start + (dash * 2 + 1) * step / 2;
+                x_dash += if dash == 0 { step / 2 } else { step };
                 items.push(DisplayItem::rect(
                     ItemKind::Lyrics,
-                    centre - dash_width / 2,
+                    left + x_dash - dash_width / 2,
                     y,
                     dash_width,
                     spec.lyrics_dash_width,
@@ -2615,6 +2635,61 @@ mod tests {
             ink_right > text_run_width("No", em, false) / 2,
             "glyph side bearings are part of the lyric shape"
         );
+    }
+
+    #[test]
+    fn hyphen_is_centred_between_syllables_and_never_doubled() {
+        // `layoutDashes` centres a dash in the gap between the two ink shapes
+        // (`lyricslayout.cpp:768-830`, `:341-359`); starting it at the first
+        // syllable's edge touched that syllable on the private page.
+        let spec = PageSpec::default();
+        let em = 2 * SP;
+        let lyric = |text: &str, syllabic| LyricAtom {
+            verse: 0,
+            text: String::from(text),
+            syllabic,
+            melisma: false,
+            melisma_end: None,
+        };
+        let first = Atom {
+            lyrics: vec![lyric("Ré", LyricsSyllabic::Begin)],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let second = Atom {
+            lyrics: vec![lyric("dem", LyricsSyllabic::Middle)],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let events = vec![(10 * SP, &first), (18 * SP, &second)];
+        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        assert_eq!(lines.len(), 1, "one syllable pair gets one hyphen");
+        let (x, w) = match lines[0].geometry {
+            Geometry::Rect { x, w, .. } => (x, w),
+            _ => panic!("a hyphen is a rectangle"),
+        };
+        let left = events[0].0 + SP / 2 - text_run_width("Ré", em, false) / 2
+            + text_ink_bounds("Ré", em, false).1;
+        let right = events[1].0 + SP / 2 - text_run_width("dem", em, false) / 2
+            + text_ink_bounds("dem", em, false).0;
+        let centre = x + w / 2;
+        assert!(
+            (centre - (left + right) / 2).abs() <= SP / 10,
+            "dash centre {centre} must sit in the ink-gap centre {}",
+            (left + right) / 2
+        );
+        assert!(
+            x >= left && x + w <= right,
+            "dash must clear both syllables"
+        );
+
+        // A syllable that already carries a printed "-" is its own separator:
+        // do not add a second dash before "-ël" (private m.24/25 verse 2).
+        let printed = Atom {
+            lyrics: vec![lyric("-ël", LyricsSyllabic::End)],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let events = vec![(10 * SP, &first), (18 * SP, &printed)];
+        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        assert!(lines.is_empty(), "a literal hyphen must not be drawn twice");
     }
 
     #[test]

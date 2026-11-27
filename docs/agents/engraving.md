@@ -2278,3 +2278,32 @@ whole page inspected) "Ré" and "dem" no longer overlap; the added widths also
 move the private page 2 start from measure 20 to measure 13, as in the 4.7.4
 reference page 2 (`eng9-ref/private-2.svg`). The affected words now lie on
 page 3 (`fix1-p3.png`), which is what the following fixes inspect.
+
+## 29. Review of the private page 3: hyphen geometry and literal hyphens (2026-11-27)
+
+Two hyphen defects remained after §28. The forced dash was widened to
+`lyricsDashMinLength` and drawn from the first syllable's ink edge, so a short
+gap left it touching that syllable; upstream instead extends the dash
+symmetrically around the gap centre (`startX -= 0.5 * diff`,
+`endX += 0.5 * diff` in `LyricsLayout::layoutDashes`,
+`lyricslayout.cpp:326-339`) and places every dash at the centre of its step
+(`:341-359`). `plan_lyric_lines` now computes the dash centre from both ink
+shapes and keeps it inside the gap. Separately, the T B verse 2 of m.24
+already carries a printed "-" in its text; its predecessor "No" received an
+automatic dash, producing "No - -ël". The next-syllable lookup now follows
+`findNextLyrics` (same track, later chord/rest, `:365-379`) and suppresses the
+automatic dash when that syllable already begins with a hyphen, as on the
+4.7.4 page. Two unit tests pin the centred geometry and the no-duplication
+rule.
+
+| Metric (`oracle-eng9-p3-fix1` → `oracle-eng9-p3-fix2`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1802 (398/2 209) | 0.1802 (398/2 209) |
+| Measure widths / system breaks | 90/394 / 37/56 | 90/394 / 37/56 |
+| Overlapping lyric syllables, same verse | 0 / 0 | 0 / 0 |
+
+Lyrics lines are not extracted by the geometric oracle, so the unchanged
+figures are expected. `engrave-img/eng9/fix2-p3.png` (whole page inspected)
+shows "le Ré-dem-pteur." with centred hyphens and one separator in
+"No - ël … No -ël".
