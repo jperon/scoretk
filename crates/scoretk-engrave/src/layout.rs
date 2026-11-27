@@ -87,6 +87,9 @@ pub struct PageSpec {
     pub staff_lower_border: i32,
     pub frame_system_distance: i32,
     pub instrument_name_offset: i32,
+    /// Point size of the lyricist text style (`styledef.cpp:878`, default
+    /// 10 pt). // Port of `LyricsLayout::layout`.
+    pub lyric_font_size: f64,
 }
 
 impl Default for PageSpec {
@@ -117,6 +120,7 @@ impl Default for PageSpec {
             staff_lower_border: 7 * SP,
             frame_system_distance: 7 * SP,
             instrument_name_offset: SP,
+            lyric_font_size: 10.0,
         }
     }
 }
@@ -165,6 +169,7 @@ impl PageSpec {
             staff_lower_border: (style.staff_lower_border_sp * SP as f64) as i32,
             frame_system_distance: (style.frame_system_distance_sp * SP as f64) as i32,
             instrument_name_offset: (style.instrument_name_offset_sp * SP as f64) as i32,
+            lyric_font_size: style.lyricist_font_size,
             // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
             // page 1 pushes the first system down by its own height plus
             // `frameSystemDistance` (7 sp, styledef.cpp:139).
@@ -644,6 +649,7 @@ fn place_measure(
     plan: &BeamPlan,
     bar_height: i32,
     draw_end_bar: bool,
+    lyrics_em: i32,
 ) -> i32 {
     // The first header event sits at its own x (e.g. clefLeftMargin); the
     // loop below then advances by the gap to the following event.
@@ -660,6 +666,7 @@ fn place_measure(
             system_y,
             atom.mm_rest_count,
             plan.stems.get(event_offset + index).copied().flatten(),
+            lyrics_em,
         );
         cursor += segment_width(atom, index, scale);
     }
@@ -825,7 +832,7 @@ pub(crate) fn text_run_width(text: &str, em: i32, bold: bool) -> i32 {
 
 /// Baseline offset from the top of a text run (Edwin cap height is about
 /// 736 font units; measured on the 4.7.4 title SVG).
-fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
+pub(crate) fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
     text.chars()
         .filter_map(|character| u16::try_from(character).ok())
         .filter_map(|codepoint| text_glyph(codepoint, bold))
@@ -876,6 +883,31 @@ pub(crate) fn place_text_kind(
             out.push(DisplayItem::text(kind, codepoint, pen, baseline, em, bold));
         }
         pen += text_advance(codepoint, em, bold);
+    }
+}
+
+/// Lyrics below their staff, as plain Edwin text. MuseScore's
+/// `LyricsLayout::layout` positions the syllable under its chord, with the
+/// default `lyricsPlacement: below` and `lyricsPosBelow` 3 sp below the
+/// bottom staff line (`styledef.cpp:73-74`, `lyricslayout.cpp:45-170`).
+/// Full text metrics/autoplace arrive in P4; here one Edwin glyph per
+/// character is drawn at the segment's shared x.
+pub(crate) fn place_lyrics(
+    out: &mut DisplayList,
+    lyrics: &[alloc::string::String],
+    x: i32,
+    staff_y: i32,
+    em: i32,
+) {
+    for (verse, text) in lyrics.iter().enumerate() {
+        if text.is_empty() {
+            continue;
+        }
+        // First verse baseline 3 sp below the bottom staff line; following
+        // verses are one text line lower.
+        let baseline = staff_y + 4 * SP + 3 * SP + verse as i32 * em;
+        let top = baseline - text_cap_height(text, em, false);
+        place_text_kind(out, ItemKind::Text, text, x, top, em, false, 1);
     }
 }
 
@@ -1125,6 +1157,7 @@ fn place_event(
     y: i32,
     mm_rest_count: u16,
     beam: Option<(bool, i32)>,
+    lyrics_em: i32,
 ) {
     match event.kind {
         AtomKind::Clef { name } => {
@@ -1144,12 +1177,18 @@ fn place_event(
             if let Some(chord) = &event.chord {
                 place_chord(out, chord, x, y, beam);
             }
+            if !event.lyrics.is_empty() {
+                place_lyrics(out, &event.lyrics, x + SP / 2, y, lyrics_em);
+            }
         }
         AtomKind::Rest {
             duration,
             dots,
             measure,
         } => {
+            if !event.lyrics.is_empty() {
+                place_lyrics(out, &event.lyrics, x + SP / 2, y, lyrics_em);
+            }
             // // Port of `RestLayout::computeVoiceOffset`
             // (`restlayout.cpp:694-765`): in a multi-voice measure the rests
             // of voices 2 and 4 move one line space down, those of voices 1
@@ -1226,6 +1265,7 @@ pub fn build_page(
     let mut out = DisplayList::new(page);
     place_credits(&mut out, credits, spec, page);
     let (staff_y, _) = crate::staffs::system_geometry(staffs, spec);
+    let lyrics_em = text_em(spec, spec.lyric_font_size);
     for system in systems.iter().filter(|system| system.page == page) {
         let sy = system.y;
         // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
@@ -1336,6 +1376,7 @@ pub fn build_page(
                     &plan,
                     bar_height,
                     draw_end_bar,
+                    lyrics_em,
                 );
                 event_offset += atom.events.len();
             }
@@ -1371,6 +1412,7 @@ pub fn geometry_of(item: &DisplayItem) -> Geometry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::String;
     use alloc::vec;
 
     use crate::atoms::NoteAtom;
@@ -1420,6 +1462,17 @@ mod tests {
             key_fifths: 0,
             mm_rest_count: 1,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn lyrics_are_centred_below_the_staff() {
+        let mut out = DisplayList::new(0);
+        place_lyrics(&mut out, &[String::from("Mi")], 10 * SP, 5 * SP, 2 * SP);
+        assert_eq!(out.count(ItemKind::Text), 2); // one Edwin glyph per character
+        for item in &out.items {
+            let (_, y) = item.origin();
+            assert!(y >= 5 * SP + 4 * SP, "lyrics must sit below the staff");
         }
     }
 
