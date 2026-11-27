@@ -1027,3 +1027,34 @@ panic in beam geometry and was therefore never produced; the number of
 matching page-break patterns is unchanged. On the private score page 1 the
 organ eighths now carry their 12/8 beam groups (chords included) instead of
 isolated flags.
+
+### 12.3 Chords of two voices on one staff (step 3)
+
+The existing atom pass already forced voice 1 stems up and voice 2 stems
+down by track parity, gave both voices the same segment x, and moved voice-2
+rests one line space down (`restlayout.cpp:694-765`). The gap was in the
+unison/second offsets: the old code shifted the later voice's head whenever
+two voices shared a staff line. It now follows `layoutChords1` /
+`calculateChordOffsets` (`chordlayout.cpp:1887-2130, 2228-2290`): a true
+unison with the same head, duration and dots shares one head x, a second
+shifts the down-stem chord enough for both stems to align, and an
+unshareable overlap shifts the up-stem chord by a head width plus 0.15 sp.
+Only the colliding chord's x changes; the segment itself stays shared.
+Unit tests pin the three rules.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Elements within 0.1 sp (56 files) | 385/2771 | 384/2771 |
+| Within 0.1 sp, x only | 0.1610 | 0.1599 |
+| Stem-length agreement | 0.6550 (684) | 0.6550 (684) |
+| Measure widths within 0.1 sp | 69/399 | 69/399 |
+| Files with identical system breaks | 34/56 | 34/56 |
+| Pages with identical system breaks | 48/58 | 48/58 |
+
+The single lost element is a `moonlight` notehead whose head-sharing x now
+differs from the nearest reference head; no other figure changes. On the
+private score page 1 the S/A unisons now share their head, with voice 1's
+stem up and voice 2's stem down, as in the 4.7.4 page. The oracle's corpus
+list had to be regenerated for this step because the eng5 worktree it
+pointed at had been removed after the merge; the MuseScore references are
+unchanged.

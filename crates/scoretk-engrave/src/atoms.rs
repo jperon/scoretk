@@ -42,7 +42,7 @@ use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
-    MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP, SYSTEM_HEADER_MIN_START,
+    MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH, SP, STEM_WIDTH, SYSTEM_HEADER_MIN_START,
 };
 
 /// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
@@ -875,6 +875,85 @@ fn stem_up(lines: &[i32], explicit: StemDirection, multi_voice: bool, track: u32
     }
 }
 
+/// One chord of a segment, reduced to the fields used by the up/down voice
+/// collision rules of `ChordLayout::calculateChordOffsets`.
+#[derive(Clone, Copy, Debug)]
+struct CollisionChord {
+    up: bool,
+    /// Lowest line of an up-stem chord (largest line number).
+    low: i32,
+    /// Highest line of a down-stem chord (smallest line number).
+    high: i32,
+    dots: u8,
+    duration: u8,
+    notes: usize,
+}
+
+/// Horizontal offsets of chords that collide with the opposite-stem voice,
+/// ported from `ChordLayout::calculateChordOffsets`
+/// (`chordlayout.cpp:1887-2130`). Unisons with the same head, duration and
+/// dots share one notehead (`shareHeads`); a second shifts the down-stem
+/// chord so that the two stems align; overlapping notes shift the up-stem
+/// chord by a head width plus 0.15 sp.
+fn voice_collision_offsets(chords: &[CollisionChord]) -> alloc::vec::Vec<i32> {
+    let mut offsets = alloc::vec![0; chords.len()];
+    let head = glyph_width("noteheadBlack");
+    let ups: alloc::vec::Vec<usize> = chords
+        .iter()
+        .enumerate()
+        .filter(|(_, chord)| chord.up)
+        .map(|(index, _)| index)
+        .collect();
+    let downs: alloc::vec::Vec<usize> = chords
+        .iter()
+        .enumerate()
+        .filter(|(_, chord)| !chord.up)
+        .map(|(index, _)| index)
+        .collect();
+    if ups.is_empty() || downs.is_empty() {
+        return offsets;
+    }
+    let bottom_up = ups
+        .iter()
+        .map(|&index| chords[index].low)
+        .max()
+        .unwrap_or(0);
+    let top_down = downs
+        .iter()
+        .map(|&index| chords[index].high)
+        .min()
+        .unwrap_or(0);
+    let separation = top_down - bottom_up;
+    let up_dots = ups.iter().any(|&index| chords[index].dots > 0);
+    let down_dots = downs.iter().any(|&index| chords[index].dots > 0);
+    if separation == 1 {
+        if up_dots && !down_dots {
+            for &index in &ups {
+                offsets[index] = head + SP / 10;
+            }
+        } else {
+            // Align the stems of the two voices (`chordlayout.cpp:1902-1912`).
+            for &index in &downs {
+                offsets[index] = head - STEM_WIDTH;
+            }
+        }
+    } else if separation <= 0 {
+        let shareable = ups.iter().all(|&up| {
+            downs.iter().all(|&down| {
+                let a = chords[up];
+                let b = chords[down];
+                a.duration == b.duration && a.dots == b.dots && a.notes == 1 && b.notes == 1
+            })
+        });
+        if !shareable {
+            for &index in &ups {
+                offsets[index] = head + 154; // 0.15 sp (`chordlayout.cpp:2090`)
+            }
+        }
+    }
+    offsets
+}
+
 /// // Port of `stemlayout.cpp:42-160` (`StemLayout::calcDefaultStemLength`):
 /// all internal arithmetic is in quarter spaces; with line distance 1 and
 /// magnitude 1, `defaultStemLength = stemLength * 4 = 14`, `quarterSpacesPerLine
@@ -1257,9 +1336,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         last_text[index] = (x, width);
                     }
                 }
-                // (voice, staff line) pairs already placed in this segment,
-                // used to shift noteheads of colliding voices.
-                let mut used_lines: alloc::vec::Vec<(u32, i32)> = alloc::vec::Vec::new();
+                let segment_start = events.len();
                 for (track, cr) in chord_rests {
                     let duration = duration_code(cr.duration.kind);
                     let stretch = if mm_stretch > 0 && matches!(cr.kind, ChordRestKind::Rest(_)) {
@@ -1332,24 +1409,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             }
                             let notes = note_atoms(chord, score, cr.duration.kind, bottom, inverse);
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
-                            // // Port of `ChordLayout::layoutChords3`
-                            // (`chordlayout.cpp:2060-2140`): when two voices
-                            // put notes on the same line, the later voice's
-                            // head is shifted right by a notehead width plus
-                            // 0.15 sp (`conflictUnison` offset).
-                            let collision = lines.iter().any(|line| {
-                                used_lines
-                                    .iter()
-                                    .any(|(voice, used)| *voice != track && used == line)
-                            });
-                            let chord_x = if collision {
-                                x + glyph_width("noteheadBlack") + 154
-                            } else {
-                                x
-                            };
-                            for &line in &lines {
-                                used_lines.push((track, line));
-                            }
+                            let chord_x = x;
                             let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
                             let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
                             let chord_atom = ChordAtom {
@@ -1431,6 +1491,39 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect();
                             events.push(rest);
                         }
+                    }
+                }
+                // // Port of `ChordLayout::layoutChords1`
+                // (`chordlayout.cpp:2228-2290`): resolve unison and second
+                // collisions between the up- and down-stem voices of this
+                // segment. All voices keep their shared segment x, and only
+                // the colliding chord's notehead/stem is shifted.
+                let mut colliding: alloc::vec::Vec<(usize, CollisionChord)> =
+                    alloc::vec::Vec::new();
+                for (index, event) in events.iter().enumerate().skip(segment_start) {
+                    if let Some(chord) = &event.chord {
+                        if chord.grace {
+                            continue;
+                        }
+                        let low = chord.notes.iter().map(|note| note.line).max().unwrap_or(4);
+                        let high = chord.notes.iter().map(|note| note.line).min().unwrap_or(4);
+                        colliding.push((
+                            index,
+                            CollisionChord {
+                                up: chord.stem_up,
+                                low,
+                                high,
+                                dots: chord.dots,
+                                duration: chord.duration,
+                                notes: chord.notes.len(),
+                            },
+                        ));
+                    }
+                }
+                let info: alloc::vec::Vec<_> = colliding.iter().map(|&(_, chord)| chord).collect();
+                for ((index, _), offset) in colliding.iter().zip(voice_collision_offsets(&info)) {
+                    if offset != 0 {
+                        events[*index].x += offset;
                     }
                 }
                 x += segment_width;
@@ -1664,6 +1757,34 @@ mod tests {
         assert_eq!(stem_length(&[12], &["noteheadBlack"], true, 4), 16 * 256);
         // A note inside the staff only gets the shortening rule: 3 sp.
         assert_eq!(stem_length(&[4], &["noteheadBlack"], false, 4), 12 * 256);
+    }
+
+    #[test]
+    fn voice_collisions_follow_the_up_down_chord_rules() {
+        let head = glyph_width("noteheadBlack");
+        let chord = |_voice, up, line, dots| CollisionChord {
+            up,
+            low: line,
+            high: line,
+            dots,
+            duration: 4,
+            notes: 1,
+        };
+        // A shared unison keeps one notehead x.
+        let unison = [chord(0, true, 4, 0), chord(1, false, 4, 0)];
+        assert_eq!(voice_collision_offsets(&unison), alloc::vec![0, 0]);
+        // A second: the down-stem chord shifts so that both stems align.
+        let second = [chord(0, true, 4, 0), chord(1, false, 5, 0)];
+        assert_eq!(
+            voice_collision_offsets(&second),
+            alloc::vec![0, head - STEM_WIDTH]
+        );
+        // An overlap that cannot share heads shifts the up-stem chord.
+        let overlap = [chord(0, true, 4, 0), chord(1, false, 4, 1)];
+        assert_eq!(
+            voice_collision_offsets(&overlap),
+            alloc::vec![head + 154, 0]
+        );
     }
 
     #[test]
