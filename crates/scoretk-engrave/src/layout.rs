@@ -341,18 +341,34 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             let first = chords[0];
             let last = chords[chords.len() - 1];
             let explicit = events[group[0]].1.beam_dir;
+            // // Port of `Beam::layout1` (`beamlayout.cpp:169-199`) and
+            // `Chord::stemDirection` (`chordlayout.cpp:1584-1588`): the group
+            // follows the first chord's stem direction, overridden by an
+            // explicit `<Beam><StemDirection>`. That chord already carries
+            // the tick-overlap voice rule of `Measure::hasVoices`
+            // (`measure.cpp:2360-2419`); the former system-wide voice count
+            // forced odd voices down even when they never overlapped, so
+            // the beam was anchored above notes whose stems were down and
+            // `far_end - note_y` collapsed to zero (no visible stem).
+            let first_chord = events[first].1.chord.as_ref();
             let up = match explicit {
                 Some(StemDirection::Up) => true,
                 Some(StemDirection::Down) => false,
-                _ if multi_voice => voice.is_multiple_of(2),
-                _ => {
-                    let lines: Vec<i32> = group
-                        .iter()
-                        .filter_map(|&index| events[index].1.chord.as_ref())
-                        .flat_map(|chord| chord.notes.iter().map(|note| note.line))
-                        .collect();
-                    crate::atoms::auto_stem_up(&lines)
-                }
+                _ => first_chord.map_or_else(
+                    || {
+                        if multi_voice {
+                            voice.is_multiple_of(2)
+                        } else {
+                            let lines: Vec<i32> = group
+                                .iter()
+                                .filter_map(|&index| events[index].1.chord.as_ref())
+                                .flat_map(|chord| chord.notes.iter().map(|note| note.line))
+                                .collect();
+                            crate::atoms::auto_stem_up(&lines)
+                        }
+                    },
+                    |chord| chord.stem_up,
+                ),
             };
             // Override every chord of the group with the beam direction
             // (`beamlayout.cpp:169-199`, `layout1`).
@@ -2140,6 +2156,89 @@ mod tests {
             // stem width), not on their notehead origins.
             assert!((x1 - lo).abs() <= 64, "beam start {x1} vs stem {lo}");
             assert!((x2 - hi).abs() <= 64, "beam end {x2} vs stem {hi}");
+        }
+    }
+
+    #[test]
+    fn an_explicit_down_beam_extends_its_stems_below_the_heads() {
+        // `Beam::layout1` (`beamlayout.cpp:169-199`) applies one direction to
+        // the whole group. A `<Beam><StemDirection>down</StemDirection>` on
+        // high notes used to anchor the slab *above* the heads while the
+        // stems were drawn down: `far_end - note_y` was clamped to zero and
+        // every stem disappeared at page scale (`moonlight`, 234 stems).
+        let mut first = atom(0);
+        let mut second = atom(1);
+        for measure in [&mut first, &mut second] {
+            measure.events[0].beams = 1;
+            measure.events[0].beam_dir = Some(StemDirection::Down);
+        }
+        first.events[0].beam_start = true;
+        let list = page(&[first, second], &PageSpec::default(), 0);
+        assert_eq!(list.count(ItemKind::Beam), 1);
+        let beam = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Beam)
+            .unwrap();
+        let Geometry::Beam { y1, y2, .. } = beam.geometry else {
+            panic!("beam must be a slanted rectangle");
+        };
+        assert!(y1 > 0 && y2 > 0, "a down beam sits below the top line");
+        let stems: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Stem)
+            .collect();
+        assert_eq!(stems.len(), 2);
+        for stem in stems {
+            let Geometry::Rect { y, h, .. } = stem.geometry else {
+                panic!("stem must be a rectangle");
+            };
+            assert!(h > 0, "an explicit down beam must keep visible stems");
+            assert!(y >= 0, "a down stem starts at (or below) the head");
+        }
+    }
+
+    #[test]
+    fn a_beam_follows_its_chord_when_two_voices_do_not_overlap() {
+        // `Measure::hasVoices(staffIdx, tick, len)` (`measure.cpp:2360-2419`,
+        // used at `chordlayout.cpp:1584`) forces track parity only while two
+        // voices sound together. A low chord of a non-overlapping second
+        // voice keeps its automatic up stem in the atoms; the beam must use
+        // that direction too (`beamlayout.cpp:169-199`), otherwise its slab
+        // is anchored above the heads after a parity-forced down direction
+        // and every stem collapses to zero length.
+        let voice_measure = |voice: u32| {
+            let mut measure = atom(8);
+            measure.events[0].beams = 1;
+            measure.events[0].beam_start = true;
+            measure.events[0].voice = voice;
+            let mut second = measure.events[0].clone();
+            second.x = 12 * SP;
+            second.beam_start = false;
+            measure.events.push(second);
+            measure.width = 20 * SP;
+            measure
+        };
+        let atoms = [voice_measure(0), voice_measure(1)];
+        let spec = PageSpec {
+            printable_width: 1000 * SP,
+            ..PageSpec::default()
+        };
+        let list = page(&atoms, &spec, 0);
+        assert_eq!(list.count(ItemKind::Beam), 2);
+        let stems: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Stem)
+            .collect();
+        assert_eq!(stems.len(), 4);
+        for stem in stems {
+            let Geometry::Rect { y, h, .. } = stem.geometry else {
+                panic!("stem must be a rectangle");
+            };
+            assert!(h > 0, "both voices must keep visible stems");
+            assert!(y < spec.margin_top + 8 * HALF_SP, "up stems start above the head");
         }
     }
 
