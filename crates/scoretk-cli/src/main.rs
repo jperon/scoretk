@@ -344,11 +344,7 @@ fn read_score(
 ) -> scoretk::Result<Score> {
     if from == Format::Ly && input != "-" {
         let mut resolve = lilypond_resolver(Path::new(input));
-        return scoretk::read_lilypond_with_includes_and_dialect(
-            bytes,
-            &mut resolve,
-            ly_gregorian,
-        );
+        return scoretk::read_lilypond_with_includes_and_dialect(bytes, &mut resolve, ly_gregorian);
     }
     if from == Format::Ly && ly_gregorian {
         return scoretk::read_lilypond_with_dialect(bytes, true);

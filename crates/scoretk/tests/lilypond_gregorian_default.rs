@@ -43,11 +43,10 @@ fn plain_lilypond_read_keeps_the_ordinary_dialect() {
 
 #[test]
 fn opt_in_lilypond_read_restores_the_gregorian_payload() {
-    let score = read_lilypond_with_dialect(VATICANA.as_bytes(), true)
-        .expect("Gregorian .ly import");
+    let score =
+        read_lilypond_with_dialect(VATICANA.as_bytes(), true).expect("Gregorian .ly import");
     assert!(
         matches!(score.extensions.format, Some(Extension::Gregorian(_))),
         "the opt-in Gregorian dialect did not restore the payload"
     );
 }
-

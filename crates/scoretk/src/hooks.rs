@@ -311,7 +311,7 @@ non_branche!(
     read_lilypond_with_includes_and_dialect(
         bytes: &[u8],
         resolve: &mut LilypondResolver<'_>,
-        gregorian: bool
+        gregorian: bool,
     ) -> Result<Score>,
     Format::Ly,
     Lecture

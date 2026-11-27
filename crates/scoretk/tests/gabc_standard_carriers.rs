@@ -186,8 +186,8 @@ fn gregorian_lilypond_option_is_additive_and_round_trips() {
         assert!(!ly.contains(dump), "{dump} is a dump: {ly}");
     }
 
-    let again = scoretk::read_lilypond_with_dialect(ly.as_bytes(), true)
-        .expect("Gregorian .ly import");
+    let again =
+        scoretk::read_lilypond_with_dialect(ly.as_bytes(), true).expect("Gregorian .ly import");
     let gabc = write(&again, Format::Gabc, &Options::default()).expect("GABC export");
     let text = String::from_utf8(gabc).expect("UTF-8");
     assert!(text.contains("(c3)"), "clef lost: {text}");
