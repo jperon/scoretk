@@ -94,12 +94,17 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
                 break;
             }
         }
-        // // Port of `systemlayout.cpp:459-489`: `shouldBeJustified` only
-        // suppresses justification when `curMeasure()` is null (no measure
-        // follows). With any measure in the system it justifies even a short
-        // last system; the old `fill < lastSystemFillLimit` shortcut left
-        // `testNoteheads2`'s final system at natural width.
-        let justify = true;
+        // // Port of `SystemLayout::shouldBeJustified`
+        // (`systemlayout.cpp:459-489`): a system whose natural width is
+        // below `lastSystemFillLimit` of the target width is justified
+        // **only when a measure follows it**. A short final system — e.g.
+        // `copypaste_parts`'s last system with one whole-measure rest —
+        // stays at its natural width. Step 7 justified it unconditionally,
+        // a regression from eng2b; `testNoteheads2`'s final system fills
+        // more than 0.3 and is still justified.
+        let is_last = first + count >= atoms.len();
+        let fill = width * 1024 / spec.printable_width.max(1);
+        let justify = !(is_last && fill < spec.last_system_fill_limit);
         // The last fixed segment of the final system is the generated end
         // barline (`endBarWidth` + `endBarDistance`), not a spring
         // (`horizontalspacing.cpp:1135-1152`).
@@ -257,14 +262,36 @@ mod tests {
     }
 
     #[test]
-    fn a_short_last_system_is_justified() {
-        // `shouldBeJustified` (systemlayout.cpp:459-489) justifies a system
-        // as long as a measure is present, even below lastSystemFillLimit.
+    fn a_short_last_system_is_left_unstretched() {
+        // `shouldBeJustified` (systemlayout.cpp:459-489): a system below
+        // `lastSystemFillLimit` is justified only when a measure follows.
+        // `copypaste_parts`'s final system holds one whole-measure rest and
+        // MuseScore leaves it short.
         let spec = PageSpec::default();
         let atoms = vec![quarter(1280)];
         let systems = compute(&atoms, &spec);
         assert_eq!(systems.len(), 1);
-        assert!(systems[0].scale > 1024);
+        assert_eq!(systems[0].scale, 1024);
+    }
+
+    #[test]
+    fn a_short_non_final_system_is_justified() {
+        let spec = PageSpec::default();
+        // One measure per system (each carries a line break), each below
+        // `lastSystemFillLimit`. Every system but the last is followed by a
+        // measure and is justified; the last one is left at natural width.
+        let atoms: Vec<_> = (0..4)
+            .map(|_| {
+                let mut atom = quarter(1280);
+                atom.width = 20 * 1024;
+                atom.line_break = true;
+                atom
+            })
+            .collect();
+        let systems = compute(&atoms, &spec);
+        assert_eq!(systems.len(), 4);
+        assert!(systems[..3].iter().all(|system| system.scale > 1024));
+        assert_eq!(systems[3].scale, 1024);
     }
 
     #[test]

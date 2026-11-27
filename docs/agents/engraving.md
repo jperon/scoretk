@@ -672,3 +672,30 @@ Beams and grace notes are P3 work (`Beam-CrossM1`, `testTuplets8`,
 `copypaste_tuplet_01`); the second figure above is reported alongside the
 first, never in place of it. The remaining non-beam deficits are mostly
 0.25–0.5 sp shortening differences in multi-voice and lyric-bearing scores.
+
+### 9.16 Regression from eng2b: short last system (step 0, 2026-11-27)
+
+Step 7 justified every system, including a final system holding one measure.
+`SystemLayout::shouldBeJustified` (`systemlayout.cpp:459-489`) actually leaves
+a system unstretched when `curSysWidth / targetSystemWidth < lastSystemFillLimit`
+(0.3) **and no measure follows**. The eng3 breaking plan now applies that
+exact rule using each score's own `lastSystemFillLimit`; a short last system
+with a following measure is still justified. Complementary check over the six
+corpus files whose reference ends with a single short system: the bar line of
+that system is at the oracle x (within 0.1 sp) in 1/6 files after the fix
+against 0/6 before (the other five are 0.19–0.94 sp off from unrelated
+header offsets, down from 74–93 sp). Before/after/reference PNGs of
+`copypaste_parts`: `/tmp/copypaste_parts-p3-before.png`,
+`/tmp/copypaste_parts-p3-step0.png`, `/tmp/copypaste_parts-p3-ref.png`.
+
+| Metric | Before step 0 | After step 0 | Gate |
+| --- | ---: | ---: | --- |
+| Measure widths within 0.1 sp | 0.3750 (72/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+| Stem-length agreement | 0.7404 (288/389) | 0.7404 (288/389) | ≥ 0.90 — failed |
+| Short last-system x within 0.1 sp | 0/6 | 1/6 | complementary |
+
+The headline width figure drops by three measures: they were counted as
+matching only because a wrongly justified system pushed a bar line onto a
+reference boundary by coincidence. Fidelity of the last system is the
+regression being repaired; the width metric remains the primary P2 figure.
