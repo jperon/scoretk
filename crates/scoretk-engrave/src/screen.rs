@@ -62,10 +62,16 @@ impl PageSpec {
         let to_sp = |px: i32| (px as f64 * SP as f64 / staff_px as f64).round() as i32;
         let width = width_px.min(i32::MAX as u32) as i32;
         let height = height_px.min(i32::MAX as u32) as i32;
-        // 2–8 px margins: proportional to the screen, never more than 1 % of
-        // the short side on a large display.
-        let margin_x = (width / 100).clamp(2, 8);
-        let margin_y = (height / 75).clamp(2, 8);
+        // The margins are in whole staff spaces, not a handful of pixels:
+        // SMuFL outlines hang outside their layout box (Leland's `gClef8va`
+        // reaches about 3.4 sp above the top staff line, see its bbox in
+        // `scoretk-smufl/src/glyphs.rs`). With only 6–8 px of margin the
+        // first system was clipped at the top and the clef touched the left
+        // edge. Two spaces at the sides and four at the top/bottom keep all
+        // emitted outlines inside the caller's buffer. `assign_pages` uses
+        // `margin_top` for both the top and the bottom of a page.
+        let margin_x = 2 * staff_px;
+        let margin_y = 4 * staff_px;
         Self {
             spatium_mm: staff_px as f64 * SCREEN_PIXEL_PITCH_MM,
             page_height: to_sp(height),
@@ -88,15 +94,19 @@ mod tests {
         for (w, h) in [(320, 240), (800, 600), (1024, 768), (600, 800)] {
             let px = screen_staff_px(w, h);
             let spec = PageSpec::for_screen(w, h);
-            assert!(px >= SCREEN_STAFF_PX_MIN && px <= SCREEN_STAFF_PX_MAX);
+            assert!((SCREEN_STAFF_PX_MIN..=SCREEN_STAFF_PX_MAX).contains(&px));
             // Every dimension maps back to the screen's pixels to within the
             // fixed-point rounding of one staff-space unit.
             let to_px = |fixed: i32| fixed * px / SP;
-            let margin_x = ((w as i32 / 100).clamp(2, 8)) * 2;
+            let margin_x = 4 * px; // two spaces on each side
             assert!((to_px(spec.printable_width) - (w as i32 - margin_x)).abs() <= 1);
             assert!((to_px(spec.page_height) - h as i32).abs() <= 1);
             assert!(spec.printable_width > 0);
             assert!(spec.page_height > 0);
+            // Tall clefs reach ~3.4 sp above the top staff line: keep at
+            // least that much room, and at least one space at the sides.
+            assert!(to_px(spec.margin_top) * 10 >= 34 * px);
+            assert!(to_px(spec.margin_left) >= px);
         }
     }
 

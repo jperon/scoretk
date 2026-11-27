@@ -37,16 +37,27 @@ fn to_pixels(fixed: i32, staff_px: i32) -> i32 {
     (i64::from(fixed) * i64::from(staff_px) * i64::from(ONE) / 1024) as i32
 }
 
+/// Rounds a rasteriser coordinate (1/256 px) to a whole pixel.
+///
+/// `Gray8::fill_rect` takes integer pixels, unlike `fill_path` which takes
+/// the fixed-point `Point`s produced by `to_pixels`. Rects (staff lines,
+/// stems, bar lines, ledger lines) must therefore be converted here, or
+/// their 1/256-px coordinates land far outside the framebuffer and are
+/// entirely clipped by `fill_rect`.
+fn to_whole_pixels(units: i32) -> i32 {
+    (units + ONE / 2) / ONE
+}
+
 /// Draws one display item into `buf`, translated by `(origin_x, origin_y)`
 /// pixels. `ink` is the grey value (0 = black, 255 = white).
 fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i32, ink: u8) {
     match item.geometry {
         Geometry::Rect { x, y, w, h } => {
             buf.fill_rect(
-                origin.x + to_pixels(x, staff_px),
-                origin.y + to_pixels(y, staff_px),
-                to_pixels(w, staff_px).max(1),
-                to_pixels(h, staff_px).max(1),
+                to_whole_pixels(origin.x + to_pixels(x, staff_px)),
+                to_whole_pixels(origin.y + to_pixels(y, staff_px)),
+                to_whole_pixels(to_pixels(w, staff_px)).max(1),
+                to_whole_pixels(to_pixels(h, staff_px)).max(1),
                 ink,
             );
         }
@@ -268,6 +279,31 @@ mod tests {
         let mut buf = Gray8::new(&mut pixels, 64, 32).unwrap();
         draw_display_list(&list, &mut buf, Point::new(0, 0), 14);
         assert!(buf.as_slice().iter().any(|value| *value < 128));
+    }
+
+    #[test]
+    fn rectangles_are_in_whole_pixels_not_fixed_point_units() {
+        let mut list = DisplayList::new(0);
+        // One staff space is 1024 layout units = 14 px at this staff size.
+        // `fill_rect` works in whole pixels: a rect at (1 sp, 2 sp), 3 sp
+        // wide, translated by (1, 2) px must land at x=15..57, y=30..32.
+        list.push(DisplayItem::rect(
+            ItemKind::StaffLine,
+            1024,
+            2048,
+            3 * 1024,
+            113,
+        ));
+        let mut pixels = [255u8; 64 * 64];
+        let mut buf = Gray8::new(&mut pixels, 64, 64).unwrap();
+        draw_display_list(&list, &mut buf, Point::from_pixels(1, 2), 14);
+        assert_eq!(pixels[30 * 64 + 14], 255, "left of the rectangle");
+        assert_eq!(pixels[30 * 64 + 15], 0, "rectangle starts at x=15");
+        assert_eq!(pixels[30 * 64 + 56], 0, "rectangle ends at x=56");
+        assert_eq!(pixels[30 * 64 + 57], 255, "right of the rectangle");
+        assert_eq!(pixels[29 * 64 + 20], 255, "above the rectangle");
+        assert_eq!(pixels[30 * 64 + 20], 0, "rectangle covers row 30");
+        assert_eq!(pixels[32 * 64 + 20], 255, "below the rectangle");
     }
 
     #[test]
