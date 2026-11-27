@@ -575,7 +575,8 @@ key/time segments (6.3 sp vs 8.6 sp in `measure-4`), per-measure user
 stretch and courtesy headers/trailers that change a system's natural width
 before justification (`measurelayout.cpp:1811-2812`). P2 is therefore not
 closed: the atoms and breaking plan are in place, but their width parity is
-not yet at the acceptance threshold.
+not yet at the acceptance threshold. See §9.12-§9.15 for the subsequent
+steps and the final measured state; the gate remains **not met**.
 
 ### 9.12 Accidentals before their notehead (step 5, 2026-11-27)
 
