@@ -404,14 +404,13 @@ pub fn build_page(
         for atom in &atoms[system.first..system.first + system.count] {
             x += place_measure(&mut out, atom, x, sy, system.scale);
         }
-        // // Port of `systemlayout.cpp`: the start bar line closes the
-        // system; its x is the staff origin.
-        place_barline(
-            &mut out,
-            atoms[system.first].start_bar,
-            spec.margin_left,
-            sy,
-        );
+        // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
+        // line is not drawn at the beginning of a system (the 4.7.4 SVG has
+        // none). Repeats and double/final start bar lines are drawn.
+        let start_bar = atoms[system.first].start_bar;
+        if start_bar.0 > 1 {
+            place_barline(&mut out, start_bar, spec.margin_left, sy);
+        }
     }
     out
 }
@@ -481,7 +480,9 @@ mod tests {
         assert_eq!(list.count(ItemKind::StaffLine), 5);
         assert_eq!(list.count(ItemKind::Notehead), 1);
         assert_eq!(list.count(ItemKind::Stem), 1);
-        assert_eq!(list.count(ItemKind::BarLine), 2);
+        // A plain start bar line is implicit in MuseScore; only the end bar
+        // line of the measure is drawn.
+        assert_eq!(list.count(ItemKind::BarLine), 1);
     }
 
     #[test]

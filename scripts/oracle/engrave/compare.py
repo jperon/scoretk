@@ -155,6 +155,9 @@ def parse_svg(path: Path) -> dict:
     systems = staff_systems(elements, spatium)
 
     result: dict[str, list[tuple[float, float]]] = {"Note": [], "Stem": [], "BarLine": []}
+    # Bar lines keep their absolute y here: local y repeats on every system,
+    # so grouping bar lines by local y would merge all systems into one.
+    raw_barlines: list[tuple[float, float, float]] = []
     lengths: list[float] = []
     for element in elements:
         class_name = element.get("class", "")
@@ -191,17 +194,28 @@ def parse_svg(path: Path) -> dict:
                 result[class_name].append(local)
                 if class_name == "Stem":
                     lengths.append(abs(y1 - y0) * scale)
+                if class_name == "BarLine":
+                    raw_barlines.append((position[1], local[0], local[1]))
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
     # One list of bar-line x positions per staff system, in staff spaces.
     # Consecutive positions delimit a measure; the count per system is the
-    # system break pattern. Coincident bar lines (start of the next measure
-    # drawn over the end of the previous one) are one line.
+    # system break pattern. MuseScore draws a double/final bar line as two
+    # strokes about 0.6-1.1 sp apart (thin + thick) and scoretk as two
+    # rectangles 0.37 sp apart: both are ONE measure boundary, so lines less
+    # than 1.5 sp apart are merged at their rightmost stroke. A plain
+    # start bar line is not counted either: MuseScore does not draw one at
+    # the beginning of a normal system, and counting scoretk's would shift
+    # every measure width by one boundary.
     by_system: dict[float, list[float]] = {}
-    for x, y in sorted(result["BarLine"], key=lambda point: (point[1], point[0])):
-        key = round(y, 1)
-        if not by_system.get(key) or x - by_system[key][-1] > 0.1:
-            by_system.setdefault(key, []).append(x)
+    for absolute_y, local_x, local_y in sorted(raw_barlines):
+        key = round(absolute_y / spatium)
+        group = by_system.setdefault(key, [])
+        if not group or local_x - group[-1] > 1.5:
+            group.append(local_x)
+        else:
+            group[-1] = local_x
+    # Consecutive system groups must be in reading order (top to bottom).
     result["barlines_by_system"] = [by_system[key] for key in sorted(by_system)]
     result["measure_widths"] = [
         round(right - left, 4)

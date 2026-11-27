@@ -599,3 +599,25 @@ with `/tmp/copypaste_parts-ref.png` as the oracle.
 
 No horizontal metric changes: the accidental's *x* influences collision
 spacing in MuseScore but our atom widths ignore it (P3 work).
+
+### 9.13 Oracle correction for bar lines (step 6, 2026-11-27)
+
+`compare.py` grouped bar lines by their **system-local** y, which is the
+same on every system: all systems of a page were merged into one sequence
+and consecutive widths could be negative. It also counted the two strokes
+of a MuseScore double/final bar line (0.6-1.1 sp apart) as two successive
+measure boundaries. Grouping is now by absolute y, double strokes within
+1.5 sp merge into one boundary, and a plain start bar line is no longer
+drawn by our engraver (the 4.7.4 SVG has none). The published 5/281 and
+17/44 P2 figures were measured with the old grouping; on the *unchanged*
+SVGs the corrected oracle gives:
+
+| Metric | Old oracle | Corrected oracle |
+| --- | ---: | ---: |
+| Measure widths within 0.1 sp | 0.0178 (5/281) | 0.0148 (3/203) |
+| Files with identical system breaks | 17/44 | 27/44 |
+| Stem-length agreement | 0.6967 | 0.6967 |
+
+The 203 vs 281 denominator is the count of real measure boundaries after
+merging doubles; failures remain in the denominator. The corrected figures
+are the baseline for the remaining P2 steps.
