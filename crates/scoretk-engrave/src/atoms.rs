@@ -476,6 +476,287 @@ pub fn duration_code(duration: DurationType) -> u8 {
     }
 }
 
+/// Default beam groups of a time signature, ported from `groups.cpp:43-100`
+/// (`noteGroups`) and `:313-335` (`Groups::endings`). A node's `pos` is in
+/// `Constants::DIVISION / 8` ticks (60 ticks per quarter at DIVISION 480),
+/// and `action` holds four nibbles: one beam mode per duration from the
+/// eighth to the thirty-second.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct BeamGroups {
+    nodes: alloc::vec::Vec<(i32, u16)>,
+}
+
+impl BeamGroups {
+    fn from_time_sig(time: &scoretk_core::model::TimeSig) -> Self {
+        if let Some(explicit) = &time.groups {
+            // MuseScore writes node positions in absolute ticks and divides
+            // them by 60 in `Groups::addStop` (`groups.cpp:351-370`).
+            let mut nodes: alloc::vec::Vec<_> = explicit
+                .iter()
+                .map(|&(pos, action)| (if pos >= 60 { pos / 60 } else { pos }, action))
+                .collect();
+            nodes.sort_by_key(|node| node.0);
+            return Self { nodes };
+        }
+        let n = time.numerator;
+        let d = time.denominator;
+        let default = match (n, d) {
+            (2, 2) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x111),
+                    (20, 0x200),
+                    (24, 0x110),
+                    (28, 0x200),
+                ][..],
+            ),
+            (3, 2) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x111),
+                    (20, 0x200),
+                    (24, 0x110),
+                    (28, 0x200),
+                    (32, 0x111),
+                    (36, 0x200),
+                    (40, 0x110),
+                    (44, 0x200),
+                ][..],
+            ),
+            (4, 2) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x111),
+                    (20, 0x200),
+                    (24, 0x110),
+                    (28, 0x200),
+                    (32, 0x111),
+                    (36, 0x200),
+                    (40, 0x110),
+                    (44, 0x200),
+                    (48, 0x111),
+                    (52, 0x200),
+                    (56, 0x110),
+                    (60, 0x200),
+                ][..],
+            ),
+            (2, 4) => Some(&[(4, 0x200), (8, 0x111), (12, 0x200)][..]),
+            (3, 4) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x111),
+                    (12, 0x200),
+                    (16, 0x111),
+                    (20, 0x200),
+                ][..],
+            ),
+            (4, 4) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x111),
+                    (20, 0x200),
+                    (24, 0x110),
+                    (28, 0x200),
+                ][..],
+            ),
+            (5, 4) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x110),
+                    (20, 0x200),
+                    (24, 0x111),
+                    (28, 0x200),
+                    (32, 0x110),
+                    (36, 0x200),
+                ][..],
+            ),
+            (6, 4) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x110),
+                    (12, 0x200),
+                    (16, 0x110),
+                    (20, 0x200),
+                    (24, 0x111),
+                    (28, 0x200),
+                    (32, 0x110),
+                    (36, 0x200),
+                    (40, 0x110),
+                    (44, 0x200),
+                ][..],
+            ),
+            (3, 8) => Some(&[(4, 0x200), (8, 0x200)][..]),
+            (5, 8) => Some(&[(4, 0x200), (8, 0x200), (12, 0x111), (16, 0x200)][..]),
+            (6, 8) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x200),
+                    (12, 0x111),
+                    (16, 0x200),
+                    (20, 0x200),
+                ][..],
+            ),
+            (7, 8) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x200),
+                    (12, 0x111),
+                    (16, 0x200),
+                    (20, 0x111),
+                    (24, 0x200),
+                ][..],
+            ),
+            (9, 8) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x200),
+                    (12, 0x111),
+                    (16, 0x200),
+                    (20, 0x200),
+                    (24, 0x111),
+                    (28, 0x200),
+                    (32, 0x200),
+                ][..],
+            ),
+            (12, 8) => Some(
+                &[
+                    (4, 0x200),
+                    (8, 0x200),
+                    (12, 0x111),
+                    (16, 0x200),
+                    (20, 0x200),
+                    (24, 0x111),
+                    (28, 0x200),
+                    (32, 0x200),
+                    (36, 0x111),
+                    (40, 0x200),
+                    (44, 0x200),
+                ][..],
+            ),
+            _ => None,
+        };
+        if let Some(nodes) = default {
+            return Self {
+                nodes: nodes.to_vec(),
+            };
+        }
+        // `Groups::endings`: one stop at each beat of an unlisted signature.
+        let step = match d {
+            2 => 16,
+            4 => 8,
+            8 => 4,
+            16 => 2,
+            32 => 1,
+            _ => 4,
+        };
+        let nodes = (1..n.max(1)).map(|i| (step * i, 0x111)).collect();
+        Self { nodes }
+    }
+
+    /// `Groups::beamMode` (`groups.cpp:266-307`): the action nibble selected
+    /// by the chord's duration (eighth, sixteenth, thirty-second or shorter).
+    fn beam_mode(&self, tick: i32, duration: u8) -> BeamMode {
+        let shift = match duration {
+            5 => 0,
+            6 => 4,
+            _ => 8,
+        };
+        for &(pos, action) in &self.nodes {
+            if pos * 60 < tick {
+                continue;
+            }
+            if pos * 60 > tick {
+                break;
+            }
+            return match (action >> shift) & 0xf {
+                1 => BeamMode::Begin,
+                2 => BeamMode::Begin16,
+                3 => BeamMode::Begin32,
+                _ => BeamMode::Auto,
+            };
+        }
+        BeamMode::Auto
+    }
+}
+
+/// Actual duration in MuseScore ticks (480 per quarter, 1920 per whole),
+/// used by `Groups::baseBeamMode` to find the beat subdivision.
+fn duration_ticks(duration: u8, dots: u8) -> i32 {
+    if duration < 2 {
+        return 1920;
+    }
+    let base = 1920i32 >> (duration - 2).min(10);
+    let factor = match dots {
+        1 => 3,
+        2 => 7,
+        _ => 1,
+    };
+    base * factor / (1 << dots.min(2))
+}
+
+/// Port of `Groups::baseBeamMode` (`groups.cpp:107-162`) and
+/// `Groups::actualBeamMode` (`:199-263`): an explicit mode always wins;
+/// automatic chords follow the time-signature groups, with a beam starting
+/// at tick zero and continuing as `Mid` elsewhere. Rests with an automatic
+/// mode are not beamed (`actualBeamMode`, `:215-218`).
+fn beam_mode_for(
+    explicit: BeamMode,
+    is_rest: bool,
+    duration: u8,
+    dots: u8,
+    tick: i32,
+    prev_ticks: i32,
+    groups: &BeamGroups,
+) -> BeamMode {
+    if !matches!(explicit, BeamMode::Auto) {
+        return explicit;
+    }
+    if is_rest || duration <= 4 {
+        return BeamMode::None;
+    }
+    let mut beat = 240; // start with an eighth (`groups.cpp:112`)
+    while beat > 0 && (beat > duration_ticks(duration, dots).max(prev_ticks) || tick % beat != 0) {
+        beat /= 2;
+        if beat < 60 {
+            beat = duration_ticks(duration, dots).max(1);
+            break;
+        }
+    }
+    let beat_duration = match beat {
+        1920 => 2,
+        960 => 3,
+        480 => 4,
+        240 => 5,
+        120 => 6,
+        _ => 7,
+    };
+    let by_type = groups.beam_mode(tick, duration);
+    let by_pos = groups.beam_mode(tick, beat_duration);
+    let mut mode = if matches!(by_type, BeamMode::Auto) {
+        by_pos
+    } else {
+        by_type
+    };
+    if matches!(mode, BeamMode::Auto) {
+        mode = if tick == 0 {
+            BeamMode::Begin
+        } else {
+            BeamMode::Mid
+        };
+    }
+    mode
+}
+
 pub fn rest_name(duration: u8) -> &'static str {
     match duration {
         0 => "restMaxima",
@@ -836,6 +1117,20 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
     let style = &score.engraving.style;
     let bar_note_distance = (style.bar_note_distance_sp * SP as f64) as i32 + SP / 10;
     let time_sig_distance = (style.system_header_time_sig_distance_sp * SP as f64) as i32;
+    // Beam groups in force for this staff. MuseScore's `Staff::group(tick)`
+    // selects them per time-signature segment (`groups.cpp:107-162`); a
+    // page-local atom keeps the effective beam mode of each event instead.
+    let mut groups = score
+        .measures
+        .iter()
+        .flat_map(|measure| measure.segments.iter())
+        .find_map(|segment| {
+            segment.iter_elements().find_map(|(_, item)| match item {
+                SegmentItem::TimeSig(time) => Some(BeamGroups::from_time_sig(time)),
+                _ => None,
+            })
+        })
+        .unwrap_or_default();
     let mut atoms = Vec::with_capacity(score.measures.len());
 
     let mut measure_index = 0;
@@ -901,10 +1196,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
         let mut segment_bases = Vec::with_capacity(measure.segments.len());
+        // Previous chord/rest of each voice in this measure: `baseBeamMode`
+        // compares its duration with the current one (`groups.cpp:107-125`).
+        let mut prev_beam: alloc::vec::Vec<(u32, i32)> = alloc::vec::Vec::new();
 
         for (segment_number, segment) in measure.segments.iter().enumerate() {
             segment_bases.push(x);
             let seg = segment_number as u16;
+            let tick = (segment.tick - measure.start_tick).ticks(1920) as i32;
             let segment_staff = |track: Track| track.staff().index() == staff_index;
             if segment.kind == SegmentType::ChordRest {
                 // P1: fixed proportional spacing, one x per chord/rest segment
@@ -1061,7 +1360,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 stem_len: stem_length(&lines, &heads, up, duration),
                                 notes,
                             };
-                            events.push(Atom {
+                            let mut chord_event = Atom {
                                 x: chord_x,
                                 kind: AtomKind::Chord,
                                 chord: Some(chord_atom),
@@ -1077,7 +1376,26 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 grace: chord.grace.is_some(),
                                 segment: seg,
                                 lyrics: cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect(),
-                            });
+                            };
+                            let voice = track;
+                            let prev = prev_beam
+                                .iter()
+                                .rev()
+                                .find(|(track, _)| *track == voice)
+                                .map_or(0, |&(_, ticks)| ticks);
+                            if !chord_event.grace {
+                                chord_event.beam_mode = beam_mode_for(
+                                    chord_event.beam_mode,
+                                    false,
+                                    duration,
+                                    cr.duration.dots,
+                                    tick,
+                                    prev,
+                                    &groups,
+                                );
+                                prev_beam.push((voice, duration_ticks(duration, cr.duration.dots)));
+                            }
+                            events.push(chord_event);
                         }
                         ChordRestKind::Rest(_) => {
                             let mut rest = Atom::at_segment(
@@ -1092,7 +1410,21 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             rest.voice = track;
                             rest.measure = measure.number;
                             rest.beams = duration.saturating_sub(4);
-                            rest.beam_mode = cr.engraving.beam_mode;
+                            let prev = prev_beam
+                                .iter()
+                                .rev()
+                                .find(|(voice, _)| *voice == track)
+                                .map_or(0, |&(_, ticks)| ticks);
+                            rest.beam_mode = beam_mode_for(
+                                cr.engraving.beam_mode,
+                                true,
+                                duration,
+                                cr.duration.dots,
+                                tick,
+                                prev,
+                                &groups,
+                            );
+                            prev_beam.push((track, duration_ticks(duration, cr.duration.dots)));
                             rest.beam_start = cr.engraving.beam_start;
                             rest.beam_dir = cr.engraving.beam_direction;
                             rest.lyrics =
@@ -1152,6 +1484,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     SegmentItem::TimeSig(time)
                         if segment.kind == SegmentType::TimeSig && !has_time =>
                     {
+                        groups = BeamGroups::from_time_sig(time);
                         let numerator = u8::try_from(time.numerator).unwrap_or(4);
                         let denominator = u8::try_from(time.denominator).unwrap_or(4);
                         events.push(Atom::at_segment(
@@ -1331,5 +1664,48 @@ mod tests {
         assert_eq!(stem_length(&[12], &["noteheadBlack"], true, 4), 16 * 256);
         // A note inside the staff only gets the shortening rule: 3 sp.
         assert_eq!(stem_length(&[4], &["noteheadBlack"], false, 4), 12 * 256);
+    }
+
+    #[test]
+    fn default_beam_groups_split_compound_metres_into_beats() {
+        // `groups.cpp:43-100`: 12/8 and 6/8 start new groups after three
+        // eighths, 9/8 after three, 3/2 after half-note beats.
+        let compound = BeamGroups::from_time_sig(&scoretk_core::model::TimeSig::new(12, 8));
+        assert!(compound.nodes.contains(&(12, 0x111)));
+        assert!(compound.nodes.contains(&(24, 0x111)));
+        assert_eq!(
+            beam_mode_for(BeamMode::Auto, false, 5, 0, 0, 0, &compound),
+            BeamMode::Begin
+        );
+        assert_eq!(
+            beam_mode_for(BeamMode::Auto, false, 5, 0, 240, 240, &compound),
+            BeamMode::Mid
+        );
+        assert_eq!(
+            beam_mode_for(BeamMode::Auto, false, 5, 0, 720, 240, &compound),
+            BeamMode::Begin
+        );
+        for (numerator, denominator, stop) in [(6, 8, 12), (9, 8, 24), (3, 2, 8)] {
+            let groups = BeamGroups::from_time_sig(&scoretk_core::model::TimeSig::new(
+                numerator,
+                denominator,
+            ));
+            assert!(groups.nodes.iter().any(|&(pos, action)| pos == stop
+                && action == if denominator == 2 { 0x110 } else { 0x111 }));
+        }
+        // An explicit `<Groups>` node overrides the default table.
+        let mut explicit = scoretk_core::model::TimeSig::new(12, 8);
+        explicit.groups = Some(alloc::vec![(240, 0x111)]);
+        let groups = BeamGroups::from_time_sig(&explicit);
+        assert_eq!(groups.nodes, alloc::vec![(4, 0x111)]);
+        // Rests with automatic mode are not beamed; an explicit mode still is.
+        assert_eq!(
+            beam_mode_for(BeamMode::Auto, true, 5, 0, 240, 240, &compound),
+            BeamMode::None
+        );
+        assert_eq!(
+            beam_mode_for(BeamMode::Mid, true, 5, 0, 240, 240, &compound),
+            BeamMode::Mid
+        );
     }
 }

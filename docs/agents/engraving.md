@@ -1000,3 +1000,30 @@ private score page 1 the signature now reads "12/8" instead of a lone "8".
 
 Time signatures are not among the oracle's extracted elements, so no figure
 changes; the visual comparison is the evidence for this step.
+
+### 12.2 Beams from time-signature groups (step 2)
+
+Atoms now carry the effective `BeamMode` of each chord/rest, computed in the
+atom pass from the signature's group nodes (`groups.cpp:43-150, 266-307`),
+from `baseBeamMode`/`actualBeamMode` (`:107-263`) and from explicit `<Beam>`
+modes. The page pass keeps its earlier beam geometry, but groups no longer
+depend on an explicit `<Beam>`: eighths in 12/8 and 6/8 are beamed in threes,
+in 3/2 by half-note beats, and automatic rests are excluded from groups. A
+beam slab containing a rest no longer unwraps a missing chord (the
+`moonlight` page-3 crash of the previous step is gone). Unit tests pin the
+12/8, 6/8, 9/8 and 3/2 group nodes, the explicit-node override and the
+automatic-rest rule.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Elements within 0.1 sp (56 files) | 385/2771 | 385/2771 |
+| Stem-length agreement | 0.6535 (684) | 0.6550 (684) |
+| Measure widths within 0.1 sp | 69/399 | 69/399 |
+| Files with identical system breaks | 34/56 | 34/56 |
+| Pages with identical system breaks | 48/57 | 48/58 |
+
+The page-break denominator grows by one because `moonlight` page 3 used to
+panic in beam geometry and was therefore never produced; the number of
+matching page-break patterns is unchanged. On the private score page 1 the
+organ eighths now carry their 12/8 beam groups (chords included) instead of
+isolated flags.

@@ -400,7 +400,12 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             // last one, not from their notehead origins. The old notehead x
             // left both ends one notehead width (~1.25 sp) short of the stems.
             let stem_x = |index: usize| {
-                let chord = events[index].1.chord.as_ref().unwrap();
+                // A beam group may contain a rest (an explicit `<Beam>` can
+                // span one). Rests have no stem or notehead anchor; the slab
+                // still starts at their segment x instead of panicking.
+                let Some(chord) = events[index].1.chord.as_ref() else {
+                    return events[index].0;
+                };
                 let head = chord
                     .notes
                     .first()
