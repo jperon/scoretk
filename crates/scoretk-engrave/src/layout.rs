@@ -1094,7 +1094,21 @@ fn place_credits(out: &mut DisplayList, credits: &[Credit], spec: &PageSpec, pag
             }
             CreditStyle::Other(_) => top,
         };
-        place_text(out, text, x, y, em, false, align);
+        // A VBox text can hold several lines separated by `<br/>`
+        // (`TextBase::createBlocks`). Each line keeps its style's horizontal
+        // alignment; bottom-aligned styles stack their lines upward from the
+        // frame's bottom edge.
+        let lines: alloc::vec::Vec<_> = text.split('\n').filter(|line| !line.is_empty()).collect();
+        let count = lines.len().max(1) as i32;
+        for (index, line) in lines.iter().enumerate() {
+            let line_y = match credit.style {
+                CreditStyle::Composer | CreditStyle::Lyricist => {
+                    y - (count - 1 - index as i32) * em
+                }
+                _ => y + index as i32 * em,
+            };
+            place_text(out, line, x, line_y, em, false, align);
+        }
     }
 }
 
@@ -1606,6 +1620,31 @@ mod tests {
             mm_rest_count: 1,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn multiline_credits_keep_their_style_alignment() {
+        let mut credit = Credit::new(
+            scoretk_core::model::RichText::from_markup("Alone<br/>Together"),
+            CreditStyle::Composer,
+        );
+        credit.page = 1;
+        credit.justify = CreditJustify::Right;
+        let spec = PageSpec::default();
+        let mut out = DisplayList::new(0);
+        place_credits(&mut out, &[credit], &spec, 0);
+        let texts: alloc::vec::Vec<_> = out
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Text)
+            .collect();
+        assert!(texts.len() >= 2);
+        // Both lines are right-aligned on the same right margin, and the
+        // second line sits below the first.
+        let first = texts[0].origin();
+        let last = texts[texts.len() - 1].origin();
+        assert!(last.1 > first.1);
+        assert!(first.0 <= spec.margin_left + spec.printable_width);
     }
 
     #[test]

@@ -1093,3 +1093,29 @@ when the note spacing itself is too tight (P2 debt).
 Lyrics, hyphens and extender lines are not among the oracle's extracted
 elements, so the kept variant produces no metric change; the visual
 comparison of the private score is the evidence for the text fixes.
+
+### 12.5 Header credits and multi-line VBox texts (step 5)
+
+The private score's VBox composer and poet (lyricist) texts contain `<br/>`
+line breaks, which `TextBase::createBlocks` turns into newline-separated
+blocks. `RichText::from_markup` ignored that tag, so both texts collapsed
+into one long line and the already style-aligned credits overlapped in the
+middle of the frame. `<br>`/`<br/>` now end a text block like a literal
+newline (`text.rs`), and `place_credits` draws one Edwin line per block with
+the credit's own alignment: title/subtitle centred, composer right, lyricist
+left, bottom-aligned styles stacking upward
+(`textlayout.cpp`, `boxlayout.cpp`). On page 1 of the private score the
+title is centred, the two lyricist lines sit at the left and the two
+composer lines at the right, as in MuseScore's page. `e2e_corpus` still
+passes: default MusicXML/MuseScore conversions are byte-identical to the
+4.7.4 references.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Elements within 0.1 sp (56 files) | 384/2771 | 384/2771 |
+| Measure widths within 0.1 sp | 69/399 | 69/399 |
+| Files with identical system breaks | 34/56 | 34/56 |
+| Files with the oracle page count | 53/56 | 53/56 |
+
+Credits and text lines are not extracted by the geometric oracle; the
+visual comparison of the private header is the evidence for this step.

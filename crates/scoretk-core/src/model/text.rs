@@ -294,6 +294,15 @@ fn parse_blocks(markup: &str, base: &TextFormat) -> Vec<Block> {
                             insert_char(&mut blocks, &symbol_format, character);
                         }
                         // Le C++ restaure le format précédent après le symbole.
+                    } else if token == "br" || token == "br/" {
+                        // `TextBase::createBlocks`: `<br/>` ends a text block,
+                        // like a literal newline in the source markup.
+                        insert_empty_fragment(&mut blocks, &format);
+                        if let Some(block) = blocks.last_mut() {
+                            block.eol = true;
+                        }
+                        blocks.push(Block::default());
+                        insert_empty_fragment(&mut blocks, &format);
                     } else {
                         apply_tag(&mut format, &token);
                     }
@@ -637,6 +646,17 @@ mod tests {
         assert_eq!(text.fragments().len(), 1);
         assert_eq!(text.plain(), "Visible text");
         assert_eq!(text.fragments()[0].format, TextFormat::default());
+    }
+
+    #[test]
+    fn retours_a_la_ligne_br() {
+        for markup in [
+            "Adolphe Adam<br/>Arrangement : John Rutter<br/>",
+            "Adolphe Adam<br>Arrangement : John Rutter<br>",
+        ] {
+            let text = RichText::from_markup(markup);
+            assert_eq!(text.plain(), "Adolphe Adam\nArrangement : John Rutter\n");
+        }
     }
 
     #[test]
