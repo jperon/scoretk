@@ -67,8 +67,8 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
             };
         let mut count = 0;
         let mut width = 0;
-        let mut header_width = 0;
-        let mut spring = 0;
+        let mut fixed_extra = 0;
+        let mut stretch_sum = 0;
         // Attached text shapes have a fixed minimum width: justification
         // fills only the space left after them (`horizontalspacing.cpp:
         // 1087-1111`), it does not stretch them again.
@@ -108,8 +108,9 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
             {
                 break;
             }
-            header_width += header;
-            spring += atom.spring;
+            let (fixed, stretch) = crate::layout::stretch_budget(atom);
+            fixed_extra += fixed;
+            stretch_sum += stretch;
             min_extra += atom.min_extra;
             width += break_width;
             count += 1;
@@ -136,15 +137,14 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
         } else {
             0
         };
-        let available = (printable - header_width - end_bar - min_extra).max(0);
-        let scale = if justify && spring > 0 && available > 0 {
-            // `stretchSegmentsToWidth`: each spring ends at width
-            // `force / springConst = force * stretch`, where `force` is
-            // chosen so the stretched widths fill the available space.
-            let force = available * 1024 / spring;
-            // Natural segment widths are `3.5 sp * stretch`; the new widths
-            // are `force * stretch`, so the scale is `force / 3.5 sp`.
-            force * 1024 / 3584
+        let available = (printable - fixed_extra - end_bar - min_extra).max(0);
+        let scale = if justify && stretch_sum > 0 && available > 0 {
+            // `stretchSegmentsToWidth` (`horizontalspacing.cpp:1087-1111`):
+            // the force fills the space left by fixed headers and minimum
+            // shape widths. Solving it against the measured natural segment
+            // widths, rather than `3.5 sp * spring`, keeps a short or dotted
+            // note from stretching the system past the right margin.
+            available * 1024 / stretch_sum
         } else {
             1024
         };

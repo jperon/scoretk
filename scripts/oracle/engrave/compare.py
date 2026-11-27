@@ -416,6 +416,13 @@ def compare(reference: dict, ours: dict) -> dict:
     within = {kind: 0 for kind in counts}
     within_x = {kind: 0 for kind in counts}
     within_y = {kind: 0 for kind in counts}
+    # Horizontal spacing figures: the same one-to-one nearest matching as the
+    # both-axes figure, so an unmatched notehead is a failure of the x figure
+    # too. The mean error is reported on matched pairs, with their count kept
+    # next to it rather than silently dropping unmatched notes.
+    note_x_within = 0
+    note_x_error = 0.0
+    note_x_matched = 0
     for kind in counts:
         matched = pair_by_nearest(
             reference[kind], ours[kind],
@@ -433,6 +440,11 @@ def compare(reference: dict, ours: dict) -> dict:
                 within_y[kind] += 1
             if dx <= TOL and dy <= TOL:
                 within[kind] += 1
+            if kind == "Note":
+                note_x_matched += 1
+                note_x_error += dx
+                if dx <= TOL:
+                    note_x_within += 1
 
     # Vertical figures use y-only matching: horizontal spacing is fixed until
     # P2 and must not perturb the measurement of pitch/ledger/stem length.
@@ -467,10 +479,20 @@ def compare(reference: dict, ours: dict) -> dict:
         abs(left - right) <= TOL
         for left, right in zip(ref_widths, our_widths)
     )
+    # A measure present on only one side contributes its whole width as an
+    # error and fails the tolerance: no missing measure is excluded here.
+    width_error = sum(
+        abs(left - right) for left, right in zip(ref_widths, our_widths)
+    ) + sum(width for width in ref_widths[len(our_widths):]) \
+      + sum(width for width in our_widths[len(ref_widths):])
     total = sum(counts.values())
     return {
         "measure_widths_total": widths_total,
         "measure_widths_within": widths_within,
+        "measure_width_error": width_error,
+        "note_x_within": note_x_within,
+        "note_x_error": note_x_error,
+        "note_x_matched": note_x_matched,
         "systems_equal": [len(bars) for bars in reference["barlines_by_system"]]
         == [len(bars) for bars in ours["barlines_by_system"]],
         "counts": counts,
@@ -497,6 +519,8 @@ def main() -> int:
         "files": 0, "failures": 0, "total": 0, "within": 0,
         "matched_notes": 0, "vertical": 0.0, "matched_stems": 0,
         "stem": 0.0, "x": 0, "y": 0, "widths": 0, "widths_total": 0,
+        "width_error": 0.0,
+        "note_x": 0, "note_x_error": 0.0, "note_x_matched": 0,
         "systems_equal": 0,
         "page_count": 0, "breaks": 0, "pages_total": 0,
         "staff_y": 0, "staff_y_total": 0, "staff_y_error": 0.0, "staff_y_matched": 0,
@@ -546,6 +570,10 @@ def main() -> int:
         totals["stem"] += values["stem_length"] * values["matched_stems"]
         totals["widths"] += values["measure_widths_within"]
         totals["widths_total"] += values["measure_widths_total"]
+        totals["width_error"] += values["measure_width_error"]
+        totals["note_x"] += values["note_x_within"]
+        totals["note_x_error"] += values["note_x_error"]
+        totals["note_x_matched"] += values["note_x_matched"]
         totals["systems_equal"] += int(values["systems_equal"])
         page_values = row["pages"]
         totals["page_count"] += page_values["page_count_equal"]
@@ -606,6 +634,14 @@ def main() -> int:
         f"({totals['matched_stems']} matched stems) |",
         f"| Measure widths within 0.1 sp | {share_widths:.4f} "
         f"({totals['widths']}/{totals['widths_total']}) |",
+        f"| Measure width mean abs. error, sp (all measures, missing counted) | "
+        f"{totals['width_error'] / totals['widths_total'] if totals['widths_total'] else 0.0:.3f} |",
+        f"| Note x within 0.1 sp (unmatched counted) | "
+        f"{totals['note_x'] / totals['total'] if totals['total'] else 0.0:.4f} "
+        f"({totals['note_x']}/{totals['total']}) |",
+        f"| Note x mean abs. error, sp (matched noteheads) | "
+        f"{totals['note_x_error'] / totals['note_x_matched'] if totals['note_x_matched'] else 0.0:.3f} "
+        f"({totals['note_x_matched']} matched) |",
         f"| Files with identical system breaks | "
         f"{totals['systems_equal']}/{totals['files']} |",
         f"| Files with the oracle page count | {totals['page_count']}/{totals['files']} |",

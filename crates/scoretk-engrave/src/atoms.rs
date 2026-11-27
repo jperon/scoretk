@@ -1460,10 +1460,39 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     x += SEGMENT_WIDTH;
                     continue;
                 }
-                // // Port of `horizontalspacing.cpp:730-745`: the natural
-                // width of a chord/rest segment is `3.5 sp * stretch`, where
-                // stretch comes from its duration; `minNoteDistance` and the
-                // notehead/accidental/dot widths give the lower bound.
+                // // Port of `computeSegmentDurationStretch`
+                // (`horizontalspacing.cpp:748-781`): one stretch per
+                // **segment**, from its ticks and the shortest chord/rest it
+                // contains (`shortestCR`; polyphonic segments with a longer
+                // note use `stretch(shortest) * segTicks / shortest`). The
+                // former per-voice spring counted each voice of a shared
+                // segment twice and halved the justification force.
+                let next_tick = measure
+                    .segments
+                    .iter()
+                    .skip(segment_number + 1)
+                    .find(|segment| segment.kind == SegmentType::ChordRest)
+                    .map_or(measure.len.ticks(1920) as i32, |segment| {
+                        (segment.tick - measure.start_tick).ticks(1920) as i32
+                    });
+                let seg_ticks = (next_tick - tick).max(1);
+                let shortest = chord_rests
+                    .iter()
+                    .map(|(_, cr)| {
+                        duration_ticks(duration_code(cr.duration.kind), cr.duration.dots).max(1)
+                    })
+                    .min()
+                    .unwrap_or(seg_ticks);
+                let slope = style.measure_spacing;
+                let seg_stretch = if shortest == seg_ticks {
+                    crate::spacing::duration_stretch(slope, seg_ticks, 480)
+                } else {
+                    crate::spacing::duration_stretch(slope, shortest, 480) * seg_ticks / shortest
+                };
+                // // Port of `chordRestSegmentNaturalWidth`
+                // (`horizontalspacing.cpp:730-745`): `3.5 sp * stretch /
+                // spacingDensity`, bounded below by the notehead, accidental,
+                // dot and `minNoteDistance` widths (`:1216-1276`).
                 let mut segment_width = SEGMENT_WIDTH;
                 let text_widths = if TEXT_WIDTH_SPACING {
                     attached_text_widths(segment, style)
@@ -1529,14 +1558,31 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     let stretch = if mm_stretch > 0 && matches!(cr.kind, ChordRestKind::Rest(_)) {
                         mm_stretch
                     } else {
-                        duration_stretch(duration, cr.duration.dots)
+                        seg_stretch
                     };
-                    spring += stretch;
-                    let mut min_width = glyph_width("noteheadBlack") + MIN_NOTE_DISTANCE;
-                    if cr.duration.dots > 0 {
-                        min_width += cr.duration.dots as i32 * glyph_width("augmentationDot");
+                    let mut min_width = glyph_width("noteheadBlack")
+                        + (style.min_note_distance_sp * SP as f64) as i32;
+                    if let ChordRestKind::Chord(chord) = &cr.kind {
+                        for id in &chord.notes {
+                            if let Some(note) = score.notes.get(id.index()) {
+                                if let Some(name) = note
+                                    .accidental
+                                    .filter(|accidental| accidental.visible)
+                                    .and_then(|accidental| accidental_name(accidental.kind))
+                                {
+                                    min_width += glyph_width(name);
+                                }
+                            }
+                        }
                     }
-                    segment_width = (QUARTER_NOTE_SPACE * stretch / 1024).max(min_width);
+                    if cr.duration.dots > 0 {
+                        min_width += cr.duration.dots as i32
+                            * (glyph_width("augmentationDot")
+                                + (style.dot_note_distance_sp * SP as f64) as i32);
+                    }
+                    segment_width = (QUARTER_NOTE_SPACE * stretch
+                        / ((style.spacing_density * SP as f64) as i32).max(1))
+                    .max(min_width);
                     match &cr.kind {
                         ChordRestKind::Chord(chord) => {
                             // // Port of `ChordLayout::layoutChords1`
@@ -1750,6 +1796,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                         events[*index].x += offset;
                     }
                 }
+                // One spring per segment, as `justifySystem` collects one
+                // `Spring` per ChordRest segment (`horizontalspacing.cpp:
+                // 198-209`), not one per voice sharing that segment.
+                spring += if mm_stretch > 0 {
+                    mm_stretch
+                } else {
+                    seg_stretch
+                };
                 x += segment_width;
                 continue;
             }

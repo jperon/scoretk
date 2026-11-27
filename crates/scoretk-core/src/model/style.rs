@@ -203,6 +203,20 @@ pub struct StyleSettings {
     /// above the syllable baseline (`Sid::lyricsDashYposRatio`, 0.5 by
     /// default). // `styledef.cpp:92`; `dom/lyricsline.cpp:181-191`.
     pub lyrics_dash_y_pos_ratio: f64,
+    /// Density of the duration-based horizontal spacing (`Sid::spacingDensity`,
+    /// 1.0): it divides the natural width of a chord/rest segment
+    /// (`horizontalspacing.cpp:743`). // `styledef.cpp:229`.
+    pub spacing_density: f64,
+    /// Slope of the duration stretch (`Sid::measureSpacing`, 1.5):
+    /// `measureSpacing^log2(ticks / quarter)` (`horizontalspacing.cpp:763,
+    /// :805-812`). // `styledef.cpp:230`.
+    pub measure_spacing: f64,
+    /// Horizontal padding values used by `HorizontalSpacing::computePadding`
+    /// and the padding table (`paddingtable.cpp:55-64, 94-104, 215-216`).
+    pub min_note_distance_sp: f64,
+    pub accidental_note_distance_sp: f64,
+    pub dot_note_distance_sp: f64,
+    pub dot_dot_distance_sp: f64,
 }
 
 impl StyleSettings {
@@ -290,6 +304,13 @@ impl StyleSettings {
             lyrics_line_height: 1.0,
             lyrics_min_distance_sp: if legacy { 0.0 } else { 0.25 },
             lyrics_dash_y_pos_ratio: 0.5,
+            // 4.7.4 defaults (`styledef.cpp:224, 229-230, 243-244, 264, 266`).
+            spacing_density: 1.0,
+            measure_spacing: 1.5,
+            min_note_distance_sp: 0.35,
+            accidental_note_distance_sp: 0.25,
+            dot_note_distance_sp: 0.5,
+            dot_dot_distance_sp: 0.65,
         }
     }
 
@@ -404,6 +425,14 @@ impl StyleSettings {
             "lyricsLineHeight" => Self::set_positive(&mut self.lyrics_line_height, value),
             "lyricsMinDistance" => Self::set_number(&mut self.lyrics_min_distance_sp, value),
             "lyricsDashYposRatio" => Self::set_number(&mut self.lyrics_dash_y_pos_ratio, value),
+            "spacingDensity" => Self::set_positive(&mut self.spacing_density, value),
+            "measureSpacing" => Self::set_positive(&mut self.measure_spacing, value),
+            "minNoteDistance" => Self::set_number(&mut self.min_note_distance_sp, value),
+            "accidentalNoteDistance" => {
+                Self::set_number(&mut self.accidental_note_distance_sp, value);
+            }
+            "dotNoteDistance" => Self::set_positive(&mut self.dot_note_distance_sp, value),
+            "dotDotDistance" => Self::set_positive(&mut self.dot_dot_distance_sp, value),
             _ => {}
         }
     }

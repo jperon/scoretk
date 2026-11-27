@@ -60,6 +60,7 @@ pub mod decor;
 pub mod display;
 pub mod layout;
 pub mod skyline;
+pub mod spacing;
 pub mod staffs;
 pub mod style;
 pub mod vertical;

@@ -34,6 +34,11 @@ files and writes SVGs into an unversioned output directory.
      P2);
    - `stem_length`: share of matched stems whose length agrees within 0.1 sp;
    - per-file rows in `raw.jsonl` and a summary in `resume.md`;
+   - horizontal spacing figures: the share of noteheads within 0.1 sp in x
+     (unmatched notes count as failures), their mean absolute x error on
+     matched pairs, and the mean absolute per-measure width error (a measure
+     present on only one side contributes its whole width and fails the
+     tolerance);
    - measure widths from consecutive bar lines and the per-system measure
      counts (system breaks). Bar lines are grouped by **absolute** y: their
      local y repeats on every system of the page, so grouping by local y

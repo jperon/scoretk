@@ -1529,3 +1529,60 @@ committed. The remaining causes are the P2 spacing debt already measured in
 §9.10–§9.23 (natural 3.5 sp springs, no harmony/tempo shapes, approximate
 glyph minima) and the absent courtesies. This is a diagnosis only: the
 page-count gate is not redefined, and no file or failure is excluded.
+
+## 15. eng9: horizontal spacing of notes (2026-11-27)
+
+The baseline oracle (`oracle-eng9-base`, 56 files, 0 failures) adds two
+horizontal columns: mean absolute per-measure width error (a missing measure
+counts with its whole width) and the notehead x agreement/mean error (an
+unmatched head counts as a failure). Failures, unmatched elements, systems
+and pages remain in every denominator.
+
+| Metric | Baseline | After step 1 |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 490 | 0 / 2 490 |
+| Within 0.1 sp, both axes | 0.1378 (343/2 490) | **0.1486** (370/2 490) |
+| Within 0.1 sp, x only | 0.1574 | 0.1687 |
+| Measure widths within 0.1 sp | 66/394 | 66/394 |
+| Measure width mean abs. error, sp | 9.857 | **8.857** |
+| Note x within 0.1 sp (unmatched counted) | 168/2 490 | **172/2 490** |
+| Note x mean abs. error, sp (matched heads) | 4.154 (876) | **2.716** (876) |
+| Files with identical system breaks | 33/56 | **37/56** |
+| Files with the oracle page count | 53/56 | 53/56 |
+| Pages with identical system breaks | 48/59 | 48/59 |
+| Stem-length agreement | 0.6447 (684) | 0.6447 (684) |
+
+### 15.1 Duration spacing and one spring per segment (2026-11-27)
+
+Three defects explained most of the horizontal error:
+
+1. `StyleSettings` did not read `spacingDensity` or `measureSpacing`
+   (`styledef.cpp:229-230`). `moonlight` and `layout_elements` set
+   `measureSpacing` 1.14; the fixed 1.5 slope made every segment too wide.
+   `spacing.rs` now computes `slope^log2(ticks / quarter)` with integer
+   log2/exp2 (no libm in this `no_std` crate) and divides by
+   `spacingDensity` (`horizontalspacing.cpp:743, 763, 805-812`). The padding
+   table values (`paddingtable.cpp:55-64, 94-104, 214-248`) and shape-to-shape
+   minimum distance (`:1216-1276, 1636-1646`) are ported alongside it; unit
+   tests pin the slopes, the style-derived padding and overlapping shapes.
+2. `compute_staff` added one spring **per voice** of a ChordRest segment.
+   `justifySystem` collects one `Spring` per segment
+   (`horizontalspacing.cpp:198-209`), so a two-voice measure received twice
+   the force and could not be justified to the printable width. The segment
+   stretch now comes from the segment's ticks and its shortest chord/rest
+   (`computeSegmentDurationStretch`, `:748-781`), added once per segment.
+3. `breaking.rs` derived the justification factor from
+   `3.5 sp * spring`, ignoring minimum widths and fixed headers; a system
+   could overflow the right margin by more than 20 sp. `stretch_budget`
+   measures the real fixed and stretchable segment widths, and the force is
+   solved against them (`stretchSegmentsToWidth`, `:1087-1111`). The cursor
+   advances once per segment even when several voices share it.
+
+The largest gains are `voiceswitching` (width error 44.5 → 3.1 sp, its four
+explicit breaks preserved), `timesig-09` (39.5 → 3.0 sp), `layout_elements`
+(424.4 → 372.0 sp), `moonlight` (896.5 → 846.2 sp width and 281.1 → 152.8 sp
+x error) and `copypaste_parts`, whose break pattern now matches. The single
+regression is `testWedge4` (28.7 → 45.4 sp width, 42.6 → 69.7 sp x error); it
+is reported, not excluded. The oracle script and its README document the new
+columns. The private score's before/after/reference page-1 PNGs are in
+`engrave-img/eng9`; the page count is still measured separately in §15.4.

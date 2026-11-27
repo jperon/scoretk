@@ -635,38 +635,68 @@ fn system_events<'a>(
         let mut cursor = atom.events.first().map_or(0, |event| event.x);
         for (index, event) in atom.events.iter().enumerate() {
             events.push((measure_x + cursor, event));
-            let width = if index + 1 < atom.events.len() {
-                atom.events[index + 1].x - event.x
-            } else {
-                atom.width - event.x
-            };
-            let stretched =
-                if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
-                    width * system.scale / 1024
-                } else {
-                    width
-                };
-            cursor += stretched;
+            cursor += segment_width(atom, index, system.scale);
         }
         measure_x += cursor;
     }
     events
 }
 
+/// Unstretched advance of one segment. `HorizontalSpacing` assigns one x per
+/// segment (`horizontalspacing.cpp:263-327`): several voices in that segment
+/// share it, so only the segment's last chord/rest advances the cursor. The
+/// former code advanced once per voice and stretched a two-voice system to
+/// twice the printable width.
+fn segment_span(atom: &MeasureAtom, index: usize) -> i32 {
+    let event = &atom.events[index];
+    if index + 1 < atom.events.len() {
+        let next = &atom.events[index + 1];
+        if !atom.segment_bases.is_empty()
+            && next.segment == event.segment
+            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+            && !event.grace
+            && !next.grace
+        {
+            return 0;
+        }
+        next.x - event.x
+    } else {
+        atom.width - event.x
+    }
+}
+
 /// Advance of one segment, stretched for chord/rest springs only.
 /// // Port of `horizontalspacing.cpp:1087-1111` (`stretchSegmentsToWidth`).
 fn segment_width(atom: &MeasureAtom, index: usize, scale: i32) -> i32 {
     let event = &atom.events[index];
-    let width = if index + 1 < atom.events.len() {
-        atom.events[index + 1].x - event.x
-    } else {
-        atom.width - event.x
-    };
+    let width = segment_span(atom, index);
     if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
         width * scale / 1024
     } else {
         width
     }
+}
+
+/// Natural width budget of a measure: fixed segments (headers, grace notes)
+/// and chord/rest segments that take part in justification. // Port of
+/// `HorizontalSpacing::justifySystem` (`horizontalspacing.cpp:198-212`):
+/// only chord/rest springs are stretched; their width and `1 / stretch`
+/// determine the force. Using the actual segment widths here (instead of
+/// `3.5 sp * spring`) accounts for the minimum widths of short notes and
+/// dotted heads, which can otherwise push the system past the right margin.
+pub(crate) fn stretch_budget(atom: &MeasureAtom) -> (i32, i32) {
+    let mut fixed = atom.events.first().map_or(0, |event| event.x);
+    let mut stretch = 0;
+    for index in 0..atom.events.len() {
+        let event = &atom.events[index];
+        let width = segment_span(atom, index);
+        if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+            stretch += width;
+        } else {
+            fixed += width;
+        }
+    }
+    (fixed, stretch)
 }
 
 /// Cursor at the end of a measure's last segment (the bar line position).
