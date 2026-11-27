@@ -89,7 +89,6 @@ impl PageSpec {
         let spatium = style.spatium_mm.max(0.1);
         let to_fixed = |mm: f64| ((mm / spatium) * SP as f64 + 0.5) as i32;
         let left = style.page_odd_left_margin_in * 25.4;
-        let right = style.page_odd_right_margin_in * 25.4;
         let top = style.page_odd_top_margin_in * 25.4;
         Self {
             printable_width: to_fixed(style.page_printable_width_in * 25.4),
@@ -315,7 +314,11 @@ fn stem_anchor_offset(head: &str, up: bool) -> i32 {
         .map(|a| i32::from(a.1))
         .unwrap_or(baseline);
     let offset = STEM_ANCHOR_OFFSET + (units - baseline) * 1024 / 250;
-    if up { -offset } else { offset }
+    if up {
+        -offset
+    } else {
+        offset
+    }
 }
 
 fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {

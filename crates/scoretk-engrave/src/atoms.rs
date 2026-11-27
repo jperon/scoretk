@@ -240,11 +240,7 @@ fn clef_name(clef: ClefType) -> &'static str {
 /// `SymId` table (`noteheadXBlack`, `noteheadDiamondBlack`, …). The pivot
 /// model keeps the group and the fill separately (`NoteHeadGroup`,
 /// `NoteHeadType`); MuseScore's `Note::sym()` combines them.
-fn head_name(
-    head: NoteHeadType,
-    group: &NoteHeadGroup,
-    duration: DurationType,
-) -> &'static str {
+fn head_name(head: NoteHeadType, group: &NoteHeadGroup, duration: DurationType) -> &'static str {
     let effective = if head == NoteHeadType::Auto {
         duration.head_type()
     } else {
@@ -267,16 +263,32 @@ fn head_name(
         NoteHeadGroup::WithX => "noteheadRoundWhiteDoubleSlashed",
         NoteHeadGroup::BrevisAlt => "noteheadDoubleWholeSquare",
         NoteHeadGroup::TriangleUp => {
-            if filled { "noteheadTriangleUpBlack" } else { "noteheadTriangleUpWhite" }
+            if filled {
+                "noteheadTriangleUpBlack"
+            } else {
+                "noteheadTriangleUpWhite"
+            }
         }
         NoteHeadGroup::TriangleDown => {
-            if filled { "noteheadTriangleRoundDownBlack" } else { "noteheadTriangleRoundDownWhite" }
+            if filled {
+                "noteheadTriangleRoundDownBlack"
+            } else {
+                "noteheadTriangleRoundDownWhite"
+            }
         }
         NoteHeadGroup::Slashed1 => {
-            if filled { "noteheadSlashedBlack1" } else { "noteheadSlashedHalf1" }
+            if filled {
+                "noteheadSlashedBlack1"
+            } else {
+                "noteheadSlashedHalf1"
+            }
         }
         NoteHeadGroup::Slashed2 => {
-            if filled { "noteheadSlashedBlack2" } else { "noteheadSlashedHalf2" }
+            if filled {
+                "noteheadSlashedBlack2"
+            } else {
+                "noteheadSlashedHalf2"
+            }
         }
         NoteHeadGroup::Diamond | NoteHeadGroup::DiamondOld => match effective {
             NoteHeadType::Breve => "noteheadDiamondDoubleWhole",
@@ -288,13 +300,26 @@ fn head_name(
         NoteHeadGroup::LargeArrow | NoteHeadGroup::LargeDiamond => "noteheadTriangleRightBlack",
         NoteHeadGroup::HeavyCross | NoteHeadGroup::HeavyCrossHat => "noteheadClusterSquareBlack",
         NoteHeadGroup::Slash => "noteheadSlashedBlack1",
-        NoteHeadGroup::Do | NoteHeadGroup::Re | NoteHeadGroup::Mi | NoteHeadGroup::Fa
-        | NoteHeadGroup::Sol | NoteHeadGroup::La | NoteHeadGroup::Ti => {
-            if filled { "noteheadTriangleUpBlack" } else { "noteheadTriangleUpWhite" }
+        NoteHeadGroup::Do
+        | NoteHeadGroup::Re
+        | NoteHeadGroup::Mi
+        | NoteHeadGroup::Fa
+        | NoteHeadGroup::Sol
+        | NoteHeadGroup::La
+        | NoteHeadGroup::Ti => {
+            if filled {
+                "noteheadTriangleUpBlack"
+            } else {
+                "noteheadTriangleUpWhite"
+            }
         }
         NoteHeadGroup::Other(_) => "noteheadBlack",
     };
-    if glyph(base).is_some() { base } else { "noteheadBlack" }
+    if glyph(base).is_some() {
+        base
+    } else {
+        "noteheadBlack"
+    }
 }
 
 /// SMuFL stem anchor y of a head, in font units, up-positive.
@@ -376,7 +401,7 @@ pub fn mmrest_stretch(count: u16, denominator: i64) -> i32 {
     ];
     let denominator = i32::try_from(denominator).unwrap_or(4);
     let quarters = if denominator > 0 { 4 / denominator } else { 1 };
-    let extra = (count.saturating_sub(2) as i32).min(8).max(0) * quarters.max(1);
+    let extra = (count.saturating_sub(2) as i32).clamp(0, 8) * quarters.max(1);
     let ratio = 4 * quarters.max(1) + extra;
     RATIO_STRETCH.get(ratio as usize).copied().unwrap_or(3871)
 }
@@ -579,7 +604,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         // A line break carried by a folded measure still ends the displayed
         // system after the multi-measure rest.
         let mut line_break = measure.line_break;
-        for skipped in &score.measures[measure_index + 1..(measure_index + mm_count).min(score.measures.len())] {
+        for skipped in
+            &score.measures[measure_index + 1..(measure_index + mm_count).min(score.measures.len())]
+        {
             line_break |= skipped.line_break;
         }
         measure_index += mm_count;
@@ -664,7 +691,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                     if !note.visible {
                                         continue;
                                     }
-                                    let head = head_name(note.head, &note.head_group, cr.duration.kind);
+                                    let head =
+                                        head_name(note.head, &note.head_group, cr.duration.kind);
                                     let accidental = note
                                         .accidental
                                         .filter(|a| a.visible)
