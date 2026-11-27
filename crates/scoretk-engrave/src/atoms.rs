@@ -32,7 +32,7 @@ use alloc::vec::Vec;
 
 use scoretk_core::model::{
     AccidentalType, BarLineType, ChordRestKind, ClefType, DurationType, NoteHeadType,
-    Score, SegmentItem, SegmentType, StemDirection,
+    Score, SegmentItem, SegmentType, StemDirection, Transpose,
 };
 
 use crate::style::{FIRST_MEASURE_EXTRA, MEASURE_GAP, SEGMENT_WIDTH};
@@ -249,6 +249,9 @@ pub fn flag_name(duration: u8, up: bool) -> Option<&'static str> {
 /// `noteDistances` is `note->line() - centerLine` (`chord.cpp`, via
 /// `stemlayout.cpp:71` where the middle line is `(staffLines - 1) * 2`).
 fn auto_stem_up(lines: &[i32]) -> bool {
+    if lines.is_empty() {
+        return true;
+    }
     let center = 4; // (5 lines - 1) * 2 / 2 : middle line in half-spaces
     let mut left = 0usize;
     let mut right = lines.len().saturating_sub(1);
@@ -281,9 +284,9 @@ fn stem_up(lines: &[i32], explicit: StemDirection) -> bool {
 /// all internal arithmetic is in quarter spaces; with line distance 1 and
 /// magnitude 1, `defaultStemLength = 3.5 sp * 4 = 14`, `quarterSpacesPerLine
 /// = 2`, `chordHeight = (downLine - upLine) * 2`, and the final length is
-/// `chordHeight / 4 * sp + stemLength / 4 * sp`. Beams, tremolos, hooks and
-/// stem shortening (`stemlayout.cpp:326-397, 415-491`) are P3 work.
-fn stem_length(lines: &[i32], up: bool) -> i32 {
+/// `chordHeight / 4 * sp + stemLength / 4 * sp`. Beams and tremolos are P3.
+/// Hooks and stem shortening follow `stemlayout.cpp:326-397` below.
+fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
     if lines.is_empty() {
         return 3584;
     }
@@ -292,39 +295,40 @@ fn stem_length(lines: &[i32], up: bool) -> i32 {
     let chord_height_qs = (bottom - top) * 2;
     let default_qs = 14;
     let mut stem_qs = default_qs;
+    // // Port of `stemlayout.cpp:77, 345-397` (`maxReduction`, style
+    // `shortenStem` true, `shortStemStartLocation` 1, traditional hooks):
+    // a stem ending outside the staff is shortened by up to one staff space
+    // according to the [extension][beamCount] table; traditional hooks cap
+    // the reduction at one quarter space.
+    let short_start = 1 * 2 + 1; // 3 quarter spaces
+    let down_short_start = (5 - 1) * (2 * 2) + short_start; // 19
     let end = if up {
         top * 2 - default_qs
     } else {
         bottom * 2 + default_qs
     };
-    // Middle line in quarter spaces is 8; an end at or beyond it is handled
-    // by the shortening pass (P3). For P1 we only clamp to shortestStem.
-    let _ = end;
-    stem_qs = stem_qs.max(10); // shortestStem 2.5 sp * 4
-    let sp_len = chord_height_qs * 256 + stem_qs * 256; // /4 sp, 1/1024 units
-    if up {
-        let stem_end = top * 512 - sp_len;
-        let target = -short_stem_start();
-        if stem_end > target {
-            sp_len + (stem_end - target)
+    let outside = if up {
+        if end <= -short_start {
+            Some((-end - short_start).abs())
         } else {
-            sp_len
+            None
         }
+    } else if end >= down_short_start {
+        Some((end - down_short_start).abs())
     } else {
-        let stem_end = bottom * 512 + sp_len;
-        let target = 4 * 1024 + short_stem_start();
-        if stem_end < target {
-            sp_len + (target - stem_end)
-        } else {
-            sp_len
+        None
+    };
+    if let Some(extension) = outside {
+        const REDUCTIONS: [i32; 5] = [1, 2, 3, 4, 4];
+        let half_spaces = (extension / 2).min(4) as usize;
+        let mut reduction = REDUCTIONS[half_spaces];
+        if duration >= 5 {
+            // Traditional flag (`useStraightNoteFlags` false, styledef.cpp:216).
+            reduction = reduction.min(1);
         }
+        stem_qs = (stem_qs - reduction).max(10);
     }
-}
-
-/// // Port of `stemlayout.cpp:77` (`shortStemStartLocation`, default 2):
-/// `shortStemStart = 2 * quarterSpacesPerLine + 1 = 5` quarter spaces.
-const fn short_stem_start() -> i32 {
-    5 * 256
+    chord_height_qs * 256 + stem_qs * 256 // /4 sp, 1/1024 units
 }
 
 fn bar_code(kind: BarLineType) -> BarCode {
@@ -345,6 +349,14 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         clef = ClefType::G;
     }
     let mut bottom = bottom_line_note(clef);
+    // MuseScore engraves the written pitch by default (`concertPitch` false):
+    // transpose the concert pitch of the pivot model by the inverse of the
+    // instrument's transposition (`engraving/dom/transpose.cpp`).
+    let transpose = score
+        .parts
+        .get(staff.part.index())
+        .and_then(|part| part.instrument.transpose);
+    let inverse = transpose.map(|value| Transpose::new(-value.diatonic, -value.chromatic));
     let mut atoms = Vec::with_capacity(score.measures.len());
 
     for measure in &score.measures {
@@ -381,8 +393,19 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                     .accidental
                                     .filter(|a| a.visible)
                                     .and_then(|a| accidental_name(a.kind));
+                                let (written_tpc, written_pitch) = match inverse {
+                                    Some(interval) => {
+                                        let _ = interval.diatonic;
+                                        // The pitch class keeps its spelling for
+                                        // octave transpositions; other intervals
+                                        // are P3 (accidental/stack work).
+                                        (note.tpc,
+                                         (i32::from(note.pitch) + interval.chromatic).clamp(0, 127) as u8)
+                                    }
+                                    None => (note.tpc, note.pitch),
+                                };
                                 notes.push(NoteAtom {
-                                    line: note_line(note.tpc, note.pitch, bottom),
+                                    line: note_line(written_tpc, written_pitch, bottom),
                                     head,
                                     accidental,
                                 });
@@ -395,7 +418,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             duration,
                             dots: cr.duration.dots,
                             stem_up: up,
-                            stem_len: stem_length(&lines, up),
+                            stem_len: stem_length(&lines, up, duration),
                             notes,
                         };
                         events.push(Atom {
@@ -508,7 +531,7 @@ mod tests {
 
     #[test]
     fn stem_length_is_at_least_shortest() {
-        assert_eq!(stem_length(&[4], true), 3584);
-        assert!(stem_length(&[0], true) >= 3584);
+        assert_eq!(stem_length(&[4], true, 4), 3072); // one stem shortening
+        assert_eq!(stem_length(&[0], true, 4), 2560); // shortestStem
     }
 }

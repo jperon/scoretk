@@ -410,3 +410,30 @@ data (the Rust source is ~500 KB of text); the font and metadata vendored as
 generation input are 239 KB, with the OFL documents 313 KB in total, still
 inside the 400 KB font-data budget. The remaining gates are a perceptual check
 of the Cu2Qu tolerance at a 14 px staff and the geometric oracle of § 6.
+
+### 9.6 P1 geometric oracle (2026-11-27)
+
+`scripts/oracle/engrave/` exports the SVG of the 44 **single-staff** corpus
+files with MuseScore 4.7.4 (`refs.sh`, `xargs -P 2`) and with our CLI
+(`ours.sh`, `xargs -P 2`, `timeout 10 prlimit --as=2000000000`). `compare.py`
+reads both SVGs as data, derives the staff scale from each document's own
+staff lines, extracts notehead centres, stem extents and bar lines, and
+matches them one-to-one (nearest first). Unmatched elements and failures are
+counted in the denominator. Baseline results, 44 files, 0 failures, 1 319
+elements:
+
+| Metric | Value |
+| --- | ---: |
+| Within 0.1 sp, both axes | 0.0030 (4 / 1 319) |
+| Within 0.1 sp, x only | 0.0106 |
+| Within 0.1 sp, y only | 0.2600 |
+| Vertical pitch / ledger agreement | 0.5138 (508 matched noteheads) |
+| Stem-length agreement | 0.1053 (380 matched stems) |
+
+Horizontal agreement is expected to stay low until P2 (fixed proportional
+spacing by construction). The vertical figures are the meaningful P1 signal;
+they are limited by clef/transposition handling (only the written pitch and
+5-line staves are modelled), by accidental placement and by the remaining
+stem-shortening cases. Reproduce with
+`scripts/oracle/engrave/mesure.sh <out> <scoretk-binary>`; raw per-file rows
+are in `<out>/raw.jsonl` and the summary in `<out>/resume.md`.

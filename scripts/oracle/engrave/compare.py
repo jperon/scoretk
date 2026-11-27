@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Copyright (C) 2026 jperon
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 3 as published by
+# the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program. If not, see the LICENSE file at the root of this repository or
+# <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+"""Compare engraving SVGs from MuseScore 4.7.4 and scoretk, in staff spaces.
+
+Only the Python standard library is used. Both SVGs are read as untrusted
+data: no script or external entity from them is executed (ElementTree does not
+resolve external entities). Each document's own staff lines define its scale,
+so the comparison is independent of page size and coordinate convention.
+
+Usage: python3 -I scripts/oracle/engrave/compare.py <out>
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import statistics
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+SVG = "{http://www.w3.org/2000/svg}"
+NUMBERS = re.compile(r"-?\d+(?:\.\d+)?")
+TOL = 0.1
+
+
+def pairs(text: str) -> list[tuple[float, float]]:
+    values = [float(value) for value in NUMBERS.findall(text)]
+    return [(values[i], values[i + 1]) for i in range(0, len(values) - 1, 2)]
+
+
+def bbox_of_path(data: str) -> tuple[float, float, float, float] | None:
+    """Bounding box from all coordinate pairs of an SVG path."""
+    points = pairs(data)
+    if not points:
+        return None
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+def transform_of(element: ET.Element) -> tuple[float, float, float, float]:
+    """(scale_x, scale_y, translate_x, translate_y) of a path transform."""
+    transform = element.get("transform", "")
+    values = [float(value) for value in NUMBERS.findall(transform)]
+    if transform.startswith("matrix") and len(values) >= 6:
+        return values[0], values[3], values[4], values[5]
+    if transform.startswith("translate") and len(values) >= 2:
+        return 1.0, 1.0, values[0], values[1]
+    return 1.0, 1.0, 0.0, 0.0
+
+
+def staff_geometry(elements: list[ET.Element]) -> tuple[float, float, float]:
+    """(origin_x, origin_y, spatium) from the five staff-line elements."""
+    lines: list[tuple[float, float]] = []
+    for element in elements:
+        if "StaffLines" not in element.get("class", ""):
+            continue
+        if element.tag == SVG + "polyline":
+            for x, y in pairs(element.get("points", "")):
+                lines.append((x, y))
+        elif element.tag == SVG + "rect":
+            value = element.get("y")
+            if value is not None:
+                # scoretk draws staff lines as rectangles centred on the
+                # staff line; use the centre, not the top edge.
+                centre = float(value) + float(element.get("height", 0)) / 2
+                lines.append((float(element.get("x", 0)), centre))
+    ys = sorted({round(y, 3) for _, y in lines})
+    spatium = statistics.median(b - a for a, b in zip(ys, ys[1:])) if len(ys) > 1 else 1.0
+    if spatium <= 0:
+        spatium = 1.0
+    origin_x = min((x for x, _ in lines), default=0.0)
+    origin_y = min(ys, default=0.0)
+    return origin_x, origin_y, spatium
+
+
+def parse_svg(path: Path) -> dict:
+    root = ET.parse(path).getroot()
+    elements = list(root.iter())
+    origin_x, origin_y, spatium = staff_geometry(elements)
+    scale = 1.0 / spatium
+
+    def relative(x: float, y: float) -> tuple[float, float]:
+        return (x - origin_x) * scale, (y - origin_y) * scale
+
+    result: dict[str, list[tuple[float, float]]] = {"Note": [], "Stem": [], "BarLine": []}
+    lengths: list[float] = []
+    for element in elements:
+        class_name = element.get("class", "")
+        tag = element.tag
+        if class_name == "Note" and tag == SVG + "path":
+            box = bbox_of_path(element.get("d", ""))
+            if box is None:
+                continue
+            sx, sy, tx, ty = transform_of(element)
+            if element.get("transform", "").startswith("translate"):
+                # scoretk: the SMuFL glyph origin is the notehead centre.
+                center = (0.0, 0.0)
+            else:
+                # MuseScore: the origin is the path bounding-box centre.
+                center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            result["Note"].append(relative(sx * center[0] + tx, sy * center[1] + ty))
+        elif class_name in ("Stem", "BarLine"):
+            if tag == SVG + "rect":
+                x = float(element.get("x", 0)) + float(element.get("width", 0)) / 2
+                y0 = float(element.get("y", 0))
+                y1 = y0 + float(element.get("height", 0))
+            elif tag == SVG + "polyline":
+                pts = pairs(element.get("points", ""))
+                if not pts:
+                    continue
+                x = sum(point[0] for point in pts) / len(pts)
+                y0 = min(point[1] for point in pts)
+                y1 = max(point[1] for point in pts)
+            else:
+                continue
+            result[class_name].append(relative(x, (y0 + y1) / 2))
+            if class_name == "Stem":
+                lengths.append(abs(y1 - y0) * scale)
+    result["stem_lengths"] = lengths
+    result["spatium"] = spatium
+    return result
+
+
+def pair_by_nearest(left: list, right: list, key) -> list[tuple[int | None, int | None]]:
+    """One-to-one greedy matching by a distance key, as index pairs.
+
+    Surplus elements get a `None` index so they count as failures instead of
+    being silently dropped. Indices rather than values are returned because
+    noteheads at the same y are common.
+    """
+    used: set[int] = set()
+    pairs: list[tuple[int | None, int | None]] = []
+    for left_index, item in enumerate(left):
+        best = min(
+            (index for index in range(len(right)) if index not in used),
+            key=lambda index: key(item, right[index]),
+            default=None,
+        )
+        if best is None:
+            pairs.append((left_index, None))
+        else:
+            used.add(best)
+            pairs.append((left_index, best))
+    pairs += [(None, index) for index in range(len(right)) if index not in used]
+    return pairs
+
+
+def compare(reference: dict, ours: dict) -> dict:
+    counts = {kind: max(len(reference[kind]), len(ours[kind])) for kind in ("Note", "Stem", "BarLine")}
+    within = {kind: 0 for kind in counts}
+    within_x = {kind: 0 for kind in counts}
+    within_y = {kind: 0 for kind in counts}
+    for kind in counts:
+        matched = pair_by_nearest(
+            reference[kind], ours[kind],
+            lambda a, b: (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2,
+        )
+        for left_index, right_index in matched:
+            if left_index is None or right_index is None:
+                continue
+            left, right = reference[kind][left_index], ours[kind][right_index]
+            dx = abs(left[0] - right[0])
+            dy = abs(left[1] - right[1])
+            if dx <= TOL:
+                within_x[kind] += 1
+            if dy <= TOL:
+                within_y[kind] += 1
+            if dx <= TOL and dy <= TOL:
+                within[kind] += 1
+
+    # Vertical figures use y-only matching: horizontal spacing is fixed until
+    # P2 and must not perturb the measurement of pitch/ledger/stem length.
+    note_pairs = pair_by_nearest(
+        reference["Note"], ours["Note"], lambda a, b: abs(a[1] - b[1])
+    )
+    matched_notes = sum(a is not None and b is not None for a, b in note_pairs)
+    vertical = sum(
+        a is not None and b is not None
+        and abs(reference["Note"][a][1] - ours["Note"][b][1]) <= TOL
+        for a, b in note_pairs
+    )
+    stem_pairs = pair_by_nearest(
+        reference["Stem"], ours["Stem"], lambda a, b: abs(a[1] - b[1])
+    )
+    ref_lengths = reference["stem_lengths"]
+    our_lengths = ours["stem_lengths"]
+    matched_stems = 0
+    stem_length = 0
+    for left_index, right_index in stem_pairs:
+        if left_index is None or right_index is None:
+            continue
+        if left_index >= len(ref_lengths) or right_index >= len(our_lengths):
+            continue
+        matched_stems += 1
+        if abs(ref_lengths[left_index] - our_lengths[right_index]) <= TOL:
+            stem_length += 1
+    total = sum(counts.values())
+    return {
+        "counts": counts,
+        "within": within,
+        "within_x": within_x,
+        "within_y": within_y,
+        "within_total": sum(within.values()),
+        "total": total,
+        "share_within_0_1_sp": sum(within.values()) / total if total else 0.0,
+        "vertical_pitch": vertical / matched_notes if matched_notes else 0.0,
+        "stem_length": stem_length / matched_stems if matched_stems else 0.0,
+        "matched_notes": matched_notes,
+        "matched_stems": matched_stems,
+    }
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        sys.exit("usage : compare.py <out>")
+    out = Path(sys.argv[1])
+    corpus = (out / "lots/corpus.txt").read_text(encoding="utf-8").splitlines()
+    rows = []
+    totals = {
+        "files": 0, "failures": 0, "total": 0, "within": 0,
+        "matched_notes": 0, "vertical": 0.0, "matched_stems": 0,
+        "stem": 0.0, "x": 0, "y": 0,
+    }
+    for source in corpus:
+        if not source.strip():
+            continue
+        source_path = Path(source)
+        identifier = source_path.stem
+        refs = sorted((out / "refs").glob(f"{identifier}-*.svg"))
+        ours = out / "ours" / f"{identifier}.svg"
+        row = {"id": identifier}
+        if not refs or not ours.exists():
+            row["error"] = "missing SVG" if not refs else "missing ours"
+            rows.append(row)
+            totals["failures"] += 1
+            continue
+        try:
+            row["compare"] = compare(parse_svg(refs[0]), parse_svg(ours))
+        except (ET.ParseError, ValueError, OSError) as error:
+            row["error"] = f"{type(error).__name__}: {error}"
+            rows.append(row)
+            totals["failures"] += 1
+            continue
+        values = row["compare"]
+        totals["files"] += 1
+        totals["total"] += values["total"]
+        totals["within"] += values["within_total"]
+        totals["x"] += sum(values["within_x"].values())
+        totals["y"] += sum(values["within_y"].values())
+        totals["matched_notes"] += values["matched_notes"]
+        totals["vertical"] += values["vertical_pitch"] * values["matched_notes"]
+        totals["matched_stems"] += values["matched_stems"]
+        totals["stem"] += values["stem_length"] * values["matched_stems"]
+        rows.append(row)
+
+    (out / "raw.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    share = totals["within"] / totals["total"] if totals["total"] else 0.0
+    vertical = totals["vertical"] / totals["matched_notes"] if totals["matched_notes"] else 0.0
+    stem = totals["stem"] / totals["matched_stems"] if totals["matched_stems"] else 0.0
+    share_x = totals["x"] / totals["total"] if totals["total"] else 0.0
+    share_y = totals["y"] / totals["total"] if totals["total"] else 0.0
+    lines = [
+        "# Engraving oracle — P1 skeleton",
+        "",
+        "Reference: MuseScore Studio 4.7.4 SVG; tolerance 0.1 staff space.",
+        "Horizontal spacing is fixed until P2, so the vertical figures are the",
+        "meaningful ones at this stage. Unmatched elements and failures count",
+        "in the denominator of `within_0_1_sp`.",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+        f"| Files measured | {totals['files']} |",
+        f"| Failures (included) | {totals['failures']} |",
+        f"| Elements compared | {totals['total']} |",
+        f"| Within 0.1 sp, both axes | {share:.4f} ({totals['within']}/{totals['total']}) |",
+        f"| Within 0.1 sp, x only | {share_x:.4f} |",
+        f"| Within 0.1 sp, y only | {share_y:.4f} |",
+        f"| Vertical pitch/ledger agreement | {vertical:.4f} "
+        f"({totals['matched_notes']} matched noteheads) |",
+        f"| Stem-length agreement | {stem:.4f} "
+        f"({totals['matched_stems']} matched stems) |",
+        "",
+        "## Failures",
+        "",
+    ]
+    failures = [row for row in rows if "error" in row]
+    lines += [f"- `{row['id']}`: {row['error']}" for row in failures] or ["- none"]
+    lines.append("")
+    (out / "resume.md").write_text("\n".join(lines), encoding="utf-8")
+    print("\n".join(lines[:12]))
+    return 0
+
+
+if __name__ == "__main__":
+    main()
