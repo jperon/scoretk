@@ -128,7 +128,11 @@ impl Reader {
     fn next_rubric(&mut self) -> Option<(String, Option<String>)> {
         let (_, text) = self.words.get(self.word_index)?.clone();
         self.word_index += 1;
-        let after = if self.words.get(self.word_index).is_some_and(|(flag, _)| *flag) {
+        let after = if self
+            .words
+            .get(self.word_index)
+            .is_some_and(|(flag, _)| *flag)
+        {
             let value = self.words[self.word_index].1.clone();
             self.word_index += 1;
             Some(value)

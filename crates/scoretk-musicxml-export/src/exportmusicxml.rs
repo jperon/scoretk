@@ -1157,9 +1157,10 @@ impl<'a> Context<'a> {
                 out.attr(false);
                 for syllable in &gregorian.syllables {
                     let sung = syllable.notes.iter().any(|note| {
-                        !note.signs.iter().any(|sign| {
-                            sign.kind == scoretk_core::model::SignKind::Alteration
-                        })
+                        !note
+                            .signs
+                            .iter()
+                            .any(|sign| sign.kind == scoretk_core::model::SignKind::Alteration)
                     });
                     if !sung {
                         chant::write_rubric_direction(
@@ -2011,13 +2012,16 @@ impl Context<'_> {
                     (&self.score.extensions.format, note.source)
                 {
                     if let Some(syllable) = gregorian.syllables.get(source.gregorian_syllable) {
-                        let first_sung = syllable.notes.iter().take(source.gregorian_note).all(
-                            |note| {
-                                note.signs.iter().any(|sign| {
-                                    sign.kind == scoretk_core::model::SignKind::Alteration
-                                })
-                            },
-                        );
+                        let first_sung =
+                            syllable
+                                .notes
+                                .iter()
+                                .take(source.gregorian_note)
+                                .all(|note| {
+                                    note.signs.iter().any(|sign| {
+                                        sign.kind == scoretk_core::model::SignKind::Alteration
+                                    })
+                                });
                         if first_sung {
                             chant::write_rubric_direction(
                                 out,

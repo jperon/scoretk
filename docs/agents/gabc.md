@@ -1593,3 +1593,76 @@ warnings`, `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk --tes
 e2e_corpus -- --nocapture` (8/8), `cargo build -p scoretk-wasm --target
 wasm32-unknown-unknown` and the instrument test (6/6 with `SCORETK_CLI`) all
 pass. New files are added by path; no build directory is versioned.
+
+## 27. Native carriers for the two remaining destinations (2026-11-27, branch `gabcxl`)
+
+The honest figures of §26 left MusicXML at 90.57 % and LilyPond at 94.48 %.
+This campaign works the residual defect families in decreasing size, using
+only carriers that a third-party consumer of the destination can interpret.
+No `key: <raw GABC token>` label, hex/base64 payload, `gabc`-prefixed field,
+lyric outside a lyric carrier or hidden free-text dump was introduced; the
+oracle still strips the historical private carriers and raises `ValueError`
+if one survives in the measured output.
+
+### 27.1 MusicXML: SMuFL sequences, notehead case and rubric `<words>`
+
+`musicxml-4.0.xsd` `other-notation/@smufl` (`:5361-5375`, attribute group
+`:2183-2188`) uses canonical SMuFL 1.4 glyph names and states that the
+attribute allows *application interoperability*. `other-notation` is
+`maxOccurs="unbounded"`, so a compound GABC glyph is written as a **sequence**
+of named glyphs (`chantPunctum`, `chantPunctumInclinatum`, `chantQuilisma`,
+`chantPunctumVirga`, `chantStrophicus`, `chantAugmentum`, `chantIctusAbove`,
+`chantEpisema`, `chantAuctumDesc`, `accidentalFlat`, …) in source order. The
+reader concatenates the inverse names into the glyph. The first name is the
+notehead: `chantPunctum` (square punctum, lowercase GABC letter) versus
+`chantPunctumInclinatum` (oblique punctum, uppercase letter). Clef +
+`pitch/step` + notehead therefore restore the exact staff position.
+
+Rubric markup is carried by `direction`/`words` (`:3495`, `formatted-text`
+`:2610`), in red italics as chant rubrics are printed. One direction precedes
+the first note of each source syllable; a second `words` value carries the
+exact inter-syllable text (GABC `<sp>`, `<i>`, `<v>` markup included, which
+`<lyric>/<text>` cannot hold). The reader processes the measure children in
+document order, so the words stay aligned with their syllables.
+
+### 27.2 LilyPond: user-defined `\header` fields and a cited inherent glyph loss
+
+The *Notation Reference* §21.2.3 ("User-defined field", `:48597`) allows
+arbitrary variables in `\header`. Each GABC header is now a named LilyPond
+field with its literal value (`title` for `name`, `office_part` for
+`office-part`, `mode`, `book`, `transcriber`, `staff_lines`, …). This is a
+readable header field, not a `name=value` copy of a source line and not a
+private prefix.
+
+The remaining largest LilyPond family, GABC spacing/fusion glyphs (`/`, `!`,
+`*`, `-`, `@`), has no native carrier. The *Notation Reference* §17.4.7
+(`:44630-44675`) states that support for Gregorian square neumes is limited,
+that "essential issues for serious typesetting are still lacking, such as
+horizontal alignment of multiple ligatures", and that ligature appearance is
+not directly dictated by the input commands. These 2 718 facts were added to
+`INHERENT_VALUES["ly"]["glyph"]` with that citation; no other inherent row was
+added or changed.
+
+### 27.3 Measured results (261 sources, same instrument, 0 failures)
+
+| Destination | Before | After | Carried / headline total | Inherent | Defects |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MusicXML 4.0 | 90.57 % | **95.35 %** | 98 841 / 103 657 | 10 400 | 4 816 |
+| LilyPond `--ly-gregorian` | 94.48 % | **97.58 %** | 105 451 / 108 071 | 5 986 | 2 620 |
+
+MusicXML defect families: `glyph` 4 093 → 3 329, `letter` 3 390 → 337,
+`rubric` 795 → 0, `text` 29 → 0, `shape` 537 → 353, `ictus` 105 → 9.
+LilyPond: `header` 783 → 0, `glyph` 3 878 → 1 160 (2 718 inherent with the
+§17.4.7 citation). The residual `pitch`, `shape`, `attribute`, `custos` and
+`clef` families are unchanged and still reported as defects.
+
+### 27.4 Non-regression
+
+All options are additive: without `--xml-full-support` / `--ly-gregorian` the
+previous bytes are produced. The corpus comparison against master
+(`019bc767`) covers every default conversion of the 65 versioned sources and
+the 261-file GABC lot. `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast`, `cargo test -p scoretk --test
+e2e_corpus -- --nocapture`, the wasm32 build of `scoretk-wasm` and the
+instrument test (6/6 with `SCORETK_CLI`) are part of the final verification.

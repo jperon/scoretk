@@ -150,11 +150,7 @@ fn headers(src: &str) -> Vec<GregorianHeader> {
                 continue;
             }
             let value = value.replace("\\\"", "\"").replace("\\\\", "\\");
-            let name = if name == "title" {
-                "name"
-            } else {
-                name
-            };
+            let name = if name == "title" { "name" } else { name };
             result.push(GregorianHeader {
                 name: name.replace('_', "-"),
                 value,

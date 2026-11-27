@@ -413,11 +413,8 @@ pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
         let names = smufl_neumes(note);
         out.xml.start_element("notations", &[]);
         for name in names {
-            out.xml.tag_with(
-                "other-notation",
-                &[("type", "single"), ("smufl", name)],
-                "",
-            );
+            out.xml
+                .tag_with("other-notation", &[("type", "single"), ("smufl", name)], "");
         }
         out.xml.end_element();
     }
