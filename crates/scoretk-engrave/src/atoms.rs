@@ -33,8 +33,8 @@ use alloc::vec::Vec;
 
 use scoretk_core::model::{
     AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
-    NoteHeadType, Score, SegmentItem, SegmentType, StaffId, StemDirection, StyleSettings, Track,
-    Transpose,
+    LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId, StemDirection,
+    StyleSettings, Track, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
@@ -100,6 +100,18 @@ pub enum AtomKind {
     },
 }
 
+/// One syllable attached to a chord/rest (`LyricsLayout::layout`,
+/// `lyricslayout.cpp:45-170`). The syllable carries its verse, its syllabic
+/// state (for hyphens) and whether it starts a melisma extender line
+/// (`lyrics.cpp:120-170`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LyricAtom {
+    pub verse: usize,
+    pub text: String,
+    pub syllabic: LyricsSyllabic,
+    pub melisma: bool,
+}
+
 /// One event of a measure atom.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Atom {
@@ -133,7 +145,7 @@ pub struct Atom {
     pub segment: u16,
     /// Lyrics syllables attached to this chord/rest (`LyricsLayout::layout`,
     /// `lyricslayout.cpp:45-170`); one entry per verse.
-    pub lyrics: Vec<String>,
+    pub lyrics: Vec<LyricAtom>,
 }
 
 impl Default for Atom {
@@ -1116,6 +1128,12 @@ pub(crate) fn cancellation_count(previous: i8, next: i8) -> u8 {
 /// helper are ready for the full `computePadding`/`Skyline` port in P4.
 pub const TEXT_WIDTH_SPACING: bool = false;
 
+/// Lyric widths were measured in the shared segment spacing in §12.4. With
+/// the real Edwin advances they moved one of 56 oracle files away from its
+/// system breaks (34 → 33/56), so the switch is kept off as in §9.23; the
+/// text widths and their padding remain ready for the full P4 port.
+pub const LYRIC_WIDTH_SPACING: bool = false;
+
 /// Font em in fixed staff spaces for a point size (`styledef.cpp:1209-1223`).
 fn text_em(style: &StyleSettings, font_size: f64) -> i32 {
     let spatium = style.spatium_mm.max(0.1);
@@ -1306,18 +1324,18 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                 // stretch comes from its duration; `minNoteDistance` and the
                 // notehead/accidental/dot widths give the lower bound.
                 let mut segment_width = SEGMENT_WIDTH;
-                let text_widths = if TEXT_WIDTH_SPACING {
+                let text_widths = if TEXT_WIDTH_SPACING || LYRIC_WIDTH_SPACING {
                     attached_text_widths(segment, style)
                 } else {
                     [0; 3]
                 };
+                // `minDistance` between neighbouring text shapes of the same
+                // family: only an actual overlap widens the measure, as in
+                // `HorizontalSpacing::computePadding` (not the full width).
                 let short_notes = segment.iter_elements().any(|(_, item)| {
                     matches!(item, SegmentItem::ChordRest(chord_rest)
                         if duration_code(chord_rest.duration.kind) >= 5)
                 });
-                // `minDistance` between neighbouring text shapes of the same
-                // family: only an actual overlap widens the segment, as in
-                // `HorizontalSpacing::computePadding` (not the full width).
                 for (index, &width) in text_widths.iter().enumerate() {
                     if width == 0 || last_text[index].1 == 0 || (index == 0 && !short_notes) {
                         continue;
@@ -1325,9 +1343,6 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     let needed = (last_text[index].1 + width) / 2;
                     let have = x - last_text[index].0;
                     if have < needed {
-                        // MuseScore records this as extra free space in the
-                        // measure (affecting its break width), but keeps the
-                        // chord segments themselves at their spring positions.
                         text_extra += needed - have;
                     }
                 }
@@ -1435,7 +1450,16 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 beam_dir: cr.engraving.beam_direction,
                                 grace: chord.grace.is_some(),
                                 segment: seg,
-                                lyrics: cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect(),
+                                lyrics: cr
+                                    .lyrics
+                                    .iter()
+                                    .map(|lyric| LyricAtom {
+                                        verse: lyric.verse,
+                                        text: lyric.text.clone(),
+                                        syllabic: lyric.syllabic,
+                                        melisma: lyric.melisma.is_some(),
+                                    })
+                                    .collect(),
                             };
                             let voice = track;
                             let prev = prev_beam
@@ -1487,8 +1511,16 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             prev_beam.push((track, duration_ticks(duration, cr.duration.dots)));
                             rest.beam_start = cr.engraving.beam_start;
                             rest.beam_dir = cr.engraving.beam_direction;
-                            rest.lyrics =
-                                cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect();
+                            rest.lyrics = cr
+                                .lyrics
+                                .iter()
+                                .map(|lyric| LyricAtom {
+                                    verse: lyric.verse,
+                                    text: lyric.text.clone(),
+                                    syllabic: lyric.syllabic,
+                                    melisma: lyric.melisma.is_some(),
+                                })
+                                .collect();
                             events.push(rest);
                         }
                     }

@@ -1058,3 +1058,38 @@ stem up and voice 2's stem down, as in the 4.7.4 page. The oracle's corpus
 list had to be regenerated for this step because the eng5 worktree it
 pointed at had been removed after the merge; the MuseScore references are
 unchanged.
+
+### 12.4 Lyrics, hyphens and melisma lines (step 4)
+
+Atoms now keep each syllable's verse, text, `LyricsSyllabic` state and
+whether it carries a melisma (`lyrics.cpp:120-170`). Syllables are centred
+under the notehead with one `lyricsLineHeight` per verse
+(`lyricslayout.cpp:45-170`); a `plan_lyric_lines` pass emits the hyphens
+after `Begin`/`Middle` syllables and the dashed extender lines of melismas,
+with the 0.4–0.6 sp dash lengths and 16 sp spacing of
+`LyricsLayout::layoutDashes` (`lyricslayout.cpp:206-366`,
+`styledef.cpp:75-101`). On the private score page 1 "Mi-nuit" and
+"chré-tien" now carry their hyphen and their extender line instead of one
+truncated, overlapping word.
+
+The P4 text-width switch was measured for lyrics alone: real Edwin advances
+enter the overlap test, and the required gap is propagated to the shared
+segment x of every staff. On the whole 56-file oracle this kept 53/56 page
+counts and 48/58 page-break patterns but moved `testHairpinDynamics` away
+from its system breaks (**33/56** instead of 34/56) and reduced elements
+within 0.1 sp from 384 to 363/2771. As in §9.23, the switch is therefore
+**left off** (`LYRIC_WIDTH_SPACING = false`); the measured helpers remain in
+place for the full `computePadding`/`Skyline` port. No syllable is hidden or
+truncated by the engraver, but syllables on adjacent notes can still touch
+when the note spacing itself is too tight (P2 debt).
+
+| Metric | Before | Switch on | Kept (switch off) |
+| --- | ---: | ---: | ---: |
+| Elements within 0.1 sp (56 files) | 384/2771 | 363/2771 | 384/2771 |
+| Measure widths within 0.1 sp | 69/399 | 69/399 | 69/399 |
+| Files with identical system breaks | 34/56 | **33/56** | 34/56 |
+| Files with the oracle page count | 53/56 | 53/56 | 53/56 |
+
+Lyrics, hyphens and extender lines are not among the oracle's extracted
+elements, so the kept variant produces no metric change; the visual
+comparison of the private score is the evidence for the text fixes.

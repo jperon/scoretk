@@ -29,10 +29,12 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use scoretk_core::model::{BeamMode, Credit, CreditJustify, CreditStyle, Score, StemDirection};
+use scoretk_core::model::{
+    BeamMode, Credit, CreditJustify, CreditStyle, LyricsSyllabic, Score, StemDirection,
+};
 use scoretk_smufl::{anchor, glyph, text_advance, text_glyph, units_to_fixed, UPEM};
 
-use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, MeasureAtom};
+use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, LyricAtom, MeasureAtom};
 use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
 use crate::style::*;
 
@@ -961,21 +963,92 @@ pub(crate) fn place_text_kind(
 /// character is drawn at the segment's shared x.
 pub(crate) fn place_lyrics(
     out: &mut DisplayList,
-    lyrics: &[alloc::string::String],
+    lyrics: &[LyricAtom],
     x: i32,
     staff_y: i32,
     em: i32,
 ) {
-    for (verse, text) in lyrics.iter().enumerate() {
+    for lyric in lyrics {
+        let text = &lyric.text;
         if text.is_empty() {
             continue;
         }
         // First verse baseline 3 sp below the bottom staff line; following
-        // verses are one text line lower.
-        let baseline = staff_y + 4 * SP + 3 * SP + verse as i32 * em;
+        // verses are one text line lower (`lyricsPosBelow`, `lyricsLineHeight`).
+        let baseline = staff_y + 4 * SP + 3 * SP + lyric.verse as i32 * LYRIC_LINE_HEIGHT;
         let top = baseline - text_cap_height(text, em, false);
-        place_text_kind(out, ItemKind::Text, text, x, top, em, false, 1);
+        // The 4.7.4 style centres syllables under the notehead
+        // (`lyricsEvenAlign`/`lyricsOddAlign`, `styledef.cpp:109,124`).
+        // A melisma-only syllable with no text of its own would be left
+        // aligned (`lyricsMelismaAlign`), which this plain-text subset does
+        // not emit separately.
+        place_text_kind(out, ItemKind::Text, text, x + SP / 2, top, em, false, 1);
     }
+}
+
+/// Hyphens and melisma extender lines of one system, ported from
+/// `LyricsLayout::layoutDashes` (`lyricslayout.cpp:206-366`). The dash width
+/// is capped at `lyricsDashMaxLength` 0.6 sp and their count is derived from
+/// `lyricsDashMaxDistance` 16 sp; the syllable and melisma styles place them
+/// halfway up the text's cap height.
+fn plan_lyric_lines(
+    events: &[(i32, &Atom)],
+    staff_y: i32,
+    right: i32,
+    em: i32,
+) -> Vec<DisplayItem> {
+    let mut items = Vec::new();
+    for (index, (x, event)) in events.iter().enumerate() {
+        for lyric in &event.lyrics {
+            if lyric.text.is_empty() {
+                continue;
+            }
+            let width = text_run_width(&lyric.text, em, false);
+            let cap = text_cap_height(&lyric.text, em, false);
+            let baseline = staff_y + 7 * SP + lyric.verse as i32 * LYRIC_LINE_HEIGHT;
+            let y = baseline - cap / 2 - LYRIC_LINE_WIDTH / 2;
+            let text_centre = *x + SP / 2;
+            let start = if lyric.melisma {
+                text_centre + width / 2 + LYRIC_MELISMA_PAD
+            } else {
+                text_centre + width / 2 + LYRIC_DASH_MIN / 2
+            };
+            if matches!(
+                lyric.syllabic,
+                LyricsSyllabic::Begin | LyricsSyllabic::Middle
+            ) {
+                items.push(DisplayItem::rect(
+                    ItemKind::Text,
+                    start - LYRIC_DASH_MIN / 2,
+                    y,
+                    LYRIC_DASH_MIN,
+                    LYRIC_LINE_WIDTH,
+                ));
+            }
+            if lyric.melisma {
+                let end = events[index + 1..]
+                    .iter()
+                    .find(|(_, later)| later.lyrics.iter().any(|later| later.verse == lyric.verse))
+                    .map_or(right, |(next, _)| *next - LYRIC_MELISMA_PAD)
+                    .max(start + LYRIC_LINE_WIDTH);
+                let length = end - start;
+                let dash_width = length.min(LYRIC_DASH_MAX);
+                let count = ((length / (16 * SP)).max(1) as usize).max(1);
+                let step = length / count as i32;
+                for dash in 0..count {
+                    let centre = start + step * dash as i32 + step / 2;
+                    items.push(DisplayItem::rect(
+                        ItemKind::Text,
+                        centre - dash_width / 2,
+                        y,
+                        dash_width,
+                        LYRIC_LINE_WIDTH,
+                    ));
+                }
+            }
+        }
+    }
+    items
 }
 
 /// Title-frame texts (`VBox` in the .mscx, `score.engraving.credits` in the
@@ -1429,6 +1502,9 @@ pub fn build_page(
             for item in &plan.items {
                 out.push(*item);
             }
+            for item in plan_lyric_lines(&events, y, left + right, lyrics_em) {
+                out.push(item);
+            }
             let mut x = left;
             let mut event_offset = 0;
             for atom in &staff_atoms[system.first..system.first + system.count] {
@@ -1565,11 +1641,51 @@ mod tests {
     #[test]
     fn lyrics_are_centred_below_the_staff() {
         let mut out = DisplayList::new(0);
-        place_lyrics(&mut out, &[String::from("Mi")], 10 * SP, 5 * SP, 2 * SP);
+        place_lyrics(
+            &mut out,
+            &[LyricAtom {
+                verse: 0,
+                text: String::from("Mi"),
+                syllabic: LyricsSyllabic::Begin,
+                melisma: false,
+            }],
+            10 * SP,
+            5 * SP,
+            2 * SP,
+        );
         assert_eq!(out.count(ItemKind::Text), 2); // one Edwin glyph per character
         for item in &out.items {
             let (_, y) = item.origin();
             assert!(y >= 5 * SP + 4 * SP, "lyrics must sit below the staff");
+        }
+    }
+
+    #[test]
+    fn lyric_syllables_get_hyphens_and_melisma_lines() {
+        let lyric = |text: &str, syllabic, melisma| LyricAtom {
+            verse: 0,
+            text: String::from(text),
+            syllabic,
+            melisma,
+        };
+        let first = Atom {
+            lyrics: vec![lyric("Mi", LyricsSyllabic::Begin, false)],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let second = Atom {
+            lyrics: vec![lyric("nuit", LyricsSyllabic::End, true)],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let third = Atom {
+            lyrics: vec![lyric("chré", LyricsSyllabic::Begin, false)],
+            ..Atom::at_segment(0, AtomKind::Chord, 2)
+        };
+        let events = vec![(4 * SP, &first), (10 * SP, &second), (16 * SP, &third)];
+        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP);
+        assert_eq!(lines.len(), 3); // two hyphens, one melisma dash
+        for item in &lines {
+            let (_, y) = item.origin();
+            assert!(y > 5 * SP + 4 * SP, "lyric lines sit below the staff");
         }
     }
 

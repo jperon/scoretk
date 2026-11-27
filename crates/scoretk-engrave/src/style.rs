@@ -79,6 +79,15 @@ pub const AKKOLADE_BAR_DISTANCE: i32 = 358; // 0.35 sp
 /// (measured on `measure-4` and `barlinedelete` with the geometric oracle).
 pub const STEM_ANCHOR_OFFSET: i32 = 240;
 
+/// Lyric line geometry (`styledef.cpp:75-101`): one text line per verse,
+/// 0.4–0.6 sp dashes, 0.2 sp pad before a melisma line, and 0.1 sp strokes.
+pub const LYRIC_LINE_HEIGHT: i32 = SP;
+pub const LYRIC_DASH_MIN: i32 = 410; // 0.4 sp
+pub const LYRIC_DASH_MAX: i32 = 614; // 0.6 sp
+pub const LYRIC_LINE_WIDTH: i32 = 102; // 0.1 sp
+pub const LYRIC_MELISMA_PAD: i32 = 205; // 0.2 sp
+pub const LYRIC_DASH_PAD: i32 = 51; // 0.05 sp
+
 /// Width of a segment in the P1 fixed proportional spacing.
 ///
 /// P2 replaces this with `HorizontalSpacing` (`horizontalspacing.cpp`).
