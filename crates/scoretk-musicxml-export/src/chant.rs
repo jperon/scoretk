@@ -237,6 +237,91 @@ fn printed_rubric_text(value: &str) -> bool {
             .is_some_and(|head| !head.is_empty() && head.chars().all(|c| c.is_ascii_digit()))
 }
 
+/// Clé d'une clé GABC (`src/struct.c:1273-1288`).
+fn clef_key(clef: &str) -> i32 {
+    let first = clef.split('@').next().unwrap_or(clef);
+    let line = first
+        .bytes()
+        .rev()
+        .find(|byte| byte.is_ascii_digit())
+        .unwrap_or(b'4')
+        - b'0';
+    if first.starts_with('f') {
+        2 * i32::from(line) - 4
+    } else {
+        2 * i32::from(line) - 1
+    }
+}
+
+/// Position verticale imprimée d'un signe d'alteration, en dixièmes
+/// (`musicxml-4.0.xsd` `print-style` : `default-y`).
+///
+/// La ligne inférieure est l'index diatonique `clef_step - 2*(lines-1)`
+/// (C4 = 0, F4 = 3) et chaque degré vaut 5 dixièmes. Le lecteur inverse
+/// retrouve la lettre GABC exacte du signe (`Gabc.tex:408-443,481-489`).
+fn alteration_y(letter: char, clef: &str) -> i32 {
+    let low = letter.to_ascii_lowercase();
+    let height = i32::from(low as u8 - b'a') + 3 + i32::from(low > 'o');
+    let step = height - clef_key(clef) - 5;
+    let first = clef.split('@').next().unwrap_or(clef);
+    let line = first
+        .bytes()
+        .rev()
+        .find(|byte| byte.is_ascii_digit())
+        .unwrap_or(b'4')
+        - b'0';
+    let clef_step = if first.starts_with('f') { 3 } else { 0 };
+    let bottom = clef_step - 2 * (i32::from(line) - 1);
+    (step - bottom) * 5
+}
+
+/// Porteur XSD 4.0 d'une alteration GABC non chantée.
+///
+/// `Gabc.tex:512-540` : `x`/`X`, `#`/`##`, `y`/`Y` sont des glyphes, pas des
+/// notes. XSD 4.0 `direction-type/symbol` (`:3530`, `formatted-symbol-id`
+/// `:2596`) imprime un symbole SMuFL canonique ; `default-y` le place sur la
+/// ligne voulue. Un tiers voit donc le bémol, le dièse ou le bécarre à sa
+/// position, et la lecture inverse restaure la lettre GABC du signe.
+pub(crate) fn write_alteration_symbols(
+    out: &mut Out,
+    gregorian: &Gregorian,
+    syllable_index: usize,
+    note_index: usize,
+) {
+    let Some(syllable) = gregorian.syllables.get(syllable_index) else {
+        return;
+    };
+    let clef = gregorian.clefs.first().map_or("c4", String::as_str);
+    let mut index = note_index;
+    while index > 0 {
+        index -= 1;
+        let Some(note) = syllable.notes.get(index) else {
+            break;
+        };
+        let Some(sign) = note
+            .signs
+            .iter()
+            .find(|sign| sign.kind == SignKind::Alteration)
+        else {
+            break;
+        };
+        let name = match sign.raw.chars().next() {
+            Some('x' | 'X') => "accidentalFlat",
+            Some('#') => "accidentalSharp",
+            Some('y' | 'Y') => "accidentalNatural",
+            _ => break,
+        };
+        let y = alteration_y(note.letter, clef);
+        out.xml
+            .start_element("direction", &[("placement", "above")]);
+        out.xml
+            .start_element("direction-type", &[("default-y", &y.to_string())]);
+        out.xml.tag("symbol", name);
+        out.xml.end_element();
+        out.xml.end_element();
+    }
+}
+
 /// Typographie XSD 4.0 d'une lyric entièrement stylée (`text-formatting`,
 /// `:2237`, `font` `:2005`).
 ///
@@ -839,5 +924,36 @@ mod tests {
         );
         assert!(!xml.contains("<sp>"), "{xml}");
         assert!(!xml.contains("<lyric"), "{xml}");
+    }
+
+    #[test]
+    fn alteration_symbol_is_placed_at_its_staff_position() {
+        // XSD 4.0 `direction-type/symbol` (:3530) + `default-y` portent le
+        // bémol de `ixi` sur la lettre `i` (25 dixièmes sous `c4`).
+        use scoretk_core::model::GregorianNote;
+        let gregorian = Gregorian {
+            clefs: vec!["c4".to_owned()],
+            syllables: vec![Syllable {
+                notes: vec![
+                    GregorianNote {
+                        letter: 'i',
+                        glyph: "x".to_owned(),
+                        signs: vec![NeumeSign::new(SignKind::Alteration, "x")],
+                        ..GregorianNote::default()
+                    },
+                    GregorianNote {
+                        letter: 'h',
+                        ..GregorianNote::default()
+                    },
+                ],
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let mut out = Out::new_with(false, false);
+        write_alteration_symbols(&mut out, &gregorian, 0, 1);
+        let xml = out.xml.finish();
+        assert!(xml.contains(r#"default-y="25""#), "{xml}");
+        assert!(xml.contains("<symbol>accidentalFlat</symbol>"), "{xml}");
     }
 }

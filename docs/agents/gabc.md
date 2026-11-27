@@ -1726,3 +1726,70 @@ interpret:
 spelling characters above; they are already used by the writer and are not
 part of this row. No carrier was invented for the remaining rows: they stay
 defects or inherent with the citation already printed by the instrument.
+
+## 28. Printed rubrics, lyric typography and placed alterations (2026-11-27, branch `gabcxm`)
+
+§27 left MusicXML at **94.36 %** (97 812 / 103 657; 10 400 inherent, 5 845
+defects) and explicitly rejected the `c3c6919f` `<words>` carrier: it wrote one
+italic red `<words>` per *syllable*, duplicating `<lyric>` and printing blanks.
+This campaign keeps that rejection: `<words>` carries **only text the GABC
+source actually prints**, with its printed value. Nothing is a `key: <raw GABC
+token>` label, hex/base64 payload, `gabc`-prefixed field, hidden text dump or
+colour flag. The instrument still raises `ValueError` on a blank `<words>`, a
+`<words>` repeating the following `<lyric>`, or two carriers whose only
+difference is `@color`; `test_full_support.py` passes 11/11.
+
+### 28.1 Standard carriers used
+
+| Family | Carrier | Norm |
+| --- | --- | --- |
+| printed special characters (`<sp>`) and verbatim text (`<v>`) | `<direction placement="above"\|"below"><direction-type><words color="#FF0000">` with the **printed** glyph (`V/.`, `✶`, `‡`, …), never the tag | `musicxml-4.0.xsd` `direction-type/words` (:3495), `formatted-text` (:2610), `text-formatting` (:2237), `print-style/default-y` (:2134); Gregorio `doc/Gabc.tex:297-309,345-378` defines what those tags print |
+| rubric markers without a sung note (`5.`, `V/. Et`, `{ia}.`) | the same `<words>`, with `placement="above"`; the reader opens a separate, note-less syllable at that point | `musicxml-4.0.xsd` `words` (:3495); `Gabc.tex:241-245,297-343` |
+| whole-syllable style (`<i>`, `<c>`, `<b>`, `<tt>`, `<ul>`) | typography of `<lyric><text font-style="italic" color="#FF0000" …>` | `musicxml-4.0.xsd` `text-formatting` (:2237), `font` (:2005-2012); `Gabc.tex:254-270`. Partial tags have no single-`<text>` carrier and stay defects |
+| non-sung alteration glyphs `x`/`#`/`y` (`Gabc.tex:481-489,512-540`) | `<direction><direction-type default-y="25"><symbol>accidentalFlat</symbol>`: a canonical SMuFL accidental at the staff height of the sign | `musicxml-4.0.xsd` `direction-type/symbol` (:3500), `formatted-symbol-id` (:2598), `smufl-glyph-name` (:411), `smufl-accidental-glyph-name` (:418), `default-y` (:2134). The inverse maps tenths → GABC staff letter |
+| word scope of an alteration | `<lyric><syllabic>` (`single`/`end` closes the word) | `musicxml-4.0.xsd` `syllabic` (:5062); `Gabc.tex:212-227,512-540`. Without it a flat leaks into the next word and pitches regress |
+
+`<words>` values are the printed characters only: the reader refuses a value
+containing `<` (a source tag dump) and a colour other than the printed red.
+Above-staff text `[alt:…]` keeps its own `<words>` with `font-style="italic"`
+(`Gabc.tex:339-343`), so colour is never the only difference between two
+carriers. All new XML attributes are gated by `gabc_neume_smufl` /
+`--xml-full-support`: every default byte is unchanged.
+
+### 28.2 Measured progression (261 sources, same instrument, 0 failures)
+
+| Step | Carried | Main % | Rubric | Pitch | Letter | Shape | Attribute |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| §27 baseline | 97 812 | 94.36 | 795 | 427 | 337 | 353 | 332 |
+| printed `<words>` | 97 962 | 94.51 | 551 | 427 | 337 | 353 | 332 |
+| + placement of note-less rubrics | 98 179 | 94.72 | 449 | 427 | 337 | 353 | 332 |
+| + lyric typography | 98 286 | 94.82 | 342 | 427 | 337 | 353 | 332 |
+| + printed braces replacement | 98 331 | 94.86 | 297 | 427 | 337 | 353 | 332 |
+| + placed alteration `<symbol>` | 98 994 | 95.50 | 297 | 665 | 36 | 52 | 332 |
+| + `<syllabic>` word scope | **106 625** | **96.25** | 297 | 158 | 36 | 52 | 332 |
+
+The intermediate pitch regression after adding `<symbol>` alone (427 → 665)
+was measured, not hidden: the sign leaked across word boundaries because the
+standard-only reader had no word scope. Restoring that scope from the XSD
+`syllabic` carrier removed the leak. No fact was reclassified as inherent:
+the `layout` row fell from 9 925 to 2 801 because the returned GABC now has
+the real word breaks (carried by `syllabic`), so the headline denominator rose
+from 103 657 to 110 781 and the raw figure from 85.76 % to 93.48 %.
+
+Final defects (4 156): `glyph` 3 227, `attribute` 332, `rubric` 297, `pitch`
+158, `shape` 52, `letter` 36, `custos` 22, `text` 15, `ictus` 9, `clef` 8.
+Only a native carrier was used per family: the remaining exact GABC glyph
+spelling (`/`, `!`, `x` inside a compound glyph) has no SMuFL name and is left
+as a defect, as required by §27.1.
+
+### 28.3 Non-regression
+
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk
+--test e2e_corpus -- --nocapture` (8/8), `cargo build -p scoretk-wasm
+--target wasm32-unknown-unknown`, `test_full_support.py` (11/11 with
+`SCORETK_CLI`) and the instrument (261 sources, 0 failures) all pass. A
+CLI built at `253106ce` and the new CLI produce **2 794/2 794 identical
+default outputs** over the versioned corpus and the 261-file GABC lot; no
+default conversion changed. New source files were added by path; no build
+directory is versioned.

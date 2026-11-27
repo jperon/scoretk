@@ -1198,6 +1198,9 @@ impl<'a> Context<'a> {
                 break;
             }
             chant::write_printed_rubrics(out, syllable);
+            if current == syllable_index {
+                chant::write_alteration_symbols(out, gregorian, syllable_index, note_index);
+            }
             out.gregorian_rubric_index += 1;
         }
     }

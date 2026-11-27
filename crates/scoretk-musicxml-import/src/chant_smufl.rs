@@ -120,6 +120,9 @@ struct Reader {
     standalone_rubrics: Vec<String>,
     /// La prochaine note doit ouvrir une nouvelle syllabe après une rubrique.
     force_new_syllable: bool,
+    /// Alterations GABC lues comme symboles SMuFL positionnés, en attente de
+    /// la note chantée qui les suit (`Gabc.tex:512-540`).
+    pending_alterations: Vec<(char, String)>,
 }
 
 impl Reader {
@@ -195,6 +198,23 @@ impl Reader {
     fn rubric_direction(&mut self, direction: &Element) {
         let placement = direction.attribute("placement").unwrap_or("");
         for kind in direction.children_named("direction-type") {
+            if let (Some(symbol), Some(y)) = (
+                kind.children_named("symbol").next(),
+                kind.attribute("default-y")
+                    .and_then(|y| y.parse::<i32>().ok()),
+            ) {
+                let raw = match symbol.text_trimmed() {
+                    "accidentalFlat" => "x",
+                    "accidentalSharp" => "#",
+                    "accidentalNatural" => "y",
+                    _ => "",
+                };
+                if let Some(letter) = self.letter_from_y(y) {
+                    if !raw.is_empty() {
+                        self.pending_alterations.push((letter, raw.to_owned()));
+                    }
+                }
+            }
             for words in kind.children_named("words") {
                 // Seul le rouge imprimé est une rubrique : le texte `[alt:…]`
                 // est en italique sans couleur, et un `<words>` d'une autre
@@ -216,6 +236,33 @@ impl Reader {
                 }
             }
         }
+    }
+
+    /// Inverse de `alteration_y` de l'exporteur : position verticale d'un
+    /// symbole → lettre de hauteur GABC (`Gabc.tex:408-443`).
+    fn letter_from_y(&self, y: i32) -> Option<char> {
+        let clef = self.clef.as_deref().unwrap_or("c4");
+        let key = clef_key(clef);
+        let first = clef.split('@').next().unwrap_or(clef);
+        let line = i32::from(
+            first
+                .bytes()
+                .rev()
+                .find(|byte| byte.is_ascii_digit())
+                .unwrap_or(b'4')
+                - b'0',
+        );
+        let clef_step = if first.starts_with('f') { 3 } else { 0 };
+        let step = clef_step - 2 * (line - 1) + y / 5;
+        let height = step + key + 5;
+        if !(3..=19).contains(&height) {
+            return None;
+        }
+        let mut offset = height - 3;
+        if offset >= 15 {
+            offset += 1; // `o` n'est pas une lettre de hauteur GABC.
+        }
+        Some((b'a' + offset as u8) as char)
     }
 
     fn note(&mut self, note: &Element, clef: &str) {
@@ -285,9 +332,18 @@ impl Reader {
             self.force_new_syllable = false;
         }
         let syllable_index = self.syllables.len() - 1;
+        let alterations = std::mem::take(&mut self.pending_alterations);
         let mut ends_syllable = false;
         {
             let syllable = &mut self.syllables[syllable_index];
+            for (letter, raw) in alterations {
+                syllable.notes.push(GregorianNote {
+                    letter,
+                    signs: parse_signs(&raw),
+                    glyph: raw,
+                    ..GregorianNote::default()
+                });
+            }
             syllable.notes.push(GregorianNote {
                 letter,
                 signs: parse_signs(&glyph),
@@ -334,6 +390,11 @@ impl Reader {
                     syllable.text = styled;
                 }
                 ends_syllable |= matches!(syllabic, "single" | "end");
+                // XSD 4.0 `syllabic` (`single`/`end`) marque la fin d'un mot :
+                // c'est aussi la fin de la portée d'une alteration GABC
+                // (`Gabc.tex:212-227,512-540`). Sans elle, un bémol fuirait
+                // sur toutes les syllabes suivantes.
+                syllable.space_after = matches!(syllabic, "single" | "end");
             }
             for printed in std::mem::take(&mut self.pending_rubrics) {
                 // Quand le `<words>` imprime la **même** syllabe avec sa
@@ -590,6 +651,35 @@ mod tests {
         assert_eq!(payload.syllables[0].notes[0].letter, 'e'); // clef + pitch
         assert_eq!(payload.syllables[0].notes[0].glyph, "w");
         assert_eq!(payload.syllables[0].text, "Ve");
+    }
+
+    #[test]
+    fn placed_symbol_and_words_restore_alteration_and_rubric() {
+        // Le lecteur standard ne voit que des porteurs XSD : `symbol` SMuFL
+        // positionné et `words` imprimé. Il reconstruit le glyphe `x` à sa
+        // lettre exacte et la rubrique `<sp>V/</sp>.` sans champ privé.
+        let xml = r##"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><clef><sign>C</sign><line>4</line></clef></attributes>
+    <direction placement="above"><direction-type><words color="#FF0000">V/.</words></direction-type></direction>
+    <direction placement="above"><direction-type default-y="25"><symbol>accidentalFlat</symbol></direction-type></direction>
+    <note><pitch><step>B</step><octave>3</octave></pitch><type>quarter</type>
+      <notations><other-notation type="single" smufl="chantPunctum"/></notations>
+      <lyric number="1"><syllabic>end</syllabic><text>ne</text></lyric>
+    </note>
+  </measure></part>
+</score-partwise>"##;
+        let root = scoretk_xml_common::parse(xml.as_bytes()).expect("XML");
+        let mut score = Score::default();
+        assert!(restore(&root, &mut score));
+        let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
+            panic!("payload");
+        };
+        assert_eq!(payload.syllables[0].text, "<sp>V/</sp>.");
+        assert_eq!(payload.syllables[1].notes[0].letter, 'i');
+        assert_eq!(payload.syllables[1].notes[0].glyph, "x");
+        assert!(payload.syllables[1].space_after);
     }
 
     #[test]
