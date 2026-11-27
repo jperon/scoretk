@@ -309,34 +309,119 @@ def parse_svg(path: Path) -> dict:
     return result
 
 
-def verse_overlaps(parsed: dict) -> int:
-    """Pairs of different lyric verse lines whose vertical bands overlap.
+def lyric_syllables(parsed: dict) -> dict[tuple[tuple[int, int, int], int], dict[int, tuple[float, float, float, float]]]:
+    """Bounding box of every lyric syllable, by (system, staff, verse, note).
 
-    A verse is one baseline; two verses must be separated by the font's line
-    height. Each glyph is attached to its baseline (within 0.25 sp), the
-    band of a verse is the union of its glyph boxes, and two bands count as
-    superposed when their baselines differ by more than 0.6 sp and their y
-    ranges overlap by more than 0.1 sp. This catches verses drawn on one
-    line even when their syllables never share the same x.
+    Neither SVG records the source `<no>` of a lyric. A verse is recovered
+    from the rendered baseline, per system and per staff: MuseScore puts all
+    syllables of verse n on the same line, `n * lyricsLineHeight * lineSpacing`
+    below the staff (`lyricslayout.cpp:602-613`). Baselines within 0.7 sp are
+    one line (a syllable's descender moves its path bbox bottom by up to
+    0.5 sp), and the lines are numbered from the staff downwards.
+
+    MuseScore emits one path per syllable, scoretk one Edwin path per glyph.
+    A syllable is attached to a chord/rest segment, so each glyph is mapped
+    to the nearest notehead x of its staff (within 3 sp). This also splits
+    syllables whose glyph streams interleave because they were drawn on top
+    of each other: a simple left-to-right word gap would merge them and hide
+    the very collision the metric must report.
     """
     spatium = parsed.get("spatium", 1.0)
-    boxes = parsed.get("lyric_boxes", [])
-    baselines = parsed.get("lyric_baselines", [])
-    lines: list[tuple[float, float, float]] = []
-    for baseline, (_x0, y0, _x1, y1) in zip(baselines, boxes):
-        for index, (line_base, top, bottom) in enumerate(lines):
-            if abs(baseline - line_base) <= 0.25 * spatium:
-                lines[index] = (line_base, min(top, y0), max(bottom, y1))
-                break
-        else:
-            lines.append((baseline, y0, y1))
-    return sum(
-        1
-        for index, (base_a, top_a, bottom_a) in enumerate(lines)
-        for base_b, top_b, bottom_b in lines[index + 1:]
-        if abs(base_a - base_b) > 0.6 * spatium
-        and min(bottom_a, bottom_b) - max(top_a, top_b) > 0.1 * spatium
+    systems = parsed.get("system_boxes", [])
+    staff_key = lambda system: (
+        round(system[0] / spatium), round(system[1] / spatium), round(system[2] / spatium)
     )
+    note_x: dict[tuple[int, int, int], list[float]] = {}
+    for x0, y0, x1, y1 in parsed.get("note_boxes_abs", []):
+        centre = (x0 + x1) / 2
+        middle = (y0 + y1) / 2
+        for system in systems:
+            sx0, sx1, top = system
+            if sx0 - 3 * spatium <= centre <= sx1 + 3 * spatium and top <= middle <= top + 4 * spatium:
+                note_x.setdefault(staff_key(system), set()).add(round(centre, 1))
+                break
+    for staff in note_x:
+        note_x[staff] = sorted(note_x[staff])
+
+    rows: dict[tuple[int, int, int], list[tuple[float, tuple[float, float, float, float]]]] = {}
+    for baseline, box in zip(parsed.get("lyric_baselines", []), parsed.get("lyric_boxes", [])):
+        x0, y0, x1, _y1 = box
+        centre = (x0 + x1) / 2
+        candidates = [
+            system for system in systems
+            if system[0] - 2 * spatium <= centre <= system[1] + 2 * spatium
+            and baseline > system[2] + 3.5 * spatium
+        ]
+        if not candidates:
+            continue
+        staff = staff_key(max(candidates, key=lambda system: system[2]))
+        rows.setdefault(staff, []).append((baseline, box))
+
+    result: dict[tuple[tuple[int, int, int], int], dict[int, tuple[float, float, float, float]]] = {}
+    for staff, items in rows.items():
+        lines: list[list[float]] = []
+        for baseline, _box in sorted(items):
+            for line in lines:
+                if abs(line[-1] - baseline) <= 0.7 * spatium:
+                    line.append(baseline)
+                    break
+            else:
+                lines.append([baseline])
+        notes = note_x.get(staff, [])
+        for verse, line in enumerate(sorted(lines, key=min)):
+            groups: dict[int, tuple[float, float, float, float]] = {}
+            for _, box in sorted(
+                (item for item in items if item[0] in line), key=lambda item: item[1][0]
+            ):
+                centre = (box[0] + box[2]) / 2
+                if notes:
+                    index = min(range(len(notes)), key=lambda i: abs(notes[i] - centre))
+                    key = index if abs(notes[index] - centre) <= 3 * spatium else len(notes) + round(centre)
+                else:
+                    key = round(centre)
+                if key in groups:
+                    previous = groups[key]
+                    groups[key] = (
+                        min(previous[0], box[0]), min(previous[1], box[1]),
+                        max(previous[2], box[2]), max(previous[3], box[3]),
+                    )
+                else:
+                    groups[key] = box
+            result[(staff, verse)] = groups
+    return result
+
+
+def lyric_collision_pairs(parsed: dict) -> tuple[int, int]:
+    """(different-verse overlaps, adjacent-syllable overlaps of one verse).
+
+    Both figures are pairs of syllable bounding boxes that overlap by more
+    than 0.1 sp in x **and** y. Grouping is per system and per staff, so a
+    lyric below one staff cannot be matched with a syllable of another staff
+    at the same y. Each pair counts once, including pairs from different
+    voices of the same verse, and no overlap is excluded from the count.
+    """
+    spatium = parsed.get("spatium", 1.0)
+    syllables = lyric_syllables(parsed)
+    different = same = 0
+
+    def overlaps(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+        return (
+            min(a[2], b[2]) - max(a[0], b[0]) > 0.1 * spatium
+            and min(a[3], b[3]) - max(a[1], b[1]) > 0.1 * spatium
+        )
+
+    for staff in {key[0] for key in syllables}:
+        verses = sorted(verse for key_staff, verse in syllables if key_staff == staff)
+        for index, first in enumerate(verses):
+            for second in verses[index + 1:]:
+                different += sum(
+                    overlaps(a, b)
+                    for a in syllables[(staff, first)].values()
+                    for b in syllables[(staff, second)].values()
+                )
+            groups = [syllables[(staff, first)][key] for key in sorted(syllables[(staff, first)])]
+            same += sum(overlaps(a, b) for a, b in zip(groups, groups[1:]))
+    return different, same
 
 
 def instrument_name_clips(parsed: dict) -> tuple[int, int]:
@@ -494,8 +579,10 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     names_ours = 0
     name_clips_ref = 0
     name_clips_ours = 0
-    verse_hits_ref = 0
-    verse_hits_ours = 0
+    verse_diff_ref = 0
+    verse_diff_ours = 0
+    verse_same_ref = 0
+    verse_same_ours = 0
     note_hits_ref = 0
     note_hits_ours = 0
 
@@ -547,7 +634,7 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         nonlocal spread_max_ref, spread_max_ours, spread_bad_ref, spread_bad_ours
         nonlocal spread_total_ref, spread_total_ours
         nonlocal names_ref, names_ours, name_clips_ref, name_clips_ours
-        nonlocal verse_hits_ref, verse_hits_ours
+        nonlocal verse_diff_ref, verse_diff_ours, verse_same_ref, verse_same_ours
         nonlocal note_hits_ref, note_hits_ours
         barline_hits_ref += barline_crossings(ref)
         barline_hits_ours += barline_crossings(our)
@@ -565,8 +652,12 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         names_ours += our_names
         name_clips_ref += ref_clips
         name_clips_ours += our_clips
-        verse_hits_ref += verse_overlaps(ref)
-        verse_hits_ours += verse_overlaps(our)
+        ref_diff, ref_same = lyric_collision_pairs(ref)
+        our_diff, our_same = lyric_collision_pairs(our)
+        verse_diff_ref += ref_diff
+        verse_diff_ours += our_diff
+        verse_same_ref += ref_same
+        verse_same_ours += our_same
         note_hits_ref += note_collisions(ref)
         note_hits_ours += note_collisions(our)
         ref_lyrics, ref_hits = lyric_collisions(ref)
@@ -646,8 +737,10 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "names_ours": names_ours,
         "name_clips_ref": name_clips_ref,
         "name_clips_ours": name_clips_ours,
-        "verse_hits_ref": verse_hits_ref,
-        "verse_hits_ours": verse_hits_ours,
+        "verse_diff_ref": verse_diff_ref,
+        "verse_diff_ours": verse_diff_ours,
+        "verse_same_ref": verse_same_ref,
+        "verse_same_ours": verse_same_ours,
         "note_hits_ref": note_hits_ref,
         "note_hits_ours": note_hits_ours,
     }
@@ -776,7 +869,8 @@ def main() -> int:
         "spread_bad_ref": 0, "spread_bad_ours": 0,
         "spread_total_ref": 0, "spread_total_ours": 0,
         "names_ref": 0, "names_ours": 0, "name_clips_ref": 0, "name_clips_ours": 0,
-        "verse_hits_ref": 0, "verse_hits_ours": 0,
+        "verse_diff_ref": 0, "verse_diff_ours": 0,
+        "verse_same_ref": 0, "verse_same_ours": 0,
         "note_hits_ref": 0, "note_hits_ours": 0,
     }
     for source in corpus:
@@ -858,8 +952,10 @@ def main() -> int:
         totals["names_ours"] += page_values["names_ours"]
         totals["name_clips_ref"] += page_values["name_clips_ref"]
         totals["name_clips_ours"] += page_values["name_clips_ours"]
-        totals["verse_hits_ref"] += page_values["verse_hits_ref"]
-        totals["verse_hits_ours"] += page_values["verse_hits_ours"]
+        totals["verse_diff_ref"] += page_values["verse_diff_ref"]
+        totals["verse_diff_ours"] += page_values["verse_diff_ours"]
+        totals["verse_same_ref"] += page_values["verse_same_ref"]
+        totals["verse_same_ours"] += page_values["verse_same_ours"]
         totals["note_hits_ref"] += page_values["note_hits_ref"]
         totals["note_hits_ours"] += page_values["note_hits_ours"]
         rows.append(row)
@@ -940,8 +1036,10 @@ def main() -> int:
         f"{totals['names_ref']} / {totals['names_ours']} |",
         f"| Instrument-name glyphs left of the page margin (reference / ours) | "
         f"{totals['name_clips_ref']} / {totals['name_clips_ours']} |",
-        f"| Overlapping lyric verse lines (reference / ours) | "
-        f"{totals['verse_hits_ref']} / {totals['verse_hits_ours']} |",
+        f"| Overlapping lyric syllables, different verses (reference / ours) | "
+        f"{totals['verse_diff_ref']} / {totals['verse_diff_ours']} |",
+        f"| Overlapping lyric syllables, same verse (reference / ours) | "
+        f"{totals['verse_same_ref']} / {totals['verse_same_ours']} |",
         f"| Overlapping notehead pairs (reference / ours) | "
         f"{totals['note_hits_ref']} / {totals['note_hits_ours']} |",
         "",

@@ -1254,25 +1254,43 @@ fn plan_lyric_lines(
                 ));
             }
             if lyric.melisma {
-                let end = events[index + 1..]
-                    .iter()
-                    .find(|(_, later)| later.lyrics.iter().any(|later| later.verse == lyric.verse))
-                    .map_or(right, |(next, _)| *next - LYRIC_MELISMA_PAD)
-                    .max(start + LYRIC_LINE_WIDTH);
-                let length = end - start;
-                let dash_width = length.min(LYRIC_DASH_MAX);
-                let count = ((length / (16 * SP)).max(1) as usize).max(1);
-                let step = length / count as i32;
-                for dash in 0..count {
-                    let centre = start + step * dash as i32 + step / 2;
-                    items.push(DisplayItem::rect(
-                        ItemKind::Lyrics,
-                        centre - dash_width / 2,
-                        y,
-                        dash_width,
-                        LYRIC_LINE_WIDTH,
-                    ));
-                }
+                // `LyricsLayout::createOrRemoveLyricsLine` ends the line at
+                // `Lyrics::endTick()`. When there is no later syllable in
+                // this system, the next same-verse lyric (or the system's
+                // right edge) is only a fallback: a melisma with its own
+                // `<ticks_f>` must not run under unrelated words.
+                let end = lyric
+                    .melisma_end
+                    .and_then(|(measure, segment)| {
+                        events
+                            .iter()
+                            .filter(|(_, event)| {
+                                event.measure == measure
+                                    && usize::from(event.segment) >= usize::from(segment)
+                            })
+                            .map(|(x, _)| *x)
+                            .min()
+                    })
+                    .or_else(|| {
+                        events[index + 1..]
+                            .iter()
+                            .find(|(_, later)| {
+                                later.lyrics.iter().any(|later| later.verse == lyric.verse)
+                            })
+                            .map(|(next, _)| *next)
+                    })
+                    .unwrap_or(right);
+                let end = (end - LYRIC_MELISMA_PAD).max(start + LYRIC_LINE_WIDTH);
+                // `LyricsLayout::layoutMelismaLine` adds one continuous
+                // LineF; the spaced dashes belong to hyphens
+                // (`layoutDashes`).
+                items.push(DisplayItem::rect(
+                    ItemKind::Lyrics,
+                    start,
+                    y,
+                    end - start,
+                    LYRIC_LINE_WIDTH,
+                ));
             }
         }
     }
@@ -2100,6 +2118,7 @@ mod tests {
                 text: String::from("Mi"),
                 syllabic: LyricsSyllabic::Begin,
                 melisma: false,
+                melisma_end: None,
             }],
             10 * SP,
             5 * SP,
@@ -2131,6 +2150,7 @@ mod tests {
             text: String::from(text),
             syllabic: LyricsSyllabic::Single,
             melisma: false,
+            melisma_end: None,
         };
         let mut out = DisplayList::new(0);
         place_lyrics(
@@ -2177,22 +2197,25 @@ mod tests {
 
     #[test]
     fn lyric_syllables_get_hyphens_and_melisma_lines() {
-        let lyric = |text: &str, syllabic, melisma| LyricAtom {
+        let lyric = |text: &str, syllabic, melisma, melisma_end| LyricAtom {
             verse: 0,
             text: String::from(text),
             syllabic,
             melisma,
+            melisma_end,
         };
         let first = Atom {
-            lyrics: vec![lyric("Mi", LyricsSyllabic::Begin, false)],
+            lyrics: vec![lyric("Mi", LyricsSyllabic::Begin, false, None)],
             ..Atom::at_segment(0, AtomKind::Chord, 0)
         };
         let second = Atom {
-            lyrics: vec![lyric("nuit", LyricsSyllabic::End, true)],
+            // `Lyrics::endTick()` reaches the segment of the next syllable:
+            // the line must not run to the system's right edge.
+            lyrics: vec![lyric("nuit", LyricsSyllabic::End, true, Some((0, 2)))],
             ..Atom::at_segment(0, AtomKind::Chord, 1)
         };
         let third = Atom {
-            lyrics: vec![lyric("chré", LyricsSyllabic::Begin, false)],
+            lyrics: vec![lyric("chré", LyricsSyllabic::Begin, false, None)],
             ..Atom::at_segment(0, AtomKind::Chord, 2)
         };
         let events = vec![(4 * SP, &first), (10 * SP, &second), (16 * SP, &third)];
@@ -2233,6 +2256,7 @@ mod tests {
             text: String::from("Mi"),
             syllabic: LyricsSyllabic::Begin,
             melisma: false,
+            melisma_end: None,
         };
         let first = Atom {
             lyrics: vec![lyric],
@@ -2270,6 +2294,7 @@ mod tests {
                     text: String::from(*text),
                     syllabic: LyricsSyllabic::Single,
                     melisma: false,
+                    melisma_end: None,
                 }],
                 (4 + index as i32 * 10) * SP,
                 5 * SP,

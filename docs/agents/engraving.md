@@ -1803,6 +1803,64 @@ apart instead of 1 sp. The page-1 PNG rendered from this tree
 lyrics now push the following staff further down, so the staff y positions
 change, but the stem-length and bar-line-spread figures above are unchanged:
 the shared-segment-x port did not worsen them.
+
+## 19. Review of the private page: lyric collisions (2026-11-27)
+
+The former oracle column "overlapping lyric verse lines" grouped *all* glyphs
+of a page by absolute baseline, required two bands more than 0.6 sp apart and
+counted only their vertical extents. It reported 0 on the private score while
+four systems visibly piled syllables on top of one another. It has been
+replaced by two columns, computed per system and per staff. Neither SVG
+carries the source `<no>` of a lyric, so a verse is reconstructed from the
+rendered baseline: syllables whose baselines are within 0.7 sp are one line
+(a descender moves a MuseScore path's bbox bottom by up to 0.5 sp), and the
+lines are numbered downwards from the staff. MuseScore writes one path per
+syllable and scoretk one Edwin path per glyph, so each glyph is attached to
+the nearest notehead x of its staff (within 3 sp); a simple left-to-right
+word gap would merge overlapped syllables and hide the defect. A collision
+is a pair of syllable bboxes overlapping by more than 0.1 sp in x and y,
+reported separately for different verses and for adjacent syllables of the
+same verse. The corpus files carry one verse and no collisions on either
+side, so the private page is the evidence: **9 same-verse collisions before,
+0 after, 0 in the 4.7.4 reference**, on the same fixed metric.
+
+The previous verse-line port had placed each syllable on its verse's line,
+but the horizontal demand was added to `MeasureAtom::min_extra`, i.e. to the
+bar line at the end of the measure. Two neighbouring syllables therefore
+kept their old x while the empty space grew after the last note.
+`HorizontalSpacing::minHorizontalDistance` (`horizontalspacing.cpp:1216-1266`)
+instead puts that demand in the width of the *preceding segment*, and
+`stretchSegmentsToWidth` (`:1087-1111`) only grows the springs. The deficit
+now shifts the current segment base (and everything after it in the
+measure), so the pair is separated in the drawn grid; `min_extra` stays zero.
+A unit test checks the resulting segment gap. The page now holds three
+systems instead of four, and the remaining words have clear ink gaps.
+
+A melisma with `<ticks_f>` but no later syllable of the same verse was
+drawn as spaced dashes running to the system's right edge, under unrelated
+words. `LyricsAtom::melisma_end` records the segment at `Lyrics::endTick()`
+(`lyricslayout.cpp:395-480`), and `plan_lyric_lines` draws one continuous
+`LyricsLayout::layoutMelismaLine` up to that segment, only falling back to
+the next same-verse syllable or the system edge when the source gives no
+tick count. The two-verse unit test also pins the line's end x.
+
+| Metric (`oracle-eng9-step7` → `oracle-eng9-final`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1689 (373/2 209) | **0.1698** (375/2 209) |
+| Measure widths within 0.1 sp | 89/394 | **92/394** |
+| Files with identical system breaks | 36/56 | 36/56 |
+| Files with the oracle page count | 54/56 | 54/56 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Max bar-line x spread, sp (reference / ours) | 2.046 / 2.001 | 2.046 / 2.001 |
+| Boundaries with spread > 0.05 sp (reference / ours) | 17/229 / 14/214 | 17/229 / 14/214 |
+| Overlapping lyric syllables, different verses (reference / ours) | 0 / 0 | 0 / 0 |
+| Overlapping lyric syllables, same verse (reference / ours) | 0 / 0 | 0 / 0 |
+
+On the private page the verse separation from §18 is unchanged: verse 0 is
+the top line below the staff, verse 1 (`Ou`) the lower one; no syllable is
+placed per measure or per word. `engrave-img/eng9/after.png` is rendered
+from the committed tree.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

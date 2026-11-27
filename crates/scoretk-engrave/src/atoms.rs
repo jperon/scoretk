@@ -33,8 +33,8 @@ use alloc::vec::Vec;
 
 use scoretk_core::model::{
     AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
-    LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId, StemDirection,
-    StyleSettings, Track, Transpose,
+    Fraction, LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId,
+    StemDirection, StyleSettings, Track, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
@@ -111,6 +111,11 @@ pub struct LyricAtom {
     pub text: String,
     pub syllabic: LyricsSyllabic,
     pub melisma: bool,
+    /// Measure number and segment index where a melisma line ends, from
+    /// `Lyrics::endTick()` (`lyricslayout.cpp:135-160`). Without it a line
+    /// with no later syllable of the same verse would run to the system's
+    /// right edge, under unrelated words.
+    pub melisma_end: Option<(usize, u16)>,
 }
 
 /// One event of a measure atom.
@@ -239,10 +244,11 @@ pub struct MeasureAtom {
     pub segment_bases: Vec<i32>,
     /// Width of the clef/key header generated at a system start.
     pub header_width: i32,
-    /// Fixed minimum width added by attached text shapes (lyrics). It is
-    /// part of a measure's minimum width, so justification must subtract it
-    /// from the spring budget instead of stretching it a second time
-    /// (`horizontalspacing.cpp:1087-1111, 1216-1276`).
+    /// Fixed minimum width added by attached text shapes. Lyric demands are
+    /// now carried by the individual segment bases (see `lyric_pair_distance`
+    /// in `compute_staff`); this field stays zero so a measure's minimum
+    /// width is entirely made of its segments, as in
+    /// `stretchSegmentsToWidth` (`horizontalspacing.cpp:1087-1111, 1216-1276`).
     pub min_extra: i32,
 }
 
@@ -1489,7 +1495,6 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
         // the pairwise shape spacing below instead.
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
-        let mut min_extra = 0;
         let last_cr_segment = measure
             .segments
             .iter()
@@ -1503,6 +1508,21 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             segment_bases.push(x);
             let seg = segment_number as u16;
             let tick = (segment.tick - measure.start_tick).ticks(1920) as i32;
+            // `Lyrics::endTick()`: a melisma's `<ticks>`/`<ticks_f>` spans
+            // from this segment to the first chord/rest at that tick
+            // (`lyricslayout.cpp:395-480`). Keep the target as a segment
+            // index so the page pass can find its x in the same system.
+            let melisma_end = |ticks: Option<Fraction>| -> Option<(usize, u16)> {
+                ticks.and_then(|ticks| {
+                    let end = segment.tick + ticks;
+                    measure
+                        .segments
+                        .iter()
+                        .position(|later| later.kind == SegmentType::ChordRest && later.tick >= end)
+                        .and_then(|index| u16::try_from(index).ok())
+                        .map(|index| (measure.number, index))
+                })
+            };
             let segment_staff = |track: Track| track.staff().index() == staff_index;
             if segment.kind == SegmentType::ChordRest {
                 // P1: fixed proportional spacing, one x per chord/rest segment
@@ -1601,13 +1621,22 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             );
                             let have = measure_origin + x - previous_x;
                             if have < needed {
-                                // `stretchSegmentsToWidth` overwrites every
-                                // chord/rest width with `force * stretch`
-                                // (`horizontalspacing.cpp:1087-1111`), so the
-                                // demand widens the measure's minimum (and
-                                // hence its breaking) rather than a single
-                                // segment's drawn x.
-                                min_extra += needed - have;
+                                // The demand belongs to the *segment*, not to
+                                // the bar line: `Segment::width` is the
+                                // minimum distance to the next segment
+                                // (`horizontalspacing.cpp:1216-1266`), and
+                                // `stretchSegmentsToWidth` only grows springs
+                                // (`:1087-1111`). Adding the deficit to the
+                                // measure's end would leave two neighbouring
+                                // syllables superposed while the bar line
+                                // moved. Shift this segment (and everything
+                                // after it) so the *previous segment's*
+                                // width carries the requirement.
+                                let deficit = needed - have;
+                                x += deficit;
+                                if let Some(base) = segment_bases.last_mut() {
+                                    *base += deficit;
+                                }
                             }
                         }
                         prev_lyrics[verse] = Some((measure_origin + x, width, syllabic));
@@ -1760,6 +1789,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                         text: lyric.text.clone(),
                                         syllabic: lyric.syllabic,
                                         melisma: lyric.melisma.is_some(),
+                                        melisma_end: melisma_end(lyric.melisma),
                                     })
                                     .collect(),
                             };
@@ -1821,6 +1851,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                     text: lyric.text.clone(),
                                     syllabic: lyric.syllabic,
                                     melisma: lyric.melisma.is_some(),
+                                    melisma_end: melisma_end(lyric.melisma),
                                 })
                                 .collect();
                             events.push(rest);
@@ -1952,7 +1983,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 
         let mut atom = MeasureAtom {
             number: measure.number,
-            width: x + min_extra + text_extra,
+            width: x + text_extra,
             spring,
             events,
             start_bar: bar_code(measure.start_bar_line),
@@ -1963,7 +1994,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             mm_rest_count: mm_count.min(u16::MAX as usize) as u16,
             segment_bases,
             header_width: 0,
-            min_extra,
+            min_extra: 0,
         };
         // // Port of `systemlayout.cpp:402-407`
         // (`MeasureLayout::createEndBarLines`): MuseScore generates a final
@@ -2083,6 +2114,67 @@ mod tests {
             lyric_pair_distance(LyricsSyllabic::Single, 2 * SP, 2 * SP, SP / 4),
             2 * SP + SP / 4
         );
+    }
+
+    #[test]
+    fn lyric_demand_widens_the_segment_not_the_bar_line() {
+        // `HorizontalSpacing::minHorizontalDistance` (`horizontalspacing.cpp:
+        // 1216-1266`) puts the syllable shapes' minimum distance in the
+        // *segment* width. A demand added to the measure's end would still
+        // draw the two syllables on top of each other.
+        use alloc::vec;
+        use scoretk_core::model::{
+            Chord, ChordRest, Duration, Lyrics, Measure, Note, Part, Segment, SegmentItem,
+            SegmentType, Staff, Track,
+        };
+        let score_with = |with_lyrics: bool| {
+            let mut score = Score::new();
+            let part = score.add_part(Part::new("S", "S"));
+            let staff = score.add_staff_with(part, Staff::new(part));
+            let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(1, 1));
+            for (index, tick) in [Fraction::ZERO, Fraction::QUARTER].into_iter().enumerate() {
+                let note = score.add_note(Note::new(67, 14));
+                let mut chord = Chord::default();
+                chord.notes.push(note);
+                let mut rest = ChordRest::chord(Duration::quarter());
+                rest.kind = scoretk_core::model::ChordRestKind::Chord(chord);
+                if with_lyrics {
+                    let text = if index == 0 { "Mi" } else { "nuit" };
+                    rest.lyrics = vec![Lyrics::new(
+                        0,
+                        if index == 0 {
+                            LyricsSyllabic::Begin
+                        } else {
+                            LyricsSyllabic::End
+                        },
+                        text,
+                    )];
+                }
+                let mut segment = Segment::new(SegmentType::ChordRest, tick, 1);
+                segment.set_element(Track::new(staff, 0), SegmentItem::ChordRest(rest));
+                measure.add_segment(segment);
+            }
+            score.add_measure(measure);
+            score
+        };
+        let plain = compute_staff(&score_with(false), 0);
+        let with_lyrics = compute_staff(&score_with(true), 0);
+        let plain_gap = plain[0].segment_bases[1] - plain[0].segment_bases[0];
+        let lyric_gap = with_lyrics[0].segment_bases[1] - with_lyrics[0].segment_bases[0];
+        let style = &score_with(true).engraving.style;
+        let em = text_em(style, style.lyricist_font_size.max(10.0));
+        let needed = lyric_pair_distance(
+            LyricsSyllabic::Begin,
+            text_width("Mi", em, false),
+            text_width("nuit", em, false),
+            0,
+        );
+        assert!(
+            lyric_gap >= needed,
+            "segment gap {lyric_gap} must reserve the lyric pair distance {needed}"
+        );
+        assert!(lyric_gap > plain_gap);
+        assert_eq!(with_lyrics[0].min_extra, 0);
     }
 
     #[test]
