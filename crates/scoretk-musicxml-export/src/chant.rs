@@ -116,34 +116,6 @@ pub(crate) fn write_miscellaneous_headers(out: &mut Out, gregorian: &Gregorian) 
     }
 }
 
-/// Texte rubrique d'une syllabe : porteur XSD 4.0 `direction`/`words`
-/// (`:3495`, `formatted-text` `:2610`), en rouge italique comme les rubriques
-/// du plain-chant. Le texte `--xml-full-support` est le texte **source exact**
-/// de la syllabe, marques `<sp>`, `<i>`, `<v>` comprises : aucun autre élément
-/// MusicXML ne porte ces marques (XSD 4.0 `lyric/text` est du plain text),
-/// et elles ne sont pas une étiquette `clé: valeur` copiée de la source.
-pub(crate) fn write_rubric_direction(out: &mut Out, text: &str, separator: &str) {
-    out.attr(false);
-    out.xml.start_element("direction", &[]);
-    out.xml.start_element("direction-type", &[]);
-    out.xml.tag_with(
-        "words",
-        &[("font-style", "italic"), ("color", "#FF0000")],
-        text,
-    );
-    // Texte exact entre la syllabe précédente et celle-ci (`Gabc.tex:60-64`) :
-    // il porte souvent `<sp>…</sp>` et n'a aucun autre porteur MusicXML.
-    if !separator.is_empty() {
-        out.xml.tag_with(
-            "words",
-            &[("font-style", "italic"), ("color", "#0000FF")],
-            separator,
-        );
-    }
-    out.xml.end_element();
-    out.xml.end_element();
-}
-
 /// Écrit le payload L6 complet des syllabes dans la première mesure.
 ///
 /// Une mesure dérivée se termine sur une barre réelle, pas sur une syllabe :

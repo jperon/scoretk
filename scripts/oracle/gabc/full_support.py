@@ -34,7 +34,12 @@ a residual private carrier would pad the figure.
 
 Native carriers (ABC `w:`, LilyPond `\\lyricsto`, MusicXML `<lyric>`, SMuFL
 `other-notation/@smufl`, gregorian.ly commands, MEI NEUMES) are deliberately
-kept: they are part of the destination specification.
+kept: they are part of the destination specification. MusicXML `<words>` is
+checked separately: a blank value, a value duplicating the `<lyric>` of the
+note it precedes, or two carriers whose only difference is `@color` is a
+disguised private carrier and the instrument fails loudly on it. `<words>`
+may only carry text that the GABC source really prints (`<alt>`, rubric
+markup), with that printed value.
 
 A loss is **inherent** only when the destination's specification has no
 carrier for that kind and a citation is recorded in `INHERENT`. A loss with no
@@ -53,6 +58,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import subprocess
@@ -365,9 +371,19 @@ INHERENT_VALUES: dict[str, dict[str, list[tuple[str, str]]]] = {
         # notation […] essential issues for serious typesetting are still
         # lacking, such as […] horizontal alignment of multiple ligatures »
         # and the ligature shape « is not directly dictated by the input
-        # commands ». GABC's spacing/fusion characters (/ ! * - @) therefore
-        # have no command that a third-party LilyPond reader could interpret.
-        "glyph": [(r"^[/!*@\-]+$", "notation-big-page.html §17.4.7 'Gregorian square neume ligatures' (:44630-44675): ligature spacing is not dictated by input commands ('limited support', 'horizontal alignment of multiple ligatures … lacking'); no command carries GABC / ! * - @ spacing/fusion spelling")],
+        # commands ». GABC `/`, `//`, `!`, `*` and `@` therefore have no
+        # command that a third-party LilyPond reader could interpret:
+        #   / , //  spacing between/inside neumes (Gabc.tex:668-687);
+        #   !       zero-width or non-breaking space (Gabc.tex:681-687);
+        #   *       lyric special character `\GreStar` (Gabc.tex:345-378),
+        #           absent from the §17.4.7 section-marker list;
+        #   @       fuses neume primitives (Gabc.tex:603-666), whereas LilyPond
+        #           `\[ … \]` only brackets notes whose shape follows musical
+        #           convention, not the input spelling.
+        # `-` (initio debilis, Gabc.tex:556-579) is NOT in this row: §17.4.7
+        # names `\[ \deminutum g \pes b \]` a "Pes Initio Debilis". It is
+        # carried by that standard command when it opens a ligature.
+        "glyph": [(r"^[/!*@]+$", "notation-big-page.html §17.4.7 'Gregorian square neume ligatures' (:44630-44675): ligature spacing is not dictated by input commands ('limited support', 'horizontal alignment of multiple ligatures … lacking'); no command carries GABC / // ! * @ spacing/fusion/special-character spelling")],
     },
     "abc": {
         "mora": [(r"^\.{2,}|^\.[0-9]", "abc-standard-v2.1.wiki.txt §4.3 'Note lengths': dot is a duration modifier, not a mora placement digit")],
@@ -402,7 +418,7 @@ RECLASSIFIED: dict[str, dict[str, str]] = {
     "musicxml": {
         "letter": "musicxml-4.0.xsd `complexType clef` (:2930), `staff-lines` (:3136) and `pitch/step` (:5160): clef + pitch give the staff position",
         "header": "musicxml-4.0.xsd `identification/miscellaneous-field/@name` (:4327-4348): arbitrary name/value metadata",
-        "rubric": "musicxml-4.0.xsd `words` (:3495, `formatted-text` :2610, xs:string): markup text can be written verbatim",
+        "rubric": "musicxml-4.0.xsd `words` (:3495, `formatted-text` :2610, xs:string): genuine printed rubric text can be written verbatim; syllable markup in `<lyric>` has no such carrier (review, gabc.md §27.1)",
         "glyph": "musicxml-4.0.xsd `other-notation/@smufl` (:5361-5375): SMuFL chant glyph names are standard carriers",
         "shape": "musicxml-4.0.xsd `other-notation/@smufl` (:5361), `other-ornament` (:5350), `other-articulation` (:4671)",
         "ictus": "musicxml-4.0.xsd `other-notation/@smufl` (:5361): SMuFL `chantIctusAbove`/`chantIctusBelow`",
@@ -547,6 +563,54 @@ def strip_private(destination: str, data: bytes) -> bytes:
     return data
 
 
+WORDS_RE = re.compile(r"<words\b([^>]*)>(.*?)</words>", re.S)
+DIRECTION_OR_NOTE_RE = re.compile(r"<(direction|note)\b([^>]*)>(.*?)</\1>", re.S)
+LYRIC_TEXT_RE = re.compile(r"<text\b[^>]*>(.*?)</text>", re.S)
+
+
+def words_violation(text: str) -> str | None:
+    """Describe a `<words>` carrier that is not a printed rubric, or ``None``.
+
+    The XSD 4.0 `words` element (:3495) is a *printed* text: writing the
+    syllable again above the staff duplicates `<lyric>` in every consumer,
+    and a blank value prints nothing. Colour is a legitimate typographic
+    attribute, but if it is the only difference between two carriers it is a
+    private flag that only our reader decodes (e.g. red = syllable, blue =
+    separator). None of these can be counted as a fact carried by MusicXML.
+    """
+    signatures: dict[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], str] = {}
+    pending: list[tuple[str, str]] = []
+    for match in DIRECTION_OR_NOTE_RE.finditer(text):
+        kind, outer_attributes, body = match.groups()
+        if kind == "direction":
+            outside = tuple(sorted(re.findall(r'([\w:-]+)\s*=\s*"([^"]*)"', outer_attributes)))
+            for words in WORDS_RE.finditer(body):
+                attributes = tuple(sorted(
+                    re.findall(r'([\w:-]+)\s*=\s*"([^"]*)"', words.group(1))))
+                colour = dict(attributes).get("color")
+                signature = (outside, tuple((k, v) for k, v in attributes if k != "color"))
+                if (previous := signatures.get(signature)) is not None and previous != colour:
+                    return ("la couleur est la seule différence entre deux "
+                            f"<words> : {previous!r} et {colour!r}")
+                signatures[signature] = colour
+                raw = words.group(2)
+                plain = " ".join(html.unescape(re.sub(r"<[^>]+>", "", raw)).split())
+                if not plain:
+                    return "<words> vide (porteur imprimé sans texte)"
+                pending.append((plain, raw))
+        else:
+            lyrics = {
+                " ".join(html.unescape(value).split())
+                for value in LYRIC_TEXT_RE.findall(body)
+            }
+            for plain, raw in pending:
+                if plain in lyrics:
+                    return (f"<words> {raw[:48]!r} double la <lyric> "
+                            "de la note suivante")
+            pending.clear()
+    return None
+
+
 def private_payload(destination: str, data: bytes) -> str | None:
     """Décrit un porteur privé résiduel dans la sortie mesurée, ou ``None``.
 
@@ -558,6 +622,9 @@ def private_payload(destination: str, data: bytes) -> str | None:
     if destination == "midi":
         return None  # flux SMF binaire, sans texte mesurable
     text = data.decode("utf-8", "replace")
+    if destination == "musicxml":
+        if violation := words_violation(text):
+            return violation
     found = GABC_RE.search(text)
     if found:
         return f"préfixe gabc → {text[max(0, found.start() - 16):found.start() + 32]!r}"

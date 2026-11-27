@@ -29,7 +29,8 @@
 //! `\lyricsto` (§2.1.2), la clé de `\clef "vaticana-…"` (§17.4.2).
 
 use scoretk_core::model::{
-    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, Score, Syllable,
+    BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, GroupToken, GroupTokenKind,
+    Score, Syllable,
 };
 use scoretk_gabc_common::syntax::{clef_key, parse_signs};
 
@@ -80,15 +81,58 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
         {
             let current = syllables.last_mut().expect("syllable");
             current.bars.push(bar);
+            current.group_tokens.push(GroupToken {
+                notes_before: current.notes.len(),
+                text: bar.as_str().to_owned(),
+                kind: GroupTokenKind::Bar,
+            });
         }
     }
-    for (at, bar) in reader.bars {
-        if at > reader_note_count(&syllables) {
+    for (at, bar) in &reader.bars {
+        if *at > reader_note_count(&syllables) {
             if syllables.is_empty() {
                 syllables.push(Syllable::default());
             }
-            syllables.last_mut().expect("syllable").bars.push(bar);
+            let last = syllables.last_mut().expect("syllable");
+            last.bars.push(*bar);
+            last.group_tokens.push(GroupToken {
+                notes_before: last.notes.len(),
+                text: bar.as_str().to_owned(),
+                kind: GroupTokenKind::Bar,
+            });
         }
+    }
+    // The GABC writer re-emits non-note tokens from `group_tokens` at their
+    // source position (an initio debilis belongs *before* its pitch). Bars
+    // were added above from the `\divisio*` commands; `\deminutum` on a
+    // ligature head (§17.4.7 "Pes Initio Debilis") supplies the `-` token.
+    let mut add_token = |at: usize, text: String, kind: GroupTokenKind| {
+        let mut base = 0usize;
+        let mut target = syllables.len().saturating_sub(1);
+        for (index, syllable) in syllables.iter().enumerate() {
+            // A note at index `base + len` belongs to the *next* syllable,
+            // not to the end of this one.
+            if at < base + syllable.notes.len() {
+                target = index;
+                break;
+            }
+            base += syllable.notes.len();
+        }
+        if let Some(syllable) = syllables.get_mut(target) {
+            syllable.group_tokens.push(GroupToken {
+                notes_before: at.saturating_sub(base),
+                text,
+                kind,
+            });
+        }
+    };
+    for at in &reader.initio_debilis_at {
+        add_token(*at, "-".to_owned(), GroupTokenKind::Spacing);
+    }
+    for syllable in &mut syllables {
+        syllable
+            .group_tokens
+            .sort_by_key(|token| token.notes_before);
     }
     let payload = Gregorian {
         headers: headers(src),
@@ -223,6 +267,16 @@ struct Voice {
     clef: Option<String>,
     notes: Vec<GregorianNote>,
     bars: Vec<(usize, BarKind)>,
+    /// Note index at which the current `\[ … \]` ligature opened. The
+    /// Notation Reference §17.4.7 names `\[ \deminutum g \pes b \]` a "Pes
+    /// Initio Debilis": on the first note of a multi-note ligature
+    /// `\deminutum` restores the GABC `-`, while on a later note it is the
+    /// liquescent `~` (the same command, disambiguated by its position).
+    ligature_start: Option<usize>,
+    deminutum_on_first: bool,
+    /// Global note indices whose `\deminutum` is an initio debilis rather
+    /// than a liquescent note (first head of a multi-note ligature).
+    initio_debilis_at: Vec<usize>,
 }
 
 impl Voice {
@@ -240,13 +294,36 @@ impl Voice {
                         self.clef = Some(gabc_clef(name.trim_matches('"')));
                     }
                 }
-                "\\[" | "\\]" | "\\pes" | "\\flexa" | "\\melisma" | "\\melismaEnd" => {}
+                "\\[" => {
+                    self.ligature_start = Some(self.notes.len());
+                    self.deminutum_on_first = false;
+                }
+                "\\]" => {
+                    if let Some(start) = self.ligature_start.take() {
+                        if self.deminutum_on_first && self.notes.len() > start + 1 {
+                            // The liquescent glyph was only a placeholder:
+                            // the source token is the group token `-`, which
+                            // the GABC writer emits before the first pitch.
+                            if let Some(note) = self.notes.get_mut(start) {
+                                note.glyph = note.glyph.replacen('~', "", 1);
+                                note.signs = parse_signs(&note.glyph);
+                            }
+                            self.initio_debilis_at.push(start);
+                        }
+                    }
+                }
+                "\\pes" | "\\flexa" | "\\melisma" | "\\melismaEnd" => {}
                 "\\inclinatum" => inclinatum = true,
                 "\\quilisma" => glyph.push('w'),
                 "\\virga" => glyph.push('v'),
                 "\\stropha" => glyph.push('s'),
                 "\\oriscus" => glyph.push('o'),
-                "\\deminutum" => glyph.push('~'),
+                "\\deminutum" => {
+                    if self.ligature_start == Some(self.notes.len()) {
+                        self.deminutum_on_first = true;
+                    }
+                    glyph.push('~');
+                }
                 "\\auctum" => glyph.push('<'),
                 "\\descendens" => glyph.push('>'),
                 "\\linea" => glyph.push('='),
@@ -364,6 +441,34 @@ mod tests {
         assert_eq!(payload.syllables[0].text, "FAc");
         assert_eq!(payload.syllables[0].notes[0].glyph, "w");
         assert!(!payload.syllables[0].notes[0].glyph.contains("glyph:"));
+    }
+
+    #[test]
+    fn initio_debilis_is_carried_by_deminutum_on_a_ligature_head() {
+        // Notation Reference §17.4.7: "Pes Initio Debilis" is written
+        // `\[ \deminutum g \pes b \]`; the same command on a later note is
+        // the liquescent `~` ("Epiphonus"). Position disambiguates them.
+        let src = r#"\new VaticanaVoice = "cantus" {
+          \[ \deminutum g \pes b \]
+          \[ \deminutum a \]
+          \[ g \pes \deminutum b \]
+        }"#;
+        let mut score = Score::default();
+        assert!(restore(src, &mut score));
+        let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
+            panic!("payload");
+        };
+        let syllable = &payload.syllables[0];
+        assert_eq!(syllable.notes.len(), 5);
+        assert_eq!(syllable.notes[0].glyph, "");
+        assert_eq!(syllable.notes[1].glyph, "");
+        assert_eq!(syllable.notes[2].glyph, "~"); // single note: not an initio debilis
+        assert_eq!(syllable.notes[3].glyph, "");
+        assert_eq!(syllable.notes[4].glyph, "~"); // liquescent, not the first note
+        assert_eq!(syllable.group_tokens.len(), 1);
+        assert_eq!(syllable.group_tokens[0].notes_before, 0);
+        assert_eq!(syllable.group_tokens[0].text, "-");
+        assert_eq!(syllable.group_tokens[0].kind, GroupTokenKind::Spacing);
     }
 
     #[test]

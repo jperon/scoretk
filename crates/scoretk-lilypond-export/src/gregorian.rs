@@ -34,7 +34,9 @@
 
 use std::fmt::Write as _;
 
-use scoretk_core::model::{BarKind, Gregorian, GregorianNote, Score, SignKind, Syllable};
+use scoretk_core::model::{
+    BarKind, Gregorian, GregorianNote, GroupTokenKind, Score, SignKind, Syllable,
+};
 use scoretk_gabc_common::syntax::diatonic_step;
 
 const STEPS: &[u8; 7] = b"cdefgab";
@@ -111,7 +113,7 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
     // le style Vatican (§17.4.7) : ils sont perdus, pas copiés dans une
     // annotation `^"glyph: …"` qui s'imprimerait au-dessus de la note.
     let mut previous_step = None;
-    for note in &sung {
+    for (note_index, note) in sung.iter().enumerate() {
         if previous_step.is_some() {
             let step = diatonic_step(note.letter, clef);
             let join = match previous_step {
@@ -122,7 +124,23 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
             out.push_str(join);
         }
         previous_step = Some(diatonic_step(note.letter, clef));
-        write_prefixes(out, note);
+        // §17.4.7, table of two-/three-note ligatures: "Pes Initio Debilis"
+        // `\[ \deminutum g \pes b \]` and "Torculus Initio Debilis"
+        // `\[ \deminutum a \pes b \flexa g \]`. The GABC `-` before a pitch
+        // is exactly an initio debilis. It is a *group token*, not a note
+        // glyph (`scoretk-core::model::GroupTokenKind::Spacing`), so it must
+        // be read at its source position. When it opens a multi-note
+        // ligature the standard `\deminutum` command carries it; elsewhere
+        // the modifier is ambiguous with the liquescent `~` and is not
+        // written.
+        let initio_debilis = note_index == 0
+            && sung.len() > 1
+            && syllable.group_tokens.iter().any(|token| {
+                token.kind == GroupTokenKind::Spacing
+                    && token.text == "-"
+                    && token.notes_before == note_index
+            });
+        write_prefixes(out, note, initio_debilis);
         let _ = write!(out, "{}", pitch_name(diatonic_step(note.letter, clef)));
         write_postfixes(out, note);
     }
@@ -139,7 +157,10 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
 /// Préfixes de tête de note (§17.4.7) et signes grégoriens (§17.4.5/§17.4.6).
 /// L'ordre suit celui des caractères du glyphe source : le lecteuradditif
 /// reconstruit le jeton GABC dans le même ordre.
-fn write_prefixes(out: &mut String, note: &GregorianNote) {
+fn write_prefixes(out: &mut String, note: &GregorianNote, initio_debilis: bool) {
+    if initio_debilis {
+        out.push_str("\\deminutum ");
+    }
     if note.letter.is_ascii_uppercase() {
         out.push_str("\\inclinatum ");
     }
@@ -301,6 +322,43 @@ mod tests {
         assert!(ly.contains("office_part = \"Alleluia\""), "{ly}");
         assert!(!ly.contains("gabc"), "no private prefix: {ly}");
         assert!(!ly.contains("office-part:"), "no dump label: {ly}");
+    }
+
+    #[test]
+    fn initio_debilis_uses_the_documented_ligature_command() {
+        // §17.4.7: "Pes/Torculus Initio Debilis" are written with
+        // `\deminutum` on the first note of the ligature, not with a private
+        // annotation. A lone liquescent `~` keeps the same command but is
+        // not rewritten as the GABC `-` on the return trip.
+        let gregorian = Gregorian {
+            syllables: vec![Syllable {
+                notes: vec![
+                    GregorianNote {
+                        letter: 'g',
+                        ..GregorianNote::default()
+                    },
+                    GregorianNote {
+                        letter: 'h',
+                        ..GregorianNote::default()
+                    },
+                ],
+                group_tokens: vec![scoretk_core::model::GroupToken {
+                    notes_before: 0,
+                    text: "-".to_owned(),
+                    kind: GroupTokenKind::Spacing,
+                }],
+                ..Syllable::default()
+            }],
+            ..Gregorian::default()
+        };
+        let ly = render(&Score::default(), &gregorian, "2.24.0");
+        let first = pitch_name(diatonic_step('g', "c4"));
+        let second = pitch_name(diatonic_step('h', "c4"));
+        assert!(
+            ly.contains(&format!("\\[ \\deminutum {first} \\pes {second} \\]")),
+            "{ly}"
+        );
+        assert!(!ly.contains("glyph:"), "no dump: {ly}");
     }
 
     #[test]

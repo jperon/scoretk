@@ -72,6 +72,36 @@ class DumpCarrierTests(unittest.TestCase):
         self.assertIn(b"chantQuilisma", stripped)
         self.assertIsNone(fs.private_payload("musicxml", stripped))
 
+    def test_words_duplicating_a_lyric_fail_loudly(self) -> None:
+        xml = (b'<score-partwise><measure><direction><direction-type>'
+               b'<words font-style="italic" color="#FF0000">FAc</words>'
+               b'</direction-type></direction>'
+               b'<note><lyric><text>FAc</text></lyric></note>'
+               b'</measure></score-partwise>')
+        self.assertIsNotNone(fs.private_payload("musicxml", xml))
+
+    def test_blank_words_fail_loudly(self) -> None:
+        xml = (b'<score-partwise><measure><direction><direction-type>'
+               b'<words font-style="italic" color="#0000FF"> </words>'
+               b'</direction-type></direction></measure></score-partwise>')
+        self.assertIsNotNone(fs.private_payload("musicxml", xml))
+
+    def test_color_as_the_only_difference_between_carriers_fails_loudly(self) -> None:
+        xml = (b'<score-partwise><measure><direction><direction-type>'
+               b'<words font-style="italic" color="#FF0000">FAc</words>'
+               b'<words font-style="italic" color="#0000FF"> </words>'
+               b'</direction-type></direction></measure></score-partwise>')
+        self.assertIn("couleur", fs.private_payload("musicxml", xml) or "")
+
+    def test_printed_rubric_words_survive(self) -> None:
+        # `<alt>` text really is printed above the staff: `<words>` is its
+        # native XSD 4.0 carrier, with the printed value and no flag colour.
+        xml = (b'<score-partwise><measure><direction placement="above">'
+               b'<direction-type><words>Cantus</words></direction-type>'
+               b'</direction><note><lyric><text>FAc</text></lyric></note>'
+               b'</measure></score-partwise>')
+        self.assertIsNone(fs.private_payload("musicxml", xml))
+
     def test_abc_annotations_are_stripped_but_w_lines_survive(self) -> None:
         abc = (b'X:1\nT:k\nK:C\nI:chant=gregorian\nI:clef=c3\n'
                b'N:language=latin\nw: FAc\n"^text: FAc"\ng, |\n'
@@ -132,6 +162,23 @@ class FactusEstTests(unittest.TestCase):
                     fs.private_payload(destination, stripped),
                     f"{destination}: dump carrier in the measured output",
                 )
+
+    def test_factus_est_has_no_disguised_words_carrier(self) -> None:
+        # The reviewer found one italic red `<words>` per syllable in the
+        # rejected c3c6919f carrier, plus italic blue blanks for separators.
+        # FactusEst has no rubric for those syllables: the syllable spelling
+        # is either a `<lyric>` fact or a defect, never a second printed text.
+        written, error = fs.convert_from(
+            self.cli, FACTUS.read_bytes(), "gabc", "musicxml",
+            fs.FULL_SUPPORT_EXTRA["musicxml"],
+        )
+        self.assertEqual(error, "", error)
+        self.assertIn(b"<lyric", written)
+        self.assertNotIn(b'font-style="italic"', written)
+        self.assertNotIn(b'color="#FF0000"', written)
+        self.assertNotIn(b'color="#0000FF"', written)
+        stripped = fs.strip_private("musicxml", written)
+        self.assertIsNone(fs.private_payload("musicxml", stripped))
 
 
 if __name__ == "__main__":

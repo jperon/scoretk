@@ -28,8 +28,11 @@
 //! un consommateur qui ignore scoretk peut donc retrouver les faits portés par
 //! la norme. Les `other-technical` dont le texte est une étiquette
 //! `letter:`/`glyph:`/`syllable-text:` sont ignorés : ce sont des vidages de la
-//! source, pas des porteurs. Aucun document sans glyphe SMuFL de chant n'est
-//! modifié.
+//! source, pas des porteurs. Les `<words>` qui répètent une `<lyric>` (avec une
+//! couleur utilisée comme drapeau privé) sont également ignorés : les paroles
+//! restent dans leur porteur XSD `<lyric>` et le texte marqué d'une syllabe
+//! sans porteur standard est un défaut, pas un fait à masquer dans une
+//! direction imprimée. Aucun document sans glyphe SMuFL de chant n'est modifié.
 
 use scoretk_core::model::{
     BarKind, Extension, Gregorian, GregorianHeader, GregorianNote, Score, Syllable,
@@ -66,26 +69,6 @@ pub(crate) fn restore(root: &Element, score: &mut Score) -> bool {
     }
     let clef = reader.clef.clone().unwrap_or_else(|| "c4".to_owned());
     let mut syllables = std::mem::take(&mut reader.syllables);
-    // Textes sans note (marques `<sp>` après une barre finale par exemple) :
-    // ils suivent les paroles chantées dans l'ordre du document.
-    while reader.word_index < reader.words.len() {
-        let (text, separator) = reader
-            .next_rubric()
-            .expect("words left in the rubric carrier");
-        if let Some(separator) = separator {
-            if let Some(previous) = syllables
-                .iter_mut()
-                .rev()
-                .find(|syllable| !syllable.notes.is_empty())
-            {
-                previous.separator_after = Some(separator);
-            }
-        }
-        syllables.push(Syllable {
-            text,
-            ..Syllable::default()
-        });
-    }
     if let Some(last) = syllables.last_mut() {
         if last.bars.is_empty() {
             last.bars.push(BarKind::DivisioFinalis);
@@ -116,61 +99,13 @@ struct Reader {
     staff_lines: u8,
     syllables: Vec<Syllable>,
     found: bool,
-    /// Textes des directions `words`, dans l'ordre source. Le drapeau marque
-    /// le texte inter-syllabique (bleu) plutôt que la syllabe elle-même
-    /// (rouge) ; les deux couleurs sont des attributs XSD `color` ordinaires.
-    words: Vec<(bool, String)>,
-    word_index: usize,
-    pending_words: usize,
-}
-
-impl Reader {
-    fn next_rubric(&mut self) -> Option<(String, Option<String>)> {
-        let (_, text) = self.words.get(self.word_index)?.clone();
-        self.word_index += 1;
-        let after = if self
-            .words
-            .get(self.word_index)
-            .is_some_and(|(flag, _)| *flag)
-        {
-            let value = self.words[self.word_index].1.clone();
-            self.word_index += 1;
-            Some(value)
-        } else {
-            None
-        };
-        Some((text, after))
-    }
-
-    /// XSD 4.0 `direction`/`words` : les marques de rubrique sont dans un
-    /// texte rouge italique. Les autres `<words>` (par exemple le texte au-
-    /// dessus de la portée) ne sont pas des paroles et sont ignorés ici.
-    fn collect_words(&mut self, direction: &Element) {
-        for words in direction
-            .children_named("direction-type")
-            .flat_map(|kind| kind.children_named("words"))
-        {
-            if words.attribute("font-style") == Some("italic") {
-                let color = words.attribute("color");
-                if color == Some("#FF0000") || color == Some("#0000FF") {
-                    self.words
-                        .push((color == Some("#0000FF"), words.text_trimmed().to_owned()));
-                    self.pending_words += 1;
-                }
-            }
-        }
-    }
 }
 
 impl Reader {
     fn measure(&mut self, measure: &Element, index: usize) {
-        // L'ordre du document est significatif : une direction `words`
-        // précède la syllabe qu'elle décrit, et le texte inter-syllabique
-        // suit la syllabe précédente.
         for child in &measure.children {
             match child.name.as_str() {
                 "attributes" => self.attributes(child),
-                "direction" => self.collect_words(child),
                 "note" => {
                     let clef = self.clef.clone().unwrap_or_else(|| "c4".to_owned());
                     self.note(child, &clef);
@@ -280,30 +215,8 @@ impl Reader {
         if inclinatum {
             letter = letter.to_ascii_uppercase();
         }
-        let has_rubric = self.pending_words > 0;
-        self.pending_words = 0;
-        let new_syllable = has_rubric
-            || self.syllables.is_empty()
-            || self.syllables.last().is_some_and(|s| !s.notes.is_empty());
-        let rubric = if has_rubric { self.next_rubric() } else { None };
-        if let Some((_, Some(separator))) = &rubric {
-            // Le séparateur appartient à la dernière syllabe *chantée*.
-            if let Some(previous) = self
-                .syllables
-                .iter_mut()
-                .rev()
-                .find(|syllable| !syllable.notes.is_empty())
-            {
-                previous.separator_after = Some(separator.clone());
-            }
-        }
-        if new_syllable {
-            self.syllables.push(Syllable {
-                text: rubric
-                    .as_ref()
-                    .map_or_else(String::new, |(text, _)| text.clone()),
-                ..Syllable::default()
-            });
+        if self.syllables.is_empty() || self.syllables.last().is_some_and(|s| !s.notes.is_empty()) {
+            self.syllables.push(Syllable::default());
         }
         let syllable_index = self.syllables.len() - 1;
         let mut ends_syllable = false;
@@ -326,11 +239,11 @@ impl Reader {
                     .next()
                     .map(|syllabic| syllabic.text_trimmed())
                     .unwrap_or("single");
-                if new_syllable && rubric.is_none() && !text.is_empty() {
-                    // Des paroles seules ne prouvent pas qu'il s'agit d'un
-                    // chant grégorien (aller-retour `changevisibility`, …) ;
-                    // le texte marqué par `words` est plus précis que
-                    // `<lyric>` et n'est donc pas écrasé.
+                if !text.is_empty() {
+                    // Des paroles seules ne prouvent pas qu'il s'agit
+                    // d'un chant grégorien : sinon tout MusicXML chanté
+                    // serait reconstruit en charge L6 (aller-retour
+                    // `changevisibility`, `repeat65`, …).
                     syllable.text = text;
                 }
                 ends_syllable |= matches!(syllabic, "single" | "end");
@@ -408,15 +321,17 @@ mod tests {
     }
 
     #[test]
-    fn rubric_words_carry_markup_that_lyric_text_cannot() {
-        // XSD 4.0 `words` (:3495, `formatted-text` :2610) est le porteur des
-        // marques de rubrique ; `<lyric>/<text>` n'est que du plain text.
+    fn words_are_not_a_lyric_carrier() {
+        // Un `<words>` coloré qui répète la syllabe est un porteur privé
+        // déguisé : il s'imprimerait une seconde fois au-dessus de la portée.
+        // Seul `<lyric>/<text>` porte les paroles (XSD 4.0 :3495).
         let xml = r##"<score-partwise version="4.0">
   <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
   <part id="P1"><measure number="1">
     <attributes><clef><sign>C</sign><line>3</line></clef></attributes>
     <direction><direction-type>
       <words font-style="italic" color="#FF0000">&lt;sp&gt;V/&lt;/sp&gt;.</words>
+      <words font-style="italic" color="#0000FF"> </words>
     </direction-type></direction>
     <note><pitch><step>G</step><octave>3</octave></pitch><type>quarter</type>
       <notations><other-notation type="single" smufl="chantPunctum"/></notations>
@@ -430,7 +345,7 @@ mod tests {
         let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
             panic!("payload");
         };
-        assert_eq!(payload.syllables[0].text, "<sp>V/</sp>.");
+        assert_eq!(payload.syllables[0].text, "V/.");
     }
 
     #[test]

@@ -1602,9 +1602,11 @@ only carriers that a third-party consumer of the destination can interpret.
 No `key: <raw GABC token>` label, hex/base64 payload, `gabc`-prefixed field,
 lyric outside a lyric carrier or hidden free-text dump was introduced; the
 oracle still strips the historical private carriers and raises `ValueError`
-if one survives in the measured output.
+if one survives in the measured output. A review of this branch rejected the
+`<words>` carrier of `c3c6919f` as a disguised private flag (§27.1), so the
+final MusicXML figure is the honest 94.36 %, not the padded 95.35 %.
 
-### 27.1 MusicXML: SMuFL sequences, notehead case and rubric `<words>`
+### 27.1 MusicXML: SMuFL sequences and notehead case — the rubric `<words>` carrier is rejected
 
 `musicxml-4.0.xsd` `other-notation/@smufl` (`:5361-5375`, attribute group
 `:2183-2188`) uses canonical SMuFL 1.4 glyph names and states that the
@@ -1618,12 +1620,21 @@ notehead: `chantPunctum` (square punctum, lowercase GABC letter) versus
 `chantPunctumInclinatum` (oblique punctum, uppercase letter). Clef +
 `pitch/step` + notehead therefore restore the exact staff position.
 
-Rubric markup is carried by `direction`/`words` (`:3495`, `formatted-text`
-`:2610`), in red italics as chant rubrics are printed. One direction precedes
-the first note of each source syllable; a second `words` value carries the
-exact inter-syllable text (GABC `<sp>`, `<i>`, `<v>` markup included, which
-`<lyric>/<text>` cannot hold). The reader processes the measure children in
-document order, so the words stay aligned with their syllables.
+**Rejected by review (2026-11-27).** Commit `c3c6919f` wrote one italic red
+`<words>` per syllable plus an italic blue blank for the separator, decoded
+by colour by our reader only. On `gregorio_FactusEst.gabc` this produced 103
+`<words>` elements, duplicating every `<lyric>` a second time above the staff
+and printing blanks. FactusEst has no rubric for those syllables. This is the
+same private-carrier class as §22–§25. The writer and reader no longer use it;
+`<words>` is reserved for text the GABC source actually prints (`[alt:…]`
+above-staff text, rubric markup), with its printed value. The exact syllable
+spelling stays in `<lyric>/<text>` plus the XSD font/elision attributes when
+they apply, otherwise it is a defect. `scripts/oracle/gabc/full_support.py`
+now raises `ValueError` if a measured `<words>` is blank, duplicates the
+`<lyric>` of the note it precedes, or if colour is the only difference
+between two carriers; `test_full_support.py` checks this on FactusEst and on
+synthetic documents. `<direction>/<words>` (`:3495`, `formatted-text`
+`:2610`) is still used for genuine printed text, never as a flag.
 
 ### 27.2 LilyPond: user-defined `\header` fields and a cited inherent glyph loss
 
@@ -1635,26 +1646,45 @@ readable header field, not a `name=value` copy of a source line and not a
 private prefix.
 
 The remaining largest LilyPond family, GABC spacing/fusion glyphs (`/`, `!`,
-`*`, `-`, `@`), has no native carrier. The *Notation Reference* §17.4.7
+`*`, `@`), has no native carrier. The *Notation Reference* §17.4.7
 (`:44630-44675`) states that support for Gregorian square neumes is limited,
 that "essential issues for serious typesetting are still lacking, such as
 horizontal alignment of multiple ligatures", and that ligature appearance is
-not directly dictated by the input commands. These 2 718 facts were added to
+not directly dictated by the input commands. These 2 705 facts stay in
 `INHERENT_VALUES["ly"]["glyph"]` with that citation; no other inherent row was
-added or changed.
+added or changed. `-` was initially included in this row but the audit of
+§27.5 found a real carrier: §17.4.7 names `\[ \deminutum g \pes b \]` a "Pes
+Initio Debilis", so the writer emits `\deminutum` when `-` opens a multi-note
+ligature and the reader restores the group token at its exact source
+position. The inherent pattern was narrowed from `^[/!*@\-]+$` to
+`^[/!*@]+$`; §27.5 justifies every remaining character against Gregorio's
+`Gabc.tex` and the LilyPond documentation.
 
 ### 27.3 Measured results (261 sources, same instrument, 0 failures)
 
-| Destination | Before | After | Carried / headline total | Inherent | Defects |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| MusicXML 4.0 | 90.57 % | **95.35 %** | 98 841 / 103 657 | 10 400 | 4 816 |
-| LilyPond `--ly-gregorian` | 94.48 % | **97.58 %** | 105 451 / 108 071 | 5 986 | 2 620 |
+| Destination | Before this campaign | Branch peak before review | Final (honest) | Carried / headline total | Inherent | Defects |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MusicXML 4.0 | 90.57 % | 95.35 % | **94.36 %** | 97 812 / 103 657 | 10 400 | 5 845 |
+| LilyPond `--ly-gregorian` | 94.48 % | 97.58 % | **97.58 %** | 105 464 / 108 084 | 5 973 | 2 620 |
 
-MusicXML defect families: `glyph` 4 093 → 3 329, `letter` 3 390 → 337,
-`rubric` 795 → 0, `text` 29 → 0, `shape` 537 → 353, `ictus` 105 → 9.
-LilyPond: `header` 783 → 0, `glyph` 3 878 → 1 160 (2 718 inherent with the
-§17.4.7 citation). The residual `pitch`, `shape`, `attribute`, `custos` and
-`clef` families are unchanged and still reported as defects.
+The MusicXML peak was padded by the `c3c6919f` `<words>` carrier; the
+LilyPond peak came from genuine `\header` and §17.4.7 carriers (§27.2).
+The MusicXML carrier rejected by review is not counted: `rubric` 795 and
+`text` 29 are back in the defect column (raw 85.76 %), so the honest figure
+is **below the 95 % target**. The blocking facts, with their counts, are
+`glyph` 3 533, `rubric` 795, `pitch` 427, `shape` 353, `letter` 337,
+`attribute` 332, `text` 29, `custos` 22, `ictus` 9 and `clef` 8 (sum 5 845).
+No fact was reclassified as inherent to close the 663-fact gap to 95 %:
+the syllable spelling belongs in `<lyric>` or is a defect, and `<words>`
+may only print text that the source really prints. The true SMuFL/clef
+gains remain (`glyph` 4 093 → 3 533, `letter` 3 390 → 337, `shape` 537 → 353,
+`ictus` 105 → 9).
+
+LilyPond: `header` 783 → 0 and `glyph` 3 878 → 1 160 with 2 705 inherent
+under the §17.4.7 citation and 13 carried by the "Initio Debilis"
+`\deminutum` carrier of §27.5 (2 718 → 2 705 inherent, +13 carried).
+The `pitch`, `shape`, `attribute`, `custos` and `clef` families are unchanged
+and still reported as defects.
 
 ### 27.4 Non-regression
 
@@ -1665,4 +1695,34 @@ the 261-file GABC lot. `cargo fmt --all -- --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace --no-fail-fast`, `cargo test -p scoretk --test
 e2e_corpus -- --nocapture`, the wasm32 build of `scoretk-wasm` and the
-instrument test (6/6 with `SCORETK_CLI`) are part of the final verification.
+instrument test (11/11 with `SCORETK_CLI`) are part of the final verification.
+Default bytes against master (`019bc767`): 455/455 conversions of the 65
+versioned sources (7 destinations) are byte-identical; on the 261-file lot,
+261/261 GABC round trips,
+260/260 headerless bodies (one invalid body excluded with the Gregorio
+citation), 6/6 NABC bodies, and 1 305/1 305 default conversions of the other
+four formats byte-identical on the 261-file lot.
+
+### 27.5 Why the LilyPond glyph row stays inherent, character by character
+
+The former `ly`/`glyph` inherent row `^[/!*@\-]+$` of §27.2 was audited
+against Gregorio's own documentation and LilyPond's *Notation Reference*.
+`-` was wrongly included and is now carried (below); none of the other
+characters has a gregorian.ly command that a third-party reader could
+interpret:
+
+| GABC token | Meaning in Gregorio | LilyPond §17.4.7 |
+| --- | --- | --- |
+| `/` | small separation between neumes (`Gabc.tex:668-687`, "Neume Spacing") | no spacing command; "horizontal alignment of multiple ligatures … [is] lacking" |
+| `//` | medium separation between neumes (`Gabc.tex:668-687`) | same absence; the note/ligature commands carry no inter-neume space |
+| `!` | alone, a zero-width space when the note chain does not break correctly; before a space, makes it non-breaking (`Gabc.tex:681-687`) | `\noBreak` (§"Line breaking") is a line-break toggle, not a glyph or a spacing value; the *Notation Reference* §17.4.7 lists no equivalent. The review's "`!` fusion = ligature" example is inaccurate: fusion is `@`. |
+| `*` | lyric special character produced by `\GreStar` (`Gabc.tex:345-378`, "Special Characters"); the instrument counts a stand-alone `*` lyric syllable as a `glyph` fact | §17.4.7 defines `\versus`, `\responsum`, `\ij`, `\iij`, `\IJ`, `\IIJ` as section markers "for use in lyrics" — no star command |
+| `@` | fuses two neume primitives, or suppresses the stem before a fusible primitive; `@[ … ]` fuses automatically (`Gabc.tex:603-666`, "Neume Fusion") | `\[ … \]` brackets notes into a ligature and `\pes`/`\flexa` join them, but §17.4.7 states that "the typographical appearance of ligatures is not directly dictated by the input commands" and that shape follows musical meaning. A third-party reader cannot recover the `@`/`@[` spelling from that output. |
+| `-` | initio debilis before a pitch (`Gabc.tex:556-579`, "Complex Neumes") | **has a command**: §17.4.7 names `\[ \deminutum g \pes b \]` a "Pes Initio Debilis" and `\[ \deminutum a \pes b \flexa g \]` a "Torculus Initio Debilis". It is now written by `write_prefixes` when `-` opens a multi-note ligature and restored by the reader: `\deminutum` on the first note of such a ligature becomes `-`, on a later note it stays the liquescent `~` ("Epiphonus", `\[ g \pes \deminutum b \]`). The inherent pattern is narrowed to `^[/!*@]+$`. |
+
+`\divisioMinima`…`\finalis` (§17.4.4) and the note-head modifiers
+(`\quilisma`, `\virga`, `\stropha`, `\inclinatum`, `\oriscus`, `\deminutum`,
+`\cavum`, `\linea`, …) carry the bar and shape facts, not the five remaining
+spelling characters above; they are already used by the writer and are not
+part of this row. No carrier was invented for the remaining rows: they stay
+defects or inherent with the citation already printed by the instrument.

@@ -1147,32 +1147,6 @@ impl<'a> Context<'a> {
             }
         }
 
-        // Syllabes de texte seul (par exemple un `<sp>V/</sp>` après la barre
-        // finale) : aucune note, donc aucun `<lyric>` ne peut les porter.
-        if part_index == 0
-            && self.options.full_support
-            && measure_index + 1 == self.score.measures.len()
-        {
-            if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
-                out.attr(false);
-                for syllable in &gregorian.syllables {
-                    let sung = syllable.notes.iter().any(|note| {
-                        !note
-                            .signs
-                            .iter()
-                            .any(|sign| sign.kind == scoretk_core::model::SignKind::Alteration)
-                    });
-                    if !sung {
-                        chant::write_rubric_direction(
-                            out,
-                            &syllable.text,
-                            syllable.separator_after.as_deref().unwrap_or(""),
-                        );
-                    }
-                }
-            }
-        }
-
         out.xml.end_element();
     }
 
@@ -2004,33 +1978,6 @@ impl Context<'_> {
             }
             if let Some(attack) = &attack {
                 note_attributes.push(("attack", attack));
-            }
-            // Le texte marqué de la syllabe doit être un enfant de `<measure>`,
-            // pas de `<note>` : il est donc écrit avant l'ouverture de la note.
-            if self.options.full_support && first {
-                if let (Some(Extension::Gregorian(gregorian)), Some(source)) =
-                    (&self.score.extensions.format, note.source)
-                {
-                    if let Some(syllable) = gregorian.syllables.get(source.gregorian_syllable) {
-                        let first_sung =
-                            syllable
-                                .notes
-                                .iter()
-                                .take(source.gregorian_note)
-                                .all(|note| {
-                                    note.signs.iter().any(|sign| {
-                                        sign.kind == scoretk_core::model::SignKind::Alteration
-                                    })
-                                });
-                        if first_sung {
-                            chant::write_rubric_direction(
-                                out,
-                                &syllable.text,
-                                syllable.separator_after.as_deref().unwrap_or(""),
-                            );
-                        }
-                    }
-                }
             }
             out.xml.start_element("note", &note_attributes);
 
