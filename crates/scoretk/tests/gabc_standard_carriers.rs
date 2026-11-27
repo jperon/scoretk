@@ -66,7 +66,10 @@ fn gregorian_abc_carriers_are_readable_and_additive() {
     let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
     let default = write(&score, Format::Abc, &Options::default()).expect("default .abc");
     let default = String::from_utf8(default).expect("UTF-8");
-    assert!(!default.contains("I:chant=gregorian"), "default bytes changed");
+    assert!(
+        !default.contains("I:chant=gregorian"),
+        "default bytes changed"
+    );
 
     let options = Options {
         abc_gregorian: true,

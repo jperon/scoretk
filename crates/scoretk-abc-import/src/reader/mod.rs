@@ -78,10 +78,13 @@ pub fn read_abc(src: &str) -> Result<Score> {
 
 /// Lit le morceau d'indice `tune` d'une source ABC.
 pub fn read_abc_tune(src: &str, tune: usize) -> Result<Score> {
-    read_abc_with(src, &ReadOptions {
-        tune,
-        ..ReadOptions::default()
-    })
+    read_abc_with(
+        src,
+        &ReadOptions {
+            tune,
+            ..ReadOptions::default()
+        },
+    )
     .map(|output| output.score)
 }
 

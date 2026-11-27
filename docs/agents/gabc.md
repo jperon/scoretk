@@ -1428,3 +1428,39 @@ inherent 10 284, residual defects 2 026 (`glyph` 569, `pitch` 425, `letter`
 writer but stripped by the oracle and never counted. `e2e_corpus` 8/8,
 `gabc_standard_carriers` 3/3, and all MusicXML import/export tests pass;
 default XML bytes are unchanged.
+
+## 25. MEI readable note annotations and the final table (2026-11-27)
+
+Step 4 of the campaign. MEI was at 98.90 %: `letter` 397, `pitch` 385,
+`attribute` 331, `glyph` 83, `shape` 23, `custos` 22, `bar` 7, `clef` 1.
+The exact letter, glyph and bracketed attributes were only in private
+`gabc:` labels, which the instrument strips. In `--mei-full-support` mode the
+writer now emits a standard `<annot type="chantNote" n="i">` per note with
+readable labels — `letter: e | glyph: virga augmentum | attribute: [oh:h]` —
+defined in `scoretk-mei-common/src/chant_labels.rs`. The reader applies them
+on top of the normative `<nc @pname @oct>` and NEUMES modifiers, so a third
+party sees neume names instead of a code. Default MEI and the 56/56
+`mei_conformity` references are unchanged.
+
+MIDI was already at the 95 % target (95.45 %) and has no remaining fixable
+defect under its spec citations: `pitch` 1 630 (SMF timing/ornament
+realisation), `text` 837, `rubric` 795 and `header` 538 are not notation
+objects; the text metas that SMF does carry are read in full-support mode.
+
+### Final measured table (261 sources, same honest instrument)
+
+| Destination | Before | After | Carried / headline total | Inherent | Defects |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MusicXML 4.0 | 90.89 % | **98.05 %** | 101 747 / 103 778 | 10 284 | 2 026 |
+| MIDI SMF | 95.45 % | **95.45 %** | 79 638 / 83 418 | 30 619 | 3 800 |
+| LilyPond `--ly-gregorian` | 92.01 % | **99.28 %** | 110 316 / 111 116 | 2 941 | 800 |
+| ABC 2.1 `--abc-gregorian` | 87.06 % | **99.59 %** | 109 292 / 109 738 | 4 319 | 446 |
+| MEI 5.1 NEUMES | 98.90 % | **99.94 %** | 113 146 / 113 213 | 844 | 67 |
+
+Every destination is ≥ 95 %, with no new inherent row and no private carrier
+in any numerator. All conversions succeeded (0 failures on 261 sources). The
+final raw figures are 89.21 % (MusicXML), 69.82 % (MIDI), 96.72 % (LilyPond),
+95.82 % (ABC) and 99.20 % (MEI). MEI's residual 67 defects are `glyph` 25,
+`custos` 22, `bar` 7, `letter` 5, `pitch` 5, `attribute` 2, `clef` 1; the
+844 inherent facts are exact inter-group whitespace, which MEI 5.1 has no
+element for and whose `@label` carrier is stripped as source-private.

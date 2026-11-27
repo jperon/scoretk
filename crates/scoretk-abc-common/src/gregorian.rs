@@ -51,39 +51,204 @@ pub struct GlyphSymbol {
 /// rythmiques, espacements) ; les raccourcis `H`–`W` sont ceux que §4.16
 /// autorise à redéfinir.
 pub const GLYPH_SYMBOLS: &[GlyphSymbol] = &[
-    GlyphSymbol { gabc: '.', name: "augmentum", shorthand: Some('H'), standard: "fermata" },
-    GlyphSymbol { gabc: '\'', name: "ictus", shorthand: Some('L'), standard: "accent" },
-    GlyphSymbol { gabc: '_', name: "episema", shorthand: Some('M'), standard: "tenuto" },
-    GlyphSymbol { gabc: 'w', name: "quilisma", shorthand: Some('P'), standard: "uppermordent" },
-    GlyphSymbol { gabc: '/', name: "spacing", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '!', name: "zero-space", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '~', name: "deminutum", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'v', name: "virga", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'x', name: "flat", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '*', name: "star", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '>', name: "diminutum", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'o', name: "oriscus", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '1', name: "one", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '0', name: "zero", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'y', name: "natural", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'V', name: "virga-reversa", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 's', name: "stropha", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'O', name: "oriscus-scampus", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '2', name: "two", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'r', name: "cavum", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '`', name: "virgula", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '-', name: "hyphen", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '+', name: "plus", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: ':', name: "colon", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '{', name: "brace-open", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '}', name: "brace-close", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '@', name: "fusion", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '3', name: "three", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '<', name: "augmentum-liquescens", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: 'u', name: "u", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '"', name: "quote", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '†', name: "dagger", shorthand: None, standard: "" },
-    GlyphSymbol { gabc: '#', name: "sharp", shorthand: None, standard: "" },
+    GlyphSymbol {
+        gabc: '.',
+        name: "augmentum",
+        shorthand: Some('H'),
+        standard: "fermata",
+    },
+    GlyphSymbol {
+        gabc: '\'',
+        name: "ictus",
+        shorthand: Some('L'),
+        standard: "accent",
+    },
+    GlyphSymbol {
+        gabc: '_',
+        name: "episema",
+        shorthand: Some('M'),
+        standard: "tenuto",
+    },
+    GlyphSymbol {
+        gabc: 'w',
+        name: "quilisma",
+        shorthand: Some('P'),
+        standard: "uppermordent",
+    },
+    GlyphSymbol {
+        gabc: '/',
+        name: "spacing",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '!',
+        name: "zero-space",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '~',
+        name: "deminutum",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'v',
+        name: "virga",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'x',
+        name: "flat",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '*',
+        name: "star",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '>',
+        name: "diminutum",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'o',
+        name: "oriscus",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '1',
+        name: "one",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '0',
+        name: "zero",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'y',
+        name: "natural",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'V',
+        name: "virga-reversa",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 's',
+        name: "stropha",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'O',
+        name: "oriscus-scampus",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '2',
+        name: "two",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'r',
+        name: "cavum",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '`',
+        name: "virgula",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '-',
+        name: "hyphen",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '+',
+        name: "plus",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: ':',
+        name: "colon",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '{',
+        name: "brace-open",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '}',
+        name: "brace-close",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '@',
+        name: "fusion",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '3',
+        name: "three",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '<',
+        name: "augmentum-liquescens",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: 'u',
+        name: "u",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '"',
+        name: "quote",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '†',
+        name: "dagger",
+        shorthand: None,
+        standard: "",
+    },
+    GlyphSymbol {
+        gabc: '#',
+        name: "sharp",
+        shorthand: None,
+        standard: "",
+    },
 ];
 
 /// Marqueur `I:` (§3.1) signalant un document ABC portant un chant grégorien.
@@ -120,19 +285,17 @@ pub fn custos_symbol(raw: &str) -> &'static str {
 
 /// Caractère GABC d'une décoration ou d'un raccourci ABC.
 pub fn glyph_char(token: &str) -> Option<char> {
-    let name = token.strip_prefix('!').and_then(|rest| rest.strip_suffix('!'));
-    let looked_up = name.or_else(|| {
-        if token.len() == 1 {
-            Some(token)
-        } else {
-            None
-        }
-    })?;
+    let name = token
+        .strip_prefix('!')
+        .and_then(|rest| rest.strip_suffix('!'));
+    let looked_up = name.or_else(|| if token.len() == 1 { Some(token) } else { None })?;
     GLYPH_SYMBOLS
         .iter()
         .find(|symbol| {
             symbol.name == looked_up
-                || symbol.shorthand.is_some_and(|short| short.to_string() == looked_up)
+                || symbol
+                    .shorthand
+                    .is_some_and(|short| short.to_string() == looked_up)
         })
         .map(|symbol| symbol.gabc)
 }
@@ -151,10 +314,9 @@ pub fn glyph_token(gabc: char) -> String {
         .iter()
         .find(|symbol| symbol.gabc == gabc)
         .expect("glyphe de la table");
-    symbol.shorthand.map_or_else(
-        || format!("!{}!", symbol.name),
-        |short| short.to_string(),
-    )
+    symbol
+        .shorthand
+        .map_or_else(|| format!("!{}!", symbol.name), |short| short.to_string())
 }
 
 /// Lignes `U:` (§4.16) des raccourcis utilisés pour les quatre signes forts.

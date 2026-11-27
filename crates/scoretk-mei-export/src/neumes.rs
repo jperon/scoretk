@@ -120,6 +120,7 @@ pub(super) fn write(
             gregorian,
             initial,
             options.gabc_tokens,
+            options.full_support,
             two_staves,
         );
     }
@@ -313,6 +314,7 @@ fn write_syllable(
     gregorian: &Gregorian,
     initial_clefs: usize,
     private: bool,
+    readable: bool,
     linked: bool,
 ) {
     let elision = syllable.text.contains('~');
@@ -465,6 +467,20 @@ fn write_syllable(
             write_nc(xml, note, &current_clef, index > 0 && !starts[index]);
         }
         xml.end_element();
+        if readable {
+            // `<annot>` est un élément MEI standard : le texte porte des noms
+            // de neumes et la lettre GABC, pas un code. Un lecteur tiers voit
+            // une indication de technique lisible au-dessus de la note.
+            for (note_index, note) in syllable.notes.iter().enumerate() {
+                annot(
+                    xml,
+                    scoretk_mei_common::chant_labels::NOTE_TYPE,
+                    &note_index.to_string(),
+                    &scoretk_mei_common::chant_labels::note_label(note),
+                    None,
+                );
+            }
+        }
         if private {
             for (note_index, note) in syllable.notes.iter().enumerate() {
                 let token = format!("{}{}", note.letter, note.glyph);

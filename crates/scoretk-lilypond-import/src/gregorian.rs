@@ -79,7 +79,10 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
         current.notes.last_mut().expect("note").attributes = facts
             .attributes
             .iter()
-            .map(|text| NoteAttribute { after: 0, text: text.clone() })
+            .map(|text| NoteAttribute {
+                after: 0,
+                text: text.clone(),
+            })
             .collect();
         // Un signe de groupe est porté par le glyphe de la dernière note :
         // le writer GABC le réémet en fin de groupe, où le relevé le compte.

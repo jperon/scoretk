@@ -41,7 +41,11 @@ const STEPS: &[u8; 7] = b"cdefgab";
 pub(crate) fn render(_score: &Score, gregorian: &Gregorian) -> String {
     let mut out = String::new();
     out.push_str("%abc-2.1\nX:1\n");
-    if let Some(name) = gregorian.headers.iter().find(|header| header.name == "name") {
+    if let Some(name) = gregorian
+        .headers
+        .iter()
+        .find(|header| header.name == "name")
+    {
         let _ = writeln!(out, "T:{}", escape_annotation(&name.value));
     } else {
         out.push_str("T:\n");

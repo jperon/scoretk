@@ -1099,3 +1099,20 @@ element (RNG/Guidelines §6.4.9), the two Laon "inside" letters have no
 GABC round trip never depends on those interpretations. In that campaign no
 default output changed, no declaration was narrowed and no new wasm API was
 introduced; §19 adds a standard layout carrier to GABC → MEI only.
+
+## Readable chant annotations in MEI full-support mode
+
+With `--mei-full-support`, a `.gabc` source gains one standard
+`<annot type="chantNote" n="i">` per sung note in the NEUMES layer:
+
+```
+<annot type="chantNote" n="0">letter: e | glyph: virga augmentum | attribute: [oh:h]</annot>
+```
+
+The text uses neume names from `Gabc.tex:452-700` (not hex, no `gabc`
+prefix) and is read back by `scoretk-mei-import/src/neumes.rs`. It completes
+`<nc @pname @oct>` and the normative NEUMES modifiers for the exact GABC
+staff letter, glyph spelling and bracketed attributes. Without the option no
+annotation is emitted; the 56/56 MuseScore 4.7.4 MEI references stay
+byte-identical. Measured GABC full support rose from 98.90 % to 99.94 %
+(`docs/agents/gabc.md` §25).

@@ -278,17 +278,45 @@ impl Reader {
 /// Nom lisible d'un caractère de glyphe GABC → caractère source.
 fn glyph_char(name: &str) -> Option<char> {
     const NAMES: &[(&str, char)] = &[
-        ("augmentum", '.'), ("ictus", '\''), ("episema", '_'), ("quilisma", 'w'),
-        ("spacing", '/'), ("zero-space", '!'), ("deminutum", '~'), ("virga", 'v'),
-        ("flat", 'x'), ("asterisk", '*'), ("diminutum", '>'), ("oriscus", 'o'),
-        ("one", '1'), ("zero", '0'), ("natural", 'y'), ("virga-reversa", 'V'),
-        ("stropha", 's'), ("oriscus-scampus", 'O'), ("two", '2'), ("cavum", 'r'),
-        ("virgula", '`'), ("hyphen", '-'), ("plus", '+'), ("colon", ':'),
-        ("brace-open", '{'), ("brace-close", '}'), ("fusion", '@'), ("three", '3'),
-        ("auctum", '<'), ("u", 'u'), ("quote", '"'), ("dagger", '†'),
-        ("sharp", '#'), ("linea", '='),
+        ("augmentum", '.'),
+        ("ictus", '\''),
+        ("episema", '_'),
+        ("quilisma", 'w'),
+        ("spacing", '/'),
+        ("zero-space", '!'),
+        ("deminutum", '~'),
+        ("virga", 'v'),
+        ("flat", 'x'),
+        ("asterisk", '*'),
+        ("diminutum", '>'),
+        ("oriscus", 'o'),
+        ("one", '1'),
+        ("zero", '0'),
+        ("natural", 'y'),
+        ("virga-reversa", 'V'),
+        ("stropha", 's'),
+        ("oriscus-scampus", 'O'),
+        ("two", '2'),
+        ("cavum", 'r'),
+        ("virgula", '`'),
+        ("hyphen", '-'),
+        ("plus", '+'),
+        ("colon", ':'),
+        ("brace-open", '{'),
+        ("brace-close", '}'),
+        ("fusion", '@'),
+        ("three", '3'),
+        ("auctum", '<'),
+        ("u", 'u'),
+        ("quote", '"'),
+        ("dagger", '†'),
+        ("sharp", '#'),
+        ("linea", '='),
     ];
-    NAMES.iter().find(|(label, _)| *label == name).map(|(_, gabc)| *gabc)
+    NAMES
+        .iter()
+        .find(|(label, _)| *label == name)
+        .map(|(_, gabc)| *gabc)
 }
 
 /// Relit une orthographe de glyphe écrite en noms lisibles.

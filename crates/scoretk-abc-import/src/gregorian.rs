@@ -76,7 +76,10 @@ pub(crate) fn restore(src: &str, score: &mut Score) -> bool {
     };
     let mut rebuilt = payload.build_derived_score();
     rebuilt.metadata = score.metadata.clone();
-    rebuilt.report.losses.extend(score.report.losses.iter().cloned());
+    rebuilt
+        .report
+        .losses
+        .extend(score.report.losses.iter().cloned());
     rebuilt.extensions.format = Some(Extension::Gregorian(payload));
     *score = rebuilt;
     true
@@ -140,7 +143,10 @@ impl Voice {
 
     /// Traite un jeton ABC : annotation, décoration ou hauteur.
     fn token(&mut self, token: &str) {
-        if let Some(annotation) = token.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
+        if let Some(annotation) = token
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
             if let Some(value) = annotation.strip_prefix(carrier::TEXT_ANNOTATION) {
                 self.syllables.push(Syllable {
                     text: value.to_owned(),
@@ -272,7 +278,9 @@ fn tokens(line: &str) -> Vec<&str> {
 /// Vrai pour une hauteur ABC (`c`…`b` avec octave).
 fn is_pitch(token: &str) -> bool {
     token.starts_with(['c', 'd', 'e', 'f', 'g', 'a', 'b'])
-        && token[1..].chars().all(|character| character == '\'' || character == ',')
+        && token[1..]
+            .chars()
+            .all(|character| character == '\'' || character == ',')
 }
 
 /// Hauteur diatonique d'une note ABC (C4 = 0).

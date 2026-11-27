@@ -73,8 +73,8 @@ pub fn glyph_name(gabc: char) -> Option<&'static str> {
 /// Caractère GABC d'un nom lisible, ou `None` si le mot est inconnu.
 pub fn glyph_char(name: &str) -> Option<char> {
     const NAMES: &[char] = &[
-        '.', '\'', '_', 'w', '/', '!', '~', 'v', 'x', '*', '>', 'o', '1', '0', 'y', 'V', 's',
-        'O', '2', 'r', '`', '-', '+', ':', '{', '}', '@', '3', '<', 'u', '"', '†', '#', '=',
+        '.', '\'', '_', 'w', '/', '!', '~', 'v', 'x', '*', '>', 'o', '1', '0', 'y', 'V', 's', 'O',
+        '2', 'r', '`', '-', '+', ':', '{', '}', '@', '3', '<', 'u', '"', '†', '#', '=',
     ];
     NAMES
         .iter()
@@ -87,9 +87,7 @@ pub fn glyph_label(glyph: &str) -> String {
     glyph
         .chars()
         .filter(|character| !character.is_whitespace())
-        .map(|character| {
-            glyph_name(character).map_or_else(|| character.to_string(), str::to_owned)
-        })
+        .map(|character| glyph_name(character).map_or_else(|| character.to_string(), str::to_owned))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -140,7 +138,10 @@ mod tests {
 
     #[test]
     fn annotations_use_labels_not_codes() {
-        let text = annotation(&[("glyph", glyph_label("w")), ("attribute", "[oh:h]".to_owned())]);
+        let text = annotation(&[
+            ("glyph", glyph_label("w")),
+            ("attribute", "[oh:h]".to_owned()),
+        ]);
         assert_eq!(text, "^\"glyph: quilisma | attribute: [oh:h]\"");
         assert_eq!(
             parse_annotation(&text),
