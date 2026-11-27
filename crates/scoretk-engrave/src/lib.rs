@@ -53,11 +53,13 @@ use core::fmt;
 use scoretk_core::model::Score;
 
 pub mod atoms;
+pub mod breaking;
 pub mod display;
 pub mod layout;
 pub mod style;
 
 pub use atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
+pub use breaking::SystemPlan;
 pub use display::{DisplayItem, DisplayList, Geometry, ItemKind};
 pub use layout::PageSpec;
 pub use style::SP;
@@ -90,6 +92,7 @@ impl fmt::Display for EngraveError {
 #[derive(Debug)]
 pub struct Engraver {
     atoms: Vec<MeasureAtom>,
+    systems: Vec<SystemPlan>,
     spec: PageSpec,
 }
 
@@ -98,22 +101,32 @@ impl Engraver {
     pub fn new(score: &Score, spec: PageSpec) -> Result<Self, EngraveError> {
         match score.staves.len() {
             0 => Err(EngraveError::NoStaff),
-            1 => Ok(Self {
-                atoms: atoms::compute(score),
-                spec,
-            }),
+            1 => {
+                let atoms = atoms::compute(score);
+                let systems = breaking::compute(&atoms, &spec);
+                Ok(Self {
+                    atoms,
+                    systems,
+                    spec,
+                })
+            }
             count => Err(EngraveError::MultipleStaves(count)),
         }
     }
 
-    /// Engraves one page from the cached atoms.
+    /// Engraves one page from the cached atoms and breaking plan.
     pub fn page(&self, page: usize) -> DisplayList {
-        layout::build_page(&self.atoms, &self.spec, page)
+        layout::build_page(&self.atoms, &self.spec, &self.systems, page)
     }
 
     /// Total number of pages.
     pub fn page_count(&self) -> usize {
-        layout::page_count(&self.atoms, &self.spec)
+        breaking::page_count(&self.systems)
+    }
+
+    /// The cached system breaks (read-only), one record per system.
+    pub fn systems(&self) -> &[SystemPlan] {
+        &self.systems
     }
 
     /// The cached atoms (read-only), for diagnostics and the oracle.

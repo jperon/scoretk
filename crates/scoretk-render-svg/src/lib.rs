@@ -101,7 +101,7 @@ fn write_item(out: &mut String, item: &DisplayItem) {
 /// geometric oracle can extract noteheads, stems and bar lines.
 pub fn render_page(list: &DisplayList, spec: &PageSpec) -> String {
     let width = spec.printable_width + 2 * spec.margin_left;
-    let height = 2 * spec.margin_top + spec.systems_per_page as i32 * 12 * 1024;
+    let height = spec.page_height;
     let width_mm = PageSpec::fixed_to_mm(width);
     let height_mm = PageSpec::fixed_to_mm(height);
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");

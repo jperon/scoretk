@@ -35,6 +35,10 @@ use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
 use crate::style::*;
 
 /// Page geometry in fixed 1/1024 staff-space units.
+///
+/// // Port of `styledef.cpp:41-59, 279` (4.7.4 defaults): A4 210 × 297 mm,
+/// 15 mm margins, 180 mm printable width, `minSystemDistance` 8.5 sp,
+/// `maxSystemDistance` 15 sp and `lastSystemFillLimit` 0.3.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageSpec {
     /// Printable width (180 mm on A4 with 15 mm margins at 1.75 mm/sp).
@@ -43,21 +47,26 @@ pub struct PageSpec {
     pub margin_left: i32,
     /// Top margin from the page edge.
     pub margin_top: i32,
-    /// Measures per system, fixed for P1 (breaking arrives in P2).
-    pub measures_per_system: usize,
-    /// Systems per page.
-    pub systems_per_page: usize,
+    /// A4 page height (297 mm / 1.75 mm per sp).
+    pub page_height: i32,
+    /// // Port of `styledef.cpp:2931` (`minSystemDistance` 8.5 sp).
+    pub min_system_distance: i32,
+    /// // Port of `styledef.cpp:2933` (`maxSystemDistance` 15 sp).
+    pub max_system_distance: i32,
+    /// // Port of `styledef.cpp:279` (`lastSystemFillLimit` 0.3).
+    pub last_system_fill_limit: i32,
 }
 
 impl Default for PageSpec {
     fn default() -> Self {
         Self {
-            // 180 mm / 1.75 mm per staff space = 102.857 sp.
-            printable_width: 105 * SP,
-            margin_left: 9 * SP, // 15.75 mm
-            margin_top: 12 * SP, // 21 mm
-            measures_per_system: 4,
-            systems_per_page: 8,
+            printable_width: 103 * SP,
+            margin_left: 9 * SP,
+            margin_top: 9 * SP,
+            page_height: 170 * SP,
+            min_system_distance: 9 * SP,
+            max_system_distance: 15 * SP,
+            last_system_fill_limit: 307,
         }
     }
 }
@@ -75,18 +84,42 @@ impl PageSpec {
 
     /// Page height in millimetres.
     pub fn page_height_mm(&self) -> f64 {
-        Self::fixed_to_mm(self.margin_top * 2 + 12 * SP * self.systems_per_page as i32)
+        Self::fixed_to_mm(self.page_height)
     }
 }
 
 /// Place one measure's events at `x0` on the system at `system_y`.
-fn place_measure(out: &mut DisplayList, atom: &MeasureAtom, x0: i32, system_y: i32) {
-    for event in &atom.events {
-        place_event(out, event, x0 + event.x, system_y);
+///
+/// // Port of `horizontalspacing.cpp:214-219` and `:1087-1111`: chord/rest
+/// segment widths are stretched by the system's spring force; the header
+/// segments keep their style-derived widths.
+fn place_measure(
+    out: &mut DisplayList,
+    atom: &MeasureAtom,
+    x0: i32,
+    system_y: i32,
+    scale: i32,
+) {
+    let mut cursor = 0;
+    for (index, event) in atom.events.iter().enumerate() {
+        place_event(out, event, x0 + cursor, system_y);
+        let width = if index + 1 < atom.events.len() {
+            atom.events[index + 1].x - event.x
+        } else {
+            atom.width - event.x
+        };
+        let stretched = if matches!(event.kind, AtomKind::Chord | AtomKind::Rest {
+            ..
+        }) {
+            width * scale / 1024
+        } else {
+            width
+        };
+        cursor += stretched;
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
     // double lines are separated by `barlineSeparation` (SMuFL).
-    let bar_x = x0 + atom.width - SEGMENT_WIDTH / 2;
+    let bar_x = x0 + cursor - SEGMENT_WIDTH / 2;
     place_barline(out, atom.end_bar, bar_x, system_y);
 }
 
@@ -332,20 +365,17 @@ fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32) {
     }
 }
 
-/// Builds the display list of one page from the atoms prepared in `new()`.
-pub fn build_page(atoms: &[MeasureAtom], spec: &PageSpec, page: usize) -> DisplayList {
+/// Builds the display list of one page from the atoms and the precomputed
+/// breaking plan. `page(n)` only reads the systems assigned to that page.
+pub fn build_page(
+    atoms: &[MeasureAtom],
+    spec: &PageSpec,
+    systems: &[crate::breaking::SystemPlan],
+    page: usize,
+) -> DisplayList {
     let mut out = DisplayList::new(page);
-    let per_system = spec.measures_per_system.max(1);
-    if atoms.is_empty() {
-        return out;
-    }
-    for local_system in 0..spec.systems_per_page {
-        let system = page * spec.systems_per_page + local_system;
-        let first = system * per_system;
-        if first >= atoms.len() {
-            break;
-        }
-        let sy = spec.margin_top + local_system as i32 * (STAFF_HEIGHT + 8 * SP);
+    for system in systems.iter().filter(|system| system.page == page) {
+        let sy = system.y;
         // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
         // rectangles, thickness `staffLineWidth`.
         for line in 0..5 {
@@ -358,29 +388,26 @@ pub fn build_page(atoms: &[MeasureAtom], spec: &PageSpec, page: usize) -> Displa
             ));
         }
         let mut x = spec.margin_left;
-        let last = (first + per_system).min(atoms.len());
-        for (index, atom) in atoms[first..last].iter().enumerate() {
-            let _ = index;
-            place_measure(&mut out, atom, x, sy);
+        for atom in &atoms[system.first..system.first + system.count] {
+            place_measure(&mut out, atom, x, sy, system.scale);
             x += atom.width;
         }
         // // Port of `systemlayout.cpp`: the start bar line closes the
         // system; its x is the staff origin.
-        place_barline(&mut out, atoms[first].start_bar, spec.margin_left, sy);
+        place_barline(&mut out, atoms[system.first].start_bar, spec.margin_left, sy);
     }
     out
 }
 
-/// Number of pages for a set of atoms and a page spec.
-pub fn page_count(atoms: &[MeasureAtom], spec: &PageSpec) -> usize {
-    let per_page = spec.measures_per_system.max(1) * spec.systems_per_page.max(1);
-    atoms.len().div_ceil(per_page).max(1)
-}
-
 /// Iterates over all items of a page in deterministic order (used by tests
 /// and the oracles).
-pub fn items(atoms: &[MeasureAtom], spec: &PageSpec, page: usize) -> Vec<DisplayItem> {
-    build_page(atoms, spec, page).items
+pub fn items(
+    atoms: &[MeasureAtom],
+    spec: &PageSpec,
+    systems: &[crate::breaking::SystemPlan],
+    page: usize,
+) -> Vec<DisplayItem> {
+    build_page(atoms, spec, systems, page).items
 }
 
 /// Exposed for the raster backend: the quadratic outline of a display item.
@@ -394,6 +421,15 @@ mod tests {
     use alloc::vec;
 
     use crate::atoms::NoteAtom;
+
+    fn page(atoms: &[MeasureAtom], spec: &PageSpec, number: usize) -> DisplayList {
+        let systems = crate::breaking::compute(atoms, spec);
+        build_page(atoms, spec, &systems, number)
+    }
+
+    fn page_count(atoms: &[MeasureAtom], spec: &PageSpec) -> usize {
+        crate::breaking::page_count(&crate::breaking::compute(atoms, spec))
+    }
 
     fn atom(line: i32) -> MeasureAtom {
         MeasureAtom {
@@ -417,13 +453,14 @@ mod tests {
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
+            line_break: false,
         }
     }
 
     #[test]
     fn page_has_five_staff_lines_and_the_event_items() {
         let spec = PageSpec::default();
-        let list = build_page(&[atom(4)], &spec, 0);
+        let list = page(&[atom(4)], &spec, 0);
         assert_eq!(list.count(ItemKind::StaffLine), 5);
         assert_eq!(list.count(ItemKind::Notehead), 1);
         assert_eq!(list.count(ItemKind::Stem), 1);
@@ -433,11 +470,11 @@ mod tests {
     #[test]
     fn high_note_gets_ledger_lines_only_outside_the_staff() {
         let spec = PageSpec::default();
-        let inside = build_page(&[atom(4)], &spec, 0);
+        let inside = page(&[atom(4)], &spec, 0);
         assert_eq!(inside.count(ItemKind::LedgerLine), 0);
-        let outside = build_page(&[atom(-2)], &spec, 0);
+        let outside = page(&[atom(-2)], &spec, 0);
         assert_eq!(outside.count(ItemKind::LedgerLine), 1);
-        let low = build_page(&[atom(12)], &spec, 0);
+        let low = page(&[atom(12)], &spec, 0);
         assert_eq!(low.count(ItemKind::LedgerLine), 2);
     }
 
@@ -446,9 +483,9 @@ mod tests {
         let spec = PageSpec::default();
         let atoms: Vec<_> = (0..9).map(|i| atom(i % 8)).collect();
         assert_eq!(page_count(&atoms, &spec), 1);
-        let many: Vec<_> = (0..33).map(|i| atom(i % 8)).collect();
-        assert_eq!(page_count(&many, &spec), 2);
-        assert!(build_page(&atoms, &spec, 1).items.is_empty());
+        let many: Vec<_> = (0..200).map(|i| atom(i % 8)).collect();
+        assert!(page_count(&many, &spec) >= 2);
+        assert!(page(&atoms, &spec, 1).items.is_empty());
     }
 
     #[test]
@@ -496,8 +533,9 @@ mod tests {
             ],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
+            line_break: false,
         };
-        let list = build_page(&[atom], &PageSpec::default(), 0);
+        let list = page(&[atom], &PageSpec::default(), 0);
         let header: Vec<_> = list
             .items
             .iter()
@@ -527,7 +565,7 @@ mod tests {
     #[test]
     fn vertical_geometry_uses_fixed_point_staff_spaces() {
         let spec = PageSpec::default();
-        let list = build_page(&[atom(8)], &spec, 0);
+        let list = page(&[atom(8)], &spec, 0);
         let head = list
             .items
             .iter()

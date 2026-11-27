@@ -528,3 +528,28 @@ For `measure-4`, reference quarters are 6.8 sp apart against our unstretched
 | Within 0.1 sp, y only | 0.5269 | 0.5303 |
 | Vertical pitch / ledger agreement | 0.9652 | 0.9571 (513 noteheads) |
 | Stem-length agreement | 0.6967 | 0.7013 (385 stems) |
+
+### 9.10 Systems and pages (step 3, 2026-11-27)
+
+`breaking.rs` collects measures into systems from atom widths only
+(`systemlayout.cpp:95-225`) and assigns systems to pages using
+`minSystemDistance` 8.5 sp and the A4 printable height
+(`pagelayout.cpp:140-265`, `systemlayout.cpp:2900-2991`). Systems are
+justified with the spring force of `stretchSegmentsToWidth`
+(`horizontalspacing.cpp:1087-1111`): chord/rest widths become
+`force * stretch` while header segments keep their style widths. The last
+system is left unstretched when it fills less than `lastSystemFillLimit`
+0.3 and nothing follows (`systemlayout.cpp:459-489`). `Engraver::page(n)`
+reads only the systems assigned to page `n`; no `Score` is touched.
+
+For `measure-4`, quarters are now 6.9 sp apart against MuseScore's 6.8 sp
+(3.5 sp before justification). The residual offset of the first notehead
+(6.3 sp vs 8.6 sp) comes from measures without explicit key/time segments.
+
+| Metric | After step 2 | After step 3 |
+| --- | ---: | ---: |
+| Within 0.1 sp, both axes | 0.0175 | 0.0061 (8/1312) |
+| Within 0.1 sp, x only | 0.0273 | 0.0244 |
+| Within 0.1 sp, y only | 0.5303 | 0.5755 |
+| Vertical pitch / ledger agreement | 0.9571 | 0.9652 (517 noteheads) |
+| Stem-length agreement | 0.7013 | 0.6967 (389 stems) |

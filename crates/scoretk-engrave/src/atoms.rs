@@ -114,6 +114,8 @@ pub struct MeasureAtom {
     pub events: Vec<Atom>,
     pub start_bar: BarCode,
     pub end_bar: BarCode,
+    /// A `<LayoutBreak>` line ends the system after this measure.
+    pub line_break: bool,
 }
 
 /// Diatonic index of a note, with C = 0 in each octave.
@@ -609,6 +611,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             events,
             start_bar: bar_code(measure.start_bar_line),
             end_bar: bar_code(measure.end_bar_line),
+            line_break: measure.line_break,
         });
     }
     atoms
