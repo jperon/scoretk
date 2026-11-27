@@ -28,7 +28,7 @@
 //! quadratic outlines.
 
 use scoretk_engrave::display::{DisplayItem, DisplayList, Geometry};
-use scoretk_smufl::{units_to_fixed, Edge, GLYPHS};
+use scoretk_smufl::{text_glyph, units_to_fixed, Edge, GLYPHS, TEXT_EDGES, UPEM};
 
 use crate::{Gray8, Path, Point, ONE};
 
@@ -122,6 +122,59 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
                         let next = Point::new(
                             cursor.x + to_pixels(units_to_fixed(x), staff_px),
                             cursor.y - to_pixels(units_to_fixed(y), staff_px),
+                        );
+                        path.quad_to(control, next);
+                        cursor = next;
+                    }
+                }
+            }
+            path.close();
+            buf.fill_path(&path, ink);
+        }
+        Geometry::Text {
+            codepoint,
+            x,
+            y,
+            size,
+            bold,
+        } => {
+            let Some(glyph) = text_glyph(codepoint, bold) else {
+                return;
+            };
+            let base = Point::new(
+                origin.x + to_pixels(x, staff_px),
+                origin.y + to_pixels(y, staff_px),
+            );
+            let scale = |value: i16| i32::from(value) * size / i32::from(UPEM);
+            let mut path = Path::new();
+            let mut cursor = base;
+            let start = usize::from(glyph.edges.0);
+            let end = start + usize::from(glyph.edges.1);
+            for edge in &TEXT_EDGES[start..end] {
+                match *edge {
+                    Edge::Move(x, y) => {
+                        cursor = Point::new(
+                            base.x + to_pixels(scale(x), staff_px),
+                            base.y - to_pixels(scale(y), staff_px),
+                        );
+                        path.move_to(cursor);
+                    }
+                    Edge::Line(dx, dy) => {
+                        let next = Point::new(
+                            cursor.x + to_pixels(scale(dx), staff_px),
+                            cursor.y - to_pixels(scale(dy), staff_px),
+                        );
+                        path.line_to(next);
+                        cursor = next;
+                    }
+                    Edge::Quad(qx, qy, x, y) => {
+                        let control = Point::new(
+                            cursor.x + to_pixels(scale(qx), staff_px),
+                            cursor.y - to_pixels(scale(qy), staff_px),
+                        );
+                        let next = Point::new(
+                            cursor.x + to_pixels(scale(x), staff_px),
+                            cursor.y - to_pixels(scale(y), staff_px),
                         );
                         path.quad_to(control, next);
                         cursor = next;
