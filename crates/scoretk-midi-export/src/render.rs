@@ -160,7 +160,17 @@ pub(crate) fn render(
     let pitch_offsets = pitch_offsets(score);
     let trills = trill_spans(score);
     let glissandos = glissando_spans(score);
-    let time_sigs = time_signature_events(score);
+    let mut time_sigs = time_signature_events(score);
+    // `[SMF §Format 0,1,2]` gives a file with no `FF 58` an implicit 4/4.
+    // Full support writes that default explicitly so a reader does not invent
+    // a time signature the file does not carry. Default bytes are unchanged.
+    if full_support && time_sigs.is_empty() {
+        if let Some(measure) = score.measures.first() {
+            let numerator = measure.time_sig_numerator.clamp(1, 255) as i32;
+            let denominator = measure.nominal_len.denominator().clamp(1, 32) as i32;
+            time_sigs.push((0, TimeSig::new(numerator, denominator)));
+        }
+    }
     let key_sigs = key_signature_events(score);
     let pause_map = PauseMap::build(score, repeat_list, &time_sigs);
     let tempo = tempo_events(score, repeat_list, &pause_map);
@@ -501,6 +511,40 @@ pub(crate) fn render(
         })
         .collect();
     super::fixup::fixup_midi(&mut performance, &part_of_track, &part_channels);
+
+    // A score without a repeat segment (or with no notes at all) can carry a
+    // time signature in the model but write no `FF 58`. Full support emits the
+    // first one at tick 0 so the file carries the signature the reader needs.
+    let has_time_signature = performance.tracks.iter().any(|track| {
+        track
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, EventKind::TimeSignature(..)))
+    });
+    if full_support && !has_time_signature {
+        if let Some((_, signature)) = time_sigs.first() {
+            let exponent = match signature.denominator {
+                1 => 0,
+                2 => 1,
+                4 => 2,
+                8 => 3,
+                16 => 4,
+                32 => 5,
+                _ => 2,
+            };
+            if let Some(track) = performance.tracks.first_mut() {
+                track.events.push(Event {
+                    tick: 0,
+                    kind: EventKind::TimeSignature(
+                        signature.numerator.clamp(0, 255) as u8,
+                        exponent,
+                        24,
+                        8,
+                    ),
+                });
+            }
+        }
+    }
 
     Ok(Rendered {
         performance,

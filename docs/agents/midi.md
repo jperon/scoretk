@@ -418,6 +418,28 @@ carries 56 instrument names the earlier full-support bytes left implicit; all
 56 are matched. `L4 playback` is 298/298 with **0 extra**. The headline stays
 **100.00 %** and the references stay `MIDI : 21/21 identiques`.
 
+| `time-sig` (extra) | 1 invented value | 0 | `FF 58 04 nn dd cc bb` (`[SMF §Format 0,1,2]`, `[SMF §Meta-Events]`). A score with no written time-signature segment now gets an explicit `FF 58` at tick 0 in full support, instead of the reader inventing the implicit 4/4. |
+
+**Final state (2026-11-27).** `midi_full_support_capacity_line` reports
+`100.00 % / 100.00 %` on the 56 scores: `L1 metric` 128/128, `L2 events`
+2 284/2 284, `L3 text` 174/174, `L4 playback` 298/298, **0 extra** in every
+declared layer, 2 884 carried items, 0 skipped files. Every residual of the
+old headline now has a standard SMF carrier: there is no inherent loss left to
+remove from the denominator and no kind was dropped from the declaration.
+The 21 `*.ref.mid` files remain `MIDI : 21/21 identiques` because every change
+is gated by `midi_full_support` (or, for the reader, by `full_support`), both
+off by default.
+
+| Kind | SMF carrier | Citation for the round trip |
+| --- | --- | --- |
+| `note`, `velocity`, `channel` | Note On/Off, velocity byte, channel nibble | `[MIDI §Channel Voice; Table II]` |
+| `time-sig`, `key-sig`, `tempo` | `FF 58`, `FF 59`, `FF 51` | `[SMF §Meta-Events]` |
+| `lyric`, `staff-text`, `system-text`, `rehearsal-mark`, `title` | `FF 05`, `FF 01`, `FF 07`, `FF 06`, `FF 02`/`FF 03`/RP-026 | `[SMF §Meta-Events; RP-017; RP-026]` |
+| `instrument`, `program`, `volume`, `pan` | `FF 04`, `C0`, `CC 7`, `CC 10` | `[SMF §Meta-Events; MIDI §Channel Voice; GM §Requirements]` |
+
+The secondary `smf_text` row is unchanged at 98.34 % (private `@…` prefixes);
+it is not the headline and never contributes private text to it.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)
