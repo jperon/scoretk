@@ -55,7 +55,7 @@ pub struct SystemPlan {
 /// `shouldBeJustified` (`:459-489`) leaves the last system unstretched when
 /// it fills less than `lastSystemFillLimit` of the page width and no further
 /// measure follows.
-fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> Vec<SystemPlan> {
+fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, _multistaff: bool) -> Vec<SystemPlan> {
     let mut systems = Vec::new();
     let mut first = 0;
     while first < atoms.len() {
@@ -75,35 +75,16 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, multistaff: bool) -> 
         let mut min_extra = 0;
         while first + count < atoms.len() {
             let atom = &atoms[first + count];
-            // // Port of `horizontalspacing.cpp:1087-1111`: justification
-            // stretches only the chord/rest springs. Everything before the
-            // first chord (clef/key/time widths and barNoteDistance) is a
-            // fixed header; using the first *event* here counted only the
-            // clef's x and left 6 sp out of the spring budget.
-            let header = atom
-                .events
-                .iter()
-                .find(|event| {
-                    // Grace notes share the segment of the following chord
-                    // and sit to its left; they are not a header segment.
-                    !event.grace
-                        && matches!(
-                            event.kind,
-                            crate::AtomKind::Chord | crate::AtomKind::Rest { .. }
-                        )
-                })
-                .map_or(atom.width, |event| event.x);
-            // With several staves, MuseScore packs measures using their
-            // *minimum* widths (`horizontalspacing.cpp:1216-1276`) rather
-            // than the natural 3.5 sp springs used by the single-staff P1
-            // oracle: a dense organ/choir measure must be allowed to shrink.
-            // The 3/5 estimate is used only for the break decision; the
-            // segment x positions are still justified from the real springs.
-            let break_width = if multistaff {
-                header + (atom.width - header) * 3 / 5
-            } else {
-                atom.width
-            };
+            // // Port of `SystemLayout::collectSystem` (`systemlayout.cpp:
+            // 153-225`): append measures until the measured width reaches
+            // the printable width. The former 3/5 discount for multi-staff
+            // measures packed too many measures into a system; with the
+            // justification solved from real segment widths (§15.1) the
+            // full atom width can be used here.
+            // The natural spring widths are the widths MuseScore measures
+            // while collecting a system (`horizontalspacing.cpp:730-745,
+            // :47-89`); justification only redistributes them afterwards.
+            let break_width = atom.width;
             if count > 0 && (width + break_width > printable || atoms[first + count - 1].line_break)
             {
                 break;

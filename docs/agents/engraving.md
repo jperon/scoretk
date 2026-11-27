@@ -1653,6 +1653,40 @@ the full-width mirror change is inert for this corpus but prevents the same
 defect for heads with a negative bearing. They remain reported as debt, not
 excluded from the metric. The private page-1 PNG is regenerated from the
 committed tree (`engrave-img/eng9/after.png`).
+
+### 15.4 System breaks and the private page count (2026-11-27)
+
+The 34 → 33 break regression from the lyric-shape port (§14.3) is recovered
+and exceeded. Once justification is solved from measured segment widths, the
+eng5 `header + (atom.width - header) * 3 / 5` discount used by the break
+decision is no longer needed: `collect_systems` now uses the full atom width
+for every staff, as `SystemLayout::collectSystem` measures it
+(`systemlayout.cpp:153-225`). The two files named in §14.3 are back on their
+oracle breaks (`testHairpinDynamics`, `copypastesymbollist-lyrics`).
+
+| Metric | Step 3 | After step 4 |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 490 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1478 (368/2 490) | **0.1652** (365/2 209) |
+| Measure widths within 0.1 sp | 66/394 | **81/394** |
+| Measure width mean abs. error, sp | 8.857 | 9.757 (worse) |
+| Note x mean abs. error, sp | 2.713 | 2.871 (worse) |
+| Vertical pitch/ledger agreement | 0.9543 (876) | 0.9224 (876) |
+| Stem-length agreement | 0.6447 (684) | 0.6082 (684) |
+| Files with identical system breaks | 37/56 | 37/56 |
+| Files with the oracle page count | 53/56 | **54/56** |
+| Pages with identical system breaks | 48/59 | **50/60** |
+| Overlapping notehead pairs (reference / ours) | 0 / 3 | **0 / 0** |
+
+The element denominator drops from 2 490 to 2 209 because `moonlight`'s first
+page no longer holds the same overflowing systems; no file or failure is
+excluded. On the private score page 1 the three systems now hold 3–4 measures
+each, and the score engraves in **7 pages**, matching MuseScore 4.7.4 (it was
+5 pages after step 1 and 6 pages in eng8). The organ notes stay inside the
+right margin, so the earlier trial that rejected full widths is no longer
+applicable. The before/after/reference page-1 images remain
+`engrave-img/eng9/before.png`, `after.png` and `ref.png`, all rendered from
+their committed trees.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method
