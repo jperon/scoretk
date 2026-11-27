@@ -306,16 +306,20 @@ pub(crate) fn read_lilypond_with_includes_and_dialect(
         .map_err(|error| Error::LilyPond(error.to_string()))
 }
 
-non_branche!(
-    "lilypond-import",
-    read_lilypond_with_includes_and_dialect(
-        bytes: &[u8],
-        resolve: &mut LilypondResolver<'_>,
-        gregorian: bool,
-    ) -> Result<Score>,
-    Format::Ly,
-    Lecture
-);
+// Le repli est écrit à la main : la macro `non_branche` n'accepte pas de
+// virgule finale dans une signature aussi longue, que rustfmt introduit.
+#[cfg(not(feature = "lilypond-import"))]
+pub(crate) fn read_lilypond_with_includes_and_dialect(
+    bytes: &[u8],
+    resolve: &mut LilypondResolver<'_>,
+    gregorian: bool,
+) -> Result<Score> {
+    let _ = (bytes, resolve, gregorian);
+    Err(Error::FormatNonPrisEnCharge {
+        format: Format::Ly,
+        sens: crate::format::Sens::Lecture,
+    })
+}
 
 // --- LilyPond (écriture) --------------------------------------------------
 
