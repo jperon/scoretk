@@ -841,6 +841,54 @@ fn system_right_edge(atom: &MeasureAtom, x: i32) -> i32 {
     }
 }
 
+/// Right edge of a measure's clef/key/time header, in absolute page x.
+/// // Port of `MeasureLayout::getMeasureStartEndPos`
+/// (`measurelayout.cpp:1396-1443`): `x1` is the largest `s1->x() + s1->minRight()`
+/// of the visible segments *before* the first chord/rest segment. A measure
+/// without a header starts at `left`. A full-measure rest is centred between
+/// this edge and the measure end, not between its own segment x and the next
+/// segment (`measurelayout.cpp:1479-1482, :1501-1514`).
+fn measure_header_end(
+    atom: &MeasureAtom,
+    events: &[(i32, &Atom)],
+    offset: usize,
+    left: i32,
+) -> i32 {
+    let mut end = left;
+    for (index, event) in atom.events.iter().enumerate() {
+        if matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+            break;
+        }
+        let x = events
+            .get(offset + index)
+            .map_or(left + event.x, |item| item.0);
+        let width = match event.kind {
+            AtomKind::Clef { name } => glyph(name)
+                .map(|item| units_to_fixed(item.bbox[2] - item.bbox[0]))
+                .unwrap_or(SP),
+            AtomKind::KeySig { fifths, .. } => {
+                let accidental = if fifths > 0 {
+                    "accidentalSharp"
+                } else {
+                    "accidentalFlat"
+                };
+                fifths.unsigned_abs().min(7) as i32
+                    * (glyph(accidental)
+                        .map(|item| units_to_fixed(item.bbox[2] - item.bbox[0]))
+                        .unwrap_or(SP)
+                        + KEYSIG_ACCIDENTAL_DISTANCE)
+            }
+            AtomKind::TimeSig {
+                numerator,
+                denominator,
+            } => time_sig_rect(numerator).0.max(time_sig_rect(denominator).0),
+            _ => 0,
+        };
+        end = end.max(x + width);
+    }
+    end
+}
+
 /// Place one measure's events at `left` on the system at `system_y`.
 ///
 /// // Port of `horizontalspacing.cpp:214-219, 1087-1111`: chord/rest segments
@@ -877,6 +925,8 @@ fn place_measure(
             event,
             absolute_x,
             right,
+            measure_header_end(atom, events, event_offset, left),
+            left + grid.end(),
             system_y,
             atom.mm_rest_count,
             plan.stems.get(event_offset + index).copied().flatten(),
@@ -1640,6 +1690,8 @@ fn place_event(
     event: &Atom,
     x: i32,
     right: i32,
+    header_end: i32,
+    measure_end: i32,
     y: i32,
     mm_rest_count: u16,
     beam: Option<(bool, i32)>,
@@ -1677,9 +1729,9 @@ fn place_event(
             let voice_offset = if event.voice.is_multiple_of(2) { 0 } else { SP };
             let name = rest_name(duration);
             let rest_y = y + HALF_SP + voice_offset;
-            // `getMeasureStartEndPos` uses the previous segment's right
-            // edge, i.e. the segment x minus `barNoteDistance`
-            // (`measurelayout.cpp:1477-1485`), not its left edge.
+            // The MMRest branch keeps the header exception of
+            // `getMeasureStartEndPos` (`measurelayout.cpp:1435-1440`): x1 is
+            // the first chord/rest segment x minus `barNoteDistance`.
             let x1 = x - BAR_NOTE_DISTANCE;
             if mm_rest_count > 1 {
                 // // Port of `MeasureLayout::layoutMeasure`
@@ -1712,11 +1764,13 @@ fn place_event(
             let width = glyph(name)
                 .map(|glyph| units_to_fixed(glyph.bbox[2] - glyph.bbox[0]))
                 .unwrap_or(SP);
-            // // Port of `measurelayout.cpp:1501-1512`: a full-measure rest
-            // is centred in the free space between the preceding segment and
-            // the bar line, not drawn at the segment's left edge.
+            // // Port of `measurelayout.cpp:1479-1482, 1501-1514`: a
+            // full-measure rest is centred in the free space from the right
+            // edge of the header to the measure's end, not at its own segment
+            // x. In measure 1 the old left bound (segment x minus
+            // `barNoteDistance`) sat on the 12/8 time signature.
             let rest_x = if measure {
-                x1 + ((right - x1 - width) / 2).max(0)
+                header_end + ((measure_end - header_end - width) / 2).max(0)
             } else {
                 x
             };
@@ -2529,9 +2583,10 @@ mod tests {
             .unwrap()
             .origin()
             .0;
+        // With no header, `getMeasureStartEndPos` starts the free space at
+        // the measure's left edge, not at `rest.x - barNoteDistance`.
         assert!(
-            ((x0 + x1) / 2 - (4 * SP - BAR_NOTE_DISTANCE + spec.margin_left + bar) / 2).abs()
-                <= SP / 10,
+            ((x0 + x1) / 2 - (spec.margin_left + bar) / 2).abs() <= SP / 10,
             "measure rest is not centred in its measure"
         );
         // An MMRest is drawn as a centred bar plus two vertical end strokes.
@@ -2550,6 +2605,78 @@ mod tests {
         assert_eq!(
             x,
             spec.margin_left + 4 * SP - BAR_NOTE_DISTANCE + 5 * SP / 4
+        );
+    }
+
+    #[test]
+    fn full_measure_rest_starts_after_the_header() {
+        // `MeasureLayout::getMeasureStartEndPos` (`measurelayout.cpp:
+        // 1396-1443`) centres a full-measure rest between the header's right
+        // edge and the measure end. In measure 1 of the private score the
+        // 12/8 signature used to touch the rest.
+        let spec = PageSpec {
+            printable_width: 1000 * SP,
+            ..PageSpec::default()
+        };
+        let header_end = 8 * SP;
+        let rest = Atom {
+            x: header_end + 2 * SP,
+            kind: AtomKind::Rest {
+                duration: 2,
+                dots: 0,
+                measure: true,
+            },
+            ..Atom::at_segment(
+                0,
+                AtomKind::Rest {
+                    duration: 2,
+                    dots: 0,
+                    measure: true,
+                },
+                0,
+            )
+        };
+        let mut with_header = atom(4);
+        with_header.events = vec![
+            Atom::simple(SP, AtomKind::Clef { name: "clefG" }),
+            Atom::simple(
+                4 * SP,
+                AtomKind::TimeSig {
+                    numerator: 12,
+                    denominator: 8,
+                },
+            ),
+            rest,
+        ];
+        with_header.width = 40 * SP;
+        let list = page(&[with_header], &spec, 0);
+        let rest = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Rest)
+            .unwrap();
+        let (rest_left, _, rest_right, _) = rest.bbox(&list).unwrap();
+        let time_right = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::TimeSig)
+            .map(|item| item.bbox(&list).unwrap().2)
+            .max()
+            .unwrap();
+        let bar = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::BarLine)
+            .unwrap()
+            .origin()
+            .0;
+        assert!(
+            rest_left > time_right + SP / 4,
+            "the rest must not touch the time signature: {rest_left} vs {time_right}"
+        );
+        assert!(
+            ((rest_left + rest_right) / 2 - (spec.margin_left + header_end + bar) / 2).abs() < SP,
+            "the rest is centred after the header"
         );
     }
 

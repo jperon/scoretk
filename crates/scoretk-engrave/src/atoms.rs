@@ -1827,7 +1827,16 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 AtomKind::Rest {
                                     duration,
                                     dots: cr.duration.dots,
-                                    measure: cr.duration.kind == DurationType::Measure,
+                                    // `Rest::isFullMeasureRest()` centres a
+                                    // measure rest in the free space after the
+                                    // header (`measurelayout.cpp:1473-1482,
+                                    // :1501-1514`). A dotted whole written in
+                                    // a 12/8 measure (private score, S A staff)
+                                    // also fills the whole measure: the 4.7.4
+                                    // SVG centres it, so treat it the same way
+                                    // instead of leaving it on the time sig.
+                                    measure: cr.duration.kind == DurationType::Measure
+                                        || cr.duration.ticks() == measure.len,
                                 },
                                 seg,
                             );
@@ -2198,6 +2207,38 @@ mod tests {
         );
         assert!(lyric_gap > plain_gap);
         assert_eq!(with_lyrics[0].min_extra, 0);
+    }
+
+    #[test]
+    fn a_measure_filling_dotted_whole_rest_is_centred() {
+        // The private score writes the S A rest of measure 1 as
+        // `<durationType>whole</durationType><dots>1</dots>` in 12/8. Its
+        // written duration fills the measure, and the 4.7.4 SVG centres it
+        // after the header like the T B `<durationType>measure</durationType>`
+        // rest. `measurelayout.cpp:1473-1482, 1501-1514`.
+        use scoretk_core::model::{
+            ChordRest, Duration, DurationType, Fraction, Measure, Part, Score, Segment,
+            SegmentItem, SegmentType, Staff, Track,
+        };
+        let mut score = Score::new();
+        let part = score.add_part(Part::new("S A", "S A"));
+        let staff = score.add_staff_with(part, Staff::new(part));
+        let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(12, 8));
+        let mut segment = Segment::new(SegmentType::ChordRest, Fraction::ZERO, 1);
+        segment.set_element(
+            Track::new(staff, 0),
+            SegmentItem::ChordRest(ChordRest::rest(Duration::with_dots(DurationType::Whole, 1))),
+        );
+        measure.add_segment(segment);
+        score.add_measure(measure);
+        let atoms = compute_staff(&score, 0);
+        assert!(
+            atoms[0]
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, AtomKind::Rest { measure: true, .. })),
+            "the dotted whole filling the 12/8 measure must be centred"
+        );
     }
 
     #[test]

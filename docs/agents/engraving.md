@@ -2071,3 +2071,36 @@ The two lost measure widths are reported, not excluded. On the private page
 (`engrave-img/eng9/step2.png`, the whole page inspected) "la tache",
 "o-ri-gi-nel" and "et de son" now have visible spaces, while the hyphens of
 "Mi-nuit" and "l'heu-re" still occupy their intra-word gaps.
+
+## 23. Review of the private page: measure rests after the header (2026-11-27)
+
+In measure 1 the whole-measure rests were drawn at their segment x, which
+sits immediately after the clef/key/12-8 header, so the T B rest touched the
+time signature and the S A dotted whole rest sat on it.
+`MeasureLayout::getMeasureStartEndPos` (`measurelayout.cpp:1396-1443`) instead
+takes `x1` as the largest `s1->x() + s1->minRight()` of the visible segments
+before the chord/rest segment and `x2` as the measure end (or the next header
+segment); `layoutMeasureElements` centres the rest in that free space
+(`:1473-1482, :1501-1514`). `place_measure` now computes the header's right
+edge from the clef/key/time events and passes it together with the measure end
+to `place_event`; a full-measure rest is centred in `[header_end, measure_end]`,
+while the MMRest branch keeps upstream's header exception
+(`:1435-1440`). The S A rest is written as a dotted whole in 12/8: its
+duration fills the measure and the 4.7.4 SVG centres it too, so the atom pass
+treats a measure-filling rest like `<durationType>measure</durationType>`.
+Unit tests pin the headerless centre, the 12/8 header case and the dotted
+whole atom.
+
+| Metric (`oracle-eng9-review-step2` → `oracle-eng9-review-step3`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1711 (378/2 209) | 0.1711 (378/2 209) |
+| Measure widths / system breaks | 90/394 / 36/56 | 90/394 / 36/56 |
+| Files with the oracle page count | 54/56 | 54/56 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Private page 1, rest x sp (S A / T B) | 30.6 / 30.7 | **46.3 / 46.3** |
+
+Rests are not extracted by the geometric oracle, so its figures are unchanged
+by construction. On the private page (`engrave-img/eng9/after.png`, the whole
+page inspected) both measure-1 rests now sit in the middle of their measure,
+clear of the 12/8 signature, as in the 4.7.4 reference.
