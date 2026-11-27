@@ -222,15 +222,19 @@ fn printed_fragments(text: &str) -> Vec<PrintedFragment> {
     result
 }
 
-/// Vrai si le texte est une rubrique imprimée et non une parole chantée
+/// Vrai si le texte est une rubrique **imprimée** et non une parole chantée
 /// (`Gabc.tex:297-378` ; cf. la règle homologue de `full_support.py::facts`).
+///
+/// Seul le texte que GregorioTeX imprime réellement est une rubrique : les
+/// numéros de verset, `V/`, `R/`, `Ant.`, `Ps.` et les signes `*`/`†`. Les
+/// accolades `{}` sont du centrage de voyelle (`Gabc.tex:314-324`) et les
+/// backslashes du TeX brut : ni l'un ni l'autre n'est imprimé, et ni l'un ni
+/// l'autre ne transforme une syllabe chantée en rubrique.
 fn printed_rubric_text(value: &str) -> bool {
-    value.contains(['\\', '{', '}'])
-        || value.starts_with("V/")
+    value.starts_with("V/")
         || value.starts_with("R/")
         || value.starts_with("Ant.")
         || value.starts_with("Ps.")
-        || value.starts_with("~~")
         || value.starts_with('+')
         || value
             .strip_suffix('.')
@@ -361,21 +365,14 @@ pub(crate) fn write_printed_rubrics(out: &mut Out, syllable: &Syllable) {
             .any(|sign| sign.kind == SignKind::Alteration)
     });
     let values: Vec<String> = if sung {
-        // Le texte qui reste dans la lyric après retrait des balises ne doit
-        // jamais être réimprimé dans un `<words>` (XSD 4.0 `words` :3495) :
-        // ce serait une duplication et le contrôle de l'oracle le rejette.
-        let plain: String = fragments
-            .iter()
-            .filter(|fragment| !fragment.markup)
-            .flat_map(|fragment| fragment.value.chars())
-            .filter(|char| !matches!(char, '{' | '}' | '$'))
-            .collect();
+        // Une syllabe chantée ne porte dans `<words>` que les caractères que
+        // GregorioTeX imprime **hors** de la lyric (`Gabc.tex:297-309,345-378`) :
+        // un `<sp>`/`<v>` inséré. Tout le texte brut — y compris les accolades
+        // de centrage, invisibles (`Gabc.tex:314-324`) — reste dans la seule
+        // `<lyric>` : le réimprimer serait une duplication avec balise source.
         fragments
             .into_iter()
-            .filter(|fragment| {
-                let value = fragment.value.trim();
-                fragment.markup || (printed_rubric_text(value) && !plain.contains(value))
-            })
+            .filter(|fragment| fragment.markup)
             .map(|fragment| fragment.value)
             .collect()
     } else {
@@ -924,6 +921,39 @@ mod tests {
         );
         assert!(!xml.contains("<sp>"), "{xml}");
         assert!(!xml.contains("<lyric"), "{xml}");
+    }
+
+    #[test]
+    fn centering_braces_are_not_a_printed_rubric() {
+        // `Gabc.tex:314-324` : `{}` force le centrage de la voyelle et ne
+        // sont **jamais** imprimés. `mi(h){n}us(h)` est la syllabe chantée
+        // « nus », pas une rubrique : aucun `<words>` rouge ne doit porter
+        // `{n}us` en double de la `<lyric>`.
+        let syllable = Syllable {
+            text: "{n}us".to_owned(),
+            notes: vec![
+                scoretk_core::model::GregorianNote {
+                    letter: 'h',
+                    glyph: String::new(),
+                    ..scoretk_core::model::GregorianNote::default()
+                },
+                scoretk_core::model::GregorianNote {
+                    letter: 'h',
+                    glyph: String::new(),
+                    ..scoretk_core::model::GregorianNote::default()
+                },
+            ],
+            ..Syllable::default()
+        };
+        let mut out = Out::new_with(false, false);
+        write_printed_rubrics(&mut out, &syllable);
+        assert!(
+            !out.xml.finish().contains("<words"),
+            "centering markup must never be a <words> carrier"
+        );
+        assert!(!printed_rubric_text("{n}us"));
+        assert!(!printed_rubric_text("{ia}."));
+        assert!(!printed_rubric_text("5. C{ui}"));
     }
 
     #[test]

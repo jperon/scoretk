@@ -397,24 +397,13 @@ impl Reader {
                 syllable.space_after = matches!(syllabic, "single" | "end");
             }
             for printed in std::mem::take(&mut self.pending_rubrics) {
-                // Quand le `<words>` imprime la **même** syllabe avec sa
-                // typographie d'origine (`{ia}.` pour la lyric `ia.`), il
-                // remplace la lyric au lieu de la dupliquer. Un caractère
-                // spécial inséré (`<sp>*</sp>`) reste ajouté à la syllabe.
-                let plain: String = printed
-                    .chars()
-                    .filter(|char| !matches!(char, '{' | '}'))
-                    .collect();
-                let plain = plain
-                    .replace("<sp>", "")
-                    .replace("</sp>", "")
-                    .replace("<v>", "")
-                    .replace("</v>", "");
-                if !syllable.text.is_empty() && plain.contains(&syllable.text) {
-                    syllable.text = printed;
-                } else {
-                    syllable.text.push_str(&printed);
-                }
+                // Un `<words placement="below">` imprime un caractère spécial
+                // (`<sp>`/`<v>`) **dans** la syllabe chantée : il s'ajoute à la
+                // lyric. Il ne remplace jamais cette lyric : les accolades de
+                // centrage (`Gabc.tex:314-324`) ne sont pas imprimées et un
+                // `<words>` qui les contient serait un vidage du source, pas
+                // une valeur imprimée (revue du 2026-11-27).
+                syllable.text.push_str(&printed);
             }
         }
         if ends_syllable {

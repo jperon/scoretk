@@ -334,10 +334,14 @@ def facts(gabc_text: str) -> Counter[tuple[str, str]]:
         if text.strip():
             value = " ".join(text.split())
             if any(char.isalnum() for char in value):
-                if ("\\" in value or "{" in value or "}" in value
-                        or value.startswith(("V/", "R/", "Ant.", "Ps.", "~~", "+"))
+                # A rubric is text the source really prints: verse numbers,
+                # V/, R/, Ant., Ps. and the * / † signs. Curly braces are
+                # vowel-centering markup (Gabc.tex:314-324) and backslashes
+                # are raw TeX: neither is printed, so a syllable carrying
+                # them stays a *text* (lyric) fact, never a rubric fact.
+                if (value.startswith(("V/", "R/", "Ant.", "Ps.", "~~", "+"))
                         or re.match(r"^(?:[0-9]+|[ivxl]+)\.$", value)):
-                    result[("rubric", value)] += 1  # TeX/<sp> markup
+                    result[("rubric", value)] += 1  # printed rubric
                 else:
                     result[("text", value)] += 1
             else:

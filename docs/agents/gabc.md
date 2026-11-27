@@ -1744,7 +1744,7 @@ difference is `@color`; `test_full_support.py` passes 11/11.
 | Family | Carrier | Norm |
 | --- | --- | --- |
 | printed special characters (`<sp>`) and verbatim text (`<v>`) | `<direction placement="above"\|"below"><direction-type><words color="#FF0000">` with the **printed** glyph (`V/.`, `✶`, `‡`, …), never the tag | `musicxml-4.0.xsd` `direction-type/words` (:3495), `formatted-text` (:2610), `text-formatting` (:2237), `print-style/default-y` (:2134); Gregorio `doc/Gabc.tex:297-309,345-378` defines what those tags print |
-| rubric markers without a sung note (`5.`, `V/. Et`, `{ia}.`) | the same `<words>`, with `placement="above"`; the reader opens a separate, note-less syllable at that point | `musicxml-4.0.xsd` `words` (:3495); `Gabc.tex:241-245,297-343` |
+| rubric markers without a sung note (`5.`, `V/. Et`, `Ps.`) | the same `<words>`, with `placement="above"`; the reader opens a separate, note-less syllable at that point | `musicxml-4.0.xsd` `words` (:3495); `Gabc.tex:241-245,297-343`. Vowel-centering braces (`{ia}.`) are **not** rubrics: §28.4 |
 | whole-syllable style (`<i>`, `<c>`, `<b>`, `<tt>`, `<ul>`) | typography of `<lyric><text font-style="italic" color="#FF0000" …>` | `musicxml-4.0.xsd` `text-formatting` (:2237), `font` (:2005-2012); `Gabc.tex:254-270`. Partial tags have no single-`<text>` carrier and stay defects |
 | non-sung alteration glyphs `x`/`#`/`y` (`Gabc.tex:481-489,512-540`) | `<direction><direction-type default-y="25"><symbol>accidentalFlat</symbol>`: a canonical SMuFL accidental at the staff height of the sign | `musicxml-4.0.xsd` `direction-type/symbol` (:3500), `formatted-symbol-id` (:2598), `smufl-glyph-name` (:411), `smufl-accidental-glyph-name` (:418), `default-y` (:2134). The inverse maps tenths → GABC staff letter |
 | word scope of an alteration | `<lyric><syllabic>` (`single`/`end` closes the word) | `musicxml-4.0.xsd` `syllabic` (:5062); `Gabc.tex:212-227,512-540`. Without it a flat leaks into the next word and pitches regress |
@@ -1757,6 +1757,9 @@ carriers. All new XML attributes are gated by `gabc_neume_smufl` /
 `--xml-full-support`: every default byte is unchanged.
 
 ### 28.2 Measured progression (261 sources, same instrument, 0 failures)
+
+The last two rows include the later-rejected "printed braces replacement"
+carrier; the corrected final figure is in §28.4.
 
 | Step | Carried | Main % | Rubric | Pitch | Letter | Shape | Attribute |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1793,3 +1796,37 @@ CLI built at `253106ce` and the new CLI produce **2 794/2 794 identical
 default outputs** over the versioned corpus and the 261-file GABC lot; no
 default conversion changed. New source files were added by path; no build
 directory is versioned.
+
+### 28.4 Review correction: centering braces are not rubrics (same branch)
+
+A review found `gregorio_PopulusSion.gabc`'s `Dó(e.f!gwhhi)mi(h){n}us(h)`
+written as `<words color="#FF0000">{n}us</words>`: a duplicated lyric, in red,
+with raw GABC markup. `{n}` is Gregorio's vowel-centering brace
+(`Gabc.tex:314-324`): it centers the note on `n` and is **never printed**.
+The syllable is the ordinary sung word *nus*.
+
+Two classifiers treated `{`/`}` (and backslashes) as rubric evidence:
+`printed_rubric_text` in the MusicXML exporter and the `rubric` heuristic in
+`full_support.py::facts`. Both were corrected: a rubric is only text the source
+actually prints — verse numbers, `V/`, `R/`, `Ant.`, `Ps.`, the `*`/`†` signs,
+`<sp>` specials and `<v>` verbatim text that prints. The exporter now emits
+`<words>` for a sung syllable **only** for inserted `<sp>`/`<v>` printed
+characters; no plain syllable text ever becomes a `<words>` carrier. The
+reader no longer replaces a `<lyric>` with a `<words>` value, which was the
+reverse side of the dump. `full_support.py` counts brace-bearing syllable text
+as `text`, not `rubric`.
+
+`scripts/oracle/gabc/audit_words.py` lists every `<words>` value over the 261
+sources with its count and source token: 44 distinct values, 210 carriers, all
+printed by Gregorio for their source (barred letters, liturgical signs, verse
+numbers, `Ant.`/`Ps.`, `[alt:…]` text). No value contains a brace, a backslash,
+a tag, a `gabc` prefix, a colour-only difference or a duplicate of the lyric.
+
+Honest re-measure (same instrument, 261 sources, 0 failures): **106 580 /
+114 057 = 96.21 %**, down from 96.25 %. The 45 centering facts have no standard
+MusicXML carrier and are now defects, not an invented printed rubric. No new
+`INHERENT` row was added; the inherent total stays 3 276. Final MusicXML
+defects (4 201): `glyph` 3 227, `attribute` 332, `rubric` 283, `pitch` 158,
+`text` 74, `shape` 52, `letter` 36, `custos` 22, `ictus` 9, `clef` 8. The other
+destinations are unchanged (MIDI 95.45 %, LilyPond 97.58 %, ABC 98.07 %, MEI
+96.09 %).
