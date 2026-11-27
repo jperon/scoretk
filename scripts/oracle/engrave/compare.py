@@ -155,6 +155,8 @@ def parse_svg(path: Path) -> dict:
     systems = staff_systems(elements, spatium)
 
     result: dict[str, list[tuple[float, float]]] = {"Note": [], "Stem": [], "BarLine": []}
+    viewbox = root.get("viewBox", "0 0 0 0").replace(",", " ").split()
+    result["page_width"] = float(viewbox[2]) if len(viewbox) > 2 else 0.0
     # Bar lines keep their absolute y here: local y repeats on every system,
     # so grouping bar lines by local y would merge all systems into one.
     raw_barlines: list[tuple[float, float, float]] = []
@@ -234,14 +236,19 @@ def parse_svg(path: Path) -> dict:
     # step 2). Elements that fail to parse are not silently dropped: the
     # element-level matcher below still counts every expected element.
     result["lyric_boxes"] = []
+    result["instrument_name_boxes"] = []
     for element in elements:
-        if element.get("class", "") != "Lyrics" or element.tag != SVG + "path":
+        class_name = element.get("class", "")
+        if class_name not in ("Lyrics", "InstrumentName") or element.tag != SVG + "path":
             continue
         box = bbox_of_path(element.get("d", ""))
         if box is None:
             continue
         sx, sy, tx, ty = transform_of(element)
-        result["lyric_boxes"].append(
+        target = (
+            result["lyric_boxes"] if class_name == "Lyrics" else result["instrument_name_boxes"]
+        )
+        target.append(
             (sx * box[0] + tx, sy * box[1] + ty, sx * box[2] + tx, sy * box[3] + ty)
         )
     result["system_boxes"] = systems
@@ -294,6 +301,22 @@ def parse_svg(path: Path) -> dict:
         for left, right in zip(bars, bars[1:])
     ]
     return result
+
+
+def instrument_name_clips(parsed: dict) -> tuple[int, int]:
+    """(instrument-name glyphs, glyphs starting left of the page margin).
+
+    The staff lines end at the printable area's right edge, so the page's
+    left margin is the viewBox width minus that edge. A name starting further
+    left is clipped by the printable area.
+    """
+    spatium = parsed.get("spatium", 1.0)
+    systems = parsed.get("system_boxes", [])
+    boxes = parsed.get("instrument_name_boxes", [])
+    if not systems:
+        return len(boxes), 0
+    margin = parsed.get("page_width", 0.0) - max(x1 for _x0, x1, _top in systems)
+    return len(boxes), sum(x0 < margin - 0.1 * spatium for x0, _y0, _x1, _y1 in boxes)
 
 
 def barline_spread(parsed: dict) -> tuple[float, int, int]:
@@ -431,6 +454,10 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     spread_bad_ours = 0
     spread_total_ref = 0
     spread_total_ours = 0
+    names_ref = 0
+    names_ours = 0
+    name_clips_ref = 0
+    name_clips_ours = 0
     note_hits_ref = 0
     note_hits_ours = 0
 
@@ -481,6 +508,7 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         nonlocal barline_hits_ref, barline_hits_ours
         nonlocal spread_max_ref, spread_max_ours, spread_bad_ref, spread_bad_ours
         nonlocal spread_total_ref, spread_total_ours
+        nonlocal names_ref, names_ours, name_clips_ref, name_clips_ours
         nonlocal note_hits_ref, note_hits_ours
         barline_hits_ref += barline_crossings(ref)
         barline_hits_ours += barline_crossings(our)
@@ -492,6 +520,12 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         spread_bad_ours += our_bad
         spread_total_ref += ref_total
         spread_total_ours += our_total
+        ref_names, ref_clips = instrument_name_clips(ref)
+        our_names, our_clips = instrument_name_clips(our)
+        names_ref += ref_names
+        names_ours += our_names
+        name_clips_ref += ref_clips
+        name_clips_ours += our_clips
         note_hits_ref += note_collisions(ref)
         note_hits_ours += note_collisions(our)
         ref_lyrics, ref_hits = lyric_collisions(ref)
@@ -567,6 +601,10 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "spread_bad_ours": spread_bad_ours,
         "spread_total_ref": spread_total_ref,
         "spread_total_ours": spread_total_ours,
+        "names_ref": names_ref,
+        "names_ours": names_ours,
+        "name_clips_ref": name_clips_ref,
+        "name_clips_ours": name_clips_ours,
         "note_hits_ref": note_hits_ref,
         "note_hits_ours": note_hits_ours,
     }
@@ -694,6 +732,7 @@ def main() -> int:
         "spread_max_ref": 0.0, "spread_max_ours": 0.0,
         "spread_bad_ref": 0, "spread_bad_ours": 0,
         "spread_total_ref": 0, "spread_total_ours": 0,
+        "names_ref": 0, "names_ours": 0, "name_clips_ref": 0, "name_clips_ours": 0,
         "note_hits_ref": 0, "note_hits_ours": 0,
     }
     for source in corpus:
@@ -771,6 +810,10 @@ def main() -> int:
         totals["spread_bad_ours"] += page_values["spread_bad_ours"]
         totals["spread_total_ref"] += page_values["spread_total_ref"]
         totals["spread_total_ours"] += page_values["spread_total_ours"]
+        totals["names_ref"] += page_values["names_ref"]
+        totals["names_ours"] += page_values["names_ours"]
+        totals["name_clips_ref"] += page_values["name_clips_ref"]
+        totals["name_clips_ours"] += page_values["name_clips_ours"]
         totals["note_hits_ref"] += page_values["note_hits_ref"]
         totals["note_hits_ours"] += page_values["note_hits_ours"]
         rows.append(row)
@@ -847,6 +890,10 @@ def main() -> int:
         f"| Boundaries with bar-line x spread > 0.05 sp (reference / ours) | "
         f"{totals['spread_bad_ref']}/{totals['spread_total_ref']} / "
         f"{totals['spread_bad_ours']}/{totals['spread_total_ours']} |",
+        f"| Instrument-name glyphs drawn (reference / ours) | "
+        f"{totals['names_ref']} / {totals['names_ours']} |",
+        f"| Instrument-name glyphs left of the page margin (reference / ours) | "
+        f"{totals['name_clips_ref']} / {totals['name_clips_ours']} |",
         f"| Overlapping notehead pairs (reference / ours) | "
         f"{totals['note_hits_ref']} / {totals['note_hits_ours']} |",
         "",

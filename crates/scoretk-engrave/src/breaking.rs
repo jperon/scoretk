@@ -55,16 +55,19 @@ pub struct SystemPlan {
 /// `shouldBeJustified` (`:459-489`) leaves the last system unstretched when
 /// it fills less than `lastSystemFillLimit` of the page width and no further
 /// measure follows.
-fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec, _multistaff: bool) -> Vec<SystemPlan> {
+fn collect_systems(
+    atoms: &[MeasureAtom],
+    spec: &PageSpec,
+    staffs: &[crate::staffs::StaffInfo],
+) -> Vec<SystemPlan> {
     let mut systems = Vec::new();
     let mut first = 0;
     while first < atoms.len() {
-        let printable = spec.printable_width
-            - if first == 0 {
-                spec.first_system_indent
-            } else {
-                0
-            };
+        // The same left indent the page pass uses: instrument names and
+        // brackets shorten the printable width of every system
+        // (`systemlayout.cpp:2082-2127`).
+        let printable =
+            spec.printable_width - crate::decor::system_left_indent(spec, staffs, first == 0);
         let mut count = 0;
         let mut width = 0;
         let mut fixed_extra = 0;
@@ -275,7 +278,7 @@ pub fn compute_with_atoms(
     system_heights: &[i32],
 ) -> (Vec<SystemPlan>, Vec<Vec<MeasureAtom>>) {
     let mut augmented = all.to_vec();
-    let mut systems = collect_systems(&merged_score(&augmented), spec, all.len() > 1);
+    let mut systems = collect_systems(&merged_score(&augmented), spec, staffs);
     for _ in 0..8 {
         let mut next = all.to_vec();
         for system in &systems {
@@ -294,7 +297,7 @@ pub fn compute_with_atoms(
             break;
         }
         augmented = next;
-        systems = collect_systems(&merged_score(&augmented), spec, all.len() > 1);
+        systems = collect_systems(&merged_score(&augmented), spec, staffs);
     }
     for system in &mut systems {
         system.staff_offsets = alloc::vec![0; all.len()];

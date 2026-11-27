@@ -28,7 +28,7 @@
 use alloc::vec::Vec;
 
 use crate::display::{DisplayItem, DisplayList, ItemKind};
-use crate::layout::{place_text_kind, text_em};
+use crate::layout::{place_text_kind, text_em, text_run_width};
 use crate::staffs::StaffInfo;
 use crate::style::{
     AKKOLADE_BAR_DISTANCE, AKKOLADE_WIDTH, BRACKET_DISTANCE, BRACKET_WIDTH, SP, STAFF_HEIGHT,
@@ -65,6 +65,84 @@ pub fn barline_groups(staffs: &[StaffInfo]) -> Vec<(usize, usize)> {
         }
     }
     groups
+}
+
+/// MuseScore hides instrument names when the score has a single part
+/// (`hideInstrumentNameIfOneInstrument`, `styledef.cpp:543`). The private
+/// choral score sets it explicitly; the default is the same.
+pub fn instrument_names_visible(staffs: &[StaffInfo]) -> bool {
+    staffs.iter().enumerate().any(|(index, staff)| {
+        staffs
+            .get(index.wrapping_sub(1))
+            .is_some_and(|previous| previous.part != staff.part)
+    })
+}
+
+/// Total width of the visible brackets/braces of a system, including the gap
+/// to the staff lines (`SystemLayout::totalBracketOffset`,
+/// `systemlayout.cpp:2215-2277`).
+fn bracket_offset(staffs: &[StaffInfo]) -> i32 {
+    staffs
+        .iter()
+        .filter_map(|staff| {
+            staff.bracket_span().map(|(kind, _)| {
+                if kind == 1 {
+                    AKKOLADE_WIDTH + AKKOLADE_BAR_DISTANCE
+                } else {
+                    BRACKET_WIDTH + BRACKET_DISTANCE
+                }
+            })
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Left indent of a system from the printable margin. // Port of
+/// `SystemLayout::layoutSystem` (`systemlayout.cpp:2082-2127`): the widest
+/// instrument name plus `instrumentNameOffset` (scaled for the font size),
+/// plus the brackets, and at least `firstSystemIndentationValue` on the first
+/// system. Reserving this space keeps long names inside the page; before the
+/// port they were drawn at `margin_left - bracket - offset`, with their left
+/// edge outside the printable area.
+pub fn system_left_indent(spec: &PageSpec, staffs: &[StaffInfo], first_system: bool) -> i32 {
+    if !instrument_names_visible(staffs) {
+        return if first_system {
+            spec.first_system_indent
+        } else {
+            0
+        };
+    }
+    let size = if first_system {
+        spec.long_instrument_font_size
+    } else {
+        spec.short_instrument_font_size
+    };
+    let em = text_em(spec, size);
+    let names_width = staffs
+        .iter()
+        .enumerate()
+        .filter(|(index, staff)| {
+            staffs
+                .get(index.wrapping_sub(1))
+                .is_none_or(|previous| previous.part != staff.part)
+        })
+        .map(|(_, staff)| {
+            let text = if first_system {
+                &staff.long_name
+            } else {
+                &staff.short_name
+            };
+            text_run_width(text, em, false)
+        })
+        .max()
+        .unwrap_or(0);
+    let brackets = bracket_offset(staffs);
+    let indent = names_width + spec.instrument_name_offset;
+    if first_system {
+        indent.max(spec.first_system_indent.saturating_sub(brackets)) + brackets
+    } else {
+        indent + brackets
+    }
 }
 
 /// Draws the brackets and braces starting on a system's staves.
@@ -140,6 +218,9 @@ pub fn place_instrument_names(
     left: i32,
     first_system: bool,
 ) {
+    if !instrument_names_visible(staffs) {
+        return;
+    }
     for (index, staff) in staffs.iter().enumerate() {
         if staffs
             .get(index.wrapping_sub(1))
@@ -153,7 +234,11 @@ pub fn place_instrument_names(
         }
         let top = system.y + system.staff_offsets.get(index).copied().unwrap_or(0);
         let bottom = system.y + system.staff_offsets.get(end).copied().unwrap_or(0) + STAFF_HEIGHT;
-        let size = if first_system { 12.0 } else { 10.0 };
+        let size = if first_system {
+            spec.long_instrument_font_size
+        } else {
+            spec.short_instrument_font_size
+        };
         let em = text_em(spec, size);
         let text = if first_system {
             &staff.long_name
@@ -252,7 +337,7 @@ mod tests {
 
     #[test]
     fn brackets_and_braces_are_drawn_with_instrument_names() {
-        let staffs = vec![staff(0, 0, 2, false), staff(0, 0, 2, false)];
+        let staffs = vec![staff(0, 0, 2, false), staff(1, 0, 2, false)];
         let system = system(2);
         let mut out = DisplayList::new(0);
         place_brackets(&mut out, &staffs, &system, 20 * SP);
@@ -265,12 +350,48 @@ mod tests {
             true,
         );
         assert_eq!(out.count(ItemKind::Bracket), 6); // two brackets, each with a line and two hooks
-        assert_eq!(out.count(ItemKind::InstrumentName), 5); // "Choir" in Edwin glyphs
+        assert_eq!(out.count(ItemKind::InstrumentName), 10); // "Choir" on two parts
 
         let staffs = vec![staff(1, 1, 2, true), staff(1, 1, 2, true)];
         let mut out = DisplayList::new(0);
         place_brackets(&mut out, &staffs, &system, 20 * SP);
         assert_eq!(out.count(ItemKind::Bracket), 2); // two scaled brace glyphs
+    }
+
+    #[test]
+    fn instrument_names_fit_inside_the_system_indent() {
+        // `SystemLayout::layoutSystem` (systemlayout.cpp:2082-2127): the left
+        // indent must contain the longest name, the name offset and the
+        // brackets, or the first glyphs are clipped at the page margin.
+        let staffs = vec![
+            staff(0, 0, 1, false),
+            staff(1, 1, 2, true),
+            staff(1, 0, 1, false),
+        ];
+        let spec = PageSpec::default();
+        let indent = system_left_indent(&spec, &staffs, true);
+        let em = text_em(&spec, spec.long_instrument_font_size);
+        let name_width = text_run_width("Choir", em, false);
+        assert!(indent >= name_width + spec.instrument_name_offset + AKKOLADE_WIDTH);
+        let mut out = DisplayList::new(0);
+        let system = system(3);
+        let left = spec.margin_left + indent;
+        place_instrument_names(&mut out, &spec, &staffs, &system, left, true);
+        let boxes: Vec<(i32, i32, i32, i32)> = out
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::InstrumentName)
+            .filter_map(|item| item.bbox(&out))
+            .collect();
+        assert!(!boxes.is_empty());
+        assert!(
+            boxes.iter().all(|box_| box_.0 >= spec.margin_left),
+            "names must start inside the printable margin: {boxes:?}"
+        );
+        // One part hides the names (`hideInstrumentNameIfOneInstrument`) and
+        // leaves only the first-system indentation.
+        let one = vec![staff(0, 0, 1, false), staff(0, 0, 1, false)];
+        assert_eq!(system_left_indent(&spec, &one, false), 0);
     }
 
     #[test]

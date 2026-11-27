@@ -177,6 +177,11 @@ pub struct StyleSettings {
     pub frame_system_distance_sp: f64,
     /// Gap between an instrument name and the staff (`Sid::instrumentNameOffset`).
     pub instrument_name_offset_sp: f64,
+    /// Font sizes of the long and short instrument names
+    /// (`Sid::longInstrumentFontSize`, `Sid::shortInstrumentFontSize`,
+    /// 10 pt each in 4.7.4, `styledef.cpp:1065,1081`).
+    pub long_instrument_font_size: f64,
+    pub short_instrument_font_size: f64,
     /// Clearance required between two outlines that share an x range
     /// (`Sid::minVerticalDistance`, 0.5 sp). // `styledef.cpp:749`.
     pub min_vertical_distance_sp: f64,
@@ -295,6 +300,8 @@ impl StyleSettings {
             staff_lower_border_sp: 7.0,
             frame_system_distance_sp: 7.0,
             instrument_name_offset_sp: 1.0,
+            long_instrument_font_size: 10.0,
+            short_instrument_font_size: 10.0,
             // 4.7.4 defaults (`engraving/style/styledef.cpp:75-79,749-750`).
             min_vertical_distance_sp: 0.5,
             skyline_min_horizontal_clearance_sp: 0.25,
@@ -402,6 +409,12 @@ impl StyleSettings {
             "frameSystemDistance" => Self::set_positive(&mut self.frame_system_distance_sp, value),
             "instrumentNameOffset" => {
                 Self::set_positive(&mut self.instrument_name_offset_sp, value);
+            }
+            "longInstrumentFontSize" => {
+                Self::set_positive(&mut self.long_instrument_font_size, value)
+            }
+            "shortInstrumentFontSize" => {
+                Self::set_positive(&mut self.short_instrument_font_size, value);
             }
             "minVerticalDistance" => {
                 Self::set_positive(&mut self.min_vertical_distance_sp, value);

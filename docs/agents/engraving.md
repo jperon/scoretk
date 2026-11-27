@@ -1727,6 +1727,44 @@ on every staff. The visible fix is on the private page: all four staves of
 each system now share their bar-line and beat x, including the organ's two
 hands (`engrave-img/eng9/step5.png`, rendered from this tree). The one lost
 system break is reported, not excluded.
+
+## 17. Review of the private page: instrument names in the indent (2026-11-27)
+
+The short names "S A", "T B" and "Org" were cut by the left page edge: names
+were drawn at `margin_left - bracket - instrumentNameOffset` without reserving
+their width. `SystemLayout::layoutSystem` (`systemlayout.cpp:2082-2127`,
+`:2192-2207`) instead sets the system's left margin to the widest name plus
+`instrumentNameOffset` plus the brackets (and at least
+`firstSystemIndentationValue` on the first system), then right-aligns each
+name at that width. `decor::system_left_indent` now computes that value from
+the same Edwin advance table used to draw the names; both the line breaker
+and the page pass use it, so the shorter printable width moves the breaks too.
+Long and short instrument font sizes now come from the score's `<Style>`
+(`styledef.cpp:1065,1081`; 12 pt in the private score, 10 pt by default), and
+a single-part score hides the names (`hideInstrumentNameIfOneInstrument`,
+`styledef.cpp:543`).
+
+The oracle gained an "instrument-name glyphs left of the page margin" column:
+the margin is the viewBox width minus the staff lines' right edge, and each
+name path starting left of it is counted on both sides.
+
+| Metric (`oracle-eng9-review-base2` → `oracle-eng9-step6`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1603 (354/2 209) | 0.1689 (373/2 209) |
+| Measure widths within 0.1 sp | 81/394 | **89/394** |
+| Files with identical system breaks | 36/56 | 36/56 |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Instrument-name glyphs drawn (reference / ours) | 23 / 476 | 23 / **123** |
+| Instrument-name glyphs left of the page margin (reference / ours) | 2 / 418 | 2 / **12** |
+| Max bar-line x spread, sp (reference / ours) | 2.046 / 2.001 | 2.046 / 2.001 |
+
+On the private page all names are now fully inside the margin
+(`engrave-img/eng9/step6.png`). The page count grows from 7 to **8** because
+the faithful name/bracket indent removes printable width from every system;
+this is reported as a regression, not hidden by a metric. The 12 remaining
+clipped glyphs are all from corpus files whose long names still exceed the
+style-derived width; they stay in the denominator.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

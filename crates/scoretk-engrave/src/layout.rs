@@ -93,6 +93,10 @@ pub struct PageSpec {
     pub staff_lower_border: i32,
     pub frame_system_distance: i32,
     pub instrument_name_offset: i32,
+    /// Point sizes of the long and short instrument-name text styles
+    /// (`styledef.cpp:1065,1081`).
+    pub long_instrument_font_size: f64,
+    pub short_instrument_font_size: f64,
     /// // Port of `styledef.cpp:749` (`minVerticalDistance` 0.5 sp): clearance
     /// added once between two outlines that share an x range.
     pub min_vertical_distance: i32,
@@ -143,6 +147,8 @@ impl Default for PageSpec {
             staff_lower_border: 7 * SP,
             frame_system_distance: 7 * SP,
             instrument_name_offset: SP,
+            long_instrument_font_size: 10.0,
+            short_instrument_font_size: 10.0,
             min_vertical_distance: SP / 2,
             skyline_clearance: SP / 4,
             lyrics_pos_below: 3 * SP,
@@ -200,6 +206,8 @@ impl PageSpec {
             staff_lower_border: (style.staff_lower_border_sp * SP as f64) as i32,
             frame_system_distance: (style.frame_system_distance_sp * SP as f64) as i32,
             instrument_name_offset: (style.instrument_name_offset_sp * SP as f64) as i32,
+            long_instrument_font_size: style.long_instrument_font_size,
+            short_instrument_font_size: style.short_instrument_font_size,
             min_vertical_distance: (style.min_vertical_distance_sp * SP as f64) as i32,
             skyline_clearance: (style.skyline_min_horizontal_clearance_sp * SP as f64) as i32,
             lyrics_pos_below: (style.lyrics_pos_below_sp * SP as f64) as i32,
@@ -1744,14 +1752,10 @@ pub fn build_page_with_skylines(
         // instrument names, initial bar line) belong to that staff's skyline.
         let system_start = out.items.len();
         let mut staff_starts = Vec::new();
-        // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
-        // system after a title frame starts `firstSystemIndentationValue`
-        // to the right and ends at the same right margin.
-        let indent = if system.first == 0 {
-            spec.first_system_indent
-        } else {
-            0
-        };
+        // // Port of `SystemLayout::layoutSystem` (`systemlayout.cpp:2082-2127`):
+        // the system's left margin reserves the instrument name and bracket
+        // widths; the first system also honours `firstSystemIndentationValue`.
+        let indent = crate::decor::system_left_indent(spec, staffs, system.first == 0);
         let left = spec.margin_left + indent;
         let staff_width = spec.printable_width - indent;
         // // Port of `MeasureLayout`/`measurelayout.cpp`: measure numbers are
