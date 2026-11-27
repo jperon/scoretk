@@ -75,8 +75,14 @@ fn xml_full_support_writes_no_private_or_hidden_carrier() {
         write(&score, Format::MusicXml, &options).expect("full-support MusicXML"),
     )
     .expect("UTF-8");
-    assert!(xml.contains("<lyric"), "native lyric carrier missing: {xml}");
-    assert!(xml.contains("smufl=\"chant"), "SMuFL carrier missing: {xml}");
+    assert!(
+        xml.contains("<lyric"),
+        "native lyric carrier missing: {xml}"
+    );
+    assert!(
+        xml.contains("smufl=\"chant"),
+        "SMuFL carrier missing: {xml}"
+    );
     for dump in ["gabc", "<other-direction", "<other-technical"] {
         assert!(!xml.contains(dump), "{dump} is a private carrier: {xml}");
     }

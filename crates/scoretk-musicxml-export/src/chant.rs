@@ -80,11 +80,7 @@ pub(crate) fn field(key: char, value: &str) -> String {
 ///
 /// `<other-direction>` est le point d'extension normalisé pour une direction
 /// que MusicXML ne décrit pas (XSD 4.0, `complexType other-direction`).
-pub(crate) fn write_header_directions(
-    out: &mut Out,
-    gregorian: &Gregorian,
-    private: bool,
-) {
+pub(crate) fn write_header_directions(out: &mut Out, gregorian: &Gregorian, private: bool) {
     if !private {
         return;
     }

@@ -148,13 +148,7 @@ pub(super) fn write(
 /// `sourceDesc/source/bibl/p` (*Guidelines* ch. 3, structure validée par
 /// `mei-all-5.1.rng`). `@n` garde l'ordre des champs GABC pour la lecture
 /// inverse ; aucun `<annot type="gabc-header">` n'est nécessaire.
-fn write_head(
-    xml: &mut XmlWriter,
-    gregorian: &Gregorian,
-    date: &str,
-    tokens: bool,
-    private: bool,
-) {
+fn write_head(xml: &mut XmlWriter, gregorian: &Gregorian, date: &str, tokens: bool, private: bool) {
     // `@label` est un attribut MEI standard (`att.labelled`, `data.string`) :
     // il transporte les commentaires, lignes vides, terminateurs `;;` et le
     // préfixe de notation. En `full_support` il est retiré : l'en-tête n'a pas
@@ -514,7 +508,13 @@ fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
                     ],
                 );
             }
-            write_nc(xml, note, &current_clef, index > 0 && !starts[index], private);
+            write_nc(
+                xml,
+                note,
+                &current_clef,
+                index > 0 && !starts[index],
+                private,
+            );
         }
         xml.end_element();
         if tokens {
@@ -596,13 +596,7 @@ fn has_space(glyph: &str) -> bool {
     })
 }
 
-fn write_nc(
-    xml: &mut XmlWriter,
-    note: &GregorianNote,
-    clef: &str,
-    connected: bool,
-    private: bool,
-) {
+fn write_nc(xml: &mut XmlWriter, note: &GregorianNote, clef: &str, connected: bool, private: bool) {
     let (pname, oct) = neumes::nc_position(note.letter, clef);
     let mut attributes = vec![
         ("pname".to_owned(), pname.to_string()),
