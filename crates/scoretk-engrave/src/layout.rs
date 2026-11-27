@@ -1382,19 +1382,21 @@ pub(crate) fn place_lyrics(
 /// `lyricsLineStartX`/`lyricsLineEndX` (`:745-830`): a line runs from the
 /// start syllable's right edge plus one pad to the next syllable's left edge
 /// minus one pad.
+#[allow(clippy::too_many_arguments)] // page-local helper: list, line geometry, style and placement
 fn plan_lyric_lines(
+    out: &mut DisplayList,
     events: &[(i32, &Atom)],
     staff_y: i32,
     right: i32,
     em: i32,
     spec: &PageSpec,
     offsets: &[i32],
-) -> Vec<DisplayItem> {
+    part: usize,
+) {
     // `styledef.cpp:82` (`lyricsDashMaxDistance` 16 sp, not overridden by the
     // private score): one dash per 16 sp of gap at most, rounded down, or up
     // when the first and last gaps are half (`lyricslayout.cpp:315-316`).
     const DASH_MAX_DISTANCE: i32 = 16 * SP;
-    let mut items = Vec::new();
     let first_line = staff_y + STAFF_HEIGHT + spec.lyrics_pos_below;
     for (index, (x, event)) in events.iter().enumerate() {
         for lyric in &event.lyrics {
@@ -1449,14 +1451,19 @@ fn plan_lyric_lines(
                 let end = (end - spec.lyrics_melisma_pad).max(start + LYRIC_LINE_WIDTH);
                 // `layoutMelismaLine` adds one continuous LineF. A melisma
                 // overrides the hyphen of a `Begin`/`Middle` syllable: there
-                // is only one separator per syllable.
-                items.push(DisplayItem::rect(
+                // is only one separator per syllable. The line is drawn for
+                // the starting syllable: it inherits that syllable's note
+                // identity, not the last measure visited on this staff.
+                out.set_measure(event.id.measure as usize, part);
+                out.set_note(Some(event.id));
+                out.push(DisplayItem::rect(
                     ItemKind::Lyrics,
                     start,
                     y,
                     end - start,
                     LYRIC_LINE_WIDTH,
                 ));
+                out.set_note(None);
                 continue;
             }
 
@@ -1524,10 +1531,15 @@ fn plan_lyric_lines(
             // `:341-359`: `firstAndLastGapAreHalf` (true by default) leaves
             // half a step at each end and centres every dash in its step.
             let step = length / count;
+            // Each centred dash belongs to the syllable that starts the
+            // word: it carries the same measure, staff and note identity as
+            // the syllable's text glyphs (`SourceRef` is stamped by `push`).
+            out.set_measure(event.id.measure as usize, part);
+            out.set_note(Some(event.id));
             let mut x_dash = 0;
             for dash in 0..count {
                 x_dash += if dash == 0 { step / 2 } else { step };
-                items.push(DisplayItem::rect(
+                out.push(DisplayItem::rect(
                     ItemKind::Lyrics,
                     left + x_dash - dash_width / 2,
                     y,
@@ -1535,9 +1547,9 @@ fn plan_lyric_lines(
                     spec.lyrics_dash_width,
                 ));
             }
+            out.set_note(None);
         }
     }
-    items
 }
 
 /// Title-frame texts (`VBox` in the .mscx, `score.engraving.credits` in the
@@ -2068,6 +2080,9 @@ fn place_event(
                 0
             };
             if rest_merged {
+                // The surviving rest keeps its own identity; the skipped
+                // duplicate must not leak it to the following bar line.
+                out.set_note(None);
                 return;
             }
             let name = rest_name(duration);
@@ -2413,7 +2428,10 @@ pub fn build_page_with_skylines(
                 // syllable half a space right of its segment (and of the
                 // hyphen/ melisma lines planned from `event_x`).
                 // A syllable is a note-level item: it carries the identity
-                // of the chord/rest it is attached to.
+                // of the chord/rest it is attached to. Lyrics are drawn after
+                // every measure of the staff, so the measure must also be
+                // reset from the syllable's own identity.
+                out.set_measure(event.id.measure as usize, part);
                 out.set_note(Some(event.id));
                 place_lyrics(
                     &mut out,
@@ -2426,9 +2444,19 @@ pub fn build_page_with_skylines(
                 );
                 out.set_note(None);
             }
-            for item in plan_lyric_lines(&events, y, left + right, lyrics_em, spec, &offsets) {
-                out.push(item);
-            }
+            plan_lyric_lines(
+                &mut out,
+                &events,
+                y,
+                left + right,
+                lyrics_em,
+                spec,
+                &offsets,
+                part,
+            );
+            // `plan_lyric_lines` stamps each dash with its syllable's measure;
+            // restore the staff's last measure for the end bar line.
+            out.set_measure(staff_atoms[system.first + system.count - 1].ordinal, part);
             // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
             // line is not drawn at the beginning of a system (the 4.7.4 SVG
             // has none). Repeats and double/final start bar lines are drawn.
@@ -2521,6 +2549,21 @@ mod tests {
 
     fn page_count(atoms: &[MeasureAtom], spec: &PageSpec) -> usize {
         crate::breaking::page_count(&crate::breaking::compute(atoms, spec))
+    }
+
+    /// The page pass pushes lyric lines with the starting syllable's source
+    /// reference; the geometry-only tests below just read those items back.
+    fn plan_lyric_lines_items(
+        events: &[(i32, &Atom)],
+        staff_y: i32,
+        right: i32,
+        em: i32,
+        spec: &PageSpec,
+        offsets: &[i32],
+    ) -> Vec<DisplayItem> {
+        let mut out = DisplayList::new(0);
+        plan_lyric_lines(&mut out, events, staff_y, right, em, spec, offsets, 0);
+        out.items
     }
 
     fn atom(line: i32) -> MeasureAtom {
@@ -2701,7 +2744,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 1)
         };
         let events = vec![(10 * SP, &event), (16 * SP, &end)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 20 * SP, em, &spec, &[]);
         assert_eq!(lines.len(), 1);
         let dash_y = lines[0].bbox(&out).unwrap().1;
         assert!(
@@ -2745,7 +2788,7 @@ mod tests {
         ];
         let spec = PageSpec::default();
         let em = 2 * SP;
-        let lines = plan_lyric_lines(&events, 5 * SP, 30 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 30 * SP, em, &spec, &[]);
         // "Mi" gets one hyphen, the melisma of "nuit" one continuous
         // extender (which replaces its hyphen), "chré" one hyphen. Without
         // "tien" the last syllable would have no dash at all.
@@ -2774,7 +2817,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 2)
         };
         let events = vec![(16 * SP, &melisma_begin), (25 * SP, &fourth)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 30 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 30 * SP, em, &spec, &[]);
         assert_eq!(lines.len(), 1);
         assert!(rect(&lines[0]).2 > 2 * SP);
         // `LyricsLineSegment::baseLineShift`: ratio * xHeight above the
@@ -2875,7 +2918,7 @@ mod tests {
             .collect();
         let no_right = glyphs[..2].iter().map(|box_| box_.2).max().unwrap();
         let el_left = glyphs[2..].iter().map(|box_| box_.0).min().unwrap();
-        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 24 * SP, em, &spec, &[]);
         assert_eq!(lines.len(), 1);
         let (x, _, w, _) = match lines[0].geometry {
             Geometry::Rect { x, y, w, h } => (x, y, w, h),
@@ -2917,7 +2960,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 1)
         };
         let events = vec![(10 * SP, &first), (18 * SP, &second)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 24 * SP, em, &spec, &[]);
         assert_eq!(lines.len(), 1, "one syllable pair gets one hyphen");
         let (x, w) = match lines[0].geometry {
             Geometry::Rect { x, w, .. } => (x, w),
@@ -2945,7 +2988,7 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 1)
         };
         let events = vec![(10 * SP, &first), (18 * SP, &printed)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 24 * SP, em, &spec, &[]);
         assert!(lines.is_empty(), "a literal hyphen must not be drawn twice");
     }
 
@@ -2979,7 +3022,7 @@ mod tests {
             lyrics_dash_max: 4 * SP / 5,
             ..PageSpec::default()
         };
-        let lines = plan_lyric_lines(&events, 5 * SP, 44 * SP, 2 * SP, &spec, &[]);
+        let lines = plan_lyric_lines_items(&events, 5 * SP, 44 * SP, 2 * SP, &spec, &[]);
         assert_eq!(lines.len(), 3, "one dash per 16 sp of gap");
         for item in &lines {
             let Geometry::Rect { w, .. } = item.geometry else {
@@ -3126,6 +3169,7 @@ mod tests {
             line,
             head: "noteheadBlack",
             accidental: None,
+            id: NoteIdentity::default(),
         };
         let chord_atom = ChordAtom {
             duration: 4,

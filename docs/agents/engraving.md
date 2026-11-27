@@ -2501,6 +2501,17 @@ all their pages and checks that every `ItemKind::Notehead` id is a `<note id>`
 of `write_playback`'s MusicXML and that every timemap attack has a notehead.
 Unit tests cover the packing/unpacking and the GABC-style source suffix.
 
+After rebasing onto the page-2 fixes of §§28–31, the same test file also
+pins the identities of the new code paths: rests merged by
+`plan_rest_merges` and moved by `plan_rest_offsets` keep the surviving note
+id, and every centred hyphen/melisma line carries the starting syllable's
+measure, staff and note id. Two gaps were found and closed: `place_event`
+left a skipped rest's identity on the following bar line, and lyrics drawn
+after the measure loop inherited the staff's last measure instead of their
+own source measure. Geometry is untouched: removing the `<g>` tags from all
+116 oracle pages of the rebased tree gives the SVGs of `dev` byte for byte,
+and the oracle of §6 stays at 0 failures / 0.1802 within 0.1 sp.
+
 ### 32.2 Structured SVG
 
 `scoretk-render-svg` now wraps the unchanged item stream in:
