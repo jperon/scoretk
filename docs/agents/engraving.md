@@ -968,3 +968,35 @@ within 0.5 sp. The remaining causes are the title frame being 7 sp too tall
 on some files, horizontal minimum widths (P2 debt) and the lack of
 spacers/skylines in the vertical spread pass (P4 work). No file or failure
 is excluded from these figures.
+
+## 12. Review of the private choral score (eng6, 2026-11-27)
+
+Five defects were reported by comparing page 1 of our render with MuseScore's
+4.7.4 PNG. The private score is never copied into the repository; only the
+final before/after/reference images live in the external scratchpad
+(`engrave-img/eng6`). Steps are committed separately, each with an oracle
+measurement before and after. The baseline oracle of step 1 (56 files) is
+identical to eng5: 385/2771 elements within 0.1 sp, 69/192 measure widths,
+34/56 system breaks, 53/56 page counts, 48/57 page-break patterns, 19/198
+staff tops, 684 stems.
+
+### 12.1 Compound time signatures (step 1)
+
+`place_time_sig` skipped every value above 9, so 12/8 drew only the "8".
+It now emits one SMuFL digit per decimal character, with the run widths and
+heights from the Leland advances/bboxes and the two runs centred around the
+middle staff line (`tlayout.cpp:6044-6185`, `utils.cpp:954-970`). A unit test
+covers 12/8, 6/8 and 3/2; synthetic scores of those three signatures were
+also rendered, and 12/8 (the only one MuseScore accepts with the source
+measure durations used) was compared with a 4.7.4 SVG reference. On the
+private score page 1 the signature now reads "12/8" instead of a lone "8".
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Elements within 0.1 sp (56 files) | 385/2771 | 385/2771 |
+| Measure widths within 0.1 sp | 69/399 | 69/399 |
+| Files with identical system breaks | 34/56 | 34/56 |
+| Files with the oracle page count | 53/56 | 53/56 |
+
+Time signatures are not among the oracle's extracted elements, so no figure
+changes; the visual comparison is the evidence for this step.

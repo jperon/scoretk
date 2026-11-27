@@ -790,28 +790,90 @@ fn cancel_glyph(out: &mut DisplayList, line: i32, x: i32, y: i32) -> i32 {
         .unwrap_or(SP)
 }
 
-/// // Port of `timesig.cpp` / `tdraw.cpp:3137`: digits are stacked in the
-/// upper and lower halves of the staff. `TimeSigType::FourFour` uses the
-/// common-time glyph; P1 keeps digits, the glyph choice arrives with P2.
-fn place_time_sig(out: &mut DisplayList, numerator: u8, denominator: u8, x: i32, y: i32) {
-    for (value, top) in [(numerator, true), (denominator, false)] {
-        if value > 9 {
+/// SMuFL name of one decimal digit (`timeSigSymIdsFromString`,
+/// `engraving/dom/utils.cpp:954-970`).
+fn time_sig_digit(value: u8) -> &'static str {
+    match value {
+        0 => "timeSig0",
+        1 => "timeSig1",
+        2 => "timeSig2",
+        3 => "timeSig3",
+        4 => "timeSig4",
+        5 => "timeSig5",
+        6 => "timeSig6",
+        7 => "timeSig7",
+        8 => "timeSig8",
+        _ => "timeSig9",
+    }
+}
+
+fn decimal_digits(mut value: u8) -> alloc::vec::Vec<u8> {
+    if value == 0 {
+        return alloc::vec![0];
+    }
+    let mut digits = alloc::vec::Vec::new();
+    while value > 0 {
+        digits.push(value % 10);
+        value /= 10;
+    }
+    digits.reverse();
+    digits
+}
+
+/// Advance of a glyph in fixed staff spaces (the font's `hmtx` advance).
+fn glyph_advance(name: &str) -> i32 {
+    glyph(name)
+        .map(|item| units_to_fixed(item.advance))
+        .unwrap_or(SP)
+}
+
+/// Width and height of a run of time-signature digits, as MuseScore's
+/// `font->bbox(SymIdList, mag)` does (`tlayout.cpp:6154-6172`): the run's
+/// width is the advances of all but the last glyph plus that glyph's own ink
+/// width; its height is the tallest digit's ink height.
+fn time_sig_rect(value: u8) -> (i32, i32) {
+    let digits = decimal_digits(value);
+    let mut width = 0;
+    let mut height = 0;
+    for (index, digit) in digits.iter().enumerate() {
+        let name = time_sig_digit(*digit);
+        let Some(item) = glyph(name) else {
             continue;
-        }
-        let name = match value {
-            0 => "timeSig0",
-            1 => "timeSig1",
-            2 => "timeSig2",
-            3 => "timeSig3",
-            4 => "timeSig4",
-            5 => "timeSig5",
-            6 => "timeSig6",
-            7 => "timeSig7",
-            8 => "timeSig8",
-            _ => "timeSig9",
         };
-        let digit_y = if top { y + HALF_SP } else { y + 5 * HALF_SP };
-        out.glyph(ItemKind::TimeSig, name, x, digit_y);
+        width += if index + 1 < digits.len() {
+            units_to_fixed(item.advance)
+        } else {
+            units_to_fixed(item.bbox[2] - item.bbox[0])
+        };
+        height = height.max(units_to_fixed(item.bbox[3] - item.bbox[1]));
+    }
+    (width, height)
+}
+
+/// // Port of `TLayout::layoutTimeSig` (`tlayout.cpp:6044-6185`) and
+/// `TDraw::draw(const TimeSig*)` (`tdraw.cpp:3137-3153`): every decimal digit
+/// becomes its own SMuFL symbol, the two runs are centred on one another, and
+/// their origins sit symmetrically around the middle staff line. `numDist`
+/// (`timeSigNormalNumDist`) is zero by default (`styledef.cpp:203`).
+/// The old code skipped values above 9, leaving a lone "8" for 12/8.
+fn place_time_sig(out: &mut DisplayList, numerator: u8, denominator: u8, x: i32, y: i32) {
+    let (num_width, num_height) = time_sig_rect(numerator);
+    let (den_width, den_height) = time_sig_rect(denominator);
+    let middle = 2 * SP; // five lines, line distance 1 (`tlayout.cpp:6097`)
+    let (num_x, den_x) = if num_width >= den_width {
+        (0, (num_width - den_width) / 2)
+    } else {
+        ((den_width - num_width) / 2, 0)
+    };
+    let num_y = middle - num_height / 2;
+    let den_y = middle + den_height / 2;
+    for (value, offset, origin_y) in [(numerator, num_x, num_y), (denominator, den_x, den_y)] {
+        let mut pen = x + offset;
+        for digit in decimal_digits(value) {
+            let name = time_sig_digit(digit);
+            out.glyph(ItemKind::TimeSig, name, pen, y + origin_y);
+            pen += glyph_advance(name);
+        }
     }
 }
 
@@ -1462,6 +1524,36 @@ mod tests {
             key_fifths: 0,
             mm_rest_count: 1,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn time_signature_draws_every_digit_of_a_compound_meter() {
+        // `tlayout.cpp:6154-6185`: all digits of 12 are emitted above the 8,
+        // centred on it and stacked around the middle staff line.
+        let mut out = DisplayList::new(0);
+        place_time_sig(&mut out, 12, 8, 4 * SP, 5 * SP);
+        let time: alloc::vec::Vec<_> = out
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::TimeSig)
+            .collect();
+        assert_eq!(time.len(), 3);
+        let (_, upper_y) = time[0].origin();
+        let (_, lower_y) = time[2].origin();
+        assert!(
+            upper_y > 5 * SP + SP / 2 && upper_y < 5 * SP + 2 * SP,
+            "upper={upper_y} lower={lower_y}"
+        );
+        assert!(lower_y > upper_y + SP);
+        let (x1, _) = time[0].origin();
+        let (x2, _) = time[1].origin();
+        assert!(x2 > x1, "the digits of the numerator must not overlap");
+        // 6/8 and 3/2 stay one digit per row.
+        for (numerator, denominator) in [(6, 8), (3, 2)] {
+            let mut out = DisplayList::new(0);
+            place_time_sig(&mut out, numerator, denominator, 4 * SP, 5 * SP);
+            assert_eq!(out.count(ItemKind::TimeSig), 2);
         }
     }
 
