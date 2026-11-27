@@ -35,7 +35,8 @@ use scoretk_core::model::{
     SegmentItem, SegmentType, StemDirection, Transpose,
 };
 
-use scoretk_smufl::{glyph, units_to_fixed};
+use scoretk_core::model::NoteHeadGroup;
+use scoretk_smufl::{anchor, glyph, units_to_fixed};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
@@ -235,18 +236,76 @@ fn clef_name(clef: ClefType) -> &'static str {
     }
 }
 
-fn head_name(head: NoteHeadType, duration: DurationType) -> &'static str {
+/// // Port of `engraving/dom/note.cpp`'s `headGroup`/`headType` → SMuFL
+/// `SymId` table (`noteheadXBlack`, `noteheadDiamondBlack`, …). The pivot
+/// model keeps the group and the fill separately (`NoteHeadGroup`,
+/// `NoteHeadType`); MuseScore's `Note::sym()` combines them.
+fn head_name(
+    head: NoteHeadType,
+    group: &NoteHeadGroup,
+    duration: DurationType,
+) -> &'static str {
     let effective = if head == NoteHeadType::Auto {
         duration.head_type()
     } else {
         head
     };
-    match effective {
-        NoteHeadType::Breve => "noteheadDoubleWhole",
-        NoteHeadType::Whole => "noteheadWhole",
-        NoteHeadType::Half => "noteheadHalf",
-        _ => "noteheadBlack",
-    }
+    let filled = !matches!(
+        effective,
+        NoteHeadType::Breve | NoteHeadType::Whole | NoteHeadType::Half
+    );
+    let base = match group {
+        NoteHeadGroup::Normal => match effective {
+            NoteHeadType::Breve => "noteheadDoubleWhole",
+            NoteHeadType::Whole => "noteheadWhole",
+            NoteHeadType::Half => "noteheadHalf",
+            _ => "noteheadBlack",
+        },
+        NoteHeadGroup::Cross => "noteheadXBlack",
+        NoteHeadGroup::Plus => "noteheadPlusBlack",
+        NoteHeadGroup::XCircle => "noteheadCircleX",
+        NoteHeadGroup::WithX => "noteheadRoundWhiteDoubleSlashed",
+        NoteHeadGroup::BrevisAlt => "noteheadDoubleWholeSquare",
+        NoteHeadGroup::TriangleUp => {
+            if filled { "noteheadTriangleUpBlack" } else { "noteheadTriangleUpWhite" }
+        }
+        NoteHeadGroup::TriangleDown => {
+            if filled { "noteheadTriangleRoundDownBlack" } else { "noteheadTriangleRoundDownWhite" }
+        }
+        NoteHeadGroup::Slashed1 => {
+            if filled { "noteheadSlashedBlack1" } else { "noteheadSlashedHalf1" }
+        }
+        NoteHeadGroup::Slashed2 => {
+            if filled { "noteheadSlashedBlack2" } else { "noteheadSlashedHalf2" }
+        }
+        NoteHeadGroup::Diamond | NoteHeadGroup::DiamondOld => match effective {
+            NoteHeadType::Breve => "noteheadDiamondDoubleWhole",
+            NoteHeadType::Whole => "noteheadDiamondWhole",
+            NoteHeadType::Half => "noteheadDiamondHalf",
+            _ => "noteheadDiamondBlack",
+        },
+        NoteHeadGroup::Circled | NoteHeadGroup::CircledLarge => "noteheadCircledXLarge",
+        NoteHeadGroup::LargeArrow | NoteHeadGroup::LargeDiamond => "noteheadTriangleRightBlack",
+        NoteHeadGroup::HeavyCross | NoteHeadGroup::HeavyCrossHat => "noteheadClusterSquareBlack",
+        NoteHeadGroup::Slash => "noteheadSlashedBlack1",
+        NoteHeadGroup::Do | NoteHeadGroup::Re | NoteHeadGroup::Mi | NoteHeadGroup::Fa
+        | NoteHeadGroup::Sol | NoteHeadGroup::La | NoteHeadGroup::Ti => {
+            if filled { "noteheadTriangleUpBlack" } else { "noteheadTriangleUpWhite" }
+        }
+        NoteHeadGroup::Other(_) => "noteheadBlack",
+    };
+    if glyph(base).is_some() { base } else { "noteheadBlack" }
+}
+
+/// SMuFL stem anchor y of a head, in font units, up-positive.
+/// // Port of `stemlayout.cpp:60-63, 220-228` (`extraHeight`, `stemPosX`):
+/// MuseScore reads `stemUpSE`/`stemDownNW` from the head's metadata.
+fn stem_anchor_units(name: &str, up: bool) -> i16 {
+    let anchor_name = if up { "stemUpSE" } else { "stemDownNW" };
+    glyph(name)
+        .and_then(|g| anchor(g, anchor_name))
+        .map(|a| a.1)
+        .unwrap_or(40)
 }
 
 fn accidental_name(kind: AccidentalType) -> Option<&'static str> {
@@ -401,10 +460,15 @@ fn stem_up(lines: &[i32], explicit: StemDirection, multi_voice: bool, track: u32
 /// `chordHeight / 4 * sp + stemLength / 4 * sp`, to which the middle-line
 /// extension of `:122-159` is added. Beams and tremolos are P3.
 /// Hooks and stem shortening follow `stemlayout.cpp:326-397` below.
-fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
+fn stem_length(lines: &[i32], heads: &[&str], up: bool, duration: u8) -> i32 {
     if lines.is_empty() {
         return 3584;
     }
+    // // Port of `stemlayout.cpp:60-63, 345-373`: the head's SMuFL stem
+    // anchor adds to `shortestStem` (2.5 sp * 4 quarter spaces).
+    let anchor_head = if up { heads.first() } else { heads.last() };
+    let anchor_units = anchor_head.map_or(40, |name| stem_anchor_units(name, up));
+    let min_qs = 10 + (i32::from(anchor_units).abs() * 4 / 250).max(0);
     let top = *lines.iter().min().unwrap();
     let bottom = *lines.iter().max().unwrap();
     let chord_height_qs = (bottom - top) * 2;
@@ -439,9 +503,9 @@ fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
         let mut reduction = REDUCTIONS[half_spaces];
         if duration >= 5 {
             // Traditional flag (`useStraightNoteFlags` false, styledef.cpp:216).
-            reduction = reduction.min(1);
+            reduction = reduction.min(2);
         }
-        stem_qs = (stem_qs - reduction).max(10);
+        stem_qs = (stem_qs - reduction).max(min_qs);
     }
     let mut final_qs = chord_height_qs + stem_qs;
     // // Port of `stemlayout.cpp:122-159`: a normal-sized chord's stem is
@@ -600,7 +664,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                     if !note.visible {
                                         continue;
                                     }
-                                    let head = head_name(note.head, cr.duration.kind);
+                                    let head = head_name(note.head, &note.head_group, cr.duration.kind);
                                     let accidental = note
                                         .accidental
                                         .filter(|a| a.visible)
@@ -629,12 +693,13 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             }
                             notes.sort_by_key(|note| note.line);
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
+                            let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
                             let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
                             let chord_atom = ChordAtom {
                                 duration,
                                 dots: cr.duration.dots,
                                 stem_up: up,
-                                stem_len: stem_length(&lines, up, duration),
+                                stem_len: stem_length(&lines, &heads, up, duration),
                                 notes,
                             };
                             events.push(Atom {
@@ -789,8 +854,8 @@ mod tests {
 
     #[test]
     fn stem_length_is_at_least_shortest() {
-        assert_eq!(stem_length(&[4], true, 4), 3072); // one stem shortening
-        assert_eq!(stem_length(&[0], true, 4), 2560); // shortestStem
+        assert_eq!(stem_length(&[4], &["noteheadBlack"], true, 4), 3072); // one stem shortening
+        assert_eq!(stem_length(&[0], &["noteheadBlack"], true, 4), 2560); // shortestStem
     }
 
     #[test]
@@ -798,10 +863,10 @@ mod tests {
         // `stemlayout.cpp:122-159`: a stem starting 2.5 sp above the top
         // line is extended by 3.5 sp so that its far end reaches the middle
         // line. Without the extension it would stop 1.5 sp short of it.
-        assert_eq!(stem_length(&[-10], false, 4), 28 * 256);
+        assert_eq!(stem_length(&[-10], &["noteheadBlack"], false, 4), 28 * 256);
         // A stem starting 2 sp below the bottom line gains 0.5 sp.
-        assert_eq!(stem_length(&[12], true, 4), 16 * 256);
+        assert_eq!(stem_length(&[12], &["noteheadBlack"], true, 4), 16 * 256);
         // A note inside the staff only gets the shortening rule: 3 sp.
-        assert_eq!(stem_length(&[4], false, 4), 12 * 256);
+        assert_eq!(stem_length(&[4], &["noteheadBlack"], false, 4), 12 * 256);
     }
 }

@@ -29,7 +29,7 @@
 use alloc::vec::Vec;
 
 use scoretk_core::model::Score;
-use scoretk_smufl::{glyph, units_to_fixed};
+use scoretk_smufl::{anchor, glyph, units_to_fixed};
 
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, MeasureAtom};
 use crate::display::{DisplayItem, DisplayList, Geometry, ItemKind};
@@ -299,6 +299,25 @@ fn place_ledger_lines(out: &mut DisplayList, head_x: i32, head_w: i32, line: i32
     }
 }
 
+/// // Port of `tlayout.cpp:5180-5201` and `stemlayout.cpp:220-228`: the
+/// near end of a stem is the head's SMuFL stem anchor, not the note line.
+/// The constant is calibrated against the 4.7.4 SVG for a normal head
+/// (`stemUpSE` 40 / `stemDownNW` -42 font units); other heads shift by the
+/// difference of their own anchors.
+fn stem_anchor_offset(head: &str, up: bool) -> i32 {
+    let (name, baseline) = if up {
+        ("stemUpSE", 40)
+    } else {
+        ("stemDownNW", -42)
+    };
+    let units = glyph(head)
+        .and_then(|g| anchor(g, name))
+        .map(|a| i32::from(a.1))
+        .unwrap_or(baseline);
+    let offset = STEM_ANCHOR_OFFSET + (units - baseline) * 1024 / 250;
+    if up { -offset } else { offset }
+}
+
 fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     for note in &chord.notes {
         let ny = y + note.line * HALF_SP;
@@ -365,11 +384,15 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     // centre. SMuFL anchor y is up-positive; our page coordinates are
     // down-positive, hence the sign flip. `stemlayout.cpp:227-242`
     // (`StemLayout::stemPos`) supplies the horizontal side of the stem.
-    let anchor_y = if chord.stem_up {
-        -STEM_ANCHOR_OFFSET
+    let anchor_head = if chord.stem_up {
+        chord.notes.first()
     } else {
-        STEM_ANCHOR_OFFSET
+        chord.notes.last()
     };
+    let anchor_y = stem_anchor_offset(
+        anchor_head.map_or("noteheadBlack", |note| note.head),
+        chord.stem_up,
+    );
     // The far end stays at `note ± stemLength`; only the notehead end moves
     // to the anchor (`tlayout.cpp:5198-5201` computes y2 independently).
     let (sy, ey) = if chord.stem_up {

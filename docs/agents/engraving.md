@@ -650,3 +650,24 @@ folded like MuseScore's displayed measures. `userStretch` is not a cause in
 this corpus: no `.mscx` contains `<stretch>`; the remaining deficits are
 text/harmony-driven segment widths (P4), multi-voice stems (P3) and a few
 courtesy-header cases.
+
+### 9.15 Stem anchors per notehead (step 8, 2026-11-27)
+
+Special noteheads no longer all render as `noteheadBlack`: `NoteHeadGroup`
+is mapped to the corresponding SMuFL head, and each head's `stemUpSE` /
+`stemDownNW` anchor shifts the drawn stem end and `shortestStem`
+(`stemlayout.cpp:60-63, 220-228, 345-373`; `tlayout.cpp:5180-5201`). The
+shortening cap for traditional flags was widened to two quarter spaces to
+match the measured 4.7.4 lengths.
+
+| Metric | Before | After | Gate |
+| --- | ---: | ---: | --- |
+| Stem-length agreement (389 matched stems) | 0.6967 | **0.7404** | ≥ 0.90 — failed |
+| Stem length excluding the three beam-heavy files (352 stems) | — | 0.7727 | reported for context only |
+| Measure widths within 0.1 sp | 0.3750 | 0.3750 | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+Beams and grace notes are P3 work (`Beam-CrossM1`, `testTuplets8`,
+`copypaste_tuplet_01`); the second figure above is reported alongside the
+first, never in place of it. The remaining non-beam deficits are mostly
+0.25–0.5 sp shortening differences in multi-voice and lyric-bearing scores.
