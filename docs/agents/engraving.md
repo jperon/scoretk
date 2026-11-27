@@ -231,6 +231,7 @@ compiled or executed from the extraction. It holds
 `rendering/score/` (105 files), `style/` and, as a transitive dependency of
 `SystemLayout`, `infrastructure/skyline.{h,cpp}`: 56 396 lines in total. The
 5.0 snapshot `ref-musescore/` has no `src/engraving/rendering/` directory.
+The eng7 follow-up measurements (stems, bar lines, voices, lyrics) are in §13.
 
 ### 9.1 MuseScore layout classes → our stages
 
@@ -1119,3 +1120,97 @@ passes: default MusicXML/MuseScore conversions are byte-identical to the
 
 Credits and text lines are not extracted by the geometric oracle; the
 visual comparison of the private header is the evidence for this step.
+
+## 13. eng7: stem, barline and voice follow-up (2026-11-27)
+
+The private score is still read only from its absolute path; only the page-1
+PNG files below leave the scratchpad. The baseline oracle of this campaign is
+`/tmp/.../scratchpad/oracle-eng7-base`: 56 files, 0 failures, 2 771 elements,
+384 within 0.1 sp, 0.6550 stem-length agreement (684 matched stems), 69/399
+measure widths, 34/56 system breaks, 53/56 page counts, 48/58 page-break
+patterns and 19/198 staff tops. Failures and unmatched elements remain in
+every denominator. The reference page is `engrave-img/eng7/ref.png`; the
+before render is `engrave-img/eng7/before.png`.
+
+### 13.1 Stem creation and length (step 1)
+
+`has_stem` now follows `TDuration::hasStem` (`dom/durationtype.cpp:222-241`)
+exactly: the long note carries a stem, breve and whole (including a dotted
+whole) do not. `stem_length` ports `StemLayout::calcDefaultStemLength`
+(`rendering/score/stemlayout.cpp:42-160`) with its beam-length addition
+(`:326-342`), the beam-count reduction table (`:345-397`), the beamed minimum
+(`:415-471`) and the `minStaffOverlap` target (`:165-182`). The hook cap is
+kept at **two** quarter spaces, not the nominal one: a trial with the nominal
+cap and the optical adjustment cost seven matched stems on `linked-ties`
+(6→4) and `voiceswitching` (40→34) while gaining one on `changevisibility`
+(3→4); both were dropped. Tests pin the duration table and the four-line
+stem-length cases.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Stem-length agreement (684 stems) | 0.6550 | 0.6550 |
+| Within 0.1 sp, both axes | 0.1386 (384/2771) | 0.1386 (384/2771) |
+| Measure widths | 69/399 | 69/399 |
+| System breaks | 34/56 | 34/56 |
+
+The private page is byte-identical for its stems: the visible "missing"
+stems are the dotted whole/chord heads whose reference stems are also absent
+(`ref-1.svg` has no `Stem` at their x), and the short-looking stems of the
+lower voices belong to measures pushed into the neighbouring system. Root
+cause of the crowding is still the page geometry (three systems on page 1
+against four in 4.7.4), not a missing `Chord::createStem` call.
+
+### 13.2 End-of-measure spacing (step 2, reverted)
+
+Adding a trailing `barNoteDistance` to the last segment's width, as suggested
+by `horizontalspacing.cpp:1039,1195,1304-1307`, **regressed** every horizontal
+figure: measure widths 69/399 → 56/398, system breaks 34/56 → 33/56, elements
+384/2771 → 362/2771, page-break patterns 48/58 unchanged. The segment's
+`minRight()` already contains that margin in MuseScore; adding it again
+stretches every measure. The experiment was reverted and is not committed;
+the last segment and bar line are at the oracle x in the private page (gaps
+of 2.9 and 3.5 sp at the ends of the first two systems), so the reported
+"note beyond the bar line" is not reproducible on this render.
+
+### 13.3 Grand-staff bar lines (step 3)
+
+`barline_groups` now spans to the next visible staff of the same part even
+when that staff does not repeat `<barLineSpan>1</barLineSpan>`
+(`dom/barline.cpp:193-210`, `nextVisibleSpannedStaff`). A unit test pins the
+two-staff part. The private organ part already declared the flag on its first
+staff and already emitted bar lines 11.29 sp tall over both staves; the
+corpus figures are unchanged (69/399 widths, 34/56 breaks, 0.6550 stems).
+
+### 13.4 Voice directions of beamed groups (step 4)
+
+The measure-wide voice test was replaced by the tick-overlap test of
+`Measure::hasVoices(staffIdx, tick, len)` (`dom/measure.cpp:2360-2419`,
+called at `chordlayout.cpp:1584`): track parity is applied only while another
+voice sounds during the chord. A unit test covers sequential and overlapping
+voices. The 56-file figures and the private page-1 stems are unchanged
+(0.6550, 384/2771, 34/56); the score's beams carry no explicit `<Beam>` or
+`<StemDirection>`, so their automatic groups keep the same default stems.
+The remaining overlap complaints come from the system-height/page geometry,
+not from a wrong beam direction.
+
+### 13.5 Lyrics spacing re-measured (step 5, switch kept off)
+
+With the stem and voice fixes in place, `LYRIC_WIDTH_SPACING = true` was
+measured again over all 56 files (`/tmp/.../oracle-eng7-lyrics-on2`):
+
+| Metric | Kept (off) | Lyrics on |
+| --- | ---: | ---: |
+| Elements within 0.1 sp | 384/2771 | **369/2771** |
+| Measure widths within 0.1 sp | 69/399 | 68/399 |
+| Files with identical system breaks | 34/56 | **34/56** |
+| Files with the oracle page count | 53/56 | 53/56 |
+| Pages with identical system breaks | 48/58 | 48/58 |
+
+The 34→33 break regression of §12.4 is gone, but the per-file cause is the
+same: `copypastesymbollist-lyrics` drops from 35 to 26 elements within
+0.1 sp and `testExcludeInvisibleElements` from 49 to 43 (one measure width
+lost). The switch therefore stays off: hiding those losses to gain lyric
+clearance would be a metric that excludes its own failures. A faithful fix
+needs the full `HorizontalSpacing::computePadding`/`Skyline` port, where the
+lyric shape pushes the *following* segment instead of inflating every
+segment carrying text.

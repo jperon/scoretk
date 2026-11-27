@@ -49,7 +49,12 @@ pub fn barline_groups(staffs: &[StaffInfo]) -> Vec<(usize, usize)> {
         }
         let part = staffs[index].part;
         let mut end = index;
-        while end + 1 < staffs.len() && staffs[end].bar_line_span && staffs[end + 1].part == part {
+        // // Port of `nextVisibleSpannedStaff` (`barline.cpp:193-210`): the
+        // bar line of a staff with `barLineSpan` reaches the next visible
+        // staff of the same part. Only the *first* staff of a grand staff
+        // carries `<barLineSpan>1</barLineSpan>` in `.mscx`; requiring the
+        // flag on both staves excluded piano/organ groups entirely.
+        while end + 1 < staffs.len() && staffs[end + 1].part == part {
             end += 1;
         }
         if end > index {
@@ -230,6 +235,19 @@ mod tests {
                 .map(|index| (index as i32) * 10 * SP)
                 .collect(),
         }
+    }
+
+    #[test]
+    fn barlines_span_the_next_staff_of_a_grand_staff_part() {
+        // A piano/organ part writes `<barLineSpan>1</barLineSpan>` only on
+        // its first staff (`barline.cpp:193-210` spans to the next staff of
+        // the part, whether or not that staff repeats the flag).
+        let staffs = vec![
+            staff(0, 1, 2, true),
+            staff(0, 0, 1, false),
+            staff(1, 0, 1, false),
+        ];
+        assert_eq!(barline_groups(&staffs), vec![(0, 1)]);
     }
 
     #[test]

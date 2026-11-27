@@ -977,8 +977,8 @@ fn voice_collision_offsets(chords: &[CollisionChord]) -> alloc::vec::Vec<i32> {
 /// `shortestStem = 2.5 * 4 = 10` and the final length is
 /// `chordHeight / 4 * sp + stemLength / 4 * sp`, to which the middle-line
 /// extension of `:122-159` is added. Beam additions, the per-beam shortening
-/// table, the optical adjustment and the beamed minimum are ported from
-/// `stemlayout.cpp:326-423` and `:415-471` below.
+/// table and the beamed minimum are ported from `stemlayout.cpp:326-397` and
+/// `:415-471` below.
 fn stem_length(
     lines: &[i32],
     heads: &[&str],
