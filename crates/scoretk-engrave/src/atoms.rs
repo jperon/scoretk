@@ -2061,10 +2061,19 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 /// pivot model shares its segments between staves, so the segment index is
 /// the alignment key.
 pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
-    let mut all: Vec<Vec<MeasureAtom>> = visible_staves(score)
+    let all: Vec<Vec<MeasureAtom>> = visible_staves(score)
         .into_iter()
         .map(|index| compute_staff(score, index))
         .collect();
+    align_staves(all)
+}
+
+/// Aligns every source segment to one x per tick across the staves of a
+/// system. // Port of `HorizontalSpacing::computeMinWidth` / `collectSegments`
+/// (`horizontalspacing.cpp:47-89`, `:262-327`): the minimum width of a segment
+/// is the largest demand of the staves at that tick, and positions accumulate
+/// from one segment to the next.
+fn align_staves(mut all: Vec<Vec<MeasureAtom>>) -> Vec<Vec<MeasureAtom>> {
     if all.len() < 2 {
         return all;
     }
@@ -2090,13 +2099,52 @@ pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
             .map(|atoms| atoms[measure].segment_bases.len())
             .max()
             .unwrap_or(0);
+        // Each staff's segment spans *before* alignment: a lyric shape demand
+        // is already included in the span that ends at the segment carrying
+        // the offset (`horizontalspacing.cpp:1216-1266`, `:1583-1601`).
+        // Taking the widest absolute x at every segment loses that demand when
+        // the same staff's previous segment sat further left than another
+        // staff's (measured on the private score: the "Ré"/"dem" span fell
+        // from 5.68 sp to 3.48 sp and the syllables overlapped).
+        let natural: alloc::vec::Vec<alloc::vec::Vec<i32>> = all
+            .iter()
+            .map(|atoms| atoms[measure].segment_bases.clone())
+            .collect();
         for segment in 0..count {
-            let common = all
+            let mut common = all
                 .iter()
                 .filter_map(|atoms| atoms[measure].segment_bases.get(segment))
                 .copied()
                 .max()
                 .unwrap_or(0);
+            if segment > 0 {
+                // `spaceAgainstPreviousSegments` accumulates the largest span
+                // of the segments at the same tick (`:343-417`), so a fixed
+                // lyric width must survive the cross-stave alignment too.
+                let previous = all[0][measure]
+                    .segment_bases
+                    .get(segment - 1)
+                    .copied()
+                    .unwrap_or(0);
+                for staff in 0..all.len() {
+                    if all[staff][measure]
+                        .segment_offsets
+                        .get(segment)
+                        .copied()
+                        .unwrap_or(0)
+                        == 0
+                    {
+                        continue;
+                    }
+                    let (Some(now), Some(before)) = (
+                        natural[staff].get(segment).copied(),
+                        natural[staff].get(segment - 1).copied(),
+                    ) else {
+                        continue;
+                    };
+                    common = common.max(previous + (now - before).max(0));
+                }
+            }
             for atoms in &mut all {
                 let Some(base) = atoms[measure].segment_bases.get_mut(segment) else {
                     continue;
@@ -2125,6 +2173,7 @@ pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use scoretk_core::model::tpc;
 
     #[test]
@@ -2230,6 +2279,69 @@ mod tests {
             "the extra lyric demand must be recorded as fixed segment width"
         );
         assert!(needed >= plain_gap);
+    }
+
+    #[test]
+    fn a_long_syllable_on_a_short_note_keeps_its_following_word_apart() {
+        // "Ré" is a long syllable on an eighth note, "dem" follows it on the
+        // next short note (`horizontalspacing.cpp:1216-1266`,
+        // `:1583-1601`). The demand is recorded on the second segment; when
+        // another staff starts that tick further right, aligning by the widest
+        // absolute x swallowed the demand and the words overlapped (measured
+        // on the private score: 5.68 sp became 3.48 sp).
+        let lyric = |text: &str, syllabic| LyricAtom {
+            verse: 0,
+            text: String::from(text),
+            syllabic,
+            melisma: false,
+            melisma_end: None,
+        };
+        let atom = |bases: Vec<i32>, offsets: Vec<i32>, words: Option<[LyricAtom; 2]>| {
+            let width = *bases.last().unwrap() + 1500;
+            let events = match words {
+                Some([first, second]) => {
+                    let mut events = Vec::new();
+                    for (segment, word) in [first, second].into_iter().enumerate() {
+                        let mut event = Atom::at_segment(
+                            bases[segment],
+                            AtomKind::Rest {
+                                duration: 4,
+                                dots: 0,
+                                measure: false,
+                            },
+                            segment as u16,
+                        );
+                        event.lyrics.push(word);
+                        events.push(event);
+                    }
+                    events
+                }
+                None => Vec::new(),
+            };
+            MeasureAtom {
+                width,
+                segment_bases: bases,
+                segment_offsets: offsets,
+                events,
+                ..Default::default()
+            }
+        };
+        let all = align_staves(vec![
+            vec![atom(
+                vec![1000, 4000],
+                vec![0, 2000],
+                Some([
+                    lyric("Ré", LyricsSyllabic::Begin),
+                    lyric("dem", LyricsSyllabic::Middle),
+                ]),
+            )],
+            vec![atom(vec![3000, 5000], vec![0, 0], None)],
+        ]);
+        // The lyric-bearing staff's own span (3000) must survive even though
+        // the other staff's absolute x at the second segment was only 5000.
+        assert_eq!(all[0][0].segment_bases, vec![3000, 6000]);
+        assert_eq!(all[1][0].segment_bases, vec![3000, 6000]);
+        assert!(all[0][0].width >= 6000);
     }
 
     #[test]

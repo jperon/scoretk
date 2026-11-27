@@ -2248,3 +2248,33 @@ drops it. It is reported, not excluded. On the private page both renders
 (`engrave-img/eng9/step7-p2.png`, `step7-p1.png`, whole pages inspected) keep
 the same three systems per page: the collisions are gone and "No-ël" now has
 its hyphen, while page 1 is unchanged.
+
+## 28. Review of the private page 2: lyric demand lost in cross-stave alignment (2026-11-27)
+
+The "Ré" of m.25 was still drawn on top of "dem": the two syllable centres
+were 3.48 sp apart where `computeLyricsPadding`
+(`horizontalspacing.cpp:1583-1601`) and the half shapes demand 5.68 sp
+(`minHorizontalDistance`, `:1216-1266`). The per-staff atom pass had recorded
+the whole deficit (2.18 sp) as `Spring::widthOffset`
+(`horizontalspacing.cpp:1073-1082`), but `align_staves` then took the widest
+**absolute** x of each segment independently: the S A segment holding "Ré"
+started 2.28 sp left of the other staves', so raising both segments to the
+shared grid compressed the pair again. `spaceAgainstPreviousSegments`
+(`:343-417`) instead walks one segment at a time and keeps the largest span
+at each tick. `align_staves` now keeps, for a segment carrying a nonzero
+offset, at least the staff's own previous span ending at that segment. A
+unit test with "Ré" on a short note followed by "dem" pins the shared grid.
+
+| Metric (`oracle-eng9-p3-base` → `oracle-eng9-p3-fix1`) | Before | After |
+| --- | --- | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1802 (398/2 209) | 0.1802 (398/2 209) |
+| Measure widths / system breaks | 90/394 / 37/56 | 90/394 / 37/56 |
+| Files with the oracle page count | 54/56 | 54/56 |
+
+No corpus file exercises the cross-stave lyric case, so the figures are
+unchanged by construction. On the private score (`engrave-img/eng9/fix1-p3.png`,
+whole page inspected) "Ré" and "dem" no longer overlap; the added widths also
+move the private page 2 start from measure 20 to measure 13, as in the 4.7.4
+reference page 2 (`eng9-ref/private-2.svg`). The affected words now lie on
+page 3 (`fix1-p3.png`), which is what the following fixes inspect.
