@@ -41,7 +41,7 @@ impl<W: Write> Server<W> {
 
     /// Handles one line; returns `false` when the caller should exit.
     pub fn handle_line(&mut self, line: &str) -> io::Result<bool> {
-        let line = line.trim_end_matches(|ch| ch == '\n' || ch == '\r');
+        let line = line.trim_end_matches(['\n', '\r']);
         let (command, rest) = match line.split_once(' ') {
             Some((command, rest)) => (command, rest),
             None => (line, ""),
@@ -78,8 +78,7 @@ impl<W: Write> Server<W> {
         // A new document always replaces (and therefore frees) the old one.
         self.doc = None;
         let mut fields = rest.splitn(3, ' ');
-        let (Some(width), Some(height), Some(path)) =
-            (fields.next(), fields.next(), fields.next())
+        let (Some(width), Some(height), Some(path)) = (fields.next(), fields.next(), fields.next())
         else {
             return Self::reply(
                 &mut self.out,

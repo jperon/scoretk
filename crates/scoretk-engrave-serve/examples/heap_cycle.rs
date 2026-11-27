@@ -48,8 +48,11 @@ fn main() {
         .next()
         .and_then(|value| value.parse().ok())
         .unwrap_or(800);
-    let pages: usize = args.next().and_then(|value| value.parse().ok()).unwrap_or(3);
+    let pages: usize = args
+        .next()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(3);
 
-    cycle(&path, width, height, pages).expect("open/render/close cycle failed");
-    println!("opened, rendered {pages} pages, closed");
+    let drawn = cycle(&path, width, height, pages).expect("open/render/close cycle failed");
+    println!("opened, rendered {drawn} pages, closed");
 }

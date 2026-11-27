@@ -78,7 +78,7 @@ crates/
   scoretk-engrave         model → layout → display list; no_std + alloc
   scoretk-render-raster   display list → 8-bit / 4-bit grey buffer
   scoretk-render-svg      display list → SVG (debug, web, oracle diffs)
-  scoretk-engrave-ffi     C ABI for KOReader (LuaJIT FFI), cdylib/staticlib
+  scoretk-engrave-serve   persistent process for KOReader, line protocol on stdin/stdout
   scoretk-smufl           generated glyph table: outlines, metrics, anchors
 ```
 
@@ -161,7 +161,7 @@ only when its gate passes. Measurements go into this document.
 | **P3 Chords and voices** | Stems, beams (`BeamLayout`), accidental stacking, dots, chords, seconds, multiple voices | Element positions within 0.1 staff space of the oracle on ≥ 90 % of noteheads/stems |
 | **P4 Curves and text** | Ties, slurs, tuplets, articulations, dynamics, hairpins, texts, lyrics; skylines | Same tolerance, plus 0 overlaps reported by the collision checker |
 | **P5 Systems and pages** | Multiple staves and parts, brackets and braces, instrument names, system and page distances, titles | Page count and page breaks equal to the oracle on ≥ 90 % of files |
-| **P6 Raster and KOReader** | Raster backend into `BlitBuffer8`, `scoretk-engrave-ffi`, Lua glue in `score.koplugin` (Verovio kept as a fallback); inputs: every format scoretk reads (`.mscz`, MusicXML, MEI, ABC, LilyPond, MIDI, GABC) | Plugin opens the corpus on the Kobo |
+| **P6 Raster and KOReader** | Raster backend into `BlitBuffer8`, `scoretk-engrave-serve` (static musl process, line protocol), Lua glue in `score.koplugin` (Verovio kept as a fallback); inputs: every format scoretk reads (`.mscz`, MusicXML, MEI, ABC, LilyPond, MIDI, GABC) | Plugin opens the corpus on the Kobo |
 | **P7 Performance** | Profile on the device; meet the budgets of § 1 | All budgets of § 1 met on the device |
 | **P8 Extensions** | Gregorian square notation from the GABC L6 payload (Gregorio as oracle, see `gabc.md`), NABC, tablature, percussion | One gate per extension |
 
@@ -2248,3 +2248,109 @@ drops it. It is reported, not excluded. On the private page both renders
 (`engrave-img/eng9/step7-p2.png`, `step7-p1.png`, whole pages inspected) keep
 the same three systems per page: the collisions are gone and "No-ël" now has
 its hyphen, while page 1 is unchanged.
+
+## P6: `scoretk-engrave-serve` (2026-11-27)
+
+The KOReader plugin no longer loads a C shared library. A measurement on the
+target Kobo Mini gives **glibc 2.11.1, kernel 2.6.35**: a glibc-linked Rust
+`cdylib` cannot be loaded there, even though the same tree cross-compiles.
+An already-tested alternative on the device is a **static musl executable**
+(the conversion CLI reaches page 1 of `moonlight.mscx` in ~1 s with a 5.2 MB
+peak). `score.koplugin` therefore starts one persistent helper process and
+hands it pages through a pipe. Closing the process returns every layout byte
+to the system, which also solves the "whole score stays resident" problem of
+a long-lived library handle.
+
+### Architecture
+
+```
+crates/scoretk-engrave-serve/
+  src/main.rs      stdin/stdout loop; stdout is a BufWriter, flushed per reply
+  src/server.rs    line protocol, catch_unwind, one-line error formatting
+  src/document.rs  Engraver + one reusable 600x800 grey buffer; page rendering
+  src/reader.rs    the CLI's format detection and LilyPond include resolver
+  examples/heap_cycle.rs  dhat measurement (feature `memory-report`)
+  tests/serve.rs   dialog tests driving the real binary
+```
+
+The crate depends on the import-only facade (seven `<format>-import`
+features), `scoretk-engrave` and `scoretk-render-raster`: no writer, no MIDI
+playback and no SVG backend. `reader::read_score` returns a `Score` which is
+dropped at the end of `Document::open`, together with the source bytes; only
+compact atoms, breaks and staves remain in the `Engraver`. Each `page` call
+builds a display list, draws it through `draw_display_list` and drops it: no
+page is cached, and the single page buffer is allocated once per document.
+
+Two additive APIs were needed without touching existing layout algorithms:
+`PageSpec::for_screen(width, height)` and `screen_staff_px` in a new
+`scoretk-engrave/src/screen.rs` (integer pixels per staff space, screen aspect
+ratio, a few pixels of margin), and `Gray8::new_with_stride` in a new
+`scoretk-render-raster/src/stride.rs` (row pitch; `new` is unchanged and still
+produces a tightly packed image). The line protocol itself has no padding, so
+the document uses a stride equal to `width`.
+
+### Protocol
+
+Commands are UTF-8 lines ending in `\n` on stdin. Replies go to stdout,
+buffered and flushed after each reply; stdout carries nothing else. Log
+output, if any, goes to stderr.
+
+| Command | Reply |
+| --- | --- |
+| `version` | `ok <version>` |
+| `open <width> <height> <path>` | `ok <page_count>` or `err <message>` |
+| `page <n>` | `ok <bytes>` then exactly `<bytes> = width × height` raw grey bytes (0 black, 255 white, row by row, no stride), or `err <message>` |
+| `close` | `ok` (releases the document) |
+| `quit` | process exits 0, no reply |
+| EOF on stdin | process exits 0 |
+| unknown command | `err unknown command` |
+
+`open` replaces (frees) the previous document first; the path is the rest of
+the line and may contain spaces. A panic during `open` or `page` is caught and
+reported as `err internal error: …` without killing the process. Errors are
+collapsed to one line. `page` without a document, a negative or out-of-range
+index, and a failed read are all `err` replies, after which the process
+remains usable.
+
+### Commands
+
+```sh
+# Host tests (targeted, never --workspace); corpus tests spawn the real binary.
+timeout 10 prlimit --as=2000000000 \
+  nix develop -c cargo test -j 2 -p scoretk-engrave-serve
+nix develop -c cargo clippy -j 2 -p scoretk-engrave-serve -- -D warnings
+nix develop -c cargo fmt --all -- --check
+
+# Peak heap of open + 3 page renders + close (dhat behind `memory-report`).
+mkdir -p tmp/serve-memory && cd tmp/serve-memory
+timeout 10 prlimit --as=2000000000 \
+  ../../target/debug/examples/heap_cycle ../../tests/corpus/v3/moonlight.mscx
+
+# Kobo executable, static musl, already-installed target (no rustup mutation).
+nice -n 19 ionice -c3 scripts/build-engrave-serve-kobo.sh
+```
+
+### Measurements
+
+Peak heap on the host, `600 × 800`, debug build with `memory-report` (the
+page buffer is now owned by the helper, unlike the earlier FFI measurement
+where KOReader owned it):
+
+| File | Total allocated | Heap at `t-gmax` | Blocks at peak |
+| --- | ---: | ---: | ---: |
+| `tests/corpus/v3/moonlight.mscx` | 15,297,913 B | **6,774,229 B** | 12,996 |
+| `tests/corpus/v4/voiceswitching.mscx` | 1,207,755 B | **503,448 B** | 125 |
+
+The `moonlight` figure is at the CLI SVG baseline of §20.2 (6.77 MB; the
+same-tree CLI measured 6,774,185 B): source parsing still dominates the peak.
+The gain is that the memory is held by a short-lived process rather than by
+KOReader, and that no SVG passes through the disk. On the private 1.7 MB
+score the device measurement is 5.2 MB for the conversion CLI; the helper's
+own device figure remains to be measured by the orchestrator.
+
+`scripts/build-engrave-serve-kobo.sh` produces a **statically linked,
+stripped 32-bit ARM EABI5 executable of 3,838,888 B** (3.66 MiB), with no
+glibc symbol dependency. This is above the 1.5 MB library budget of §1, which
+was written for a `cdylib`; the static process carries its own libc and Rust
+runtime. No Kobo run was performed here: the device test belongs to the
+orchestrator.

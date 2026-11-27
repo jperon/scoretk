@@ -60,15 +60,21 @@ impl Peer {
 
     fn line(&mut self) -> String {
         let mut line = String::new();
-        assert!(self.stdout.read_line(&mut line).unwrap() > 0, "EOF on stdout");
-        line.trim_end_matches(|ch| ch == '\n' || ch == '\r')
-            .to_owned()
+        assert!(
+            self.stdout.read_line(&mut line).unwrap() > 0,
+            "EOF on stdout"
+        );
+        line.trim_end_matches(['\n', '\r']).to_owned()
     }
 
     fn page(&mut self, index: usize) -> Vec<u8> {
         self.send(&format!("page {index}"));
         let header = self.line();
-        assert_eq!(header, format!("ok {}", WIDTH * HEIGHT), "unexpected {header:?}");
+        assert_eq!(
+            header,
+            format!("ok {}", WIDTH * HEIGHT),
+            "unexpected {header:?}"
+        );
         let mut bytes = vec![0u8; WIDTH * HEIGHT];
         self.stdout.read_exact(&mut bytes).unwrap();
         bytes
@@ -110,10 +116,7 @@ fn opens_every_corpus_format_and_renders_page_zero() {
         "gabc/gregorio_pitches2.gabc",
     ] {
         let path = corpus(file);
-        peer.send(&format!(
-            "open {WIDTH} {HEIGHT} {}",
-            path.to_str().unwrap()
-        ));
+        peer.send(&format!("open {WIDTH} {HEIGHT} {}", path.to_str().unwrap()));
         let answer = peer.line();
         assert!(answer.starts_with("ok "), "{file}: {answer}");
         let pages: usize = answer[3..].parse().unwrap();
@@ -121,7 +124,10 @@ fn opens_every_corpus_format_and_renders_page_zero() {
 
         let bytes = peer.page(0);
         assert_eq!(bytes.len(), WIDTH * HEIGHT);
-        assert!(bytes.iter().any(|value| *value < 128), "{file}: no dark pixel");
+        assert!(
+            bytes.iter().any(|value| *value < 128),
+            "{file}: no dark pixel"
+        );
 
         peer.send(&format!("page {pages}"));
         assert!(peer.line().starts_with("err "), "{file}: out-of-range page");
@@ -178,10 +184,7 @@ fn paths_with_spaces_are_accepted() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("moon light.mscx");
     std::fs::copy(corpus("v3/lyricsline01.mscx"), &path).unwrap();
-    peer.send(&format!(
-        "open {WIDTH} {HEIGHT} {}",
-        path.to_str().unwrap()
-    ));
+    peer.send(&format!("open {WIDTH} {HEIGHT} {}", path.to_str().unwrap()));
     assert!(peer.line().starts_with("ok "));
     let _ = peer.page(0);
     peer.send("quit");

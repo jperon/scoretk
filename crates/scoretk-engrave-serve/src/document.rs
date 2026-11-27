@@ -96,11 +96,13 @@ impl Document {
 }
 
 /// One open + render of up to `pages` pages + close, for the heap example.
-pub fn cycle(path: &str, width: u32, height: u32, pages: usize) -> Result<(), String> {
+///
+/// Returns the number of pages actually drawn (a short score has fewer).
+pub fn cycle(path: &str, width: u32, height: u32, pages: usize) -> Result<usize, String> {
     let mut document = Document::open(path, width, height)?;
     let drawn = pages.min(document.page_count());
     for page in 0..drawn {
         document.page(page)?;
     }
-    Ok(())
+    Ok(drawn)
 }
