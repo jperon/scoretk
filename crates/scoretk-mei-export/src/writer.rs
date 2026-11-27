@@ -27,8 +27,8 @@
 use std::collections::BTreeMap;
 
 use scoretk_core::model::{
-    Annotation, BeamMode, ChordRest, ChordRestKind, DurationType, Fraction, Key, Score,
-    SegmentItem, SegmentType, SpannerNotation, SpannerType, TimeSigType, Track, VOICES,
+    Annotation, BeamMode, ChordRest, ChordRestKind, DurationType, Fraction, Key, OrnamentType,
+    Score, SegmentItem, SegmentType, SpannerNotation, SpannerType, TimeSigType, Track, VOICES,
 };
 use scoretk_mei_common::{convert, ids};
 use scoretk_xml_common::XmlWriter;
@@ -128,6 +128,23 @@ fn tremolo_bar_type_name(kind: scoretk_core::model::TremoloBarType) -> &'static 
         Kind::Return => "Return",
         Kind::ReleaseDown => "ReleaseDown",
         Kind::Custom => "Custom",
+    }
+}
+
+/// Porteur MEI 5.1 natif d'un ornement (`meiconverter.cpp:2389-2424` pour
+/// `<mordent>`, `:3705-3728` pour `<turn>`, `:3545-3594` pour `<trill>`).
+/// Aucun jeton `mscore-ornament-*` n'est nécessaire : le lecteur 4.7.4 lit
+/// déjà ces éléments et `@form`. Quand MEI n'a pas de terme pour la variante,
+/// le fait devient une perte mesurée au lieu d'une extension privée.
+fn native_ornament(kind: &OrnamentType) -> Option<(&'static str, Option<&'static str>)> {
+    match kind {
+        OrnamentType::TrillMark => Some(("trill", None)),
+        OrnamentType::Turn => Some(("turn", Some("upper"))),
+        OrnamentType::InvertedTurn => Some(("turn", Some("lower"))),
+        OrnamentType::TurnSlash => Some(("turn", Some("upper"))),
+        OrnamentType::Mordent => Some(("mordent", Some("upper"))),
+        OrnamentType::InvertedMordent => Some(("mordent", Some("lower"))),
+        _ => None,
     }
 }
 
@@ -1510,15 +1527,23 @@ fn write_control_events(
                         );
                     }
                     for ornament in &chord.ornaments {
-                        let type_name = format!("{}{:?}", ids::ORNAMENT_TYPE, ornament.kind);
-                        xml.tag_empty(
-                            "ornam",
-                            &[
-                                ("type", type_name.as_str()),
-                                ("staff", staff.as_str()),
-                                ("startid", anchor.as_str()),
-                            ],
-                        );
+                        let Some((element, form)) = native_ornament(&ornament.kind) else {
+                            // Aucun élément MEI 5.1 pour cette variante : ne pas
+                            // inventer de jeton privé, la perte est mesurée.
+                            continue;
+                        };
+                        let mut native_attrs =
+                            vec![("staff", staff.as_str()), ("startid", anchor.as_str())];
+                        if let Some(form) = form {
+                            native_attrs.push(("form", form));
+                        }
+                        if ornament.kind == OrnamentType::TurnSlash {
+                            // `meiconverter.cpp:3722-3725` : `@glyph.name` SMuFL
+                            // distingue le gruppetto barré du gruppetto simple.
+                            native_attrs.push(("glyph.auth", ids::SMUFL_AUTH));
+                            native_attrs.push(("glyph.name", "ornamentTurnSlash"));
+                        }
+                        xml.tag_empty(element, &native_attrs);
                     }
                     if let Some(tremolo) = chord.tremolo {
                         if chord.tremolo_two_chord {
@@ -2087,9 +2112,10 @@ mod tests {
             "{full}"
         );
         assert!(
-            full.contains("<ornam type=\"mscore-ornament-Turn\""),
+            full.contains("<turn ") && full.contains("form=\"upper\""),
             "{full}"
         );
+        assert!(!full.contains("mscore-ornament-"), "{full}");
         assert!(full.contains("mscore-tremolo-two-chord-Start"), "{full}");
         let grace = full
             .split("<graceGrp")

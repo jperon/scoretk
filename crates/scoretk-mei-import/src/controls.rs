@@ -871,19 +871,26 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readOrnam` / `readMordent` / `readTurn` / `readTrill`.
     fn add_ornament(&mut self, node: &Element, measure: usize, kind: OrnamentType) {
-        let kind = node
-            .attribute("type")
-            .and_then(|value| value.strip_prefix(scoretk_mei_common::ids::ORNAMENT_TYPE))
-            .and_then(|name| match name {
-                "TrillMark" => Some(OrnamentType::TrillMark),
-                "Turn" => Some(OrnamentType::Turn),
-                "InvertedTurn" => Some(OrnamentType::InvertedTurn),
-                "Mordent" => Some(OrnamentType::Mordent),
-                "InvertedMordent" => Some(OrnamentType::InvertedMordent),
-                "TurnSlash" => Some(OrnamentType::TurnSlash),
-                "VerticalTurn" => Some(OrnamentType::VerticalTurn),
-                "InvertedVerticalTurn" => Some(OrnamentType::InvertedVerticalTurn),
-                _ => None,
+        // `@glyph.name` SMuFL est le porteur MEI 5.1 de la variante barrée
+        // (`meiconverter.cpp:3722-3725`) : il est lu avant tout jeton privé.
+        let smufl = (node.name == "turn"
+            && node.attribute("glyph.name") == Some("ornamentTurnSlash"))
+        .then_some(OrnamentType::TurnSlash);
+        let kind = smufl
+            .or_else(|| {
+                node.attribute("type")
+                    .and_then(|value| value.strip_prefix(scoretk_mei_common::ids::ORNAMENT_TYPE))
+                    .and_then(|name| match name {
+                        "TrillMark" => Some(OrnamentType::TrillMark),
+                        "Turn" => Some(OrnamentType::Turn),
+                        "InvertedTurn" => Some(OrnamentType::InvertedTurn),
+                        "Mordent" => Some(OrnamentType::Mordent),
+                        "InvertedMordent" => Some(OrnamentType::InvertedMordent),
+                        "TurnSlash" => Some(OrnamentType::TurnSlash),
+                        "VerticalTurn" => Some(OrnamentType::VerticalTurn),
+                        "InvertedVerticalTurn" => Some(OrnamentType::InvertedVerticalTurn),
+                        _ => None,
+                    })
             })
             .unwrap_or(kind);
         let (tick, track) = self.anchor(node, measure);

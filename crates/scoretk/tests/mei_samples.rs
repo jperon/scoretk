@@ -361,6 +361,322 @@ fn mei_samples_full_support_residual() {
     assert_eq!(totals.skipped, 0);
 }
 
+/// Mesure honnête : les mêmes 130 fichiers, mais le lecteur ne reconnaît
+/// aucun porteur privé (les `mscore-*` de MuseScore 4.7.4 compris). Le score
+/// mesuré est celui d'un lecteur MEI 5.1 conforme, pas celui d'un lecteur qui
+/// décode nos extensions.
+#[test]
+fn mei_samples_full_support_without_private_carriers() {
+    let Some(paths) = available_lot() else {
+        return;
+    };
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    let mut totals = Totals::default();
+    for path in &paths {
+        let bytes = fs::read(path).expect("read MEI sample");
+        let Ok(model) = read(&bytes, Format::Mei) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let reference = inventory(&model);
+        let Ok(written) = write(&model, Format::Mei, &options) else {
+            totals.skipped += 1;
+            continue;
+        };
+        let sanitized = without_private_carriers(&written);
+        let Ok(candidate) = read(&sanitized, Format::Mei) else {
+            totals.skipped += 1;
+            continue;
+        };
+        totals.add(&reference, &inventory(&candidate));
+    }
+    totals.print_losses("mei_full_support, reader without private carriers");
+    assert_eq!(totals.files, 130);
+    assert_eq!(totals.skipped, 0);
+}
+
+/// Un porteur est « privé » dès qu'une valeur d'attribut porte un jeton
+/// `mscore-`, `scoretk` ou `gabc` : ni MEI 5.1 ni un encodage CMN externe n'en
+/// exige. Les `xml:id` générés (`n12`, `m3s2l1`, …) ne sont pas des porteurs :
+/// ce sont des identifiants opaques résolus par `@startid`/`@endid`.
+pub(crate) fn private_token(value: &str) -> bool {
+    value.split_whitespace().any(|token| {
+        token.starts_with("mscore-")
+            || token.starts_with("gabc:")
+            || token.starts_with("gabc-")
+            || token.contains("scoretk")
+    }) || value.starts_with("layout:")
+}
+
+/// Rejette les porteurs privés d'un document MEI écrit, comme le ferait un
+/// lecteur MEI 5.1 qui n'interprète que les attributs normatifs. Les valeurs
+/// `mscore-*` de MuseScore 4.7.4 et les nôtres sont toutes retirées.
+fn without_private_carriers(bytes: &[u8]) -> Vec<u8> {
+    fn clean(node: &scoretk_xml_common::Element) -> scoretk_xml_common::Element {
+        scoretk_xml_common::Element {
+            name: node.name.clone(),
+            attributes: node
+                .attributes
+                .iter()
+                .filter(|(_, value)| !private_token(value))
+                .cloned()
+                .collect(),
+            text: node.text.clone(),
+            children: node
+                .children
+                .iter()
+                .filter_map(|child| {
+                    if matches!(child.name.as_str(), "annot" | "extMeta") {
+                        None
+                    } else {
+                        Some(clean(child))
+                    }
+                })
+                .collect(),
+        }
+    }
+    fn emit(xml: &mut scoretk_xml_common::XmlWriter, node: &scoretk_xml_common::Element) {
+        let attrs: Vec<(&str, &str)> = node
+            .attributes
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        if node.children.is_empty() {
+            xml.tag_with(&node.name, &attrs, &node.text);
+        } else {
+            xml.start_element(&node.name, &attrs);
+            for child in &node.children {
+                emit(xml, child);
+            }
+            xml.end_element();
+        }
+    }
+    let tree = scoretk_xml_common::parse(bytes).expect("parse written MEI");
+    let clean = clean(&tree);
+    let mut xml = scoretk_xml_common::XmlWriter::new();
+    xml.start_document();
+    emit(&mut xml, &clean);
+    xml.finish().into_bytes()
+}
+
+/// Aucun jeton privé scoretk ne doit apparaître dans une sortie
+/// `mei_full_support`. Les `mscore-*` écrits par MuseScore 4.7.4 lui-même
+/// (mode par défaut) ne sont pas visés : ce test filtre explicitement la
+/// liste des porteurs que seul scoretk invente.
+#[test]
+fn mei_samples_full_support_has_no_scoretk_private_token() {
+    let Some(paths) = available_lot() else {
+        return;
+    };
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    let mut offenders = BTreeMap::new();
+    for path in &paths {
+        let bytes = fs::read(path).expect("read MEI sample");
+        let Ok(model) = read(&bytes, Format::Mei) else {
+            continue;
+        };
+        let Ok(written) = write(&model, Format::Mei, &options) else {
+            continue;
+        };
+        let tree = scoretk_xml_common::parse(&written).expect("parse written MEI");
+        let mut stack = vec![&tree];
+        while let Some(node) = stack.pop() {
+            stack.extend(node.children.iter());
+            if matches!(node.name.as_str(), "annot" | "extMeta") {
+                offenders
+                    .entry(format!("<{}>", node.name))
+                    .or_insert_with(|| path.display().to_string());
+            }
+            for (key, value) in &node.attributes {
+                let private = value.split_whitespace().any(|token| {
+                    token.starts_with("mscore-grace-")
+                        || token.starts_with("mscore-ornament-")
+                        || token.starts_with("mscore-breath-")
+                        || token.starts_with("mscore-tremolo-")
+                        || token.starts_with("mscore-chordline-")
+                        || token.starts_with("mscore-instrument")
+                        || token.starts_with("mscore-tbox")
+                        || token.starts_with("mscore-figured-bass")
+                        || token.starts_with("mscore-frame-")
+                        || token.starts_with("gabc")
+                        || token.contains("scoretk")
+                });
+                if private {
+                    offenders
+                        .entry(format!("{}@{} = {}", node.name, key, value))
+                        .or_insert_with(|| path.display().to_string());
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "scoretk-private carriers: {offenders:?}"
+    );
+}
+
+/// Audit des porteurs non normatifs dans les 130 sorties `mei_full_support`.
+/// Test de mesure : il imprime l'inventaire, il n'impose aucune limite.
+#[test]
+fn mei_samples_private_carrier_inventory() {
+    let Some(paths) = available_lot() else {
+        return;
+    };
+    let options = Options {
+        mei_full_support: true,
+        ..Default::default()
+    };
+    // (occurrence, fichiers) par porteur.
+    let mut types: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut labels: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut n_values: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut id_shapes: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut elements: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut files_with_private = 0;
+    let mut files_with_musescore = 0;
+    let mut private_per_file: BTreeMap<String, usize> = BTreeMap::new();
+    let mut musescore_per_file: BTreeMap<String, usize> = BTreeMap::new();
+    for path in &paths {
+        let bytes = fs::read(path).expect("read MEI sample");
+        let Ok(model) = read(&bytes, Format::Mei) else {
+            continue;
+        };
+        let Ok(written) = write(&model, Format::Mei, &options) else {
+            continue;
+        };
+        let tree = scoretk_xml_common::parse(&written).expect("parse written MEI");
+        let mut stack = vec![&tree];
+        let mut seen_types = std::collections::BTreeSet::new();
+        let mut seen_labels = std::collections::BTreeSet::new();
+        let mut seen_n = std::collections::BTreeSet::new();
+        let mut seen_ids = std::collections::BTreeSet::new();
+        let mut private = 0;
+        let mut musescore = 0;
+        while let Some(node) = stack.pop() {
+            stack.extend(node.children.iter());
+            if matches!(node.name.as_str(), "annot" | "extMeta") {
+                let key = format!("<{}>", node.name);
+                let entry = elements.entry(key).or_default();
+                entry.0 += 1;
+                private += 1;
+            }
+            if node.name == "f" && node.text.contains(';') && node.text.contains('/') {
+                elements.entry("<f encoded>".to_owned()).or_default().0 += 1;
+            }
+            for (key, value) in &node.attributes {
+                match key.as_str() {
+                    "type" => {
+                        seen_types.insert(value.clone());
+                        let entry = types.entry(value.clone()).or_default();
+                        entry.0 += 1;
+                        if value.starts_with("mscore-staff-text")
+                            || value.starts_with("mscore-system-text")
+                            || value.starts_with("mscore-ending-")
+                            || value.starts_with("mscore-manual")
+                            || value.starts_with("mscore-beam-")
+                            || value.starts_with("mscore-marker-")
+                            || value.starts_with("mscore-jump-")
+                            || value.starts_with("mscore-repeat-")
+                            || value.starts_with("mscore-infer-from-text")
+                        {
+                            musescore += 1;
+                        } else if value.starts_with("mscore-grace-")
+                            || value.starts_with("mscore-ornament-")
+                            || value.starts_with("mscore-breath-")
+                            || value.starts_with("mscore-tremolo-")
+                            || value.starts_with("mscore-chordline-")
+                            || value.starts_with("mscore-instrument")
+                            || value.starts_with("mscore-tbox-")
+                            || value.starts_with("mscore-figured-bass")
+                            || value.starts_with("mscore-frame-")
+                        {
+                            private += 1;
+                        }
+                    }
+                    "label" => {
+                        seen_labels.insert(value.clone());
+                        let entry = labels.entry(value.clone()).or_default();
+                        entry.0 += 1;
+                        if value.starts_with("mscore-") {
+                            private += 1;
+                        }
+                    }
+                    "n" => {
+                        seen_n.insert(value.clone());
+                        n_values.entry(value.clone()).or_default().0 += 1;
+                    }
+                    "class" => {
+                        elements.entry(format!("@class={value}")).or_default().0 += 1;
+                    }
+                    "id" => {
+                        let shape: String = value
+                            .chars()
+                            .map(|c| if c.is_ascii_digit() { '9' } else { c })
+                            .collect();
+                        seen_ids.insert(shape.clone());
+                        id_shapes.entry(shape).or_default().0 += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Un porteur ne compte qu'une fois par fichier dans la colonne « fichiers ».
+        for (map, seen) in [
+            (&mut types, &seen_types),
+            (&mut labels, &seen_labels),
+            (&mut n_values, &seen_n),
+            (&mut id_shapes, &seen_ids),
+        ] {
+            for key in seen {
+                map.get_mut(key).expect("counted carrier").1 += 1;
+            }
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if private > 0 {
+            files_with_private += 1;
+            *private_per_file.entry(name.clone()).or_default() += private;
+        }
+        if musescore > 0 {
+            files_with_musescore += 1;
+            *musescore_per_file.entry(name).or_default() += musescore;
+        }
+    }
+    let report = |label: &str, map: &BTreeMap<String, (usize, usize)>| {
+        println!("\n=== {label} (occurrence, files) ===");
+        let mut rows: Vec<_> = map.iter().collect();
+        rows.sort_by(|left, right| right.1 .0.cmp(&left.1 .0).then_with(|| left.0.cmp(right.0)));
+        for (value, (count, files)) in rows.into_iter().take(80) {
+            println!("  {count:>6} {files:>4}  {value}");
+        }
+    };
+    report("@type", &types);
+    report("@label", &labels);
+    report("@n", &n_values);
+    report("xml:id shapes", &id_shapes);
+    println!("\n=== elements (occurrence) ===");
+    for (name, (count, _)) in &elements {
+        println!("  {count:>6}  {name}");
+    }
+    println!("\n=== scoretk-private occurrences: {files_with_private} files ===");
+    let mut ranked: Vec<_> = private_per_file.iter().collect();
+    ranked.sort_by_key(|entry| std::cmp::Reverse(*entry.1));
+    for (name, count) in ranked.into_iter().take(20) {
+        println!("  {count:>6}  {name}");
+    }
+    println!("\n=== MuseScore 4.7.4 own tokens: {files_with_musescore} files ===");
+    let mut ranked: Vec<_> = musescore_per_file.iter().collect();
+    ranked.sort_by_key(|entry| std::cmp::Reverse(*entry.1));
+    for (name, count) in ranked.into_iter().take(20) {
+        println!("  {count:>6}  {name}");
+    }
+}
+
 #[test]
 fn mei_samples_import_completeness_table() {
     let Some(paths) = available_lot() else {

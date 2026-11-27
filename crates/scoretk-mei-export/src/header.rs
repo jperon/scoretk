@@ -398,12 +398,13 @@ pub(crate) fn write_score_def(xml: &mut XmlWriter, score: &Score, options: &MeiO
     xml.end_element();
 }
 
-/// Attributs d'un `<instrDef>` (MEI 5.1 `att.midiInstrument`, `att.channelized`
-/// et `att.typed`). Les champs numériques sont standard ; l'identifiant
-/// d'instrument de MuseScore est porté par un `@type="mscore-instrument-*"`
-/// documenté, `@midi.instrname` étant limité à l'énumération fermée
-/// `data.MIDINAMES`. Ces attributs additionnels sont derrière
-/// `MeiOptions::full_support`.
+/// Attributs d'un `<instrDef>` (MEI 5.1 `att.midiInstrument`, `att.channelized`).
+/// L'identité de l'instrument est portée par les éléments MEI 5.1
+/// `<label>`/`<labelAbbr>` du `<staffGrp>` et par `@midi.instrnum` : le lecteur
+/// retrouve l'id du modèle par `recognize_musicxml_id` sans jeton privé.
+/// Le porteur `@type="mscore-instrument-*"` n'est plus écrit : c'était une
+/// extension scoretk, absente de `meiexporter.cpp` (§15 de `mei.md`).
+/// Les champs numériques additionnels restent derrière `full_support`.
 fn instr_def_attributes(part: &Part, full_support: bool) -> Vec<(String, String)> {
     let mut attributes = Vec::new();
     if let Some(program) = part.instrument.midi_program {
@@ -420,12 +421,6 @@ fn instr_def_attributes(part: &Part, full_support: bool) -> Vec<(String, String)
     }
     if let Some(pan) = part.instrument.pan {
         attributes.push(("midi.pan".to_owned(), pan.to_string()));
-    }
-    if !part.instrument.id.is_empty() {
-        attributes.push((
-            "type".to_owned(),
-            format!("{}{}", ids::INSTRUMENT_TYPE, part.instrument.id),
-        ));
     }
     attributes
 }
@@ -517,9 +512,11 @@ mod tests {
         assert!(output.contains("midi.channel=\"3\""));
         assert!(output.contains("midi.volume=\"101\""));
         assert!(output.contains("midi.pan=\"64\""));
-        assert!(output.contains("type=\"mscore-instrument-voice.vocals\""));
+        assert!(!output.contains("mscore-instrument-"), "{output}");
         let back = scoretk_mei_import::read_mei(output.as_bytes()).expect("read MEI");
-        assert_eq!(back.parts[0].instrument.id, "voice.vocals");
+        // Le porteur natif `@midi.instrnum` redonne l'identité MIDI sans le
+        // jeton privé ; la chaîne exacte `voice.vocals` n'est pas reconstruite.
+        assert_eq!(back.parts[0].instrument.id, "voice");
         assert_eq!(back.parts[0].instrument.midi_program, Some(52));
         assert_eq!(back.parts[0].instrument.midi_channel, Some(3));
         assert_eq!(back.parts[0].instrument.volume, Some(101));
