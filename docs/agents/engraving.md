@@ -576,3 +576,26 @@ stretch and courtesy headers/trailers that change a system's natural width
 before justification (`measurelayout.cpp:1811-2812`). P2 is therefore not
 closed: the atoms and breaking plan are in place, but their width parity is
 not yet at the acceptance threshold.
+
+### 9.12 Accidentals before their notehead (step 5, 2026-11-27)
+
+`place_chord` used a fixed `x - 3.5 sp` offset for every accidental. With a
+stretched system that offset landed on the *preceding* notehead: in
+`copypaste_parts` measure 1 the G was drawn, then the ♯ of the following G♯
+appeared 1.6 sp to its right. The offset is now derived from the glyph's own
+bbox plus `accidentalDistance` 0.25 sp (`accidentalslayout.cpp:286-305`,
+`:745-767`, `styledef.cpp:243`); a bbox unit test asserts that the accidental's
+right edge is exactly 0.25 sp to the left of the head's left edge and that it
+is emitted first in the display list. Before/after PNGs:
+`/tmp/copypaste_parts-before.png`, `/tmp/copypaste_parts-after-accidental.png`,
+with `/tmp/copypaste_parts-ref.png` as the oracle.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Measure widths within 0.1 sp | 0.0178 (5/281) | 0.0178 (5/281) |
+| Files with identical system breaks | 17/44 | 17/44 |
+| Stem-length agreement | 0.6967 | 0.6967 |
+| Vertical pitch/ledger agreement | 0.9652 | 0.9652 |
+
+No horizontal metric changes: the accidental's *x* influences collision
+spacing in MuseScore but our atom widths ignore it (P3 work).

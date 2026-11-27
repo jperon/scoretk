@@ -255,8 +255,22 @@ fn place_ledger_lines(out: &mut DisplayList, head_x: i32, head_w: i32, line: i32
 fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     for note in &chord.notes {
         let ny = y + note.line * HALF_SP;
+        // // Port of `accidentalslayout.cpp:286-305` (`stackAccidental`) and
+        // `:745-767` (`minAccidentalToChordDistance`): the accidental's right
+        // edge is separated from the notehead's left edge by
+        // `accidentalDistance`, so it is drawn immediately **before** its
+        // head. The previous 3.5 sp offset placed it after the preceding
+        // notehead of the system (`copypaste_parts`, measure 1).
         if let Some(name) = note.accidental {
-            out.glyph(ItemKind::Accidental, name, x - 7 * HALF_SP, ny);
+            let width = glyph(name)
+                .map(|g| units_to_fixed(g.bbox[2] - g.bbox[0]))
+                .unwrap_or(SP);
+            out.glyph(
+                ItemKind::Accidental,
+                name,
+                x - width - ACCIDENTAL_DISTANCE,
+                ny,
+            );
         }
         let head = glyph(note.head).unwrap();
         let head_w = units_to_fixed(head.bbox[2]);
@@ -563,6 +577,66 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn accidental_bbox_is_left_of_its_notehead() {
+        // `accidentalslayout.cpp:286-305`: the accidental must clear the head
+        // by `accidentalDistance` (0.25 sp). A regression here used to put the
+        // sharp 3.5 sp to the left, i.e. after the preceding notehead.
+        let atom = MeasureAtom {
+            number: 0,
+            width: 8 * SEGMENT_WIDTH,
+            spring: 1024,
+            events: vec![Atom {
+                x: 4 * SP,
+                kind: AtomKind::Chord,
+                chord: Some(ChordAtom {
+                    duration: 4,
+                    dots: 0,
+                    stem_up: true,
+                    stem_len: 3072,
+                    notes: vec![NoteAtom {
+                        line: 4,
+                        head: "noteheadBlack",
+                        accidental: Some("accidentalSharp"),
+                    }],
+                }),
+            }],
+            start_bar: crate::atoms::BarCode(1),
+            end_bar: crate::atoms::BarCode(1),
+            line_break: false,
+        };
+        let list = page(&[atom], &PageSpec::default(), 0);
+        let accidental = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Accidental)
+            .unwrap();
+        let head = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Notehead)
+            .unwrap();
+        let (ax0, _, ax1, _) = accidental.bbox(&list).unwrap();
+        let (hx0, _, hx1, _) = head.bbox(&list).unwrap();
+        assert!(
+            ax1 <= hx0,
+            "accidental bbox {ax0}..{ax1} overlaps head {hx0}..{hx1}"
+        );
+        assert_eq!(hx0 - ax1, ACCIDENTAL_DISTANCE);
+        // The accidental is emitted before its head in the display list.
+        let accidental_index = list
+            .items
+            .iter()
+            .position(|item| item.kind == ItemKind::Accidental)
+            .unwrap();
+        let head_index = list
+            .items
+            .iter()
+            .position(|item| item.kind == ItemKind::Notehead)
+            .unwrap();
+        assert!(accidental_index < head_index);
     }
 
     #[test]
