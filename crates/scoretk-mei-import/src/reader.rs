@@ -88,6 +88,13 @@ pub(crate) struct Reader<'a> {
     /// Signatures must be written in the next measure (initial `scoreDef` or
     /// a `scoreDef` change inside a section).
     pub(crate) signatures_pending: bool,
+    /// Dénominateur *non réduit* du mètre de chaque mesure (par index de
+    /// mesure). MEI 5.1 compte `@tstamp` en positions métriques : dans une
+    /// mesure à `2/4`, `tstamp="2"` est le deuxième temps, soit `1/4` de ronde
+    /// (*Guidelines* §4.2.6). Le modèle réduit `2/4` en `1/2` et ne garde que
+    /// le numérateur réduit dans `Measure::time_sig_numerator` ; sans cette
+    /// table le lecteur ne peut pas retrouver le dénominateur écrit.
+    pub(crate) beat_denominators: Vec<i64>,
 }
 
 impl<'a> Reader<'a> {
@@ -118,6 +125,7 @@ impl<'a> Reader<'a> {
             tremolo_phase: 0,
             pending_graces: Vec::new(),
             signatures_pending: true,
+            beat_denominators: Vec::new(),
         };
         reader.build_staff_layer_map(score_node);
         reader.read_mei_head();
@@ -260,6 +268,8 @@ impl<'a> Reader<'a> {
         self.mei_measure_ordinal += 1;
         let index = self.score.measures.len();
         let (numerator, denominator, kind) = self.current_timesig();
+        debug_assert_eq!(index, self.beat_denominators.len());
+        self.beat_denominators.push(denominator);
         let nominal = Fraction::try_new(numerator, denominator).unwrap_or(Fraction::new(4, 4));
         let start = self.score.end_tick();
         let mut measure = Measure::new(index, start, nominal);
@@ -357,9 +367,19 @@ impl<'a> Reader<'a> {
         self.read_staves(node, index);
         self.read_control_events(node, index);
         // Several staves may share the last tick: the measure length is the
-        // longest voice, not the sum of all tracks.
+        // longest voice, not the sum of all tracks. A control event anchored
+        // at the last beat creates a `ChordRest` segment holding only an
+        // annotation: such a segment must not extend the measure. MEI 5.1
+        // places control events after the staves (`format-ref/mei.md` §2/§10)
+        // and their position is independent of the sounding events.
         let len = self.score.measures[index]
-            .last_segment()
+            .segments
+            .iter()
+            .rfind(|segment| {
+                segment
+                    .iter_elements()
+                    .any(|(_, item)| item.as_chord_rest().is_some())
+            })
             .map_or(Fraction::ZERO, |segment| {
                 segment
                     .iter_elements()
@@ -466,6 +486,9 @@ impl<'a> Reader<'a> {
             }
             self.score.add_measure(measure);
         }
+        let denominator = self.beat_denominators[index];
+        self.beat_denominators
+            .extend(std::iter::repeat_n(denominator, count - 1));
         if !Self::has_chord_rest(&self.score.measures[index], start) {
             Self::insert_measure_rest(&mut self.score.measures[index], start, staff_count, nominal);
         }

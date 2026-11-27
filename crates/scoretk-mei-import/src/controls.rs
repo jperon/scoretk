@@ -204,6 +204,38 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Convertit `@tstamp` en tick absolu.
+    ///
+    /// MEI 5.1 (*Guidelines* §4.2.6, `att.timestamp/@tstamp`, RNG
+    /// `mei_att.timestamp.log.attributes`) compte les positions métriques
+    /// écrites : dans `2/4`, `tstamp="2"` est le deuxième temps (`1/4` de
+    /// ronde), et la valeur doit rester dans `[0, numérateur + 1]`. Le
+    /// porteur MuseScore 4.7.4 utilise le dénominateur réduit du modèle
+    /// (`Convert::tstampToFraction`) ; quand cette lecture place l'événement
+    /// hors de la mesure alors que le dénominateur écrit le remet dedans, le
+    /// dénominateur MEI reprend la main. Les deux conventions coïncident pour
+    /// les fichiers de référence (où les événements sont ancrés par `@startid`)
+    /// et pour les mesures dont le numérateur réduit est déjà le numérateur
+    /// écrit.
+    fn tstamp_tick(&self, measure: usize, stamp: f64) -> Fraction {
+        let mei_measure = &self.score.measures[measure];
+        let reduced = convert::tstamp_denominator(mei_measure);
+        let tick = mei_measure.start_tick + convert::tstamp_to_fraction(stamp, reduced);
+        let written = self
+            .beat_denominators
+            .get(measure)
+            .copied()
+            .unwrap_or(reduced);
+        let nominal_end = mei_measure.start_tick + mei_measure.nominal_len;
+        if written != reduced && tick >= nominal_end {
+            let alternative = mei_measure.start_tick + convert::tstamp_to_fraction(stamp, written);
+            if alternative < nominal_end {
+                return alternative;
+            }
+        }
+        tick
+    }
+
     /// Resolve `@startid` / `@tstamp` (`MeiImporter::findStart`, `:620`).
     pub(crate) fn anchor(&self, node: &Element, measure: usize) -> (Fraction, Track) {
         if let Some(id) = node.attribute("startid").or_else(|| node.attribute("id")) {
@@ -216,11 +248,7 @@ impl<'a> Reader<'a> {
             .attribute("tstamp")
             .and_then(|value| value.parse::<f64>().ok())
         {
-            let tick = self.score.measures[measure].start_tick
-                + convert::tstamp_to_fraction(
-                    stamp,
-                    convert::tstamp_denominator(&self.score.measures[measure]),
-                );
+            let tick = self.tstamp_tick(measure, stamp);
             let staff = node
                 .attribute("staff")
                 .and_then(|value| value.parse::<u8>().ok())
@@ -252,11 +280,7 @@ impl<'a> Reader<'a> {
             .and_then(|value| value.parse::<f64>().ok())
         {
             return Some((
-                self.score.measures[measure].start_tick
-                    + convert::tstamp_to_fraction(
-                        stamp,
-                        convert::tstamp_denominator(&self.score.measures[measure]),
-                    ),
+                self.tstamp_tick(measure, stamp),
                 self.anchor(node, measure).1,
             ));
         }
@@ -264,13 +288,19 @@ impl<'a> Reader<'a> {
     }
 
     /// Attach an annotation to a segment, creating it if needed.
-    fn add_annotation(&mut self, tick: Fraction, track: Track, annotation: Annotation) {
+    fn add_annotation(
+        &mut self,
+        measure: usize,
+        tick: Fraction,
+        track: Track,
+        annotation: Annotation,
+    ) {
         let measure = self
             .score
             .measures
             .iter()
             .position(|measure| tick >= measure.start_tick && tick < measure.end_tick())
-            .unwrap_or(0);
+            .unwrap_or_else(|| measure.min(self.score.measures.len().saturating_sub(1)));
         let staff_count = self.score.staves.len().max(1);
         let position = self.score.measures[measure]
             .segments
@@ -431,7 +461,7 @@ impl<'a> Reader<'a> {
         // nuance. MuseScore 4.7.4 n'écrit pas l'attribut ; le lecture le
         // consomme quand un encodeur externe le fournit.
         dynamic.velocity = velocity;
-        self.add_annotation(tick, track, Annotation::Dynamic(dynamic));
+        self.add_annotation(measure, tick, track, Annotation::Dynamic(dynamic));
     }
 
     /// `MeiImporter::readDir` (`meiimporter.cpp:2511`).
@@ -510,7 +540,7 @@ impl<'a> Reader<'a> {
                 _ => TremoloBarType::Custom,
             };
             let (tick, track) = self.anchor(node, measure);
-            self.add_annotation(tick, track, Annotation::TremoloBar(bar));
+            self.add_annotation(measure, tick, track, Annotation::TremoloBar(bar));
             return;
         }
         if typ == scoretk_mei_common::ids::TEXT_LINE_TYPE {
@@ -547,7 +577,7 @@ impl<'a> Reader<'a> {
                 change.instrument = Some(instrument);
             }
             let (tick, track) = self.anchor(node, measure);
-            self.add_annotation(tick, track, Annotation::InstrumentChange(change));
+            self.add_annotation(measure, tick, track, Annotation::InstrumentChange(change));
             return;
         }
         // Porteur additionnel pour un `TBox` de MuseScore : MEI 5.1 n'a pas
@@ -596,6 +626,7 @@ impl<'a> Reader<'a> {
                 HairpinType::Diminuendo
             };
             self.add_annotation(
+                measure,
                 tick,
                 track,
                 Annotation::Other {
@@ -608,9 +639,19 @@ impl<'a> Reader<'a> {
             return;
         }
         if typ.contains("mscore-system-text") {
-            self.add_annotation(tick, track, Annotation::SystemText(SystemText::new(text)));
+            self.add_annotation(
+                measure,
+                tick,
+                track,
+                Annotation::SystemText(SystemText::new(text)),
+            );
         } else {
-            self.add_annotation(tick, track, Annotation::StaffText(StaffText::new(text)));
+            self.add_annotation(
+                measure,
+                tick,
+                track,
+                Annotation::StaffText(StaffText::new(text)),
+            );
         }
     }
 
@@ -641,7 +682,7 @@ impl<'a> Reader<'a> {
         let mut tempo = Tempo::new(text);
         // `@midi.bpm` is beats per minute; the pivot stores beats per second.
         tempo.beats_per_second = bpm.map(|value| value / 60.0);
-        self.add_annotation(tick, track, Annotation::Tempo(tempo));
+        self.add_annotation(measure, tick, track, Annotation::Tempo(tempo));
     }
 
     /// `MeiImporter::readReh` (`meiimporter.cpp:2998`).
@@ -652,6 +693,7 @@ impl<'a> Reader<'a> {
         }
         let (tick, track) = self.anchor(node, measure);
         self.add_annotation(
+            measure,
             tick,
             track,
             Annotation::RehearsalMark(RehearsalMark::new(text)),
@@ -666,7 +708,12 @@ impl<'a> Reader<'a> {
             _ => FermataType::Normal,
         };
         let (tick, track) = self.anchor(node, measure);
-        self.add_annotation(tick, track, Annotation::Fermata(Fermata::new(kind)));
+        self.add_annotation(
+            measure,
+            tick,
+            track,
+            Annotation::Fermata(Fermata::new(kind)),
+        );
     }
 
     /// `MeiImporter::readArtic` (`meiimporter.cpp:1720`).
@@ -745,7 +792,7 @@ impl<'a> Reader<'a> {
                 let mut figure = FiguredBass::new();
                 figure.items = decode_figured_bass(&text);
                 let (tick, track) = self.anchor(node, measure);
-                self.add_annotation(tick, track, Annotation::FiguredBass(figure));
+                self.add_annotation(measure, tick, track, Annotation::FiguredBass(figure));
                 return;
             }
         }
@@ -754,7 +801,12 @@ impl<'a> Reader<'a> {
             return;
         }
         let (tick, track) = self.anchor(node, measure);
-        self.add_annotation(tick, track, Annotation::Harmony(Harmony::new(text)));
+        self.add_annotation(
+            measure,
+            tick,
+            track,
+            Annotation::Harmony(Harmony::new(text)),
+        );
     }
 
     /// `<fb>`/`<f>` (MEI 5.1 `mei_fb`, Guidelines §10). Without our `@type`
@@ -767,7 +819,7 @@ impl<'a> Reader<'a> {
         let mut figure = FiguredBass::new();
         figure.items = decode_figured_bass(&text);
         let (tick, track) = self.anchor(node, measure);
-        self.add_annotation(tick, track, Annotation::FiguredBass(figure));
+        self.add_annotation(measure, tick, track, Annotation::FiguredBass(figure));
     }
 
     /// `MeiImporter::readBreath`/`readCaesura` (`:2461`, `:2486`).

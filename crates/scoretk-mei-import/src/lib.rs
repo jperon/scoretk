@@ -192,6 +192,39 @@ mod tests {
         assert_eq!(score.notes.len(), 1);
     }
 
+    /// MEI 5.1 *Guidelines* §4.2.6 : `@tstamp` compte les positions du mètre
+    /// écrit (1 = premier temps). Dans `2/4`, `tstamp="2"` est donc à `1/4`
+    /// de ronde, pas en fin de mesure. Une lecture avec le dénominateur réduit
+    /// plaçait la nuance hors mesure, puis le segment vide créé là allongeait
+    /// la mesure d'un aller-retour et décalait toutes les notes suivantes.
+    #[test]
+    fn tstamp_of_a_second_beat_stays_inside_a_two_four_measure() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="2" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1">
+              <staff n="1"><layer n="1"><note dur="4" pname="c" oct="4"/></layer></staff>
+              <dynam staff="1" tstamp="2">p</dynam>
+            </measure><measure n="2">
+              <staff n="1"><layer n="1"><note dur="4" pname="d" oct="4"/></layer></staff>
+            </measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a beat timestamp");
+        let tick = scoretk_core::model::Fraction::new(1, 4);
+        assert!(
+            score.measures[0]
+                .segments
+                .iter()
+                .any(|segment| segment.tick == tick && !segment.annotations.is_empty()),
+            "dynamic must be anchored on the second beat"
+        );
+        assert_eq!(
+            score.measures[0].len,
+            scoretk_core::model::Fraction::new(1, 2)
+        );
+        assert_eq!(score.measures[1].start_tick, tick + tick);
+    }
+
     #[test]
     fn reads_a_minimal_score() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
