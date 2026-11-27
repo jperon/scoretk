@@ -92,10 +92,7 @@ fn open_impl(path: *const c_char, width_px: c_int, height_px: c_int) -> Result<B
             .map_err(|error| format!("cannot engrave {path}: {error}"))?;
         (engraver, staff_px)
     };
-    Ok(Box::new(StDoc {
-        engraver,
-        staff_px,
-    }))
+    Ok(Box::new(StDoc { engraver, staff_px }))
 }
 
 /// Reads a score and engraves it for a `width_px × height_px` screen.

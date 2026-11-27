@@ -42,8 +42,7 @@ pub fn screen_staff_px(width_px: u32, height_px: u32) -> i32 {
     if width_px == 0 || height_px == 0 {
         return REFERENCE_STAFF_PX;
     }
-    let scaled = (REFERENCE_STAFF_PX as f64 * width_px.min(height_px) as f64
-        / REFERENCE_SHORT_PX)
+    let scaled = (REFERENCE_STAFF_PX as f64 * width_px.min(height_px) as f64 / REFERENCE_SHORT_PX)
         .round() as i32;
     scaled.clamp(SCREEN_STAFF_PX_MIN, SCREEN_STAFF_PX_MAX)
 }

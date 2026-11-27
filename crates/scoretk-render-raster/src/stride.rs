@@ -66,13 +66,7 @@ mod tests {
         let (width, height, stride) = (8usize, 4usize, 12usize);
         let mut pixels = [0xAAu8; 12 * 4];
         let mut list = DisplayList::new(0);
-        list.push(DisplayItem::rect(
-            ItemKind::StaffLine,
-            0,
-            0,
-            8 * 1024,
-            1024,
-        ));
+        list.push(DisplayItem::rect(ItemKind::StaffLine, 0, 0, 8 * 1024, 1024));
         {
             let mut buf = Gray8::new_with_stride(&mut pixels, width, height, stride).unwrap();
             assert_eq!(buf.stride(), stride);
