@@ -333,3 +333,59 @@ SSIM or oracle comparison yet), behaviour on a real display list with text and
 beams, quality at a 14 px staff, and real device time (QEMU timings above vary
 by up to 2× between batches and are not a Kobo measurement). The `prlimit`/SSH
 device benchmark of the P0 gate remains to be done on the Kobo.
+
+### 9.4 Leland subset feasibility (no crate generated yet)
+
+Data inspected locally, nothing downloaded and no script from a font package
+executed. `$FL` = `~/programmes/liseuse/koreader/plugins/score.koplugin/vendor/verovio/fonts/Leland/`
+(and `$VD` = the sibling `data/`): `Leland.otf` 89 132 B (CFF, cubic),
+`Leland.svg` 280 307 B (`FontForge`/copyright header at `:5-7`, 488 glyphs with
+path data, first glyph at `:28`), `leland_metadata.json` 150 602 B (30
+`engravingDefaults` at `:2`, `fontVersion` 0.80 at `:38`, 489 bounding boxes
+from `:39`, anchors from `:5225`), and `$VD/Leland.xml` 45 013 B / 792 lines
+(bounding boxes and anchors in staff spaces). Licence: all Verovio fonts are
+SIL OFL (`fonts/README.md:13` of the Verovio source tree); the SVG itself names
+MuseScore BVBA and Klaus Rettinghaus (`Leland.svg:5-7`). The OFL text is not
+present next to these files, so it will have to be shipped with the generated
+crate, and `NOTICE`/`licences-tierces.md` updated at that time.
+
+Measured subset: the 293 glyph names in the SVG that start with a notation
+family the engraver will emit (notehead, clef, accidental, rest, flag, beam,
+dot, dynamic, artic, slur, tie, fermata, trill, turn, breath, caesura, timeSig,
+barline, bracket, brace, pedal, hairpin, ornament, fingering, harmonic, mordent,
+arpeggio, glissando, repeat), all 293 present in the OTF. The SVG path text for
+those glyphs contains 9 608 cubic `c` plus 874 smooth-cubic `s` commands
+(≈ 21.7 cubic segments/glyph) and 4 394 line commands (≈ 9.7/glyph), averaging
+460 B of path text per glyph. Converting the OTF with fontTools 4.61.1
+`Cu2QuPen` (measurement only; fontTools is not a project dependency) gives:
+
+| Cubic→quadratic error (font units, upem 1000) | Quadratic segments | Line segments | Outline bytes at 8 B/quad + 4 B/line |
+| --- | ---: | ---: | ---: |
+| 0.5 | 14 539 | 2 589 | 126 668 B |
+| **1.0 (proposed)** | **11 614** | **2 589** | **103 268 B** |
+| 2.0 | 10 020 | 2 589 | 90 516 B |
+
+The proposed binary layout per glyph is a u16 glyph id/codepoint, i16 advance
+width, four i16 bbox values and a contour/segment count (≈ 17 B/glyph), then
+quadratics as four i16 coordinates (control + endpoint) and lines as two i16
+coordinates. Metadata from the JSON subset: 293 bboxes, 283 anchors over 109
+glyphs, 10 distinct SMuFL anchor names (`stemUpSE`, `cutOutNE`, …), 30
+`engravingDefaults`.
+
+| Component | Estimate |
+| --- | ---: |
+| Quadratic + line outlines (error 1.0, above) | 103 268 B |
+| Per-glyph headers (293 × 17 B) | 4 981 B |
+| Advance, bbox, codepoint (293 × 12 B) | 3 516 B |
+| Anchors (283 × 5 B) + 10 names | ≈ 1 535 B |
+| 30 engraving defaults, i16 fixed point | ≈ 120 B |
+| **Total, raw generated constants** | **≈ 113 KB (≈ 111 KiB)** |
+| With ≈ 10 % alignment/padding margin | ≈ 125 KB |
+
+This is well inside the 400 KB font-data budget of § 1; even the stricter
+error-0.5 conversion stays near 137 KB. Alternates (30), ligatures (7),
+optional glyphs (1) and text fonts are excluded. **Not done:** no subset crate,
+no generated Rust file, no verification that this Leland 0.80 snapshot is
+byte-identical to the font bundled in MuseScore 4.7.4, and no perceptual check
+of the 1-font-unit Cu2Qu tolerance at a 14 px staff. Those are gates before the
+font is generated, not assumed facts.
