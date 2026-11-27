@@ -49,9 +49,17 @@ quick-xml = "0.42"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
+# Host CLI and libraries: optimise for build time and runtime speed.
+# The browser package has its own size-oriented profile below.
 [profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 16
+
+# Identical to the former release profile: the wasm binary is downloaded by
+# the PWA, so it keeps the size settings (and stays byte-identical).
+[profile.wasm]
+inherits = "release"
 lto = true
-# Le paquet navigateur vise la taille (wasm téléchargé par la PWA) ; pour la
-# CLI, le coût est négligeable.
 opt-level = "z"
 codegen-units = 1

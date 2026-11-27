@@ -102,11 +102,14 @@
 
         # Dépendances précompilées pour wasm32. Crane impose que
         # buildDepsOnly et la construction qui consomme ses artefacts aient le
-        # même CARGO_BUILD_TARGET : d'où une dérivation distincte des artefacts
-        # hôte.
+        # même CARGO_BUILD_TARGET et le même CARGO_PROFILE : d'où une
+        # dérivation distincte des artefacts hôte. Le profil `wasm` garde les
+        # réglages de taille de l'ancien profil `release`, désormais optimisé
+        # pour la CLI.
         wasmCargoArtifacts = craneLib.buildDepsOnly (commonArgs
           // {
             CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+            CARGO_PROFILE = "wasm";
           });
 
         # --- Paquet navigateur (`nix build .#wasm`) ----------------------
@@ -118,12 +121,13 @@
           // {
             cargoArtifacts = wasmCargoArtifacts;
             CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+            CARGO_PROFILE = "wasm";
             cargoExtraArgs = "--locked -p scoretk-wasm";
             doCheck = false;
             doInstallCargoArtifacts = false;
             installPhaseCommand = ''
               mkdir -p $out
-              cp target/wasm32-unknown-unknown/release/scoretk_wasm.wasm $out/
+              cp target/wasm32-unknown-unknown/wasm/scoretk_wasm.wasm $out/
             '';
           });
 
@@ -248,22 +252,22 @@
           NDK_HOME = "${androidSdk}/libexec/android-sdk/ndk-bundle";
         };
 
-        packages.default = craneLib.buildPackage (commonArgs
-          // {
-            inherit cargoArtifacts;
-            # Le binaire vit dans crates/scoretk-cli.
-            cargoExtraArgs = "-p scoretk-cli";
-          });
+        # `nix run .` et `nix build .` utilisent exactement la même dérivation
+        # que `nix build .#scoretk` (une seule construction, un seul binaire).
+        packages.default = self.packages.${system}.scoretk;
 
         # Paquet navigateur : `nix build .#wasm` → result/{esm,classic,package.json,README.md}.
         packages.wasm = wasm;
 
         # Façade multi-formats et sa CLI (`nix build .#scoretk`).
+        # `checks.tests` exécute déjà toute la suite : la reconstruction
+        # quotidienne n'a pas à la rejouer.
         packages.scoretk = craneLib.buildPackage (commonArgs
           // {
             inherit cargoArtifacts;
             pname = "scoretk";
             cargoExtraArgs = "-p scoretk-cli";
+            doCheck = false;
           });
 
         # `nix run .#scoretk -- entrée.mscz -o sortie.musicxml`.
@@ -318,6 +322,7 @@
             // {
               cargoArtifacts = wasmCargoArtifacts;
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+              CARGO_PROFILE = "wasm";
               cargoExtraArgs = "-p scoretk-core -p scoretk-xml-common -p scoretk-mei-common -p scoretk-mei-import -p scoretk-mei-export -p scoretk-musescore-import -p scoretk-musescore-export -p scoretk-musicxml-import -p scoretk-musicxml-export -p scoretk-midi-common -p scoretk-midi-import -p scoretk-midi-export -p scoretk-lilypond-common -p scoretk-lilypond-import -p scoretk-lilypond-export -p scoretk-abc-common -p scoretk-abc-import -p scoretk-abc-export -p scoretk -p scoretk-wasm";
               doCheck = false;
             });
