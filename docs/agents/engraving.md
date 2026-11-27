@@ -791,6 +791,29 @@ Before/after/reference PNGs: `/tmp/Beam-CrossM1-p3b-before.png`,
 oracle uses the SVGs in `/tmp/oracle-p3b-base` (before) and
 `/tmp/oracle-p3b-step1b` (after), with the same MuseScore references.
 
+### 9.20 Staff lines of a short last system (eng3b, step 2, 2026-11-27)
+
+The five staff lines were drawn over `printable_width` for every system,
+while a short final system is left unstretched (`shouldBeJustified`,
+`systemlayout.cpp:459-489`): `Beam-CrossM1`'s last system showed staff lines
+running past its final double bar line. `build_page` now replays the system's
+segment widths and clips each staff line to the right edge of that system's
+last bar line (`tdraw.cpp` bar-line drawing, `styledef.cpp:147,149`). On
+justified systems the result is unchanged (the bar line is at the right
+margin).
+
+| Metric | Step 1 | Step 2 | Gate |
+| --- | ---: | ---: | ---: |
+| Stem-length agreement | 0.8076 (319/395) | 0.8076 (319/395) | ≥ 0.90 — failed |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+The staff-line width is a vertical-decoration detail measured by visual
+comparison, not by the element oracle (which only extracts noteheads, stems
+and bar lines): in `Beam-CrossM1` the last staff lines end at the final
+thick bar line in both SVGs. `/tmp/Beam-CrossM1-p3b-step2.png` shows the
+result; the before image is `/tmp/Beam-CrossM1-p3b-after.png` from §9.19.
+
 ## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,

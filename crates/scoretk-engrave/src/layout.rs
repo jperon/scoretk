@@ -520,6 +520,41 @@ fn system_events<'a>(
     events
 }
 
+/// Advance of one segment, stretched for chord/rest springs only.
+/// // Port of `horizontalspacing.cpp:1087-1111` (`stretchSegmentsToWidth`).
+fn segment_width(atom: &MeasureAtom, index: usize, scale: i32) -> i32 {
+    let event = &atom.events[index];
+    let width = if index + 1 < atom.events.len() {
+        atom.events[index + 1].x - event.x
+    } else {
+        atom.width - event.x
+    };
+    if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+        width * scale / 1024
+    } else {
+        width
+    }
+}
+
+/// Cursor at the end of a measure's last segment (the bar line position).
+fn measure_end(atom: &MeasureAtom, scale: i32) -> i32 {
+    atom.events.first().map_or(0, |event| event.x)
+        + (0..atom.events.len())
+            .map(|index| segment_width(atom, index, scale))
+            .sum::<i32>()
+}
+
+/// Right edge of a system's final bar line, used to clip its staff lines.
+/// // Port of `tdraw.cpp`'s bar-line drawing with `endBarWidth` and
+/// `barlineSeparation` (`styledef.cpp:147,149`).
+fn system_right_edge(atom: &MeasureAtom, x: i32) -> i32 {
+    match atom.end_bar.0 {
+        3 => x + BARLINE_SEPARATION + THICK_BARLINE_WIDTH,
+        2 | 1 => x + THIN_BARLINE_WIDTH / 2,
+        _ => x,
+    }
+}
+
 /// Place one measure's events at `x0` on the system at `system_y`.
 ///
 /// // Port of `horizontalspacing.cpp:214-219` and `:1087-1111`: chord/rest
@@ -550,18 +585,7 @@ fn place_measure(
             system_y,
             plan.stems.get(event_offset + index).copied().flatten(),
         );
-        let width = if index + 1 < atom.events.len() {
-            atom.events[index + 1].x - event.x
-        } else {
-            atom.width - event.x
-        };
-        let stretched =
-            if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
-                width * scale / 1024
-            } else {
-                width
-            };
-        cursor += stretched;
+        cursor += segment_width(atom, index, scale);
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
     // double lines are separated by `barlineSeparation` (SMuFL).
@@ -957,6 +981,17 @@ pub fn build_page(
         };
         let left = spec.margin_left + indent;
         let staff_width = spec.printable_width - indent;
+        // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
+        // system's last bar line. A short final system (below
+        // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not stretched
+        // to the right margin, so drawing them over the full printable width
+        // left five lines running into empty space.
+        let mut end_x = left;
+        for atom in &atoms[system.first..system.first + system.count] {
+            end_x += measure_end(atom, system.scale);
+        }
+        let last = &atoms[system.first + system.count - 1];
+        let right = (system_right_edge(last, end_x) - left).clamp(0, staff_width);
         // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
         // rectangles, thickness `staffLineWidth`.
         for line in 0..5 {
@@ -964,7 +999,7 @@ pub fn build_page(
                 ItemKind::StaffLine,
                 left,
                 sy + line * SP - STAFF_LINE_WIDTH / 2,
-                staff_width,
+                right,
                 STAFF_LINE_WIDTH,
             ));
         }
@@ -1084,6 +1119,40 @@ mod tests {
         // A plain start bar line is implicit in MuseScore; only the end bar
         // line of the measure is drawn.
         assert_eq!(list.count(ItemKind::BarLine), 1);
+    }
+
+    #[test]
+    fn staff_lines_stop_at_the_last_bar_line() {
+        // A short final system is left unstretched (`shouldBeJustified`,
+        // `systemlayout.cpp:459-489`). Its staff lines must stop at the final
+        // bar line, not run to the printable margin.
+        let spec = PageSpec {
+            printable_width: 1000 * SP,
+            ..PageSpec::default()
+        };
+        let list = page(&[atom(4)], &spec, 0);
+        let staff = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::StaffLine)
+            .unwrap();
+        let Geometry::Rect { x, w, .. } = staff.geometry else {
+            panic!("staff line must be a rectangle");
+        };
+        let bars: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::BarLine)
+            .collect();
+        let last_bar = bars
+            .last()
+            .and_then(|item| match item.geometry {
+                Geometry::Rect { x, w, .. } => Some(x + w),
+                _ => None,
+            })
+            .unwrap();
+        assert!(x + w < spec.margin_left + spec.printable_width);
+        assert!((x + w - last_bar).abs() <= THICK_BARLINE_WIDTH);
     }
 
     #[test]
