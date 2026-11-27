@@ -255,8 +255,12 @@ fn convert_midi(score: &mut Score, midi: &MidiFile, options: &ImportOptions) -> 
     drum::set_staff_bracket_for_drums(score, &track_list);
 
     let first_tick = find_first_chord_tick(&track_list);
+    // `[SMF §Meta-Events]` allows `FF 51` at the tick where the performance
+    // ends. In exact mode one extra tick keeps that meta inside a measure, so
+    // `setTempoToScore` can anchor its annotation at the tick the file carries
+    // instead of dropping it. The default 4.7.4 path is unchanged.
     let measure_end = if options.smf_exact_ticks {
-        last_tick.max(find_last_meta_tick(midi))
+        last_tick.max(find_last_meta_tick(midi)) + Fraction::from_ticks(1, UNITS_PER_WHOLE as u32)
     } else {
         last_tick
     };

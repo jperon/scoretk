@@ -19,7 +19,7 @@
 
 mod common;
 
-use scoretk_core::model::{ChordRestKind, Fraction, Score, SegmentItem};
+use scoretk_core::model::{Annotation, ChordRestKind, Fraction, Score, SegmentItem};
 use scoretk_midi_import::{read_midi, read_midi_with, ImportOptions};
 
 use common::{smf, Ev};
@@ -84,5 +84,50 @@ fn exact_ticks_recover_an_irregular_onset_grid() {
     assert!(
         expected.iter().all(|tick| exact_onsets.contains(tick)),
         "exact mode must preserve the source attack ticks: {exact_onsets:?}"
+    );
+}
+
+fn tempos(score: &Score) -> Vec<f64> {
+    let mut result = Vec::new();
+    for measure in &score.measures {
+        for segment in &measure.segments {
+            for annotation in &segment.annotations {
+                if let Annotation::Tempo(tempo) = &annotation.annotation {
+                    if let Some(bps) = tempo.beats_per_second {
+                        result.push(bps);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// `FF 51 03 tttttt` at the last meta tick is a tempo change the file carries.
+/// `[SMF §Meta-Events]` places no restriction on its tick; exact mode adds one
+/// measure so the tempo can be anchored at that tick rather than dropped.
+#[test]
+fn exact_ticks_keep_a_tempo_change_at_the_last_meta_tick() {
+    let bytes = smf(&[vec![
+        (0, Ev::TimeSig(4, 2)),
+        (0, Ev::Tempo(500_000)),
+        (0, Ev::NoteOn(0, 60, 80)),
+        (480, Ev::NoteOff(0, 60)),
+        (1920, Ev::Tempo(652_175)),
+    ]]);
+    let options = ImportOptions {
+        smf_exact_ticks: true,
+        ..Default::default()
+    };
+    let default_tempos = tempos(&read_midi(&bytes).expect("default import"));
+    assert!(!default_tempos
+        .iter()
+        .any(|bps| (bps - 92.0 / 60.0).abs() < 1e-9));
+    let exact_tempos = tempos(&read_midi_with(&bytes, &options).expect("exact import"));
+    assert!(
+        exact_tempos
+            .iter()
+            .any(|bps| (bps - 92.0 / 60.0).abs() < 1e-9),
+        "the FF 51 at the last tick must survive: {exact_tempos:?}"
     );
 }

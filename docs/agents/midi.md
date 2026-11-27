@@ -398,6 +398,12 @@ headline rose from **98.23 %** to **99.68 %**.
 Headline: **99.68 % → 99.75 %**; `L1 metric` 125/127 → 127/127. Refs remain
 `MIDI : 21/21 identiques`.
 
+| `tempo` | 1 / 61 | 0 / 61 | `FF 51 03 tttttt` (`[SMF §Meta-Events]`). Exact mode extends the measure map by one tick so an `FF 51` at the performance's last tick is anchored instead of dropped; `roundToBpm` already maps the stored microseconds back to the carried BPM. The default importer is unchanged. |
+
+Headline: **99.75 % → 99.79 %**; `L3 text` 173/174 → 174/174. The residual
+`note`/`channel` losses are the same five harmony-channel attacks counted on
+both kinds. Refs remain `MIDI : 21/21 identiques`.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)
