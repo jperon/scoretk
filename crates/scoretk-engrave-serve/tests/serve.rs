@@ -98,6 +98,74 @@ fn version_and_unknown_command() {
 }
 
 #[test]
+fn page_zero_has_staff_lines_stems_and_margins() {
+    let mut peer = Peer::start();
+    let path = corpus("abc/v3_measure-4.abc");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {}", path.to_str().unwrap()));
+    let answer = peer.line();
+    assert!(answer.starts_with("ok "), "{answer}");
+    let bytes = peer.page(0);
+
+    // The screen geometry leaves room for tall clefs instead of clipping
+    // the first system or letting it touch the left edge.
+    for x in 0..WIDTH {
+        assert_eq!(bytes[x], 255, "ink on the first row at x={x}");
+        assert_eq!(
+            bytes[(HEIGHT - 1) * WIDTH + x],
+            255,
+            "ink on the last row at x={x}"
+        );
+    }
+    for y in 0..HEIGHT {
+        assert_eq!(bytes[y * WIDTH], 255, "ink on the first column at y={y}");
+        assert_eq!(
+            bytes[y * WIDTH + WIDTH - 1],
+            255,
+            "ink on the last column at y={y}"
+        );
+    }
+
+    // Five staff lines, each a continuous horizontal run of at least 60 %
+    // of the page width. Rectangles used to be passed in 1/256-px units to
+    // `fill_rect` (which expects whole pixels) and were entirely clipped.
+    let staff_rows = bytes
+        .as_chunks::<WIDTH>()
+        .0
+        .iter()
+        .filter(|row| {
+            let mut run = 0;
+            let mut longest = 0;
+            for value in *row {
+                if *value < 128 {
+                    run += 1;
+                    longest = longest.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+            longest >= WIDTH * 3 / 5
+        })
+        .count();
+    assert!(
+        staff_rows >= 5,
+        "expected at least five continuous staff lines, found {staff_rows}"
+    );
+
+    // Stems and bar lines are vertical strokes through the staff, distinct
+    // from the five thin staff lines themselves.
+    let stem_columns = (0..WIDTH)
+        .filter(|x| (0..HEIGHT).filter(|y| bytes[y * WIDTH + x] < 128).count() >= 16)
+        .count();
+    assert!(
+        stem_columns >= 10,
+        "expected stems and bar lines, found {stem_columns} tall columns"
+    );
+
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
+#[test]
 fn opens_every_corpus_format_and_renders_page_zero() {
     let mut peer = Peer::start();
     peer.send("version");
