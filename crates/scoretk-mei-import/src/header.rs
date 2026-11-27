@@ -119,6 +119,35 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Numérateur et dénominateur *écrits* d'une indication métrique.
+    ///
+    /// `Fraction` réduit `2/2` en `1/1`, mais MEI 5.1
+    /// `att.meterSigDefault.log/@meter.sym` (RNG :21691) désigne un symbole
+    /// qui *remplace* la signature numérique : `cut` est 2/2 et `common` 4/4.
+    /// L'écrivain 4.7.4 émet parfois uniquement `@meter.sym` sur `<staffDef>`.
+    fn written_meter_numbers(
+        count: Option<&str>,
+        unit: Option<i32>,
+        sym: Option<&str>,
+        fraction: Fraction,
+    ) -> (i32, i32) {
+        let from_symbol = match sym {
+            Some("common") => Some((4, 4)),
+            Some("cut") => Some((2, 2)),
+            _ => None,
+        };
+        if let Some(numbers) = from_symbol {
+            return numbers;
+        }
+        (
+            count
+                .and_then(|value| value.split('+').next())
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(fraction.numerator() as i32),
+            unit.unwrap_or(fraction.denominator() as i32),
+        )
+    }
+
     /// `MeiImporter::readScoreDef` (`meiimporter.cpp:1052`).
     pub(crate) fn read_score_def(&mut self, node: &Element, is_initial: bool) {
         // MuseScore's `readScoreDef` (meiimporter.cpp:1052) only touches
@@ -134,11 +163,7 @@ impl<'a> Reader<'a> {
         let sym = node.attribute("meter.sym");
         if count.is_some() || sym.is_some() {
             let (fraction, kind) = convert::meter_from_mei(count, unit, sym);
-            let numerator = count
-                .and_then(|value| value.split('+').next())
-                .and_then(|value| value.parse::<i32>().ok())
-                .unwrap_or(fraction.numerator() as i32);
-            let denominator = unit.unwrap_or(fraction.denominator() as i32);
+            let (numerator, denominator) = Self::written_meter_numbers(count, unit, sym, fraction);
             // `att.scoreDef.log/@meter.count` a priorité sur la valeur
             // initiale de `<staffDef>` (`format-ref/mei.md` §4). Sans cette
             // remise à zéro, une mesure avec `meter.count="3"` après un
@@ -560,13 +585,16 @@ impl<'a> Reader<'a> {
                     .and_then(|child| child.attribute("sym"))
             });
             if count.is_some() || sym.is_some() {
-                let (_, kind) = convert::meter_from_mei(count, unit, sym);
-                let numerator = count
-                    .and_then(|value| value.split('+').next())
-                    .and_then(|value| value.parse::<i32>().ok())
-                    .unwrap_or(4);
+                let (fraction, kind) = convert::meter_from_mei(count, unit, sym);
+                // MEI 5.1 `att.meterSigDefault.log/@meter.sym` (RNG :21691)
+                // remplace le compteur : `cut` est 2/2 et `common` 4/4, même
+                // quand `@meter.count`/`@meter.unit` sont absents — c'est
+                // précisément ce que l'écrivain 4.7.4 émet sur `<staffDef>`.
+                // Déduire le numérateur de `count` seul donnait 4/4 pour `cut`.
+                let (numerator, denominator) =
+                    Self::written_meter_numbers(count, unit, sym, fraction);
                 self.timesigs
-                    .insert(staff_idx, (numerator, unit.unwrap_or(4), kind));
+                    .insert(staff_idx, (numerator, denominator, kind));
             }
             let keysig = staff_def.attribute("keysig").or_else(|| {
                 staff_def

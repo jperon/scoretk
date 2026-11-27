@@ -192,6 +192,32 @@ mod tests {
         assert_eq!(score.notes.len(), 1);
     }
 
+    /// MEI 5.1 RNG `mei_att.meterSigDefault.log.attribute.meter.sym`
+    /// (`@meter.sym="cut"` = 2/2) : l'écrivain 4.7.4 ne met que le symbole
+    /// sur `<staffDef>`, sans `@meter.count`/`@meter.unit`.
+    #[test]
+    fn cut_meter_symbol_on_a_staff_def_is_two_two() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.sym="cut"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <note dur="2" pname="c" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a cut meter symbol");
+        assert!(score.measures[0].segments.iter().any(|segment| {
+            segment.iter_elements().any(|(_, item)| {
+                matches!(
+                    item,
+                    scoretk_core::model::SegmentItem::TimeSig(time)
+                        if time.numerator == 2
+                            && time.denominator == 2
+                            && time.kind == scoretk_core::model::TimeSigType::AllaBreve
+                )
+            })
+        }));
+    }
+
     /// MEI 5.1 *Guidelines* §4.3.4 : `num`/`numbase` décrivent le rapport du
     /// n-olet, et la durée de base est celle des événements qu'il contient,
     /// même lorsqu'un `<beam>` les enveloppe (RNG `mei_tuplet` admet
