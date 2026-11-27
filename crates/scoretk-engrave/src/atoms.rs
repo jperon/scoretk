@@ -276,22 +276,31 @@ fn auto_stem_up(lines: &[i32]) -> bool {
     true
 }
 
-/// // Port of `chordlayout.cpp:1564-1569`: an explicit stem direction wins
-/// when there is no beam (P1 has no beams), otherwise the automatic rule
-/// applies.
-fn stem_up(lines: &[i32], explicit: StemDirection) -> bool {
+/// // Port of `chordlayout.cpp:1564-1588`: an explicit stem direction wins
+/// when there is no beam (P1 has no beams). With two voices on the staff the
+/// stems are forced by track parity (`computeUp`: `track() % 2 == 0`);
+/// otherwise the automatic rule applies.
+fn stem_up(lines: &[i32], explicit: StemDirection, multi_voice: bool, track: u32) -> bool {
     match explicit {
         StemDirection::Up => true,
         StemDirection::Down => false,
-        StemDirection::Auto => auto_stem_up(lines),
+        StemDirection::Auto => {
+            if multi_voice {
+                track % 2 == 0
+            } else {
+                auto_stem_up(lines)
+            }
+        }
     }
 }
 
-/// // Port of `stemlayout.cpp:60-71, 85-99, 122` (`calcDefaultStemLength`):
+/// // Port of `stemlayout.cpp:42-160` (`StemLayout::calcDefaultStemLength`):
 /// all internal arithmetic is in quarter spaces; with line distance 1 and
-/// magnitude 1, `defaultStemLength = 3.5 sp * 4 = 14`, `quarterSpacesPerLine
-/// = 2`, `chordHeight = (downLine - upLine) * 2`, and the final length is
-/// `chordHeight / 4 * sp + stemLength / 4 * sp`. Beams and tremolos are P3.
+/// magnitude 1, `defaultStemLength = stemLength * 4 = 14`, `quarterSpacesPerLine
+/// = floor(lineDistance * 2) = 2`, `chordHeight = (downLine - upLine) * 2`,
+/// `shortestStem = 2.5 * 4 = 10` and the final length is
+/// `chordHeight / 4 * sp + stemLength / 4 * sp`, to which the middle-line
+/// extension of `:122-159` is added. Beams and tremolos are P3.
 /// Hooks and stem shortening follow `stemlayout.cpp:326-397` below.
 fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
     if lines.is_empty() {
@@ -335,7 +344,22 @@ fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
         }
         stem_qs = (stem_qs - reduction).max(10);
     }
-    chord_height_qs * 256 + stem_qs * 256 // /4 sp, 1/1024 units
+    let mut final_qs = chord_height_qs + stem_qs;
+    // // Port of `stemlayout.cpp:122-159`: a normal-sized chord's stem is
+    // extended until its far end reaches the middle staff line (two spaces
+    // from the top line, i.e. 8 quarter spaces). Without this step a stem
+    // starting on a low note with an up direction stops short of the middle
+    // line; MuseScore adds the missing length to `finalStemLength`.
+    let start = if up { bottom * 2 } else { top * 2 };
+    let stem_end = if up { start - final_qs } else { start + final_qs };
+    let middle_line_qs = 8; // minStaffOverlap(false, 5, 0, …) with wide beams off
+    let extra_qs = if up {
+        (stem_end - middle_line_qs).max(0)
+    } else {
+        (middle_line_qs - stem_end).max(0)
+    };
+    final_qs += extra_qs;
+    final_qs * 256 // quarter spaces in 1/1024 staff-space units
 }
 
 fn bar_code(kind: BarLineType) -> BarCode {
@@ -383,23 +407,35 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         let mut has_clef = false;
         let mut has_key = false;
         let mut has_time = false;
+        // // Port of `chordlayout.cpp:1584` (`measure()->hasVoices`): once a
+        // measure contains two voices, the stems of every voice in it are
+        // forced by track parity, not only the chords sharing a segment.
+        let multi_voice = measure.segments.iter().any(|segment| {
+            segment
+                .iter_elements()
+                .filter(|(_, item)| matches!(item, SegmentItem::ChordRest(_)))
+                .count()
+                > 1
+        });
 
         for segment in &measure.segments {
             if segment.kind == SegmentType::ChordRest {
                 // P1: fixed proportional spacing, one x per chord/rest segment
-                // (plan §4, stage 1; P2 replaces this with real springs).
-                let item = segment
-                    .elements()
-                    .iter()
-                    .flatten()
-                    .find_map(|item| match item {
-                        SegmentItem::ChordRest(cr) => Some(cr),
+                // (plan §4, stage 1; P2 replaces this with real springs). All
+                // voices of a segment share that x; MuseScore forces their
+                // stem directions by track parity (`chordlayout.cpp:1584`).
+                let chord_rests: Vec<(u32, &_)> = segment
+                    .iter_elements()
+                    .filter_map(|(track, item)| match item {
+                        SegmentItem::ChordRest(cr) => Some((track.raw(), cr)),
                         _ => None,
-                    });
-                let Some(cr) = item else {
+                    })
+                    .collect();
+                if chord_rests.is_empty() {
                     x += SEGMENT_WIDTH;
                     continue;
-                };
+                }
+                for (track, cr) in chord_rests {
                 let duration = duration_code(cr.duration.kind);
                 match &cr.kind {
                     ChordRestKind::Chord(chord) => {
@@ -438,7 +474,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                         }
                         notes.sort_by_key(|note| note.line);
                         let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
-                        let up = stem_up(&lines, chord.engraving.stem);
+                        let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
                         let chord_atom = ChordAtom {
                             duration,
                             dots: cr.duration.dots,
@@ -461,6 +497,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             },
                         ));
                     }
+                }
                 }
                 x += SEGMENT_WIDTH;
                 continue;
@@ -562,11 +599,26 @@ mod tests {
         assert!(auto_stem_up(&[8]));
         // Symmetric chord: the middle line leads to the default "up".
         assert!(auto_stem_up(&[2, 6]));
+        // Two voices: even tracks up, odd tracks down (`chordlayout.cpp:1586`).
+        assert!(stem_up(&[0], StemDirection::Auto, true, 0));
+        assert!(!stem_up(&[0], StemDirection::Auto, true, 1));
     }
 
     #[test]
     fn stem_length_is_at_least_shortest() {
         assert_eq!(stem_length(&[4], true, 4), 3072); // one stem shortening
         assert_eq!(stem_length(&[0], true, 4), 2560); // shortestStem
+    }
+
+    #[test]
+    fn stem_reaches_the_middle_line_from_outside_the_staff() {
+        // `stemlayout.cpp:122-159`: a stem starting 2.5 sp above the top
+        // line is extended by 3.5 sp so that its far end reaches the middle
+        // line. Without the extension it would stop 1.5 sp short of it.
+        assert_eq!(stem_length(&[-10], false, 4), 28 * 256);
+        // A stem starting 2 sp below the bottom line gains 0.5 sp.
+        assert_eq!(stem_length(&[12], true, 4), 16 * 256);
+        // A note inside the staff only gets the shortening rule: 3 sp.
+        assert_eq!(stem_length(&[4], false, 4), 12 * 256);
     }
 }

@@ -261,14 +261,25 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     } else {
         x - STEM_WIDTH / 2
     };
-    let (sy, ey) = if chord.stem_up {
-        (ny - chord.stem_len, ny)
+    // // Port of `tlayout.cpp:5180-5187` (`TLayout::layoutStem`): the drawn
+    // stem starts at the notehead's SMuFL stem anchor, not at the note's
+    // centre. SMuFL anchor y is up-positive; our page coordinates are
+    // down-positive, hence the sign flip. `stemlayout.cpp:227-242`
+    // (`StemLayout::stemPos`) supplies the horizontal side of the stem.
+    let anchor_y = if chord.stem_up {
+        -STEM_ANCHOR_OFFSET
     } else {
-        (ny, ny + chord.stem_len)
+        STEM_ANCHOR_OFFSET
     };
-    // // Port of `stemlayout.cpp:227-242` (`StemLayout::stemPos`) and
-    // `tlayout.cpp:5143-5175` (`TLayout::layoutStem`): a stem is a rectangle
-    // from the notehead side to `baseLength` away, snapped to the pixel grid.
+    // The far end stays at `note ± stemLength`; only the notehead end moves
+    // to the anchor (`tlayout.cpp:5198-5201` computes y2 independently).
+    let (sy, ey) = if chord.stem_up {
+        (ny - chord.stem_len, ny + anchor_y)
+    } else {
+        (ny + anchor_y, ny + chord.stem_len)
+    };
+    // // Port of `stemlayout.cpp:227-242` and `tlayout.cpp:5143-5175`: a
+    // stem is a rectangle from the notehead anchor to `stemLength` away.
     out.push(DisplayItem::rect(
         ItemKind::Stem,
         stem_x,
@@ -278,7 +289,8 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     ));
     if let Some(name) = flag_name(chord.duration, chord.stem_up) {
         let _ = (top, bottom);
-        out.glyph(ItemKind::Flag, name, stem_x, ey - chord.stem_len);
+        let flag_y = if chord.stem_up { sy } else { ey };
+        out.glyph(ItemKind::Flag, name, stem_x, flag_y);
     }
 }
 

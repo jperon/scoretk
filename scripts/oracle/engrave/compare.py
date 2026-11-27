@@ -65,57 +65,111 @@ def transform_of(element: ET.Element) -> tuple[float, float, float, float]:
     return 1.0, 1.0, 0.0, 0.0
 
 
-def staff_geometry(elements: list[ET.Element]) -> tuple[float, float, float]:
-    """(origin_x, origin_y, spatium) from the five staff-line elements."""
-    lines: list[tuple[float, float]] = []
+def staff_lines(elements: list[ET.Element]) -> list[tuple[float, float, float, float]]:
+    """Staff-line segments: (x_left, x_right, y, line_width)."""
+    lines: list[tuple[float, float, float, float]] = []
     for element in elements:
         if "StaffLines" not in element.get("class", ""):
             continue
+        width = float(element.get("stroke-width", 0))
         if element.tag == SVG + "polyline":
             for x, y in pairs(element.get("points", "")):
-                lines.append((x, y))
+                lines.append((x, x, y, width))
         elif element.tag == SVG + "rect":
             value = element.get("y")
             if value is not None:
                 # scoretk draws staff lines as rectangles centred on the
                 # staff line; use the centre, not the top edge.
                 centre = float(value) + float(element.get("height", 0)) / 2
-                lines.append((float(element.get("x", 0)), centre))
-    ys = sorted({round(y, 3) for _, y in lines})
+                x = float(element.get("x", 0))
+                lines.append((x, x + float(element.get("width", 0)), centre, width))
+    return lines
+
+
+def staff_geometry(elements: list[ET.Element]) -> tuple[float, float, float]:
+    """(origin_x, origin_y, spatium) from the staff-line elements.
+
+    With several systems on a page the median of all consecutive y gaps is
+    still the spatium: intra-staff gaps (one sp) outnumber inter-system ones.
+    """
+    lines = staff_lines(elements)
+    ys = sorted({round(line[2], 3) for line in lines})
     spatium = statistics.median(b - a for a, b in zip(ys, ys[1:])) if len(ys) > 1 else 1.0
     if spatium <= 0:
         spatium = 1.0
-    origin_x = min((x for x, _ in lines), default=0.0)
+    origin_x = min((line[0] for line in lines), default=0.0)
     origin_y = min(ys, default=0.0)
     return origin_x, origin_y, spatium
+
+
+def staff_systems(elements: list[ET.Element], spatium: float) -> list[tuple[float, float, float]]:
+    """(x_left, x_right, top_line_y) for each five-line staff system.
+
+    // Port of MuseScore's `System` staff geometry: one system holds five
+    lines one spatium apart. Grouping consecutive staff lines by a gap
+    smaller than two spatia recovers the systems without reading any layout
+    metadata from either SVG.
+    """
+    groups: list[list[float]] = []
+    for y in sorted({round(line[2], 3) for line in staff_lines(elements)}):
+        if groups and y - groups[-1][-1] < spatium * 1.6:
+            groups[-1].append(y)
+        else:
+            groups.append([y])
+    systems = []
+    for group in groups:
+        if len(group) < 4:
+            continue
+        in_group = [line for line in staff_lines(elements)
+                    if min(group) - 0.01 <= line[2] <= max(group) + 0.01]
+        if in_group:
+            systems.append((min(line[0] for line in in_group),
+                            max(line[1] for line in in_group), min(group)))
+    return systems
+
+
+def local_position(x: float, y: float, systems: list[tuple[float, float, float]],
+                   spatium: float) -> tuple[float, float] | None:
+    """Position relative to the staff system that contains an element.
+
+    Vertical comparisons must be local to a system: comparing a note on
+    system 3 with one on system 1 measures the system distance, not pitch.
+    """
+    best = None
+    for x0, x1, top in systems:
+        if not x0 - 3 * spatium <= x <= x1 + 3 * spatium:
+            continue
+        distance = abs(y - (top + 2 * spatium))
+        if best is None or distance < best[0]:
+            best = (distance, x0, top)
+    if best is None:
+        return None
+    return (x - best[1]) / spatium, (y - best[2]) / spatium
 
 
 def parse_svg(path: Path) -> dict:
     root = ET.parse(path).getroot()
     elements = list(root.iter())
-    origin_x, origin_y, spatium = staff_geometry(elements)
+    _, _, spatium = staff_geometry(elements)
     scale = 1.0 / spatium
-
-    def relative(x: float, y: float) -> tuple[float, float]:
-        return (x - origin_x) * scale, (y - origin_y) * scale
+    systems = staff_systems(elements, spatium)
 
     result: dict[str, list[tuple[float, float]]] = {"Note": [], "Stem": [], "BarLine": []}
     lengths: list[float] = []
     for element in elements:
         class_name = element.get("class", "")
         tag = element.tag
+        position = None
         if class_name == "Note" and tag == SVG + "path":
             box = bbox_of_path(element.get("d", ""))
             if box is None:
                 continue
             sx, sy, tx, ty = transform_of(element)
-            if element.get("transform", "").startswith("translate"):
-                # scoretk: the SMuFL glyph origin is the notehead centre.
-                center = (0.0, 0.0)
-            else:
-                # MuseScore: the origin is the path bounding-box centre.
-                center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
-            result["Note"].append(relative(sx * center[0] + tx, sy * center[1] + ty))
+            # Both engines' noteheads are compared at their bounding-box
+            # centre: MuseScore emits an centred outline, scoretk translates
+            # the SMuFL outline, whose origin is the head's left edge.
+            center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            position = (sx * center[0] + tx, sy * center[1] + ty)
         elif class_name in ("Stem", "BarLine"):
             if tag == SVG + "rect":
                 x = float(element.get("x", 0)) + float(element.get("width", 0)) / 2
@@ -130,9 +184,13 @@ def parse_svg(path: Path) -> dict:
                 y1 = max(point[1] for point in pts)
             else:
                 continue
-            result[class_name].append(relative(x, (y0 + y1) / 2))
-            if class_name == "Stem":
-                lengths.append(abs(y1 - y0) * scale)
+            position = (x, (y0 + y1) / 2)
+        if position is not None:
+            local = local_position(*position, systems, spatium)
+            if local is not None:
+                result[class_name].append(local)
+                if class_name == "Stem":
+                    lengths.append(abs(y1 - y0) * scale)
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
     return result
@@ -283,9 +341,10 @@ def main() -> int:
         "# Engraving oracle — P1 skeleton",
         "",
         "Reference: MuseScore Studio 4.7.4 SVG; tolerance 0.1 staff space.",
-        "Horizontal spacing is fixed until P2, so the vertical figures are the",
-        "meaningful ones at this stage. Unmatched elements and failures count",
-        "in the denominator of `within_0_1_sp`.",
+        "Element coordinates are relative to their own staff system: comparing",
+        "absolute y would measure the system distance, not pitch. Horizontal",
+        "spacing is fixed until P2. Unmatched elements and failures count in",
+        "the denominator of `within_0_1_sp`.",
         "",
         "| Metric | Value |",
         "| --- | ---: |",

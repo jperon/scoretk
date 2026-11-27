@@ -41,6 +41,10 @@ use scoretk_engrave::layout::PageSpec;
 use scoretk_smufl::{units_to_fixed, Edge, GLYPHS};
 
 /// Appends the quadratic outline of a SMuFL glyph, in fixed 1/1024 sp units.
+///
+/// // Port of `tdraw.cpp:2595-2630`: SMuFL glyph coordinates and anchors have
+/// y increasing upwards, while MuseScore's painter (and our SVG viewBox) has
+/// y increasing downwards. Negating y here keeps the glyph upright.
 fn write_outline(out: &mut String, glyph_index: u16) {
     let Some(glyph) = GLYPHS.get(usize::from(glyph_index)) else {
         return;
@@ -53,19 +57,19 @@ fn write_outline(out: &mut String, glyph_index: u16) {
         match *edge {
             Edge::Move(x, y) => {
                 cx = units_to_fixed(x);
-                cy = units_to_fixed(y);
+                cy = -units_to_fixed(y);
                 let _ = write!(out, "M{cx},{cy}");
             }
             Edge::Line(dx, dy) => {
                 cx += units_to_fixed(dx);
-                cy += units_to_fixed(dy);
+                cy -= units_to_fixed(dy);
                 let _ = write!(out, "L{cx},{cy}");
             }
             Edge::Quad(qx, qy, x, y) => {
                 let control_x = cx + units_to_fixed(qx);
-                let control_y = cy + units_to_fixed(qy);
+                let control_y = cy - units_to_fixed(qy);
                 cx += units_to_fixed(x);
-                cy += units_to_fixed(y);
+                cy -= units_to_fixed(y);
                 let _ = write!(out, "Q{control_x},{control_y} {cx},{cy}");
             }
         }

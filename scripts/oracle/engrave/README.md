@@ -17,9 +17,11 @@ files and writes SVGs into an unversioned output directory.
 3. `ours.sh` engraves the same files with `scoretk in.mscx -o out.svg
    --page 0`, also two in parallel, under `timeout 10 prlimit --as=2000000000`.
 4. `compare.py` converts both SVGs to staff spaces using each document's own
-   staff lines (reference: polylines; ours: rectangles), extracts notehead
-   centres, stem extents and bar-line centres, matches elements of the same
-   kind in document order, and reports:
+   staff lines (reference: polylines; ours: rectangles). Each element is
+   localised to its own five-line staff system before comparison: absolute y
+   would compare notes from different systems and report system distances as
+   pitch errors. It extracts notehead bounding-box centres, stem extents and
+   bar-line centres, matches elements of the same kind, and reports:
    - `within_0_1_sp`: share of all expected elements within 0.1 staff space in
      **both** axes; unmatched elements and failures count in the denominator;
    - `vertical_pitch`: share of matched noteheads whose staff line agrees
@@ -28,6 +30,8 @@ files and writes SVGs into an unversioned output directory.
      P2);
    - `stem_length`: share of matched stems whose length agrees within 0.1 sp;
    - per-file rows in `raw.jsonl` and a summary in `resume.md`.
+   `worst.py <out> [count]` dumps the worst element-level differences (20 by
+   default), unmatched elements included.
 
 ## Usage
 

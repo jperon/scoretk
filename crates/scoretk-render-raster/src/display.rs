@@ -64,17 +64,19 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
             let end = start + usize::from(g.edges.1);
             for edge in &scoretk_smufl::EDGES[start..end] {
                 match *edge {
+                    // // Port of `tdraw.cpp:2595-2630`: SMuFL y is
+                    // up-positive, the framebuffer y is down-positive.
                     Edge::Move(x, y) => {
                         cursor = Point::new(
                             base.x + to_pixels(units_to_fixed(x), staff_px),
-                            base.y + to_pixels(units_to_fixed(y), staff_px),
+                            base.y - to_pixels(units_to_fixed(y), staff_px),
                         );
                         path.move_to(cursor);
                     }
                     Edge::Line(dx, dy) => {
                         let next = Point::new(
                             cursor.x + to_pixels(units_to_fixed(dx), staff_px),
-                            cursor.y + to_pixels(units_to_fixed(dy), staff_px),
+                            cursor.y - to_pixels(units_to_fixed(dy), staff_px),
                         );
                         path.line_to(next);
                         cursor = next;
@@ -82,11 +84,11 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
                     Edge::Quad(qx, qy, x, y) => {
                         let control = Point::new(
                             cursor.x + to_pixels(units_to_fixed(qx), staff_px),
-                            cursor.y + to_pixels(units_to_fixed(qy), staff_px),
+                            cursor.y - to_pixels(units_to_fixed(qy), staff_px),
                         );
                         let next = Point::new(
                             cursor.x + to_pixels(units_to_fixed(x), staff_px),
-                            cursor.y + to_pixels(units_to_fixed(y), staff_px),
+                            cursor.y - to_pixels(units_to_fixed(y), staff_px),
                         );
                         path.quad_to(control, next);
                         cursor = next;

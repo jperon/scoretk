@@ -437,3 +437,51 @@ they are limited by clef/transposition handling (only the written pitch and
 stem-shortening cases. Reproduce with
 `scripts/oracle/engrave/mesure.sh <out> <scoretk-binary>`; raw per-file rows
 are in `<out>/raw.jsonl` and the summary in `<out>/resume.md`.
+
+### 9.7 Oracle correction and P1 debt (2026-11-27)
+
+`compare.py` originally converted every element to coordinates relative to
+the **first** staff system of the page. With several systems per page, the
+nearest-y matcher paired a note on system 4 of the reference with a note on
+system 1 of ours: the reported pitch figure measured the system distance,
+not the pitch. `staff_systems()` now groups staff lines into five-line
+systems and each note, stem and bar line is localised to its own system
+before matching. Noteheads are compared at their bounding-box centre in both
+SVGs (scoretk's SMuFL outline has its origin at the head's left edge).
+`worst.py <out> [count] [kind]` dumps the worst element-level differences.
+
+Re-running the **unchanged** P1 SVGs with the corrected oracle gives:
+
+| Metric | Original | Corrected |
+| --- | ---: | ---: |
+| Within 0.1 sp, both axes | 0.0030 | 0.0083 |
+| Within 0.1 sp, x only | 0.0106 | 0.0159 |
+| Within 0.1 sp, y only | 0.2600 | 0.4898 |
+| Vertical pitch / ledger agreement | 0.5138 | **0.9547** (508 noteheads) |
+| Stem-length agreement | 0.1053 | **0.0711** (380 stems) |
+
+So the pitch debt was mostly a measurement artefact; the remaining pitch
+differences are 23 noteheads (worst: 4.5 sp in `testMultiInstrumentPart3`,
+from clef handling). Stem length is a real defect: `copypaste_parts` has
+stems of 6.83/5.83 sp in MuseScore against 3.50 sp in ours, because
+`StemLayout::calcDefaultStemLength`'s final "extend to the middle line" step
+(`stemlayout.cpp:122-159`) is not ported yet.
+
+Fix applied in step 0: the middle-line extension, the drawn stem anchor
+(`tdraw.cpp:2602-2614`, calibrated to 0.235 sp against the 4.7.4 SVG),
+multi-voice stem directions by track parity (`chordlayout.cpp:1584-1588`),
+all voices of a segment instead of only the first, and an upright-glyph fix
+in both backends (SMuFL y is up-positive, the canvas y is down-positive).
+
+| Metric | P1 before | After step 0 |
+| --- | ---: | ---: |
+| Within 0.1 sp, both axes | 0.0083 | 0.0083 |
+| Within 0.1 sp, y only | 0.4898 | 0.5246 |
+| Vertical pitch / ledger agreement | 0.9547 | **0.9652** (517 noteheads) |
+| Stem-length agreement | 0.0711 | **0.6967** (389 stems) |
+
+The pitch target (≥ 95 %) is met. The stem-length target (≥ 90 %) is **not**:
+the remaining deficits are special noteheads (`testNoteheads2`: 9/26),
+beams/tuplets (`testTuplets8`: 9/21, `Beam-CrossM1`: 3/9) and multi-voice
+overlaps (`voiceswitching`: 24/62), all belonging to P3's beam/voice work.
+`worst.py /tmp/oracle-engrave 20 Stem` lists the worst cases.
