@@ -39,10 +39,10 @@ fn centering_braces_never_become_a_words_carrier() {
     // The lyric keeps the sung word, with the invisible braces removed.
     assert!(xml.contains("<text>nus</text>"), "lyric lost: {xml}");
     // No duplicated, red, raw-markup <words> for the centering brace. The
-    // private `gabc:syllable` field may still carry the source spelling: it
-    // is not printed and is stripped before a standard-only consumer reads
-    // the document (`full_support.py::sanitize`).
+    // private `gabc:syllable` field is gone from full-support output: a
+    // standard-only consumer sees the sung syllable and nothing else.
     assert!(!xml.contains("<words"), "an unexpected <words>: {xml}");
+    assert!(!xml.contains("gabc:"), "a private dump: {xml}");
     assert!(
         !xml.contains("#FF0000"),
         "syllable text coloured red: {xml}"
@@ -50,7 +50,7 @@ fn centering_braces_never_become_a_words_carrier() {
 }
 
 #[test]
-fn centering_braces_stay_in_the_derived_lyric_after_round_trip() {
+fn centering_is_an_honest_loss_after_full_support_round_trip() {
     let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
     let options = Options {
         xml_full_support: true,
@@ -60,10 +60,11 @@ fn centering_braces_stay_in_the_derived_lyric_after_round_trip() {
     let again = read(&xml, Format::MusicXml).expect("MusicXML import");
     let gabc = write(&again, Format::Gabc, &Options::default()).expect("GABC export");
     let gabc = String::from_utf8(gabc).expect("UTF-8");
-    assert!(
-        gabc.contains("{n}us"),
-        "sung syllable and centering lost: {gabc}"
-    );
+    // MusicXML has no carrier for a GABC centering control: the sung syllable
+    // survives in `<lyric>`, the invisible braces do not, and no hidden source
+    // spelling is smuggled back in (`gabc.md` §29).
+    assert!(gabc.contains("nus"), "sung syllable lost: {gabc}");
+    assert!(!gabc.contains("{n}"), "centering smuggled back in: {gabc}");
     assert!(
         !gabc.contains("<words"),
         "no <words> is copied into GABC: {gabc}"

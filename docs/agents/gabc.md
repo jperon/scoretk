@@ -1894,6 +1894,10 @@ Native carriers are counted but never flagged: 1 576 `miscellaneous-field`,
   written output and `convert_back` raises on any `gabc:` token, hidden
   extension text, private label, dump annotation or `@…` SMF prefix.
   `test_full_support.py` tests the audit and the native lyric carrier.
+- `gabc_centering_not_a_rubric.rs` no longer expects the invisible centering
+  braces to survive a full-support round trip: MusicXML has no carrier for
+  them, so the test now asserts the sung syllable is kept and the braces are
+  an honest loss instead of smuggled back through a hidden source spelling.
 
 ### 29.3 Measured result
 
