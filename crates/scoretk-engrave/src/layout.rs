@@ -711,9 +711,21 @@ pub(crate) fn stretch_budget(atom: &MeasureAtom) -> (i32, i32) {
     let mut stretch = 0;
     for index in 0..atom.events.len() {
         let event = &atom.events[index];
+        // The lyric padding is a `Spring::widthOffset` (`horizontalspacing.cpp:
+        // 1073-1082`): justification scales only `width - widthOffset`, so it
+        // belongs to the fixed budget and cannot be shrunk away.
         let width = segment_span(atom, index);
+        let offset = if width > 0 {
+            atom.segment_offsets
+                .get(usize::from(event.segment) + 1)
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        let spring_part = (width - offset).max(0);
         if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
-            stretch += width;
+            stretch += spring_part;
         } else {
             fixed += width;
         }
@@ -790,11 +802,25 @@ fn shared_measures(
                 bases.push(0);
             }
             let width = staves.iter().map(|atom| atom.width).max().unwrap_or(0);
+            // `Spring::widthOffset` (`horizontalspacing.cpp:1073-1082`): the
+            // lyric shape padding is fixed and is added back after the spring
+            // is stretched, so a force below 1 cannot shrink it. The widest
+            // demand over the staves wins, as for every other segment shape.
+            let offsets: alloc::vec::Vec<i32> = (0..=bases.len())
+                .map(|index| {
+                    staves
+                        .iter()
+                        .filter_map(|atom| atom.segment_offsets.get(index).copied())
+                        .max()
+                        .unwrap_or(0)
+                })
+                .collect();
             let mut xs = Vec::with_capacity(bases.len() + 1);
             xs.push(bases[0]);
             for (segment, &base) in bases.iter().enumerate() {
                 let next = bases.get(segment + 1).copied().unwrap_or(width);
-                let span = (next - base).max(0);
+                let offset = offsets.get(segment + 1).copied().unwrap_or(0);
+                let span = (next - base - offset).max(0);
                 let spring = staves.iter().any(|atom| {
                     atom.events.iter().any(|event| {
                         usize::from(event.segment) == segment
@@ -804,6 +830,7 @@ fn shared_measures(
                 });
                 xs.push(
                     xs[segment]
+                        + offset
                         + if spring {
                             span * system.scale / 1024
                         } else {
@@ -1155,6 +1182,30 @@ pub(crate) fn text_run_width(text: &str, em: i32, bold: bool) -> i32 {
         .sum()
 }
 
+/// Ink bounds of a text run relative to its pen, in fixed staff spaces.
+/// // Port of `Lyrics::shape()` used by `LyricsLayout::lyricsLineStartX`
+/// (`lyricslayout.cpp:768-770`): a dash starts at the syllable's *shape*
+/// right edge, which includes the Edwin glyph's side bearings. Using the
+/// advance width instead put the hyphen of "No-ël" on top of the "o".
+pub(crate) fn text_ink_bounds(text: &str, em: i32, bold: bool) -> (i32, i32) {
+    let mut pen = 0;
+    let mut left = i32::MAX;
+    let mut right = 0;
+    for character in text.chars() {
+        let Some(codepoint) = u16::try_from(character).ok() else {
+            continue;
+        };
+        if let Some(item) = text_glyph(codepoint, bold) {
+            // The Edwin table uses 250 font units per staff space, i.e.
+            // 1000 units = 4 sp; `em` is in 1/1024 sp.
+            left = left.min(pen + units_to_fixed(item.bbox[0]) * em / (4 * SP));
+            right = right.max(pen + units_to_fixed(item.bbox[2]) * em / (4 * SP));
+        }
+        pen += text_advance(codepoint, em, bold);
+    }
+    (if left == i32::MAX { 0 } else { left }, right)
+}
+
 /// Baseline offset from the top of a text run (Edwin cap height is about
 /// 736 font units; measured on the 4.7.4 title SVG).
 pub(crate) fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
@@ -1312,7 +1363,10 @@ fn plan_lyric_lines(
             if lyric.text.is_empty() {
                 continue;
             }
-            let width = text_run_width(&lyric.text, em, false);
+            let (_, ink_right) = text_ink_bounds(&lyric.text, em, false);
+            // `place_text_kind` centres the run with its advance width, so
+            // the glyph ink sits at `origin - advance / 2 + ink`.
+            let advance = text_run_width(&lyric.text, em, false);
             let line = lyric_line_offset(lyric.verse, em, spec);
             let top = first_line + line + offsets.get(lyric.verse).copied().unwrap_or(0);
             // `place_text_kind` draws the glyphs with their baseline at
@@ -1324,7 +1378,7 @@ fn plan_lyric_lines(
             let y = text_baseline
                 - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
                 - spec.lyrics_dash_width / 2;
-            let text_right = *x + SP / 2 + width / 2;
+            let text_right = *x + SP / 2 - advance / 2 + ink_right;
 
             if lyric.melisma {
                 // `LyricsLayout::createOrRemoveLyricsLine` ends the line at
@@ -1388,7 +1442,8 @@ fn plan_lyric_lines(
             else {
                 continue;
             };
-            let next_left = next_x + SP / 2 - text_run_width(next_text, em, false) / 2;
+            let next_ink = text_ink_bounds(next_text, em, false);
+            let next_left = next_x + SP / 2 - text_run_width(next_text, em, false) / 2 + next_ink.0;
             let start = text_right + spec.lyrics_dash_pad;
             let length = next_left - spec.lyrics_dash_pad - start;
             if length <= 0 {
@@ -2042,10 +2097,14 @@ pub fn build_page_with_skylines(
             let base = skyline_from_items(&out.items[staff_start..], &out, y, spec, false);
             let offsets = lyric_verse_moves(&events, lyrics_em, y, &base, spec);
             for (event_x, event) in &events {
+                // `place_lyrics` adds `SP / 2` itself to centre the run under
+                // the notehead; passing `event_x + SP / 2` here moved every
+                // syllable half a space right of its segment (and of the
+                // hyphen/ melisma lines planned from `event_x`).
                 place_lyrics(
                     &mut out,
                     &event.lyrics,
-                    event_x + SP / 2,
+                    *event_x,
                     y,
                     lyrics_em,
                     spec,
@@ -2411,6 +2470,63 @@ mod tests {
             - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
             - spec.lyrics_dash_width / 2;
         assert_eq!(lines[0].origin().1, expected);
+    }
+
+    #[test]
+    fn hyphen_sits_between_the_two_syllables_ink() {
+        // `LyricsLayout::lyricsLineStartX` (`lyricslayout.cpp:768-770`) uses
+        // `startLyrics->shape().right()`, not the advance width. Centring the
+        // run with the advance and then adding SP/2 *again* in `place_lyrics`
+        // put "No-ël"'s hyphen on top of the "o".
+        let spec = PageSpec::default();
+        let em = 2 * SP;
+        let lyric = |text: &str, syllabic| LyricAtom {
+            verse: 0,
+            text: String::from(text),
+            syllabic,
+            melisma: false,
+            melisma_end: None,
+        };
+        let first = Atom {
+            lyrics: vec![lyric("No", LyricsSyllabic::Begin)],
+            ..Atom::at_segment(0, AtomKind::Chord, 0)
+        };
+        let second = Atom {
+            lyrics: vec![lyric("ël", LyricsSyllabic::End)],
+            ..Atom::at_segment(0, AtomKind::Chord, 1)
+        };
+        let events = vec![(10 * SP, &first), (16 * SP, &second)];
+        let mut text = DisplayList::new(0);
+        // The page pass hands the *segment* x to `place_lyrics`, which adds
+        // the half-space centring once.
+        for (x, event) in &events {
+            place_lyrics(&mut text, &event.lyrics, *x, 5 * SP, em, &spec, &[]);
+        }
+        let glyphs: Vec<_> = text
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Lyrics)
+            .filter_map(|item| item.bbox(&text))
+            .collect();
+        let no_right = glyphs[..2].iter().map(|box_| box_.2).max().unwrap();
+        let el_left = glyphs[2..].iter().map(|box_| box_.0).min().unwrap();
+        let lines = plan_lyric_lines(&events, 5 * SP, 24 * SP, em, &spec, &[]);
+        assert_eq!(lines.len(), 1);
+        let (x, _, w, _) = match lines[0].geometry {
+            Geometry::Rect { x, y, w, h } => (x, y, w, h),
+            _ => panic!("a hyphen is a rectangle"),
+        };
+        assert!(x >= no_right, "hyphen {x} must clear 'No' ink {no_right}");
+        assert!(
+            x + w <= el_left,
+            "hyphen end {} must clear 'ël' ink {el_left}",
+            x + w
+        );
+        let (_, ink_right) = text_ink_bounds("No", em, false);
+        assert!(
+            ink_right > text_run_width("No", em, false) / 2,
+            "glyph side bearings are part of the lyric shape"
+        );
     }
 
     #[test]

@@ -181,6 +181,7 @@ impl Default for MeasureAtom {
             key_fifths: 0,
             mm_rest_count: 1,
             segment_bases: Vec::new(),
+            segment_offsets: Vec::new(),
             header_width: 0,
             min_extra: 0,
         }
@@ -242,11 +243,18 @@ pub struct MeasureAtom {
     /// number. Shared between staves by `align_staves` so a tick has one x
     /// for the whole system (`horizontalspacing.cpp:262-327`).
     pub segment_bases: Vec<i32>,
+    /// Fixed part of the distance to the next segment, indexed like
+    /// `segment_bases` (`offset[0]` is 0). // Port of `Spring::widthOffset`
+    /// (`horizontalspacing.cpp:1073-1082`): `computeMinWidth` records the
+    /// lyric padding as an offset that justification does **not** stretch,
+    /// while `stretchSegmentsToWidth` scales only `width - widthOffset`
+    /// (`:1087-1111`). Putting the demand in the base alone let a force below
+    /// 1 shrink it and collide neighbouring syllables again.
+    pub segment_offsets: Vec<i32>,
     /// Width of the clef/key header generated at a system start.
     pub header_width: i32,
-    /// Fixed minimum width added by attached text shapes. Lyric demands are
-    /// now carried by the individual segment bases (see `lyric_pair_distance`
-    /// in `compute_staff`); this field stays zero so a measure's minimum
+    /// Fixed minimum width added by attached text shapes. Lyric demands now
+    /// live in `segment_offsets`; this field stays zero so a measure's minimum
     /// width is entirely made of its segments, as in
     /// `stretchSegmentsToWidth` (`horizontalspacing.cpp:1087-1111, 1216-1276`).
     pub min_extra: i32,
@@ -1503,12 +1511,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             .iter()
             .rposition(|segment| segment.kind == SegmentType::ChordRest);
         let mut segment_bases = Vec::with_capacity(measure.segments.len());
+        let mut segment_offsets = Vec::with_capacity(measure.segments.len());
         // Previous chord/rest of each voice in this measure: `baseBeamMode`
         // compares its duration with the current one (`groups.cpp:107-125`).
         let mut prev_beam: alloc::vec::Vec<(u32, i32)> = alloc::vec::Vec::new();
 
         for (segment_number, segment) in measure.segments.iter().enumerate() {
             segment_bases.push(x);
+            segment_offsets.push(0);
             let seg = segment_number as u16;
             let tick = (segment.tick - measure.start_tick).ticks(1920) as i32;
             // `Lyrics::endTick()`: a melisma's `<ticks>`/`<ticks_f>` spans
@@ -1638,6 +1648,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                 x += deficit;
                                 if let Some(base) = segment_bases.last_mut() {
                                     *base += deficit;
+                                }
+                                // The demand is also recorded as a
+                                // `Spring::widthOffset`, the fixed part of
+                                // this segment's width that justification
+                                // must not shrink (`horizontalspacing.cpp:
+                                // 1073-1082, :1087-1111`).
+                                if let Some(offset) = segment_offsets.get_mut(segment_number) {
+                                    *offset += deficit;
                                 }
                             }
                         }
@@ -2010,6 +2028,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             key_fifths,
             mm_rest_count: mm_count.min(u16::MAX as usize) as u16,
             segment_bases,
+            segment_offsets,
             header_width: 0,
             min_extra: 0,
         };
@@ -2207,6 +2226,15 @@ mod tests {
         );
         assert!(lyric_gap > plain_gap);
         assert_eq!(with_lyrics[0].min_extra, 0);
+        // The deficit is a `Spring::widthOffset` (`horizontalspacing.cpp:
+        // 1073-1082`): justification stretches only `width - widthOffset`,
+        // so a force below 1 cannot put the syllables back on top of one
+        // another.
+        assert_eq!(
+            with_lyrics[0].segment_offsets[1],
+            (needed - plain_gap).max(0),
+            "the lyric padding must be recorded as fixed segment width"
+        );
     }
 
     #[test]

@@ -2104,3 +2104,52 @@ Rests are not extracted by the geometric oracle, so its figures are unchanged
 by construction. On the private page (`engrave-img/eng9/after.png`, the whole
 page inspected) both measure-1 rests now sit in the middle of their measure,
 clear of the 12/8 signature, as in the 4.7.4 reference.
+
+## 24. Review of the private page 2: lyric collision at the source (2026-11-27)
+
+Page 2 still showed "le Ré dem pteur" with the "é" of "Ré" on top of the "d"
+of "dem" (m.22, 26) and "Noël" without a visible hyphen (m.20–21, 25). Two
+root causes were measured on the SVG, not guessed from the picture.
+
+`HorizontalSpacing` splits a segment's width into a spring and a fixed
+`widthOffset` (`horizontalspacing.cpp:1073-1082`); `stretchSegmentsToWidth`
+scales only `width - widthOffset` (`:1087-1111`). §19 put the lyric padding
+into `segment_bases`, i.e. into the spring, so a system justification force
+below 1 shrank the reserved gap again: the "Ré"→"dem" centre distance was
+3.7 sp where `computeLyricsPadding` (`:1583-1601`) demands 5.7 sp. `MeasureAtom`
+now carries `segment_offsets`, the fixed part of each segment's distance to
+the next one, and `shared_measures` adds it back **after** scaling. The fixed
+budget of `stretch_budget` includes it, so the system's total width is still
+the justification target; only the distribution between spring and padding
+changed. A unit test pins the offset to `needed - plain_gap`.
+
+The hyphen was planned from `text_run_width` (an advance) while the glyphs
+are centred by the same advance, but `place_lyrics` added `SP / 2` a second
+time on top of the caller's `event_x + SP / 2`. Every syllable therefore sat
+half a space right of the segment that `plan_lyric_lines` used: "No-ël"'s dash
+landed on the "o". The page pass now hands the plain segment x to
+`place_lyrics`; the half-space centring happens once, as in
+`LyricsLayout::setDefaultPositions`. Dash ends additionally use
+`text_ink_bounds` (Edwin glyph boxes, 250 units per sp) for
+`LyricsLayout::lyricsLineStartX`/`EndX` (`lyricslayout.cpp:745-830`), so the
+dash starts at the syllable's shape edge rather than at its advance edge.
+A unit test checks that the dash lies between the rendered ink of "No" and
+"ël".
+
+| Metric (`oracle-eng9-review-step3` → `oracle-eng9-p2-step6b`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1711 (378/2 209) | **0.1747** (386/2 209) |
+| Measure widths within 0.1 sp | 90/394 | **91/394** |
+| Note x within 0.1 sp | 173/2 209 | **178/2 209** |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Files with identical system breaks | 36/56 | **35/56** |
+| Files with the oracle page count | 54/56 | 54/56 |
+
+The one lost system-break file is `testHairpinDynamics`: its per-page
+`breaks_equal` stays 1, but the count of bar lines per system in the SVG
+changes after the horizontal redistribution, so the element-level metric
+drops it. It is reported, not excluded. On the private page both renders
+(`engrave-img/eng9/step7-p2.png`, `step7-p1.png`, whole pages inspected) keep
+the same three systems per page: the collisions are gone and "No-ël" now has
+its hyphen, while page 1 is unchanged.
