@@ -199,6 +199,10 @@ pub struct StyleSettings {
     /// 0.25 sp in 4.x, 0 in the legacy 3.x styles). It fills the lyrics row
     /// of the padding table (`rendering/paddingtable.cpp:207-209`).
     pub lyrics_min_distance_sp: f64,
+    /// Fraction of the lyric font's x-height by which a dash line is raised
+    /// above the syllable baseline (`Sid::lyricsDashYposRatio`, 0.5 by
+    /// default). // `styledef.cpp:92`; `dom/lyricsline.cpp:181-191`.
+    pub lyrics_dash_y_pos_ratio: f64,
 }
 
 impl StyleSettings {
@@ -285,6 +289,7 @@ impl StyleSettings {
             lyrics_min_bottom_distance_sp: 1.5,
             lyrics_line_height: 1.0,
             lyrics_min_distance_sp: if legacy { 0.0 } else { 0.25 },
+            lyrics_dash_y_pos_ratio: 0.5,
         }
     }
 
@@ -398,6 +403,7 @@ impl StyleSettings {
             }
             "lyricsLineHeight" => Self::set_positive(&mut self.lyrics_line_height, value),
             "lyricsMinDistance" => Self::set_number(&mut self.lyrics_min_distance_sp, value),
+            "lyricsDashYposRatio" => Self::set_number(&mut self.lyrics_dash_y_pos_ratio, value),
             _ => {}
         }
     }

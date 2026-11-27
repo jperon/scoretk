@@ -1462,3 +1462,37 @@ is reported rather than attributed yet. The private score sets
 `lyricsMinDistance` 0, so its floor is 0.1 sp; no score text is copied into
 the repository. The before/after PNGs are `engrave-img/eng8/before.png` and
 `after.png`, both rendered from the tree at the corresponding commit.
+
+### 14.4 Dashes at the verse baseline (2026-11-27)
+
+`plan_lyric_lines` placed every hyphen and melisma dash at
+`text_top - cap(text)/2`, i.e. roughly half a cap height **above the top of
+the glyphs**. `LyricsLineSegment::baseLineShift`
+(`dom/lyricsline.cpp:181-191`) puts a dash at
+`-styleD(lyricsDashYposRatio) * fontMetrics().xHeight()` *relative to the
+lyrics' own baseline*; `LyricsLayout::setDefaultPositions`
+(`lyricslayout.cpp:598,606-611`) gives the segment the verse's y plus that
+shift. Our Edwin backend draws the glyphs with their baseline at
+`top + cap("M")`, and x-height is the Edwin `x` glyph's bbox (466 font
+units). The private score sets `lyricsDashYposRatio` 0.67 instead of the
+4.7.4 default 0.5 (`styledef.cpp:92`), so `Sid::lyricsDashYposRatio` is now
+read by `StyleSettings::set_value` and copied into `PageSpec`. A unit test
+pins the resulting dash y; the horizontal origin of the dashes is left
+untouched (moving it half a space changed 10 systems of `moonlight`
+and inflated the oracle's element denominator from 2 490 to 2 771, so that
+experiment was dropped).
+
+| Oracle, 56 files | Before (`oracle-eng8-step1-final`) | After (`oracle-eng8-step2b`) |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2490 | 0 / 2490 |
+| Elements within 0.1 sp | 343/2490 | 343/2490 |
+| Measure widths / system breaks | 66/394 / 33/56 | 66/394 / 33/56 |
+| Page counts / page-break patterns | 53/56 / 48/59 | 53/56 / 48/59 |
+| Lyric glyphs overlapping a staff | 0 / 0 | 0 / 0 |
+
+On the private page the dashes now sit at 0.67 x-height above each verse's
+baseline (measured 1 041 fixed units at em 3 334) instead of floating above
+the words. Lyrics, hyphens and dashes are not extracted by the geometric
+oracle, so the unchanged figures above are expected; the visual comparison
+of `engrave-img/eng8/after.png` against `before.png` and `ref.png` is the
+evidence for this step.

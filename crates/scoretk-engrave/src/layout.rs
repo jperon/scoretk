@@ -106,6 +106,9 @@ pub struct PageSpec {
     pub lyrics_min_bottom_distance: i32,
     /// // Port of `styledef.cpp:79` (`lyricsLineHeight` 1.0), fixed 1024 = 1.0.
     pub lyrics_line_height: i32,
+    /// // Port of `styledef.cpp:92` (`lyricsDashYposRatio` 0.5): the dash
+    /// segment's baseline shift in x-heights (`dom/lyricsline.cpp:181-191`).
+    pub lyrics_dash_y_pos_ratio: f64,
     /// Point size of the lyricist text style (`styledef.cpp:878`, default
     /// 10 pt). // Port of `LyricsLayout::layout`.
     pub lyric_font_size: f64,
@@ -146,6 +149,7 @@ impl Default for PageSpec {
             lyrics_min_top_distance: SP,
             lyrics_min_bottom_distance: 3 * SP / 2,
             lyrics_line_height: 1024,
+            lyrics_dash_y_pos_ratio: 0.5,
             lyric_font_size: 10.0,
         }
     }
@@ -202,6 +206,7 @@ impl PageSpec {
             lyrics_min_top_distance: (style.lyrics_min_top_distance_sp * SP as f64) as i32,
             lyrics_min_bottom_distance: (style.lyrics_min_bottom_distance_sp * SP as f64) as i32,
             lyrics_line_height: (style.lyrics_line_height * 1024.0) as i32,
+            lyrics_dash_y_pos_ratio: style.lyrics_dash_y_pos_ratio,
             lyric_font_size: style.lyricist_font_size,
             // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
             // page 1 pushes the first system down by its own height plus
@@ -1051,8 +1056,10 @@ pub(crate) fn place_lyrics(
 /// Hyphens and melisma extender lines of one system, ported from
 /// `LyricsLayout::layoutDashes` (`lyricslayout.cpp:206-366`). The dash width
 /// is capped at `lyricsDashMaxLength` 0.6 sp and their count is derived from
-/// `lyricsDashMaxDistance` 16 sp; the syllable and melisma styles place them
-/// halfway up the text's cap height.
+/// `lyricsDashMaxDistance` 16 sp. // Port of
+/// `LyricsLineSegment::baseLineShift` (`dom/lyricsline.cpp:181-191`): a dash
+/// sits `lyricsDashYposRatio * xHeight` **above the verse baseline**, which
+/// here is `top + cap("M")` (`place_text_kind`), not above the text's top.
 fn plan_lyric_lines(
     events: &[(i32, &Atom)],
     staff_y: i32,
@@ -1069,10 +1076,17 @@ fn plan_lyric_lines(
                 continue;
             }
             let width = text_run_width(&lyric.text, em, false);
-            let cap = text_cap_height(&lyric.text, em, false);
             let line = lyric.verse as i32 * spec.lyrics_line_height / 1024 * SP;
-            let baseline = first_line + line + offsets.get(lyric.verse).copied().unwrap_or(0);
-            let y = baseline - cap / 2 - LYRIC_LINE_WIDTH / 2;
+            let top = first_line + line + offsets.get(lyric.verse).copied().unwrap_or(0);
+            // `place_text_kind` draws the glyphs with their baseline at
+            // `top + cap("M")`; the line segment is placed relative to that
+            // baseline (`lyricslayout.cpp:606-611`, `:598`).
+            let text_baseline = top + text_cap_height("M", em, false);
+            let x_height = text_glyph(u16::from(b'x'), false)
+                .map_or(em / 2, |g| i32::from(g.bbox[3]) * em / i32::from(UPEM));
+            let y = text_baseline
+                - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
+                - LYRIC_LINE_WIDTH / 2;
             let text_centre = *x + SP / 2;
             let start = if lyric.melisma {
                 text_centre + width / 2 + LYRIC_MELISMA_PAD
@@ -1966,12 +1980,24 @@ mod tests {
             ..Atom::at_segment(0, AtomKind::Chord, 2)
         };
         let events = vec![(4 * SP, &first), (10 * SP, &second), (16 * SP, &third)];
-        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP, &PageSpec::default(), &[]);
+        let spec = PageSpec::default();
+        let lines = plan_lyric_lines(&events, 5 * SP, 20 * SP, 2 * SP, &spec, &[]);
         assert_eq!(lines.len(), 3); // two hyphens, one melisma dash
         for item in &lines {
             let (_, y) = item.origin();
             assert!(y > 5 * SP + 4 * SP, "lyric lines sit below the staff");
         }
+        // `LyricsLineSegment::baseLineShift`: ratio * xHeight above the
+        // verse's text baseline, not above the top of the glyphs.
+        let em = 2 * SP;
+        let x_height =
+            i32::from(text_glyph(u16::from(b'x'), false).unwrap().bbox[3]) * em / i32::from(UPEM);
+        let text_baseline =
+            5 * SP + STAFF_HEIGHT + spec.lyrics_pos_below + text_cap_height("M", em, false);
+        let expected = text_baseline
+            - (spec.lyrics_dash_y_pos_ratio * x_height as f64) as i32
+            - LYRIC_LINE_WIDTH / 2;
+        assert_eq!(lines[0].origin().1, expected);
     }
 
     #[test]
