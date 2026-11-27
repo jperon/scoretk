@@ -48,6 +48,14 @@ pub fn glyph(name: &str) -> Option<&'static Glyph> {
         .map(|index| &GLYPHS[index])
 }
 
+/// Index d'un glyphe dans [`GLYPHS`], pour les listes d'affichage.
+pub fn glyph_index(name: &str) -> Option<u16> {
+    GLYPHS
+        .binary_search_by(|glyph| glyph.name.cmp(name))
+        .ok()
+        .and_then(|index| u16::try_from(index).ok())
+}
+
 /// Cherche un glyphe par son codepoint Unicode privé SMuFL.
 pub fn glyph_by_codepoint(codepoint: u16) -> Option<&'static Glyph> {
     GLYPHS.iter().find(|glyph| glyph.codepoint == codepoint)

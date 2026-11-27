@@ -756,6 +756,7 @@ pub struct Default {
         out.write("pub const SPATIUM_UNITS: i16 = %d;\n" % SPATIUM_UNITS)
         out.write("pub const GLYPHS: [Glyph; %d] = [\n" % len(selected))
         out.write("\n".join(glyph_lines) + "\n];\n\n")
+        out.write("#[allow(clippy::large_const_arrays)]\n")
         out.write("pub const EDGES: [Edge; %d] = [\n" % len(edge_lines))
         out.write("\n".join(edge_lines) + "\n];\n\n")
         out.write("pub const ANCHORS: [Anchor; %d] = [\n" % len(anchor_lines))

@@ -375,6 +375,7 @@ pub const GLYPHS: [Glyph; 308] = [
     Glyph { name: "unpitchedPercussionClef2", codepoint: 0xE06A, advance: 304, bbox: [0, -438, 304, 438], edges: (14370, 16), anchors: (339, 0) },
 ];
 
+#[allow(clippy::large_const_arrays)]
 pub const EDGES: [Edge; 14386] = [
     Edge::Move(186, -37),
     Edge::Line(-79, 0),

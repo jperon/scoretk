@@ -27,6 +27,7 @@ members = [
     "crates/scoretk-wasm",
     "crates/scoretk-render-raster",
     "crates/scoretk-smufl",
+    "crates/scoretk-engrave",
 ]
 
 [workspace.package]

@@ -664,6 +664,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-engrave"
+version = "0.1.0"
+dependencies = [
+ "scoretk-core",
+ "scoretk-smufl",
+]
+
+[[package]]
 name = "scoretk-gabc-common"
 version = "0.1.0"
 dependencies = [
