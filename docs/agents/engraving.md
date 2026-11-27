@@ -403,9 +403,13 @@ python3 -I scripts/gen-smufl-subset.py \
   crates/scoretk-smufl/fonts/leland crates/scoretk-smufl/src/glyphs.rs
 ```
 
-Measured output: **308 glyphs, 10 468 quadratic and 3 281 line segments
+Measured output at P1: **308 glyphs, 10 468 quadratic and 3 281 line segments
 (14 386 edges), 339 anchors over 10 anchor names, 29 numeric
-`engravingDefaults`**. The generated constants occupy about 107 KB of binary
+`engravingDefaults`**. In eng5 the CFF interpreter was fixed to include the
+first segment of every contour (which the old reader treated as a starting
+point), so the regenerated tables contain **11 365 quadratics and 3 309 lines
+for the SMuFL subset**; the Edwin subset contains 12 312 edges for 167
+codepoints per style. The generated constants occupy about 107 KB of binary
 data (the Rust source is ~500 KB of text); the font and metadata vendored as
 generation input are 239 KB, with the OFL documents 313 KB in total, still
 inside the 400 KB font-data budget. The remaining gates are a perceptual check
@@ -934,3 +938,33 @@ differences (the explicit beams of `Beam-CrossM1` now all match, §9.19). The P2
 breaks still differ, largely from text-driven segment widths (needs text
 metrics, P4), multi-voice collisions and courtesy headers. Both remain
 open work, not a redefinition of the gate.
+
+## 11. P5: multi-staff engraving (eng5, 2026-11-27)
+
+P5 was brought forward because the CLI refused a private choral score with
+the message `P1 engraves a single staff, score has 17`. The 17 staves are
+**all parts/excerpts of the `.mscz`**; 15 belong to hidden parts, leaving
+four visible staves (S/A, T/B and the two organ staves). MuseScore's
+`SystemLayout` likewise visits only `Staff::show()` staves
+(`systemlayout.cpp:2477-2485`).
+
+| Step | Change | Oracle figures before → after |
+| --- | --- | --- |
+| 1 | Remove the refusal; one atom stream per visible staff, shared segment x, own clef/key/time and spanning bar lines | 0/12 multi-staff corpus files engraved → 12/12; 44 single-staff files unchanged (34/44 breaks, 69/192 widths, 365/1261 elements) |
+| 2 | `staffDistance`/`akkoladeDistance`, `minSystemDistance`, `distributeStaves` spread and page breaks by system height | System top y vs 4.7.4 on 77 page-1 systems: mean abs. error 11.19 → 5.05 sp, median 7.00 → 4.64 sp; single-staff figures unchanged. Private score: 2 → 8 pages (oracle 7), 42 → 22 systems |
+| 3 | Choir brackets, piano brace (`Scaled` SMuFL geometry in SVG and raster), instrument names, `barLineSpan` | Private page 1: 0 → 12 bracket items, 0 → 21 Edwin name glyphs; 44-file oracle unchanged |
+| 4 | Lyrics as Edwin text below their staff at the shared segment x | Private page 1: 0 → 268 Edwin text glyphs; 44-file oracle unchanged |
+| 5 | Oracle over all 56 corpus files, every page, page breaks and staff y; fix the slashed Edwin `o` | 44 files: 366/1261 elements, 34/44 breaks, 42/44 page counts, 15/88 staff tops → 56 files: 385/2771, 34/56 breaks, 53/56 page counts, 19/198 staff tops; **0 failures** |
+
+The `o` defect came from `gen-smufl-subset.py`: `glyph_edges` used
+`contour[0]` as the starting point and then iterated `contour[1:]`, dropping
+the first arc and replacing it with a chord. Edwin's lowercase `o` was
+slashed in both SVG and raster output. Both generated tables were
+regenerated; a unit test in `scoretk-smufl` pins the first arc.
+
+The P5 gate (page count and breaks equal on ≥ 90 % of files) is **not met**:
+53/56 page counts but only 48/57 page-break patterns and 19/198 staff tops
+within 0.5 sp. The remaining causes are the title frame being 7 sp too tall
+on some files, horizontal minimum widths (P2 debt) and the lack of
+spacers/skylines in the vertical spread pass (P4 work). No file or failure
+is excluded from these figures.
