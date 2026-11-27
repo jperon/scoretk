@@ -937,10 +937,13 @@ impl<'a> Reader<'a> {
             .unwrap_or(1);
         let ratio = Fraction::try_new(num, base).unwrap_or(Fraction::ONE);
         let start_tick = self.score.measures[measure].start_tick + *ticks;
-        let base_len = node
-            .children
-            .iter()
-            .find_map(duration_of_opt)
+        // MEI 5.1 (*Guidelines* §4.3.4, RNG `mei_tuplet`) place les événements
+        // du n-olet dans des conteneurs `<beam>`/`<beamSpan>` aussi bien que
+        // directement sous `<tuplet>`. La durée de base est celle du premier
+        // événement, pas celle du conteneur : regarder seulement les enfants
+        // directs retombait sur un quart par défaut dès qu'un `<beam>` enveloppait
+        // les notes, et l'aller-retour changeait `base_len`/`len` du n-olet.
+        let base_len = first_event_duration(node)
             .map(|duration| duration.ticks())
             .unwrap_or(Fraction::QUARTER);
         // `TRead::read(Tuplet*)` : `len = baseLen * normalNotes`, avec le
@@ -1295,6 +1298,19 @@ fn note_head_group(node: &Element) -> Option<scoretk_core::model::NoteHeadGroup>
 /// (`Convert::durFromMEI` + `AttAugmentDots`).
 pub(crate) fn duration_of(node: &Element) -> Duration {
     duration_of_opt(node).unwrap_or(Duration::quarter())
+}
+
+/// First musical event with an `@dur` below `node`, beam wrappers included.
+fn first_event_duration(node: &Element) -> Option<Duration> {
+    if let Some(duration) = duration_of_opt(node) {
+        return Some(duration);
+    }
+    for child in &node.children {
+        if let Some(duration) = first_event_duration(child) {
+            return Some(duration);
+        }
+    }
+    None
 }
 
 fn duration_of_opt(node: &Element) -> Option<Duration> {

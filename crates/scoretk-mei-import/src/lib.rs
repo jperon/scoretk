@@ -192,6 +192,27 @@ mod tests {
         assert_eq!(score.notes.len(), 1);
     }
 
+    /// MEI 5.1 *Guidelines* §4.3.4 : `num`/`numbase` décrivent le rapport du
+    /// n-olet, et la durée de base est celle des événements qu'il contient,
+    /// même lorsqu'un `<beam>` les enveloppe (RNG `mei_tuplet` admet
+    /// `mei_model.eventLike.cmn` comme enfant indirect).
+    #[test]
+    fn tuplet_base_duration_ignores_the_beam_wrapper() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <tuplet num="3" numbase="2"><beam>
+                <note dur="8" pname="c" oct="4"/><note dur="8" pname="d" oct="4"/><note dur="8" pname="e" oct="4"/>
+              </beam></tuplet>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI with a beamed tuplet");
+        let tuplet = &score.tuplets[0];
+        assert_eq!(tuplet.base_len, scoretk_core::model::Fraction::new(1, 8));
+        assert_eq!(tuplet.len, scoretk_core::model::Fraction::new(1, 4));
+    }
+
     /// MEI 5.1 *Guidelines* §4.2.6 : `@tstamp` compte les positions du mètre
     /// écrit (1 = premier temps). Dans `2/4`, `tstamp="2"` est donc à `1/4`
     /// de ronde, pas en fin de mesure. Une lecture avec le dénominateur réduit
