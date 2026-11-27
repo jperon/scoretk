@@ -642,6 +642,8 @@ fn place_measure(
     events: &[(i32, &Atom)],
     event_offset: usize,
     plan: &BeamPlan,
+    bar_height: i32,
+    draw_end_bar: bool,
 ) -> i32 {
     // The first header event sits at its own x (e.g. clefLeftMargin); the
     // loop below then advances by the gap to the following event.
@@ -667,11 +669,13 @@ fn place_measure(
     // last segment's right edge. The former -SEGMENT_WIDTH/2 offset placed
     // every bar line 0.75 sp too early.
     let bar_x = x0 + cursor;
-    place_barline(out, atom.end_bar, bar_x, system_y);
+    if draw_end_bar {
+        place_barline(out, atom.end_bar, bar_x, system_y, bar_height);
+    }
     cursor
 }
 
-fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: i32) {
+fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: i32, height: i32) {
     let w = THIN_BARLINE_WIDTH;
     match code.0 {
         1 => out.push(DisplayItem::rect(
@@ -679,7 +683,7 @@ fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: 
             x - w / 2,
             y,
             w,
-            STAFF_HEIGHT,
+            height,
         )),
         2 => {
             out.push(DisplayItem::rect(
@@ -687,14 +691,14 @@ fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: 
                 x - BARLINE_SEPARATION - w / 2,
                 y,
                 w,
-                STAFF_HEIGHT,
+                height,
             ));
             out.push(DisplayItem::rect(
                 ItemKind::BarLine,
                 x - w / 2,
                 y,
                 w,
-                STAFF_HEIGHT,
+                height,
             ));
         }
         3 => {
@@ -708,14 +712,14 @@ fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: 
                 x - THIN_BARLINE_WIDTH / 2,
                 y,
                 THIN_BARLINE_WIDTH,
-                STAFF_HEIGHT,
+                height,
             ));
             out.push(DisplayItem::rect(
                 ItemKind::BarLine,
                 x + BARLINE_SEPARATION,
                 y,
                 THICK_BARLINE_WIDTH,
-                STAFF_HEIGHT,
+                height,
             ));
         }
         _ => {}
@@ -806,13 +810,13 @@ fn place_time_sig(out: &mut DisplayList, numerator: u8, denominator: u8, x: i32,
 
 /// Font em in fixed staff spaces: point size converted with the score's
 /// spatium (`styledef.cpp:1209-1223`, `TextStyle::fontSize`).
-fn text_em(spec: &PageSpec, font_size: f64) -> i32 {
+pub(crate) fn text_em(spec: &PageSpec, font_size: f64) -> i32 {
     ((font_size * 25.4 / 72.0) / spec.spatium_mm * SP as f64) as i32
 }
 
 /// Width of a text run with real Edwin advances (`horizontalspacing.cpp` uses
 /// the same item widths to size its segments).
-fn text_run_width(text: &str, em: i32, bold: bool) -> i32 {
+pub(crate) fn text_run_width(text: &str, em: i32, bold: bool) -> i32 {
     text.chars()
         .filter_map(|character| u16::try_from(character).ok())
         .map(|codepoint| text_advance(codepoint, em, bold))
@@ -832,7 +836,31 @@ fn text_cap_height(text: &str, em: i32, bold: bool) -> i32 {
 
 /// Emits one Edwin glyph per character. `align` is 0 (left), 1 (centre) or
 /// 2 (right); the pen starts at `x` with a top at `y` (not the baseline).
-fn place_text(out: &mut DisplayList, text: &str, x: i32, y: i32, em: i32, bold: bool, align: u8) {
+pub(crate) fn place_text(
+    out: &mut DisplayList,
+    text: &str,
+    x: i32,
+    y: i32,
+    em: i32,
+    bold: bool,
+    align: u8,
+) {
+    place_text_kind(out, ItemKind::Text, text, x, y, em, bold, align);
+}
+
+/// Same as [`place_text`], with an explicit display-list class (used by
+/// instrument names and lyrics).
+#[allow(clippy::too_many_arguments)] // page-local helper: list, style and text run
+pub(crate) fn place_text_kind(
+    out: &mut DisplayList,
+    kind: ItemKind,
+    text: &str,
+    x: i32,
+    y: i32,
+    em: i32,
+    bold: bool,
+    align: u8,
+) {
     let width = text_run_width(text, em, bold);
     let mut pen = match align {
         1 => x - width / 2,
@@ -845,14 +873,7 @@ fn place_text(out: &mut DisplayList, text: &str, x: i32, y: i32, em: i32, bold: 
             continue;
         };
         if text_glyph(codepoint, bold).is_some() {
-            out.push(DisplayItem::text(
-                ItemKind::Text,
-                codepoint,
-                pen,
-                baseline,
-                em,
-                bold,
-            ));
+            out.push(DisplayItem::text(kind, codepoint, pen, baseline, em, bold));
         }
         pen += text_advance(codepoint, em, bold);
     }
@@ -1234,10 +1255,33 @@ pub fn build_page(
                 1,
             );
         }
+        let groups = crate::decor::barline_groups(staffs);
+        crate::decor::place_brackets(&mut out, staffs, system, left);
+        crate::decor::place_instrument_names(
+            &mut out,
+            spec,
+            staffs,
+            system,
+            left,
+            system.first == 0 && system.page == 0,
+        );
+        crate::decor::place_initial_barline(&mut out, staffs, &groups, system, left);
         // // Port of `SystemLayout::layoutSystem` (`systemlayout.cpp:2477-2582`):
         // each visible staff of the system is laid out in turn, with its own
         // clef/key/time and its own events at the shared segment x positions.
         for (staff_index, staff_atoms) in atoms.iter().enumerate() {
+            let span = groups
+                .iter()
+                .find(|&&(first, last)| staff_index >= first && staff_index <= last);
+            let (bar_height, draw_end_bar) = match span {
+                Some(&(first, last)) => {
+                    let top = system.staff_offsets.get(first).copied().unwrap_or(0);
+                    let bottom =
+                        system.staff_offsets.get(last).copied().unwrap_or(0) + STAFF_HEIGHT;
+                    (bottom - top, staff_index == first)
+                }
+                None => (STAFF_HEIGHT, true),
+            };
             let y = sy
                 + system
                     .staff_offsets
@@ -1290,6 +1334,8 @@ pub fn build_page(
                     &events,
                     event_offset,
                     &plan,
+                    bar_height,
+                    draw_end_bar,
                 );
                 event_offset += atom.events.len();
             }
@@ -1297,8 +1343,8 @@ pub fn build_page(
             // line is not drawn at the beginning of a system (the 4.7.4 SVG
             // has none). Repeats and double/final start bar lines are drawn.
             let start_bar = staff_atoms[system.first].start_bar;
-            if start_bar.0 > 1 {
-                place_barline(&mut out, start_bar, left, y);
+            if start_bar.0 > 1 && draw_end_bar {
+                place_barline(&mut out, start_bar, left, y, bar_height);
             }
         }
     }

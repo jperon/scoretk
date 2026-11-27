@@ -112,6 +112,18 @@ fn write_text_outline(out: &mut String, codepoint: u16, bold: bool, size: i32) {
     let _ = write!(out, "Z");
 }
 
+/// Writes a 1/1024 fixed-point ratio as a decimal SVG number.
+fn write_ratio(out: &mut String, value: i32) {
+    let magnitude = value.unsigned_abs();
+    let _ = write!(
+        out,
+        "{}{}.{:04}",
+        if value < 0 { "-" } else { "" },
+        magnitude / 1024,
+        (magnitude % 1024) * 10000 / 1024
+    );
+}
+
 fn write_item(out: &mut String, item: &DisplayItem) {
     let class = item.kind.as_str();
     match item.geometry {
@@ -148,6 +160,26 @@ fn write_item(out: &mut String, item: &DisplayItem) {
                 "<path class=\"{class}\" transform=\"translate({x},{y})\" d=\""
             );
             write_text_outline(out, codepoint, bold, size);
+            out.push_str("\"/>");
+        }
+        Geometry::Scaled {
+            glyph,
+            x,
+            y,
+            sx,
+            sy,
+        } => {
+            let _ = write!(
+                out,
+                "<path class=\"{class}\" transform=\"translate({x},{y}) scale("
+            );
+            write_ratio(out, sx);
+            out.push(',');
+            write_ratio(out, sy);
+            let _ = write!(out, ")\" d=\"");
+            // `write_outline` already flips SMuFL's y axis, so a positive
+            // scale in both directions keeps the brace upright.
+            write_outline(out, glyph);
             out.push_str("\"/>");
         }
         Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {

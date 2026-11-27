@@ -45,6 +45,10 @@ pub enum ItemKind {
     Beam,
     /// Title, subtitle, measure numbers, lyrics and other Edwin text.
     Text,
+    /// Square choir bracket or curved piano brace.
+    Bracket,
+    /// Short or long instrument name at the left of a system.
+    InstrumentName,
 }
 
 impl ItemKind {
@@ -63,6 +67,8 @@ impl ItemKind {
             Self::Flag => "Hook",
             Self::Beam => "Beam",
             Self::Text => "Text",
+            Self::Bracket => "Bracket",
+            Self::InstrumentName => "InstrumentName",
         }
     }
 }
@@ -110,6 +116,17 @@ pub enum Geometry {
         y: i32,
         size: i32,
         bold: bool,
+    },
+    /// A SMuFL glyph stretched to a given box, used for the piano brace
+    /// (`tdraw.cpp:1088-1105` scales the `brace` symbol to the bracket
+    /// height). `x`/`y` are the translation of the font outline and
+    /// `sx`/`sy` are 1/1024 scale factors.
+    Scaled {
+        glyph: u16,
+        x: i32,
+        y: i32,
+        sx: i32,
+        sy: i32,
     },
 }
 
@@ -175,12 +192,26 @@ impl DisplayItem {
         }
     }
 
+    pub const fn scaled(glyph: u16, x: i32, y: i32, sx: i32, sy: i32) -> Self {
+        Self {
+            kind: ItemKind::Bracket,
+            geometry: Geometry::Scaled {
+                glyph,
+                x,
+                y,
+                sx,
+                sy,
+            },
+        }
+    }
+
     /// Position of the item's origin in fixed-point staff spaces.
     pub const fn origin(&self) -> (i32, i32) {
         match self.geometry {
             Geometry::Glyph { x, y, .. }
             | Geometry::Path { x, y, .. }
-            | Geometry::Text { x, y, .. } => (x, y),
+            | Geometry::Text { x, y, .. }
+            | Geometry::Scaled { x, y, .. } => (x, y),
             Geometry::Rect { x, y, .. } | Geometry::Beam { x1: x, y1: y, .. } => (x, y),
         }
     }
@@ -208,6 +239,26 @@ impl DisplayItem {
                     y - units_to_fixed(b[3]),
                     x + units_to_fixed(b[2]),
                     y - units_to_fixed(b[1]),
+                ))
+            }
+            Geometry::Scaled {
+                glyph,
+                x,
+                y,
+                sx,
+                sy,
+            } => {
+                let g = GLYPHS.get(usize::from(glyph))?;
+                let b = g.bbox;
+                let left = x + i32::from(b[0]) * sx / 1024;
+                let right = x + i32::from(b[2]) * sx / 1024;
+                // SMuFL y is up-positive: the translated outline's lowest
+                // point is `y - b[1] * sy`.
+                Some((
+                    left,
+                    y - i32::from(b[3]) * sy / 1024,
+                    right,
+                    y - i32::from(b[1]) * sy / 1024,
                 ))
             }
             Geometry::Text {
@@ -276,7 +327,10 @@ impl DisplayList {
             Geometry::Glyph { glyph, .. } | Geometry::Path { glyph, .. } => {
                 GLYPHS.get(usize::from(glyph)).map(|g| g.name)
             }
-            Geometry::Rect { .. } | Geometry::Beam { .. } | Geometry::Text { .. } => None,
+            Geometry::Rect { .. }
+            | Geometry::Beam { .. }
+            | Geometry::Text { .. }
+            | Geometry::Scaled { .. } => None,
         }
     }
 }

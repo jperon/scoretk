@@ -131,6 +131,59 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
             path.close();
             buf.fill_path(&path, ink);
         }
+        Geometry::Scaled {
+            glyph,
+            x,
+            y,
+            sx,
+            sy,
+        } => {
+            let Some(g) = GLYPHS.get(usize::from(glyph)) else {
+                return;
+            };
+            let base = Point::new(
+                origin.x + to_pixels(x, staff_px),
+                origin.y + to_pixels(y, staff_px),
+            );
+            let scale = |value: i32, factor: i32| value * factor / 1024;
+            let mut path = Path::new();
+            let mut cursor = base;
+            let start = usize::from(g.edges.0);
+            let end = start + usize::from(g.edges.1);
+            for edge in &scoretk_smufl::EDGES[start..end] {
+                match *edge {
+                    Edge::Move(gx, gy) => {
+                        cursor = Point::new(
+                            base.x + to_pixels(scale(i32::from(gx), sx), staff_px),
+                            base.y - to_pixels(scale(i32::from(gy), sy), staff_px),
+                        );
+                        path.move_to(cursor);
+                    }
+                    Edge::Line(dx, dy) => {
+                        let next = Point::new(
+                            cursor.x + to_pixels(scale(i32::from(dx), sx), staff_px),
+                            cursor.y - to_pixels(scale(i32::from(dy), sy), staff_px),
+                        );
+                        path.line_to(next);
+                        cursor = next;
+                    }
+                    Edge::Quad(qx, qy, x, y) => {
+                        let control = Point::new(
+                            cursor.x + to_pixels(scale(i32::from(qx), sx), staff_px),
+                            cursor.y - to_pixels(scale(i32::from(qy), sy), staff_px),
+                        );
+                        let next = Point::new(
+                            cursor.x + to_pixels(scale(i32::from(x), sx), staff_px),
+                            cursor.y - to_pixels(scale(i32::from(y), sy), staff_px),
+                        );
+                        path.quad_to(control, next);
+                        cursor = next;
+                    }
+                }
+            }
+            path.close();
+            buf.fill_path(&path, ink);
+        }
         Geometry::Text {
             codepoint,
             x,

@@ -56,6 +56,7 @@ use scoretk_core::model::{Credit, Score};
 
 pub mod atoms;
 pub mod breaking;
+pub mod decor;
 pub mod display;
 pub mod layout;
 pub mod staffs;

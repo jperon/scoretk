@@ -67,6 +67,12 @@ pub const THIN_BARLINE_WIDTH: i32 = 184; // SMuFL thinBarlineThickness 0.18 sp
 pub const THICK_BARLINE_WIDTH: i32 = 563; // SMuFL thickBarlineThickness 0.55 sp
 pub const BARLINE_SEPARATION: i32 = 379; // SMuFL barlineSeparation 0.37 sp
 pub const ACCIDENTAL_DISTANCE: i32 = 256; // styledef.cpp:243 (0.25 sp)
+/// // Port of `styledef.cpp:156-159`: square bracket width and gap, piano
+/// brace width and gap to the first bar line.
+pub const BRACKET_WIDTH: i32 = 461; // 0.45 sp
+pub const BRACKET_DISTANCE: i32 = 461; // 0.45 sp
+pub const AKKOLADE_WIDTH: i32 = 1536; // 1.5 sp
+pub const AKKOLADE_BAR_DISTANCE: i32 = 358; // 0.35 sp
 /// Where `tdraw.cpp:2606` starts a stem on a black notehead, in staff spaces.
 /// Leland's `stemUpSE`/`stemDownNW` metadata is 0.16 sp from the head centre,
 /// but the 4.7.4 SVG places the end of the stem 0.235 sp from the note line
