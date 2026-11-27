@@ -846,6 +846,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoretk-smufl"
+version = "0.1.0"
+
+[[package]]
 name = "scoretk-wasm"
 version = "0.1.0"
 dependencies = [

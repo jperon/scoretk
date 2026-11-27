@@ -1,0 +1,11 @@
+[package]
+name = "scoretk-smufl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generated SMuFL Leland subset: quadratic glyph outlines, metrics and anchors"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]

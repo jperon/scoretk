@@ -384,8 +384,29 @@ glyphs, 10 distinct SMuFL anchor names (`stemUpSE`, `cutOutNE`, …), 30
 
 This is well inside the 400 KB font-data budget of § 1; even the stricter
 error-0.5 conversion stays near 137 KB. Alternates (30), ligatures (7),
-optional glyphs (1) and text fonts are excluded. **Not done:** no subset crate,
-no generated Rust file, no verification that this Leland 0.80 snapshot is
-byte-identical to the font bundled in MuseScore 4.7.4, and no perceptual check
-of the 1-font-unit Cu2Qu tolerance at a 14 px staff. Those are gates before the
-font is generated, not assumed facts.
+optional glyphs (1) and text fonts are excluded.
+
+### 9.5 P1 font generation (2026-11-27)
+
+**Done (P1).** The font bundled in MuseScore 4.7.4 (`git archive v4.7.4
+fonts/leland`, nothing compiled or executed) is byte-identical to the Verovio
+0.80 copy for `Leland.otf` (SHA-256 `293788a4…`) and `leland_metadata.json`
+(`41a3dcd4…`); the MuseScore originals are vendored in
+`crates/scoretk-smufl/fonts/leland/` with the OFL-1.1 text, FAQ and font log.
+`scripts/gen-smufl-subset.py` is a **dependency-free** `python3 -I` script: it
+parses the CFF/Type2 charstrings, `cmap` and `hmtx` with the Python standard
+library and converts cubics to quadratics at a stricter tolerance of 0.5 font
+units. Regeneration command (the generated file is never hand-edited):
+
+```sh
+python3 -I scripts/gen-smufl-subset.py \
+  crates/scoretk-smufl/fonts/leland crates/scoretk-smufl/src/glyphs.rs
+```
+
+Measured output: **308 glyphs, 10 468 quadratic and 3 281 line segments
+(14 386 edges), 339 anchors over 10 anchor names, 29 numeric
+`engravingDefaults`**. The generated constants occupy about 107 KB of binary
+data (the Rust source is ~500 KB of text); the font and metadata vendored as
+generation input are 239 KB, with the OFL documents 313 KB in total, still
+inside the 400 KB font-data budget. The remaining gates are a perceptual check
+of the Cu2Qu tolerance at a 14 px staff and the geometric oracle of § 6.

@@ -26,6 +26,7 @@ members = [
     "crates/scoretk-cli",
     "crates/scoretk-wasm",
     "crates/scoretk-render-raster",
+    "crates/scoretk-smufl",
 ]
 
 [workspace.package]

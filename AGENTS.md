@@ -185,8 +185,11 @@ Derived data is regenerated with `scripts/gen-references.sh` and
   only one direction stays in its own file; never a single-direction module
   in a `-common`, nor format logic in a common crate
   (full rule in `docs/agents/developpement.md`).
-- **Generated files**: `crates/scoretk-core/src/instruments.rs` and
-  `docs/agents/ecarts-complets.md` are regenerated, never hand-edited.
+- **Generated files**: `crates/scoretk-core/src/instruments.rs`,
+  `crates/scoretk-smufl/src/glyphs.rs` (regenerate with `python3 -I
+  scripts/gen-smufl-subset.py crates/scoretk-smufl/fonts/leland
+  crates/scoretk-smufl/src/glyphs.rs`) and `docs/agents/ecarts-complets.md`
+  are regenerated, never hand-edited.
 - **Order of `<direction>`, spanners and `<credit>` is significant** for
   parity: do not sort a collection without checking the C++ and the reference.
 - **`ref-musescore/` is absent from a fresh checkout**: recreate it with
@@ -211,6 +214,11 @@ One line per document; read the one matching the subject before coding.
   file and their causes: read to choose the next fix.
 - `docs/agents/ecarts-complets.md` — **generated** report of full parity:
   read to measure, not to decide a fix on its own.
+- `docs/agents/engraving.md` — engraving plan (P0 survey, P1 skeleton): read
+  before touching the `scoretk-engrave`, `-smufl` or `-render-*` crates;
+  regenerate `crates/scoretk-smufl/src/glyphs.rs` with `python3 -I
+  scripts/gen-smufl-subset.py crates/scoretk-smufl/fonts/leland
+  crates/scoretk-smufl/src/glyphs.rs`.
 - `docs/agents/wasm.md` — the single wasm package (scoretk facade): build,
   sizes, API (convert/detect/formats/version), options, ESM/classic usage,
   Node tests: read before touching the
