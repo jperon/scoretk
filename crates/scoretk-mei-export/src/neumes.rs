@@ -115,13 +115,15 @@ pub(super) fn write(
     for (syllable_index, syllable) in gregorian.syllables.iter().enumerate() {
         write_syllable(
             &mut xml,
-            syllable,
-            syllable_index,
-            gregorian,
-            initial,
-            options.gabc_tokens,
-            options.full_support,
-            two_staves,
+            &SyllableContext {
+                syllable,
+                syllable_index,
+                gregorian,
+                initial_clefs: initial,
+                private: options.gabc_tokens,
+                readable: options.full_support,
+                linked: two_staves,
+            },
         );
     }
     // staff 1 : layer, staff
@@ -307,16 +309,27 @@ fn annot(xml: &mut XmlWriter, kind: &str, n: &str, text: &str, sign: Option<Sign
     xml.tag_with("annot", &[("type", &type_value), ("n", n)], text);
 }
 
-fn write_syllable(
-    xml: &mut XmlWriter,
-    syllable: &Syllable,
+/// Contexte d'une syllabe pour l'écriture NEUMES.
+struct SyllableContext<'a> {
+    syllable: &'a Syllable,
     syllable_index: usize,
-    gregorian: &Gregorian,
+    gregorian: &'a Gregorian,
     initial_clefs: usize,
     private: bool,
     readable: bool,
     linked: bool,
-) {
+}
+
+fn write_syllable(xml: &mut XmlWriter, context: &SyllableContext<'_>) {
+    let SyllableContext {
+        syllable,
+        syllable_index,
+        gregorian,
+        initial_clefs,
+        private,
+        readable,
+        linked,
+    } = *context;
     let elision = syllable.text.contains('~');
     // Le séparateur exact entre ce groupe et le suivant (`Gabc.tex:60-61`)
     // n'a pas de champ MEI ; `@label` est un attribut standard et garde son

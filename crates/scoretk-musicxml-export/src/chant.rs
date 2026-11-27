@@ -371,16 +371,27 @@ fn smufl_neume(note: &GregorianNote) -> &'static str {
     }
 }
 
-pub(crate) fn write_note_signs(
-    out: &mut Out,
-    note: &GregorianNote,
-    syllable_index: usize,
-    breath: bool,
-    smufl: bool,
-    standard_attributes: bool,
-    first_in_syllable: bool,
-    syllable_text: &str,
-) {
+/// Contexte d'une note grégorienne pour l'écriture de ses porteurs standard.
+pub(crate) struct NoteSigns<'a> {
+    pub note: &'a GregorianNote,
+    pub syllable_index: usize,
+    pub breath: bool,
+    pub smufl: bool,
+    pub standard_attributes: bool,
+    pub first_in_syllable: bool,
+    pub syllable_text: &'a str,
+}
+
+pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
+    let NoteSigns {
+        note,
+        syllable_index,
+        breath,
+        smufl,
+        standard_attributes,
+        first_in_syllable,
+        syllable_text,
+    } = *signs;
     if smufl {
         // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
         // **interopérabilité applicative** (« allowing application

@@ -288,7 +288,7 @@ pub fn glyph_char(token: &str) -> Option<char> {
     let name = token
         .strip_prefix('!')
         .and_then(|rest| rest.strip_suffix('!'));
-    let looked_up = name.or_else(|| if token.len() == 1 { Some(token) } else { None })?;
+    let looked_up = name.or(if token.len() == 1 { Some(token) } else { None })?;
     GLYPH_SYMBOLS
         .iter()
         .find(|symbol| {
