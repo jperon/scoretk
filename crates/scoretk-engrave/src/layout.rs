@@ -622,22 +622,25 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
 }
 
 /// Absolute x of every event of a system, in the same order as
-/// `place_measure` advances its cursor. Shared by beam layout and drawing so
-/// both agree after justification.
+/// `place_measure`. Shared by beam layout and drawing so both agree after
+/// justification; a tick has one x for all staves.
 fn system_events<'a>(
     atoms: &'a [MeasureAtom],
     system: &crate::breaking::SystemPlan,
     left: i32,
+    grids: &[SharedMeasure],
 ) -> Vec<(i32, &'a Atom)> {
     let mut events = Vec::new();
     let mut measure_x = left;
-    for atom in &atoms[system.first..system.first + system.count] {
-        let mut cursor = atom.events.first().map_or(0, |event| event.x);
-        for (index, event) in atom.events.iter().enumerate() {
-            events.push((measure_x + cursor, event));
-            cursor += segment_width(atom, index, system.scale);
+    for (measure, atom) in atoms[system.first..system.first + system.count]
+        .iter()
+        .enumerate()
+    {
+        let grid = &grids[measure];
+        for event in &atom.events {
+            events.push((shared_event_x(event, grid, measure_x), event));
         }
-        measure_x += cursor;
+        measure_x += grid.end();
     }
     events
 }
@@ -665,18 +668,6 @@ fn segment_span(atom: &MeasureAtom, index: usize) -> i32 {
     }
 }
 
-/// Advance of one segment, stretched for chord/rest springs only.
-/// // Port of `horizontalspacing.cpp:1087-1111` (`stretchSegmentsToWidth`).
-fn segment_width(atom: &MeasureAtom, index: usize, scale: i32) -> i32 {
-    let event = &atom.events[index];
-    let width = segment_span(atom, index);
-    if !event.grace && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
-        width * scale / 1024
-    } else {
-        width
-    }
-}
-
 /// Natural width budget of a measure: fixed segments (headers, grace notes)
 /// and chord/rest segments that take part in justification. // Port of
 /// `HorizontalSpacing::justifySystem` (`horizontalspacing.cpp:198-212`):
@@ -699,12 +690,113 @@ pub(crate) fn stretch_budget(atom: &MeasureAtom) -> (i32, i32) {
     (fixed, stretch)
 }
 
-/// Cursor at the end of a measure's last segment (the bar line position).
-fn measure_end(atom: &MeasureAtom, scale: i32) -> i32 {
-    atom.events.first().map_or(0, |event| event.x)
-        + (0..atom.events.len())
-            .map(|index| segment_width(atom, index, scale))
-            .sum::<i32>()
+/// One system-wide horizontal grid for a measure. MuseScore lays out a
+/// `Segment` once for every staff of a system (`horizontalspacing.cpp:47-89`,
+/// `:262-327`): its x is the same on all staves and its minimum width is the
+/// largest per-staff shape. Header segments keep their own style x; only
+/// chord/rest segments share these positions.
+struct SharedMeasure {
+    /// Unstretched x of every source segment, aligned across staves.
+    bases: Vec<i32>,
+    /// Justified x of every segment, plus the shared bar line x at the end.
+    xs: Vec<i32>,
+}
+
+impl SharedMeasure {
+    fn end(&self) -> i32 {
+        self.xs.last().copied().unwrap_or(0)
+    }
+}
+
+/// Builds the shared grid of every measure of a system. // Port of
+/// `HorizontalSpacing::computeMinWidth` / `collectSegments`
+/// (`horizontalspacing.cpp:47-89, 262-327`) and `stretchSegmentsToWidth`
+/// (`:1087-1111`): one x per segment, the largest demand over all staves, and
+/// one spring force per system. `atoms::compute` has already aligned the
+/// segment bases across staves; the last segment ends at the widest staff's
+/// bar line so a shifted head cannot pass it.
+fn shared_measures(
+    atoms: &[Vec<MeasureAtom>],
+    system: &crate::breaking::SystemPlan,
+) -> Vec<SharedMeasure> {
+    (system.first..system.first + system.count)
+        .map(|measure| {
+            let staves: Vec<&MeasureAtom> = atoms.iter().map(|all| &all[measure]).collect();
+            let count = staves
+                .iter()
+                .map(|atom| atom.segment_bases.len())
+                .max()
+                .unwrap_or(0);
+            let mut bases = if count == 0 {
+                // Test atoms and callers that already collapsed the staves
+                // carry no segment table: recover one from their events.
+                let mut derived = Vec::new();
+                for event in &staves[0].events {
+                    let segment = usize::from(event.segment);
+                    if segment == usize::from(u16::MAX) {
+                        continue;
+                    }
+                    if derived.len() <= segment {
+                        derived.resize(segment + 1, event.x);
+                    }
+                }
+                if derived.is_empty() {
+                    derived.push(staves[0].events.first().map_or(0, |event| event.x));
+                }
+                derived
+            } else {
+                (0..count)
+                    .map(|segment| {
+                        staves
+                            .iter()
+                            .filter_map(|atom| atom.segment_bases.get(segment).copied())
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .collect()
+            };
+            if bases.is_empty() {
+                bases.push(0);
+            }
+            let width = staves.iter().map(|atom| atom.width).max().unwrap_or(0);
+            let mut xs = Vec::with_capacity(bases.len() + 1);
+            xs.push(bases[0]);
+            for (segment, &base) in bases.iter().enumerate() {
+                let next = bases.get(segment + 1).copied().unwrap_or(width);
+                let span = (next - base).max(0);
+                let spring = staves.iter().any(|atom| {
+                    atom.events.iter().any(|event| {
+                        usize::from(event.segment) == segment
+                            && !event.grace
+                            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+                    })
+                });
+                xs.push(
+                    xs[segment]
+                        + if spring {
+                            span * system.scale / 1024
+                        } else {
+                            span
+                        },
+                );
+            }
+            SharedMeasure { bases, xs }
+        })
+        .collect()
+}
+
+/// Absolute x of one event on a shared system grid. Headers and grace notes
+/// keep their own fixed x; a voice pushed by a collision keeps its offset
+/// from the segment it belongs to (`chordlayout.cpp:1887-2130`).
+fn shared_event_x(event: &Atom, grid: &SharedMeasure, left: i32) -> i32 {
+    let segment = usize::from(event.segment);
+    if segment == usize::from(u16::MAX)
+        || !matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+    {
+        return left + event.x;
+    }
+    let base = grid.bases.get(segment).copied().unwrap_or(event.x);
+    left + grid.xs.get(segment).copied().unwrap_or(event.x) + event.x - base
 }
 
 /// Right edge of a system's final bar line, used to clip its staff lines.
@@ -718,18 +810,18 @@ fn system_right_edge(atom: &MeasureAtom, x: i32) -> i32 {
     }
 }
 
-/// Place one measure's events at `x0` on the system at `system_y`.
+/// Place one measure's events at `left` on the system at `system_y`.
 ///
-/// // Port of `horizontalspacing.cpp:214-219` and `:1087-1111`: chord/rest
-/// segment widths are stretched by the system's spring force; the header
-/// segments keep their style-derived widths.
-#[allow(clippy::too_many_arguments)] // page-local helper: out, atom, origin, scale and precomputed events
+/// // Port of `horizontalspacing.cpp:214-219, 1087-1111`: chord/rest segments
+/// take their justified x from the system-wide grid, while the header
+/// segments keep their style-derived x. Every staff of the system therefore
+/// draws its bar line at the same x.
+#[allow(clippy::too_many_arguments)] // page-local helper: list, grid, events, style
 fn place_measure(
     out: &mut DisplayList,
     atom: &MeasureAtom,
-    x0: i32,
+    left: i32,
     system_y: i32,
-    scale: i32,
     events: &[(i32, &Atom)],
     event_offset: usize,
     plan: &BeamPlan,
@@ -737,37 +829,39 @@ fn place_measure(
     draw_end_bar: bool,
     lyrics_em: i32,
     spec: &PageSpec,
+    grid: &SharedMeasure,
 ) -> i32 {
-    // The first header event sits at its own x (e.g. clefLeftMargin); the
-    // loop below then advances by the gap to the following event.
-    let mut cursor = atom.events.first().map_or(0, |event| event.x);
     for (index, event) in atom.events.iter().enumerate() {
         let absolute_x = events
             .get(event_offset + index)
-            .map_or(x0 + cursor, |item| item.0);
+            .map_or(left + event.x, |item| item.0);
+        let right = left
+            + grid
+                .xs
+                .get(usize::from(event.segment) + 1)
+                .copied()
+                .unwrap_or_else(|| grid.end());
         place_event(
             out,
             event,
             absolute_x,
-            x0 + cursor + segment_width(atom, index, scale),
+            right,
             system_y,
             atom.mm_rest_count,
             plan.stems.get(event_offset + index).copied().flatten(),
             lyrics_em,
             spec,
         );
-        cursor += segment_width(atom, index, scale);
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
     // double lines are separated by `barlineSeparation` (SMuFL).
     // // Port of `horizontalspacing.cpp:1148-1152`: a measure ends at the
-    // last segment's right edge. The former -SEGMENT_WIDTH/2 offset placed
-    // every bar line 0.75 sp too early.
-    let bar_x = x0 + cursor;
+    // last segment's right edge, shared by all staves of the system.
+    let bar_x = left + grid.end();
     if draw_end_bar {
         place_barline(out, atom.end_bar, bar_x, system_y, bar_height);
     }
-    cursor
+    grid.end()
 }
 
 fn place_barline(out: &mut DisplayList, code: crate::atoms::BarCode, x: i32, y: i32, height: i32) {
@@ -1645,6 +1739,7 @@ pub fn build_page_with_skylines(
         .enumerate()
     {
         let sy = system.y;
+        let grids = shared_measures(atoms, system);
         // Items emitted before the first staff (measure number, brackets,
         // instrument names, initial bar line) belong to that staff's skyline.
         let system_start = out.items.len();
@@ -1717,8 +1812,8 @@ pub fn build_page_with_skylines(
             // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not
             // stretched to the right margin.
             let mut end_x = left;
-            for atom in &staff_atoms[system.first..system.first + system.count] {
-                end_x += measure_end(atom, system.scale);
+            for grid in &grids {
+                end_x += grid.end();
             }
             let last = &staff_atoms[system.first + system.count - 1];
             let right = (system_right_edge(last, end_x) - left).clamp(0, staff_width);
@@ -1733,7 +1828,7 @@ pub fn build_page_with_skylines(
                     STAFF_LINE_WIDTH,
                 ));
             }
-            let events = system_events(staff_atoms, system, left);
+            let events = system_events(staff_atoms, system, left, &grids);
             let mut voices = alloc::vec::Vec::new();
             for (_, event) in &events {
                 if !voices.contains(&event.voice) {
@@ -1747,13 +1842,15 @@ pub fn build_page_with_skylines(
             }
             let mut x = left;
             let mut event_offset = 0;
-            for atom in &staff_atoms[system.first..system.first + system.count] {
-                x += place_measure(
+            for (measure, atom) in staff_atoms[system.first..system.first + system.count]
+                .iter()
+                .enumerate()
+            {
+                place_measure(
                     &mut out,
                     atom,
                     x,
                     y,
-                    system.scale,
                     &events,
                     event_offset,
                     &plan,
@@ -1761,7 +1858,9 @@ pub fn build_page_with_skylines(
                     draw_end_bar,
                     lyrics_em,
                     spec,
+                    &grids[measure],
                 );
+                x += grids[measure].end();
                 event_offset += atom.events.len();
             }
             // // Port of `LyricsLayout::layout` (`lyricslayout.cpp:515-535`):

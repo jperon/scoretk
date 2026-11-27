@@ -158,6 +158,7 @@ def parse_svg(path: Path) -> dict:
     # Bar lines keep their absolute y here: local y repeats on every system,
     # so grouping bar lines by local y would merge all systems into one.
     raw_barlines: list[tuple[float, float, float]] = []
+    barline_segments_abs: list[tuple[float, float, float]] = []
     lengths: list[float] = []
     for element in elements:
         class_name = element.get("class", "")
@@ -196,6 +197,7 @@ def parse_svg(path: Path) -> dict:
                     lengths.append(abs(y1 - y0) * scale)
                 if class_name == "BarLine":
                     raw_barlines.append((position[1], local[0], local[1]))
+                    barline_segments_abs.append((position[0], y0, y1))
     result["stem_lengths"] = lengths
     result["spatium"] = spatium
     # Absolute notehead boxes and bar-line positions, used by the horizontal
@@ -213,6 +215,7 @@ def parse_svg(path: Path) -> dict:
             (sx * box[0] + tx, sy * box[1] + ty, sx * box[2] + tx, sy * box[3] + ty)
         )
     result["barlines_abs"] = [(x, y) for y, x, _ in raw_barlines]
+    result["barline_segments_abs"] = barline_segments_abs
     # Notehead/notehead bbox collisions. Unisons deliberately share one head
     # centre in MuseScore, so coincident centres are not counted. Heads on
     # adjacent staff lines touch by about 0.06 sp in both engines; only an
@@ -293,6 +296,75 @@ def parse_svg(path: Path) -> dict:
     return result
 
 
+def barline_spread(parsed: dict) -> tuple[float, int, int]:
+    """Bar-line x disagreement between the staves of one system.
+
+    A MuseScore `Segment` is shared by every staff of a system: all staves must
+    draw a boundary at the same x (`horizontalspacing.cpp:47-89`,
+    `segment.cpp:2640-2697`). Bar lines are grouped by the five-line staff they
+    cross, then compared ordinal by ordinal inside each system (staves of a
+    system share their left x). Double strokes within 1.5 sp are one boundary.
+
+    Returns (largest spread in staff spaces, boundaries with a spread above
+    0.05 sp, boundaries compared).
+    """
+    spatium = parsed.get("spatium", 1.0)
+    systems = parsed.get("system_boxes", [])
+    segments = parsed.get("barline_segments_abs", [])
+    buckets: dict[tuple[float, float], list[tuple[float, list[float]]]] = {}
+    for x0, x1, top in systems:
+        # Staves of one system share both edges of their staff lines; systems
+        # below them share only the left edge. Grouping by the left edge
+        # alone would merge every system of a page into one phantom system.
+        key = (round(x0 / spatium, 1), round(x1 / spatium, 1))
+        xs: list[float] = []
+        for x, y0, y1 in sorted(segments):
+            if y1 <= top - spatium / 2 or y0 >= top + 4.5 * spatium:
+                continue
+            if not xs or x - xs[-1] > 1.5 * spatium:
+                xs.append(x)
+        buckets.setdefault(key, []).append((top, xs))
+
+    def agreement(first: list[float], second: list[float]) -> float:
+        if not first or not second:
+            return 0.0
+        matched = sum(
+            1 for x in first if any(abs(x - other) <= 2 * spatium for other in second)
+        )
+        return matched / len(first)
+
+    spreads: list[float] = []
+    for staves in buckets.values():
+        systems_found: list[list[tuple[float, list[float]]]] = []
+        for top, xs in sorted(staves):
+            for group in systems_found:
+                if (
+                    top - group[0][0] <= 25 * spatium
+                    and agreement(xs, group[0][1]) >= 0.6
+                    and agreement(group[0][1], xs) >= 0.6
+                ):
+                    group.append((top, xs))
+                    break
+            else:
+                systems_found.append([(top, xs)])
+        for group in systems_found:
+            if len(group) < 2:
+                continue
+            for boundary in group[0][1]:
+                positions = []
+                for _top, staff in group:
+                    nearest = min(
+                        (abs(x - boundary) for x in staff), default=3 * spatium
+                    )
+                    positions.append(nearest / spatium)
+                spreads.append(max(positions))
+    return (
+        max(spreads, default=0.0),
+        sum(spread > 0.05 for spread in spreads),
+        len(spreads),
+    )
+
+
 def pair_by_nearest(left: list, right: list, key) -> list[tuple[int | None, int | None]]:
     """One-to-one greedy matching by a distance key, as index pairs.
 
@@ -353,6 +425,12 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     lyric_hits_ours = 0
     barline_hits_ref = 0
     barline_hits_ours = 0
+    spread_max_ref = 0.0
+    spread_max_ours = 0.0
+    spread_bad_ref = 0
+    spread_bad_ours = 0
+    spread_total_ref = 0
+    spread_total_ours = 0
     note_hits_ref = 0
     note_hits_ours = 0
 
@@ -401,9 +479,19 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         nonlocal gap_ref_sum, gap_ours_sum, overlaps_ref, overlaps_ours
         nonlocal lyrics_ref, lyrics_ours, lyric_hits_ref, lyric_hits_ours
         nonlocal barline_hits_ref, barline_hits_ours
+        nonlocal spread_max_ref, spread_max_ours, spread_bad_ref, spread_bad_ours
+        nonlocal spread_total_ref, spread_total_ours
         nonlocal note_hits_ref, note_hits_ours
         barline_hits_ref += barline_crossings(ref)
         barline_hits_ours += barline_crossings(our)
+        ref_max, ref_bad, ref_total = barline_spread(ref)
+        our_max, our_bad, our_total = barline_spread(our)
+        spread_max_ref = max(spread_max_ref, ref_max)
+        spread_max_ours = max(spread_max_ours, our_max)
+        spread_bad_ref += ref_bad
+        spread_bad_ours += our_bad
+        spread_total_ref += ref_total
+        spread_total_ours += our_total
         note_hits_ref += note_collisions(ref)
         note_hits_ours += note_collisions(our)
         ref_lyrics, ref_hits = lyric_collisions(ref)
@@ -473,6 +561,12 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "lyric_hits_ours": lyric_hits_ours,
         "barline_hits_ref": barline_hits_ref,
         "barline_hits_ours": barline_hits_ours,
+        "spread_max_ref": spread_max_ref,
+        "spread_max_ours": spread_max_ours,
+        "spread_bad_ref": spread_bad_ref,
+        "spread_bad_ours": spread_bad_ours,
+        "spread_total_ref": spread_total_ref,
+        "spread_total_ours": spread_total_ours,
         "note_hits_ref": note_hits_ref,
         "note_hits_ours": note_hits_ours,
     }
@@ -597,6 +691,9 @@ def main() -> int:
         "lyrics_ref": 0, "lyrics_ours": 0,
         "lyric_hits_ref": 0, "lyric_hits_ours": 0,
         "barline_hits_ref": 0, "barline_hits_ours": 0,
+        "spread_max_ref": 0.0, "spread_max_ours": 0.0,
+        "spread_bad_ref": 0, "spread_bad_ours": 0,
+        "spread_total_ref": 0, "spread_total_ours": 0,
         "note_hits_ref": 0, "note_hits_ours": 0,
     }
     for source in corpus:
@@ -668,6 +765,12 @@ def main() -> int:
         totals["lyric_hits_ours"] += page_values["lyric_hits_ours"]
         totals["barline_hits_ref"] += page_values["barline_hits_ref"]
         totals["barline_hits_ours"] += page_values["barline_hits_ours"]
+        totals["spread_max_ref"] = max(totals["spread_max_ref"], page_values["spread_max_ref"])
+        totals["spread_max_ours"] = max(totals["spread_max_ours"], page_values["spread_max_ours"])
+        totals["spread_bad_ref"] += page_values["spread_bad_ref"]
+        totals["spread_bad_ours"] += page_values["spread_bad_ours"]
+        totals["spread_total_ref"] += page_values["spread_total_ref"]
+        totals["spread_total_ours"] += page_values["spread_total_ours"]
         totals["note_hits_ref"] += page_values["note_hits_ref"]
         totals["note_hits_ours"] += page_values["note_hits_ours"]
         rows.append(row)
@@ -739,6 +842,11 @@ def main() -> int:
         f"{totals['lyric_hits_ref']} / {totals['lyric_hits_ours']} |",
         f"| Noteheads crossing a bar line (reference / ours) | "
         f"{totals['barline_hits_ref']} / {totals['barline_hits_ours']} |",
+        f"| Max bar-line x spread across staves of one system, sp (reference / ours) | "
+        f"{totals['spread_max_ref']:.3f} / {totals['spread_max_ours']:.3f} |",
+        f"| Boundaries with bar-line x spread > 0.05 sp (reference / ours) | "
+        f"{totals['spread_bad_ref']}/{totals['spread_total_ref']} / "
+        f"{totals['spread_bad_ours']}/{totals['spread_total_ours']} |",
         f"| Overlapping notehead pairs (reference / ours) | "
         f"{totals['note_hits_ref']} / {totals['note_hits_ours']} |",
         "",

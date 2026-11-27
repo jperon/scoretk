@@ -1687,6 +1687,46 @@ right margin, so the earlier trial that rejected full widths is no longer
 applicable. The before/after/reference page-1 images remain
 `engrave-img/eng9/before.png`, `after.png` and `ref.png`, all rendered from
 their committed trees.
+
+## 16. Review of the private page: shared segment x (2026-11-27)
+
+The organ staves of each system used to draw their bar lines and beats at
+different x from the choir staves, and the organ's left hand was offset from
+its right hand. A `Segment` is shared by every staff of a MuseScore system:
+one x per tick, with a minimum width equal to the largest per-staff shape
+(`horizontalspacing.cpp:47-89`, `:262-327`, `Segment::minHorizontalDistance`).
+`layout.rs` now builds that grid once per system from the aligned
+`segment_bases` (`atoms.rs::compute`), justifies it with the system's single
+spring force and maps every chord/rest event to its segment x. A voice's
+collision offset and grace notes stay relative to their segment; a bar line
+sits at the widest staff's last segment edge. Beam layout and staff-line
+clipping read the same grid, and the new two-staff test uses two half notes
+against four quarters to pin equal bar-line and coincident-tick x.
+
+The oracle gained a "bar-line x spread across staves of one system" column:
+bar lines are grouped by staff, staves are clustered into a system by their
+shared staff-line extents and bar-line pattern, and the largest x distance
+from a boundary is reported in staff spaces, on both sides. Boundaries that
+do not exist on a staff count with the 3 sp cap, so a missing bar line cannot
+improve the figure.
+
+| Metric (`oracle-eng9-review-base` → `oracle-eng9-step5`) | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 209 | 0 / 2 209 |
+| Within 0.1 sp, both axes | 0.1652 (365/2 209) | **0.1603** (354/2 209) |
+| Stem-length agreement | 0.6082 (684) | 0.6082 (684) |
+| Measure widths within 0.1 sp | 81/394 | 81/394 |
+| Files with identical system breaks | 37/56 | 36/56 (one regression) |
+| Max bar-line x spread, sp (reference / ours) | 2.046 / 2.001 | 2.046 / 2.001 |
+| Boundaries with spread > 0.05 sp (reference / ours) | 17/229 / 15/137 | 17/229 / 15/214 |
+
+The corpus figure is nearly unchanged because its systems are mostly
+single-staff or already aligned; the comparison also counts far more
+boundaries after the change, as the shared grid now supplies a bar-line edge
+on every staff. The visible fix is on the private page: all four staves of
+each system now share their bar-line and beat x, including the organ's two
+hands (`engrave-img/eng9/step5.png`, rendered from this tree). The one lost
+system break is reported, not excluded.
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

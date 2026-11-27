@@ -317,4 +317,65 @@ mod tests {
             assert_eq!(treble.0, bass.0);
         }
     }
+
+    #[test]
+    fn different_rhythms_share_segment_and_barline_x() {
+        // A Segment is shared by all staves of a system: one x per segment,
+        // its width the maximum over the staves (`horizontalspacing.cpp:
+        // 47-89`, `:262-327`). Give the second staff two half notes where the
+        // first one has four quarters; their segment x and bar line x must
+        // still agree.
+        let mut score = one_staff_score();
+        let second_part = score.add_part(Part::new("Bass", "B."));
+        let second_staff = score.add_staff(second_part);
+        let track = Track::new(second_staff, 0);
+        for (segment_index, pitch) in [(3, 67), (5, 67)] {
+            let note = score.add_note(Note::new(pitch, 14));
+            let mut chord = Chord::default();
+            chord.notes.push(note);
+            let mut rest = ChordRest::chord(Duration::half());
+            rest.kind = scoretk_core::model::ChordRestKind::Chord(chord);
+            score.measures[0].segments[segment_index]
+                .set_element(track, SegmentItem::ChordRest(rest));
+        }
+        let engraver = Engraver::from_score(&score).unwrap();
+        assert_eq!(engraver.staffs().len(), 2);
+        let page = engraver.page(0);
+        let bar_x: Vec<(i32, i32)> = page
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::BarLine)
+            .map(|item| item.origin())
+            .collect();
+        assert!(bar_x.len() >= 2, "each staff must end with a bar line");
+        // A final bar line draws a thin stroke and a thick one one
+        // `barlineSeparation` apart; both staves draw both at the same x.
+        let mut xs: Vec<i32> = bar_x.iter().map(|bar| bar.0).collect();
+        xs.sort_unstable();
+        assert_eq!(xs.len(), 4, "two strokes on each of two staves: {bar_x:?}");
+        assert_eq!(xs[0], xs[1], "thin strokes must share x: {bar_x:?}");
+        assert_eq!(xs[2], xs[3], "thick strokes must share x: {bar_x:?}");
+        let heads: Vec<(i32, i32)> = page
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Notehead)
+            .map(|item| item.origin())
+            .collect();
+        assert_eq!(heads.len(), 6); // four quarters, two halves
+        let bass_y = heads.iter().map(|head| head.1).max().unwrap();
+        let bass: Vec<i32> = heads
+            .iter()
+            .filter(|head| head.1 == bass_y)
+            .map(|head| head.0)
+            .collect();
+        let treble: Vec<i32> = heads
+            .iter()
+            .filter(|head| head.1 != bass_y)
+            .map(|head| head.0)
+            .collect();
+        assert_eq!(bass.len(), 2, "heads={heads:?}");
+        assert_eq!(treble.len(), 4);
+        assert_eq!(bass[0], treble[0], "tick 0 must share its x");
+        assert_eq!(bass[1], treble[2], "tick 1/2 must share its x");
+    }
 }
