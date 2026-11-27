@@ -320,6 +320,9 @@ fn create_mtrack_list(
                     let (bars, _, _) = sigmap.tick_values(tick.ticks(UNITS_PER_WHOLE as u32));
                     sigmap.add(sigmap.bar2tick(bars, 0), timesig);
                 }
+                EventKind::Meta { kind, data } if *kind == meta::INSTRUMENT_NAME => {
+                    track.instrument_name = decode_meta_text(data);
+                }
                 EventKind::Note {
                     pitch,
                     velocity,
@@ -607,9 +610,18 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
             scoretk_core::model::recognize_musicxml_id(&instr_name, Some(tracks[index].program))
                 .unwrap_or("")
                 .to_owned();
-        part.instrument.track_name = template
-            .map_or("", |template| template.track_name)
-            .to_owned();
+        // A standard `FF 04` instrument name is the SMF's own carrier for this
+        // value: full support restores it instead of the catalogue's guess.
+        if options.full_support {
+            // Without `FF 04` the file carries no instrument name: do not
+            // invent one from the General MIDI catalogue (a channel-only track
+            // would otherwise become a new, unnamed part).
+            part.instrument.track_name = tracks[index].instrument_name.clone();
+        } else {
+            part.instrument.track_name = template
+                .map_or("", |template| template.track_name)
+                .to_owned();
+        }
         if let Some(template) = template {
             part.instrument.transpose = if template.transpose_chromatic == 0 {
                 None
@@ -659,7 +671,6 @@ fn create_instruments(score: &mut Score, tracks: &mut [MTrack], options: &Import
         }
         index += staves;
     }
-    let _ = options;
 }
 
 /// Nom affiché de la piste : le nom long du gabarit (`msInstrName`), ou le nom

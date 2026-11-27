@@ -80,6 +80,8 @@ pub(crate) struct Event {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum EventKind {
     TrackName(String),
+    /// `FF 04` instrument name (`[SMF §Meta-Events]`), full support only.
+    InstrumentName(String),
     TimeSignature(u8, u8, u8, u8),
     /// Altérations et drapeau mineur (`mi`) du méta `FF 59 02 sf mi`.
     KeySignature(i8, bool),
@@ -202,6 +204,16 @@ pub(crate) fn render(
             tick: 0,
             kind: EventKind::TrackName(name),
         });
+
+        // `[SMF §Meta-Events]` gives `FF 04` to the instrument name. Full
+        // support writes the part's track name so a reader can restore it
+        // instead of inventing a name from the General MIDI program.
+        if full_support && !part.instrument.track_name.is_empty() {
+            track.events.push(Event {
+                tick: 0,
+                kind: EventKind::InstrumentName(part.instrument.track_name.clone()),
+            });
+        }
 
         // Indications de mesure : une seule fois, sur la première piste.
         if staff_index == 0 {

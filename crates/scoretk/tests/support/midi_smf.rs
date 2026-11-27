@@ -424,11 +424,13 @@ pub fn model_kind_values(score: &Score) -> KindValues {
         }
     }
     for part in &score.parts {
-        insert(
-            &mut values,
-            "instrument",
-            part.instrument.track_name.clone(),
-        );
+        if !part.instrument.track_name.is_empty() {
+            insert(
+                &mut values,
+                "instrument",
+                part.instrument.track_name.clone(),
+            );
+        }
         if let Some(program) = part.instrument.midi_program {
             insert(&mut values, "program", program.to_string());
         }

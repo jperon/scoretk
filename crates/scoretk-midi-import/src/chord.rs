@@ -267,6 +267,8 @@ pub struct MTrack {
     pub out_channel: i32,
     /// Nom de piste (`META_TRACK_NAME`).
     pub name: String,
+    /// Nom d'instrument (`META_INSTRUMENT_NAME`, `FF 04`).
+    pub instrument_name: String,
     /// Volume du canal (`CTRL_VOLUME`), par tick.
     pub volumes: BTreeMap<Fraction, u8>,
     /// Panoramique du canal (`CTRL_PANPOT`), si présent.
@@ -305,6 +307,7 @@ impl Default for MTrack {
             drum_track: false,
             out_channel: 0,
             name: String::new(),
+            instrument_name: String::new(),
             volumes: BTreeMap::new(),
             pan: None,
             events: Vec::new(),

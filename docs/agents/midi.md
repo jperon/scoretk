@@ -411,6 +411,13 @@ Headline: **99.79 % → 100.00 %**; `L2 events` 2 279/2 284 → 2 284/2 284,
 (`MIDI : 21/21 identiques`); the field is `None` for every score from a format
 without per-note channels.
 
+| `instrument` | 62 extra model names | 0 extra | `FF 04` instrument name (`[SMF §Meta-Events]`). Full support writes the part's track name and restores it; a track with no `FF 04` gets no invented catalogue name in that mode. The default 4.7.4 path is untouched. |
+
+The denominator grows from 2 827 to 2 883 carried items because the file now
+carries 56 instrument names the earlier full-support bytes left implicit; all
+56 are matched. `L4 playback` is 298/298 with **0 extra**. The headline stays
+**100.00 %** and the references stay `MIDI : 21/21 identiques`.
+
 ## Additive options and private extensions
 
 ### Text/marker export and import (`smf_text`)

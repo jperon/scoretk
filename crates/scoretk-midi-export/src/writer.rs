@@ -101,6 +101,9 @@ fn kind(event: &Event) -> Result<TrackEventKind<'_>> {
     let channel = |channel: u8| u4::new(channel.min(15));
     Ok(match &event.kind {
         EventKind::TrackName(name) => TrackEventKind::Meta(MetaMessage::TrackName(name.as_bytes())),
+        EventKind::InstrumentName(name) => {
+            TrackEventKind::Meta(MetaMessage::InstrumentName(name.as_bytes()))
+        }
         EventKind::TimeSignature(numerator, denominator, clocks, thirty_seconds) => {
             TrackEventKind::Meta(MetaMessage::TimeSignature(
                 *numerator,
