@@ -142,6 +142,38 @@ pub struct StyleSettings {
     /// Fill below which the last system is not justified
     /// (`Sid::lastSystemFillLimit`, 0.3).
     pub last_system_fill_limit: f64,
+    /// Distance between staves of different parts (`Sid::staffDistance`,
+    /// 6.5 sp). // `styledef.cpp:55`.
+    pub staff_distance_sp: f64,
+    /// Distance between staves of the same part (`Sid::akkoladeDistance`,
+    /// 6.5 sp). // `styledef.cpp:57`.
+    pub akkolade_distance_sp: f64,
+    /// Minimum distance between systems (`Sid::minSystemDistance`, 8.5 sp).
+    pub min_system_distance_sp: f64,
+    /// Maximum distance between systems when spread is off (15 sp).
+    pub max_system_distance_sp: f64,
+    /// Whether MuseScore spreads the gaps of a page (`Sid::enableVerticalSpread`).
+    pub enable_vertical_spread: bool,
+    /// Stretch factor of an inter-system gap (`Sid::spreadSystem`, 2.5).
+    pub spread_system: f64,
+    /// Stretch factor around a square bracket (`Sid::spreadSquareBracket`, 1.2).
+    pub spread_square_bracket: f64,
+    /// Stretch factor around a curly brace (`Sid::spreadCurlyBracket`, 1.1).
+    pub spread_curly_bracket: f64,
+    /// Maximum extra spacing inside a gap (`Sid::maxPageFillSpread`, 6 sp).
+    pub max_page_fill_spread_sp: f64,
+    /// Spacing bounds used by the vertical spread pass (`styledef.cpp:64-70`).
+    pub min_staff_spread_sp: f64,
+    pub max_staff_spread_sp: f64,
+    pub max_system_spread_sp: f64,
+    pub max_akkolade_distance_sp: f64,
+    /// Upper/lower borders of the printable area and frame distance
+    /// (`styledef.cpp:52-54`, `:139`).
+    pub staff_upper_border_sp: f64,
+    pub staff_lower_border_sp: f64,
+    pub frame_system_distance_sp: f64,
+    /// Gap between an instrument name and the staff (`Sid::instrumentNameOffset`).
+    pub instrument_name_offset_sp: f64,
 }
 
 impl StyleSettings {
@@ -201,6 +233,24 @@ impl StyleSettings {
             enable_indentation_on_first_system: !legacy,
             first_system_indentation_sp: 5.0,
             last_system_fill_limit: 0.3,
+            // 4.7.4 defaults (`engraving/style/styledef.cpp:52-70,139`).
+            staff_distance_sp: 6.5,
+            akkolade_distance_sp: 6.5,
+            min_system_distance_sp: 8.5,
+            max_system_distance_sp: 15.0,
+            enable_vertical_spread: true,
+            spread_system: 2.5,
+            spread_square_bracket: 1.2,
+            spread_curly_bracket: 1.1,
+            max_page_fill_spread_sp: 6.0,
+            min_staff_spread_sp: 3.5,
+            max_staff_spread_sp: 20.0,
+            max_system_spread_sp: 32.0,
+            max_akkolade_distance_sp: 6.5,
+            staff_upper_border_sp: 7.0,
+            staff_lower_border_sp: 7.0,
+            frame_system_distance_sp: 7.0,
+            instrument_name_offset_sp: 1.0,
         }
     }
 
@@ -267,6 +317,27 @@ impl StyleSettings {
             "minMeasureWidth" => Self::set_positive(&mut self.min_measure_width_sp, value),
             "systemHeaderTimeSigDistance" => {
                 Self::set_positive(&mut self.system_header_time_sig_distance_sp, value);
+            }
+            "staffDistance" => Self::set_positive(&mut self.staff_distance_sp, value),
+            "akkoladeDistance" => Self::set_positive(&mut self.akkolade_distance_sp, value),
+            "minSystemDistance" => Self::set_positive(&mut self.min_system_distance_sp, value),
+            "maxSystemDistance" => Self::set_positive(&mut self.max_system_distance_sp, value),
+            "enableVerticalSpread" => self.enable_vertical_spread = flag(value),
+            "spreadSystem" => Self::set_positive(&mut self.spread_system, value),
+            "spreadSquareBracket" => Self::set_positive(&mut self.spread_square_bracket, value),
+            "spreadCurlyBracket" => Self::set_positive(&mut self.spread_curly_bracket, value),
+            "maxPageFillSpread" => Self::set_positive(&mut self.max_page_fill_spread_sp, value),
+            "minStaffSpread" => Self::set_positive(&mut self.min_staff_spread_sp, value),
+            "maxStaffSpread" => Self::set_positive(&mut self.max_staff_spread_sp, value),
+            "maxSystemSpread" => Self::set_positive(&mut self.max_system_spread_sp, value),
+            "maxAkkoladeDistance" => {
+                Self::set_positive(&mut self.max_akkolade_distance_sp, value);
+            }
+            "staffUpperBorder" => Self::set_positive(&mut self.staff_upper_border_sp, value),
+            "staffLowerBorder" => Self::set_positive(&mut self.staff_lower_border_sp, value),
+            "frameSystemDistance" => Self::set_positive(&mut self.frame_system_distance_sp, value),
+            "instrumentNameOffset" => {
+                Self::set_positive(&mut self.instrument_name_offset_sp, value);
             }
             _ => {}
         }

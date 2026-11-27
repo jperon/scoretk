@@ -43,6 +43,8 @@ pub struct SystemPlan {
     pub y: i32,
     /// Page that holds this system (0-based).
     pub page: usize,
+    /// Height of all staves of the system, top line to bottom line.
+    pub height: i32,
 }
 
 /// // Port of `SystemLayout::collectSystem` (`:206-225`): append measures
@@ -134,6 +136,7 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
             scale,
             y: 0,
             page: 0,
+            height: 0,
         });
         first += count;
     }
@@ -144,26 +147,28 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
 /// are placed from the top margin with `minDistance` between them
 /// (`systemlayout.cpp:2900-2991`: 8.5 sp for one staff with no spacers) and
 /// a page break once the next system would cross the bottom margin.
-fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec) -> usize {
+fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec, heights: &[i32]) -> usize {
     let mut page = 0;
     // The first-page title frame (VBox + `frameSystemDistance`) precedes the
     // first system (`boxlayout.cpp`, `systemlayout.cpp:2900-2991`).
     let mut y = spec.margin_top + spec.title_frame_height;
     let bottom = spec.page_height - spec.margin_top;
-    for system in systems.iter_mut() {
+    for (index, system) in systems.iter_mut().enumerate() {
         let distance = if system.y == 0 && system.first == 0 {
             0
         } else {
             spec.min_system_distance
         };
-        if y + distance + STAFF_HEIGHT > bottom && system.first > 0 {
+        let height = heights.get(index).copied().unwrap_or(STAFF_HEIGHT);
+        system.height = height;
+        if y + distance + height > bottom && system.first > 0 {
             page += 1;
             y = spec.margin_top;
         }
         y += distance;
         system.y = y;
         system.page = page;
-        y += STAFF_HEIGHT;
+        y += height;
     }
     page + 1
 }
@@ -175,32 +180,95 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec) -> usize {
 /// add header segments to the first measure of a system before spacing, so
 /// adding them changes the natural width and can move a break. Iterate until
 /// the break pattern is stable (one pass is enough for ordinary scores).
+/// One measure as seen by the breaking pass: the largest width and spring
+/// over all staves at each segment, as `HorizontalSpacing` visits a segment
+/// once for the whole system (`horizontalspacing.cpp:47-89, 262-327`).
+fn merged_measure(all: &[Vec<MeasureAtom>], measure: usize) -> MeasureAtom {
+    let mut merged = all[0][measure].clone();
+    for atoms in all.iter().skip(1) {
+        let atom = &atoms[measure];
+        if atom.width > merged.width {
+            merged.events = atom.events.clone();
+        }
+        merged.width = merged.width.max(atom.width);
+        merged.spring = merged.spring.max(atom.spring);
+        merged.start_bar.0 = merged.start_bar.0.max(atom.start_bar.0);
+        merged.end_bar.0 = merged.end_bar.0.max(atom.end_bar.0);
+        merged.line_break |= atom.line_break;
+        merged.header_width = merged.header_width.max(atom.header_width);
+    }
+    merged
+}
+
+fn merged_score(all: &[Vec<MeasureAtom>]) -> Vec<MeasureAtom> {
+    (0..all[0].len())
+        .map(|measure| merged_measure(all, measure))
+        .collect()
+}
+
+/// Gives every staff of a system the same header width, the maximum of the
+/// per-staff generated clef/key widths (`measurelayout.cpp:2530-2660`).
+fn align_headers(all: &mut [Vec<MeasureAtom>], first: usize) {
+    let common = all
+        .iter()
+        .map(|atoms| atoms[first].header_width)
+        .max()
+        .unwrap_or(0);
+    for atoms in all.iter_mut() {
+        let atom = &mut atoms[first];
+        let delta = common - atom.header_width;
+        if delta == 0 {
+            continue;
+        }
+        atom.header_width = common;
+        atom.width += delta;
+        for base in &mut atom.segment_bases {
+            *base += delta;
+        }
+        for event in &mut atom.events {
+            if event.segment != u16::MAX {
+                event.x += delta;
+            }
+        }
+    }
+}
+
 pub fn compute_with_atoms(
-    atoms: &[MeasureAtom],
+    all: &[Vec<MeasureAtom>],
     spec: &PageSpec,
-) -> (Vec<SystemPlan>, Vec<MeasureAtom>) {
-    let mut augmented = atoms.to_vec();
-    let mut systems = collect_systems(&augmented, spec);
+    system_heights: &[i32],
+) -> (Vec<SystemPlan>, Vec<Vec<MeasureAtom>>) {
+    let mut augmented = all.to_vec();
+    let mut systems = collect_systems(&merged_score(&augmented), spec);
     for _ in 0..8 {
-        let mut next = atoms.to_vec();
+        let mut next = all.to_vec();
         for system in &systems {
-            if system.first > 0 && system.first < atoms.len() {
-                next[system.first] = atoms[system.first].with_system_header();
+            if system.first > 0 && system.first < all[0].len() {
+                // Each staff keeps its own clef/key header, built from its
+                // own default clef and key (`measurelayout.cpp:2530-2660`).
+                for (staff, atoms) in next.iter_mut().enumerate() {
+                    if let Some(source) = all.get(staff) {
+                        atoms[system.first] = source[system.first].with_system_header();
+                    }
+                }
+                align_headers(&mut next, system.first);
             }
         }
         if next == augmented {
             break;
         }
         augmented = next;
-        systems = collect_systems(&augmented, spec);
+        systems = collect_systems(&merged_score(&augmented), spec);
     }
-    assign_pages(&mut systems, spec);
+    assign_pages(&mut systems, spec, system_heights);
     (systems, augmented)
 }
 
-/// Computes all systems and pages from the atoms.
+/// Computes all systems and pages from one staff's atoms (used by the unit
+/// tests and by callers that already collapsed the staves).
 pub fn compute(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
-    compute_with_atoms(atoms, spec).0
+    let heights = alloc::vec![STAFF_HEIGHT; atoms.len()];
+    compute_with_atoms(&[atoms.to_vec()], spec, &heights).0
 }
 
 /// Number of pages of a plan.
@@ -250,6 +318,7 @@ mod tests {
                     beam_start: false,
                     beam_dir: None,
                     grace: false,
+                    ..Default::default()
                 },
             ],
             start_bar: BarCode(1),
@@ -258,6 +327,7 @@ mod tests {
             clef_name: "gClef",
             key_fifths: 0,
             mm_rest_count: 1,
+            ..Default::default()
         }
     }
 

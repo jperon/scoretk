@@ -28,11 +28,13 @@
 //! borrows the `Score`. This is stage 1 of the plan (§4) with fixed
 //! proportional spacing: the real `HorizontalSpacing` springs arrive in P2.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use scoretk_core::model::{
     AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
-    NoteHeadType, Score, SegmentItem, SegmentType, StemDirection, StyleSettings, Transpose,
+    NoteHeadType, Score, SegmentItem, SegmentType, StaffId, StemDirection, StyleSettings, Track,
+    Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
@@ -124,10 +126,54 @@ pub struct Atom {
     /// True for a cue/grace chord: smaller glyphs and stems
     /// (`beamlayout.cpp:135-340`).
     pub grace: bool,
+    /// Index of the source segment in its measure: this is the shared
+    /// horizontal alignment key between staves of a system, as `Segment*`
+    /// positions are shared by all staves in MuseScore
+    /// (`horizontalspacing.cpp:47-89`, `:262-327`).
+    pub segment: u16,
+    /// Lyrics syllables attached to this chord/rest (`LyricsLayout::layout`,
+    /// `lyricslayout.cpp:45-170`); one entry per verse.
+    pub lyrics: Vec<String>,
+}
+
+impl Default for Atom {
+    fn default() -> Self {
+        Self::simple(
+            0,
+            AtomKind::Rest {
+                duration: 4,
+                dots: 0,
+                measure: false,
+            },
+        )
+    }
+}
+
+impl Default for MeasureAtom {
+    fn default() -> Self {
+        Self {
+            number: 0,
+            width: 0,
+            spring: 0,
+            events: Vec::new(),
+            start_bar: BarCode(0),
+            end_bar: BarCode(0),
+            line_break: false,
+            clef_name: "gClef",
+            key_fifths: 0,
+            mm_rest_count: 1,
+            segment_bases: Vec::new(),
+            header_width: 0,
+        }
+    }
 }
 
 impl Atom {
     pub(crate) fn simple(x: i32, kind: AtomKind) -> Self {
+        Self::at_segment(x, kind, 0)
+    }
+
+    pub(crate) fn at_segment(x: i32, kind: AtomKind, segment: u16) -> Self {
         Self {
             x,
             kind,
@@ -139,6 +185,8 @@ impl Atom {
             beam_start: false,
             beam_dir: None,
             grace: false,
+            segment,
+            lyrics: Vec::new(),
         }
     }
 }
@@ -171,6 +219,12 @@ pub struct MeasureAtom {
     /// this is an ordinary measure). // Port of `Measure::isMMRest` and
     /// `MeasureLayout::layoutMeasure`'s centring step (`:1486-1491`).
     pub mm_rest_count: u16,
+    /// Cursor x at the beginning of each source segment, indexed by segment
+    /// number. Shared between staves by `align_staves` so a tick has one x
+    /// for the whole system (`horizontalspacing.cpp:262-327`).
+    pub segment_bases: Vec<i32>,
+    /// Width of the clef/key header generated at a system start.
+    pub header_width: i32,
 }
 
 impl MeasureAtom {
@@ -212,7 +266,16 @@ impl MeasureAtom {
         for event in &mut atom.events {
             event.x += header_width;
         }
+        for base in &mut atom.segment_bases {
+            *base += header_width;
+        }
         atom.width += header_width;
+        atom.header_width = header_width;
+        // Header events keep their own absolute style x; they do not move
+        // with the aligned chord segments (segment sentinel u16::MAX).
+        for event in &mut events {
+            event.segment = u16::MAX;
+        }
         events.append(&mut atom.events);
         atom.events = events;
         atom
@@ -737,9 +800,20 @@ fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSet
     widths
 }
 
-/// Computes all measure atoms of a score (single staff only).
-pub fn compute(score: &Score) -> Vec<MeasureAtom> {
-    let staff = &score.staves[0];
+/// Indices of the staves MuseScore actually engraves: a hidden/invisible
+/// staff is skipped both in `SystemLayout::layoutSystem`
+/// (`systemlayout.cpp:2477-2485`) and in `PageLayout::distributeStaves`
+/// (`pagelayout.cpp:661`). Parts and excerpts are already flattened into
+/// `score.staves`; hidden staves are *not* removed by the readers.
+pub fn visible_staves(score: &Score) -> Vec<usize> {
+    (0..score.staves.len())
+        .filter(|&index| score.staff_shown(StaffId::from_raw(index as u32)))
+        .collect()
+}
+
+/// Computes the measure atoms of the given staff.
+fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
+    let staff = &score.staves[staff_index];
     let mut clef = staff.default_clef.concert;
     if clef == ClefType::Invalid {
         clef = ClefType::G;
@@ -801,7 +875,7 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             // where the key signature segment can start.
             let name = clef_name(clef);
             let clef_x = CLEF_LEFT_MARGIN;
-            events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
+            events.push(Atom::at_segment(clef_x, AtomKind::Clef { name }, 0));
             x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
             has_clef = true;
         }
@@ -813,6 +887,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         let mut used_tracks = alloc::vec::Vec::new();
         for segment in &measure.segments {
             for (track, item) in segment.iter_elements() {
+                if track.staff().index() != staff_index {
+                    continue;
+                }
                 if matches!(item, SegmentItem::ChordRest(_)) && !used_tracks.contains(&track.raw())
                 {
                     used_tracks.push(track.raw());
@@ -823,8 +900,12 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         // (x of the last segment carrying this text family, shape width).
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
+        let mut segment_bases = Vec::with_capacity(measure.segments.len());
 
-        for segment in &measure.segments {
+        for (segment_number, segment) in measure.segments.iter().enumerate() {
+            segment_bases.push(x);
+            let seg = segment_number as u16;
+            let segment_staff = |track: Track| track.staff().index() == staff_index;
             if segment.kind == SegmentType::ChordRest {
                 // P1: fixed proportional spacing, one x per chord/rest segment
                 // (plan §4, stage 1; P2 replaces this with real springs). All
@@ -832,8 +913,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 // stem directions by track parity (`chordlayout.cpp:1584`).
                 let chord_rests: Vec<(u32, &_)> = segment
                     .iter_elements()
+                    .filter(|(track, _)| segment_staff(*track))
                     .filter_map(|(track, item)| match item {
-                        SegmentItem::ChordRest(cr) => Some((track.raw(), cr)),
+                        SegmentItem::ChordRest(cr) => Some((track.voice() as u32, cr)),
                         _ => None,
                     })
                     .collect();
@@ -943,6 +1025,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                         beam_start: false,
                                         beam_dir: None,
                                         grace: true,
+                                        segment: seg,
+                                        lyrics: Vec::new(),
                                     });
                                 }
                                 grace_x -= grace_w + MIN_NOTE_DISTANCE * 7 / 10;
@@ -991,16 +1075,19 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 beam_start: cr.engraving.beam_start,
                                 beam_dir: cr.engraving.beam_direction,
                                 grace: chord.grace.is_some(),
+                                segment: seg,
+                                lyrics: cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect(),
                             });
                         }
                         ChordRestKind::Rest(_) => {
-                            let mut rest = Atom::simple(
+                            let mut rest = Atom::at_segment(
                                 x,
                                 AtomKind::Rest {
                                     duration,
                                     dots: cr.duration.dots,
                                     measure: cr.duration.kind == DurationType::Measure,
                                 },
+                                seg,
                             );
                             rest.voice = track;
                             rest.measure = measure.number;
@@ -1008,6 +1095,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                             rest.beam_mode = cr.engraving.beam_mode;
                             rest.beam_start = cr.engraving.beam_start;
                             rest.beam_dir = cr.engraving.beam_direction;
+                            rest.lyrics =
+                                cr.lyrics.iter().map(|lyric| lyric.text.clone()).collect();
                             events.push(rest);
                         }
                     }
@@ -1016,14 +1105,17 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 continue;
             }
 
-            for item in segment.elements().iter().flatten() {
+            for (_track, item) in segment
+                .iter_elements()
+                .filter(|(track, _)| segment_staff(*track))
+            {
                 match item {
                     SegmentItem::Clef(new_clef) if segment.kind.is_clef_type() && !has_clef => {
                         clef = new_clef.concert;
                         bottom = bottom_line_note(clef);
                         let name = clef_name(clef);
                         let clef_x = x + CLEF_LEFT_MARGIN;
-                        events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
+                        events.push(Atom::at_segment(clef_x, AtomKind::Clef { name }, seg));
                         x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
                         has_clef = true;
                     }
@@ -1033,12 +1125,13 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                         key_fifths = fifths;
                         prev_fifths = fifths;
                         if fifths != 0 || previous != 0 {
-                            events.push(Atom::simple(
+                            events.push(Atom::at_segment(
                                 x,
                                 AtomKind::KeySig {
                                     fifths,
                                     prev_fifths: previous,
                                 },
+                                seg,
                             ));
                             // // Port of `styledef.cpp:241` (`keysigAccidentalDistance`):
                             // consecutive accidentals are one glyph width plus
@@ -1061,12 +1154,13 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     {
                         let numerator = u8::try_from(time.numerator).unwrap_or(4);
                         let denominator = u8::try_from(time.denominator).unwrap_or(4);
-                        events.push(Atom::simple(
+                        events.push(Atom::at_segment(
                             x,
                             AtomKind::TimeSig {
                                 numerator,
                                 denominator,
                             },
+                            seg,
                         ));
                         // // Port of `horizontalspacing.cpp:1345-1353`: after
                         // a system header time signature the gap is
@@ -1091,6 +1185,8 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             clef_name: clef_name(clef),
             key_fifths,
             mm_rest_count: mm_count.min(u16::MAX as usize) as u16,
+            segment_bases,
+            header_width: 0,
         };
         // // Port of `systemlayout.cpp:402-407`
         // (`MeasureLayout::createEndBarLines`): MuseScore generates a final
@@ -1109,6 +1205,66 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
         atoms.push(atom);
     }
     atoms
+}
+
+/// Computes the atoms of every engraved staff and aligns their segment
+/// positions. // Port of `HorizontalSpacing::computeMinWidth` and
+/// `collectSegments` (`horizontalspacing.cpp:47-89, 262-327`): MuseScore
+/// visits the segments of a system once, taking the largest minimum width
+/// over all staves at each tick, then assigns that x to every staff. The
+/// pivot model shares its segments between staves, so the segment index is
+/// the alignment key.
+pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
+    let mut all: Vec<Vec<MeasureAtom>> = visible_staves(score)
+        .into_iter()
+        .map(|index| compute_staff(score, index))
+        .collect();
+    if all.len() < 2 {
+        return all;
+    }
+    for measure in 0..all[0].len() {
+        let tails: Vec<i32> = all
+            .iter()
+            .map(|atoms| {
+                let atom = &atoms[measure];
+                atom.width - atom.segment_bases.last().copied().unwrap_or(atom.width)
+            })
+            .collect();
+        let count = all
+            .iter()
+            .map(|atoms| atoms[measure].segment_bases.len())
+            .max()
+            .unwrap_or(0);
+        for segment in 0..count {
+            let common = all
+                .iter()
+                .filter_map(|atoms| atoms[measure].segment_bases.get(segment))
+                .copied()
+                .max()
+                .unwrap_or(0);
+            for atoms in &mut all {
+                let Some(base) = atoms[measure].segment_bases.get_mut(segment) else {
+                    continue;
+                };
+                let delta = common - *base;
+                *base = common;
+                if delta != 0 {
+                    for event in &mut atoms[measure].events {
+                        if usize::from(event.segment) == segment {
+                            event.x += delta;
+                        }
+                    }
+                }
+            }
+        }
+        // The measure ends where the last (possibly shifted) segment ends.
+        for (staff, atoms) in all.iter_mut().enumerate() {
+            let atom = &mut atoms[measure];
+            let last_base = atom.segment_bases.last().copied().unwrap_or(0);
+            atom.width = last_base + tails[staff].max(0);
+        }
+    }
+    all
 }
 
 #[cfg(test)]

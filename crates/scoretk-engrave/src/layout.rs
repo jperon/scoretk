@@ -66,6 +66,27 @@ pub struct PageSpec {
     /// Height of the first-page VBox plus `frameSystemDistance` (7 sp),
     /// added above the first system. Zero when the score has no title frame.
     pub title_frame_height: i32,
+    /// // Port of `styledef.cpp:55` (`staffDistance` 6.5 sp): gap between
+    /// staves of different parts.
+    pub staff_distance: i32,
+    /// // Port of `styledef.cpp:57` (`akkoladeDistance` 6.5 sp): gap between
+    /// staves of the same part (grand staff).
+    pub akkolade_distance: i32,
+    /// Stretch factors and bounds of the vertical spread pass
+    /// (`styledef.cpp:62-70`, `verticalgapdata.cpp:71-128`).
+    pub enable_vertical_spread: bool,
+    pub spread_system: i32,
+    pub spread_square_bracket: i32,
+    pub spread_curly_bracket: i32,
+    pub max_page_fill_spread: i32,
+    pub min_staff_spread: i32,
+    pub max_staff_spread: i32,
+    pub max_system_spread: i32,
+    pub max_akkolade_distance: i32,
+    pub staff_upper_border: i32,
+    pub staff_lower_border: i32,
+    pub frame_system_distance: i32,
+    pub instrument_name_offset: i32,
 }
 
 impl Default for PageSpec {
@@ -81,6 +102,21 @@ impl Default for PageSpec {
             first_system_indent: 0,
             spatium_mm: 1.75,
             title_frame_height: 0,
+            staff_distance: 6656,
+            akkolade_distance: 6656,
+            enable_vertical_spread: true,
+            spread_system: 2560,
+            spread_square_bracket: 1229,
+            spread_curly_bracket: 1126,
+            max_page_fill_spread: 6144,
+            min_staff_spread: 3584,
+            max_staff_spread: 20 * SP,
+            max_system_spread: 32 * SP,
+            max_akkolade_distance: 6656,
+            staff_upper_border: 7 * SP,
+            staff_lower_border: 7 * SP,
+            frame_system_distance: 7 * SP,
+            instrument_name_offset: SP,
         }
     }
 }
@@ -103,8 +139,6 @@ impl PageSpec {
             margin_left: to_fixed(left),
             margin_top: to_fixed(top),
             page_height: to_fixed(style.page_height_in * 25.4),
-            min_system_distance: 8704,
-            max_system_distance: 15 * SP,
             last_system_fill_limit: (style.last_system_fill_limit * 1024.0) as i32,
             // `enableIndentationOnFirstSystem` is true by default in 4.x
             // (legacy 3.x style files disable it).
@@ -114,6 +148,23 @@ impl PageSpec {
                 0
             },
             spatium_mm: spatium,
+            staff_distance: (style.staff_distance_sp * SP as f64) as i32,
+            akkolade_distance: (style.akkolade_distance_sp * SP as f64) as i32,
+            min_system_distance: (style.min_system_distance_sp * SP as f64) as i32,
+            max_system_distance: (style.max_system_distance_sp * SP as f64) as i32,
+            enable_vertical_spread: style.enable_vertical_spread,
+            spread_system: (style.spread_system * SP as f64) as i32,
+            spread_square_bracket: (style.spread_square_bracket * SP as f64) as i32,
+            spread_curly_bracket: (style.spread_curly_bracket * SP as f64) as i32,
+            max_page_fill_spread: (style.max_page_fill_spread_sp * SP as f64) as i32,
+            min_staff_spread: (style.min_staff_spread_sp * SP as f64) as i32,
+            max_staff_spread: (style.max_staff_spread_sp * SP as f64) as i32,
+            max_system_spread: (style.max_system_spread_sp * SP as f64) as i32,
+            max_akkolade_distance: (style.max_akkolade_distance_sp * SP as f64) as i32,
+            staff_upper_border: (style.staff_upper_border_sp * SP as f64) as i32,
+            staff_lower_border: (style.staff_lower_border_sp * SP as f64) as i32,
+            frame_system_distance: (style.frame_system_distance_sp * SP as f64) as i32,
+            instrument_name_offset: (style.instrument_name_offset_sp * SP as f64) as i32,
             // // Port of `boxlayout.cpp` and `systemlayout.cpp`: a VBox on
             // page 1 pushes the first system down by its own height plus
             // `frameSystemDistance` (7 sp, styledef.cpp:139).
@@ -124,7 +175,9 @@ impl PageSpec {
                 .filter(|credit| credit.page == 1)
                 .map(|credit| (credit.vbox_height * SP as f64) as i32)
                 .max()
-                .map_or(0, |height| height + 7 * SP),
+                .map_or(0, |height| {
+                    height + (style.frame_system_distance_sp * SP as f64) as i32
+                }),
         }
     }
 
@@ -1142,14 +1195,16 @@ fn place_event(
 /// Builds the display list of one page from the atoms and the precomputed
 /// breaking plan. `page(n)` only reads the systems assigned to that page.
 pub fn build_page(
-    atoms: &[MeasureAtom],
+    atoms: &[Vec<MeasureAtom>],
     spec: &PageSpec,
     systems: &[crate::breaking::SystemPlan],
+    staffs: &[crate::staffs::StaffInfo],
     credits: &[Credit],
     page: usize,
 ) -> DisplayList {
     let mut out = DisplayList::new(page);
     place_credits(&mut out, credits, spec, page);
+    let (staff_y, _) = crate::staffs::system_geometry(staffs, spec);
     for system in systems.iter().filter(|system| system.page == page) {
         let sy = system.y;
         // // Port of `pagelayout.cpp:524-613` and `styledef.cpp:540`: a first
@@ -1166,7 +1221,7 @@ pub fn build_page(
         // drawn above the first measure of every system (except measure 1,
         // `showMeasureNumberOne` false by default), centred on the staff's
         // left edge (`measureNumberFontSize` 8 pt, styledef.cpp:1210).
-        let first = &atoms[system.first];
+        let first = &atoms[0][system.first];
         if first.number > 0 {
             let label = alloc::format!("{}", first.number + 1);
             place_text(
@@ -1179,61 +1234,66 @@ pub fn build_page(
                 1,
             );
         }
-        // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
-        // system's last bar line. A short final system (below
-        // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not stretched
-        // to the right margin, so drawing them over the full printable width
-        // left five lines running into empty space.
-        let mut end_x = left;
-        for atom in &atoms[system.first..system.first + system.count] {
-            end_x += measure_end(atom, system.scale);
-        }
-        let last = &atoms[system.first + system.count - 1];
-        let right = (system_right_edge(last, end_x) - left).clamp(0, staff_width);
-        // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
-        // rectangles, thickness `staffLineWidth`.
-        for line in 0..5 {
-            out.push(DisplayItem::rect(
-                ItemKind::StaffLine,
-                left,
-                sy + line * SP - STAFF_LINE_WIDTH / 2,
-                right,
-                STAFF_LINE_WIDTH,
-            ));
-        }
-        let events = system_events(atoms, system, left);
-        let mut voices = alloc::vec::Vec::new();
-        for (_, event) in &events {
-            if !voices.contains(&event.voice) {
-                voices.push(event.voice);
+        // // Port of `SystemLayout::layoutSystem` (`systemlayout.cpp:2477-2582`):
+        // each visible staff of the system is laid out in turn, with its own
+        // clef/key/time and its own events at the shared segment x positions.
+        for (staff_index, staff_atoms) in atoms.iter().enumerate() {
+            let y = sy + staff_y.get(staff_index).copied().unwrap_or(0);
+            // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
+            // system's last bar line. A short final system (below
+            // `lastSystemFillLimit`, `systemlayout.cpp:459-489`) is not
+            // stretched to the right margin.
+            let mut end_x = left;
+            for atom in &staff_atoms[system.first..system.first + system.count] {
+                end_x += measure_end(atom, system.scale);
             }
-        }
-        let multi_voice = voices.len() > 1;
-        let plan = plan_beams(&events, multi_voice, sy);
-        for item in &plan.items {
-            out.push(*item);
-        }
-        let mut x = left;
-        let mut event_offset = 0;
-        for atom in &atoms[system.first..system.first + system.count] {
-            x += place_measure(
-                &mut out,
-                atom,
-                x,
-                sy,
-                system.scale,
-                &events,
-                event_offset,
-                &plan,
-            );
-            event_offset += atom.events.len();
-        }
-        // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
-        // line is not drawn at the beginning of a system (the 4.7.4 SVG has
-        // none). Repeats and double/final start bar lines are drawn.
-        let start_bar = atoms[system.first].start_bar;
-        if start_bar.0 > 1 {
-            place_barline(&mut out, start_bar, left, sy);
+            let last = &staff_atoms[system.first + system.count - 1];
+            let right = (system_right_edge(last, end_x) - left).clamp(0, staff_width);
+            // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
+            // rectangles, thickness `staffLineWidth`.
+            for line in 0..5 {
+                out.push(DisplayItem::rect(
+                    ItemKind::StaffLine,
+                    left,
+                    y + line * SP - STAFF_LINE_WIDTH / 2,
+                    right,
+                    STAFF_LINE_WIDTH,
+                ));
+            }
+            let events = system_events(staff_atoms, system, left);
+            let mut voices = alloc::vec::Vec::new();
+            for (_, event) in &events {
+                if !voices.contains(&event.voice) {
+                    voices.push(event.voice);
+                }
+            }
+            let multi_voice = voices.len() > 1;
+            let plan = plan_beams(&events, multi_voice, y);
+            for item in &plan.items {
+                out.push(*item);
+            }
+            let mut x = left;
+            let mut event_offset = 0;
+            for atom in &staff_atoms[system.first..system.first + system.count] {
+                x += place_measure(
+                    &mut out,
+                    atom,
+                    x,
+                    y,
+                    system.scale,
+                    &events,
+                    event_offset,
+                    &plan,
+                );
+                event_offset += atom.events.len();
+            }
+            // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
+            // line is not drawn at the beginning of a system (the 4.7.4 SVG
+            // has none). Repeats and double/final start bar lines are drawn.
+            let start_bar = staff_atoms[system.first].start_bar;
+            if start_bar.0 > 1 {
+                place_barline(&mut out, start_bar, left, y);
+            }
         }
     }
     out
@@ -1242,12 +1302,13 @@ pub fn build_page(
 /// Iterates over all items of a page in deterministic order (used by tests
 /// and the oracles).
 pub fn items(
-    atoms: &[MeasureAtom],
+    atoms: &[Vec<MeasureAtom>],
     spec: &PageSpec,
     systems: &[crate::breaking::SystemPlan],
+    staffs: &[crate::staffs::StaffInfo],
     page: usize,
 ) -> Vec<DisplayItem> {
-    build_page(atoms, spec, systems, &[], page).items
+    build_page(atoms, spec, systems, staffs, &[], page).items
 }
 
 /// Exposed for the raster backend: the quadratic outline of a display item.
@@ -1264,7 +1325,7 @@ mod tests {
 
     fn page(atoms: &[MeasureAtom], spec: &PageSpec, number: usize) -> DisplayList {
         let systems = crate::breaking::compute(atoms, spec);
-        build_page(atoms, spec, &systems, &[], number)
+        build_page(&[atoms.to_vec()], spec, &systems, &[], &[], number)
     }
 
     fn page_count(atoms: &[MeasureAtom], spec: &PageSpec) -> usize {
@@ -1298,6 +1359,7 @@ mod tests {
                 beam_start: false,
                 beam_dir: None,
                 grace: false,
+                ..Default::default()
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
@@ -1305,6 +1367,7 @@ mod tests {
             clef_name: "gClef",
             key_fifths: 0,
             mm_rest_count: 1,
+            ..Default::default()
         }
     }
 
@@ -1342,6 +1405,7 @@ mod tests {
             beam_start: false,
             beam_dir: None,
             grace: false,
+            ..Default::default()
         }];
         rest.width = 40 * SP;
         let list = page(&[rest.clone()], &spec, 0);
@@ -1492,6 +1556,7 @@ mod tests {
                     beam_start: false,
                     beam_dir: None,
                     grace: false,
+                    ..Default::default()
                 },
             ],
             start_bar: crate::atoms::BarCode(1),
@@ -1500,6 +1565,7 @@ mod tests {
             clef_name: "gClef",
             key_fifths: 0,
             mm_rest_count: 1,
+            ..Default::default()
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let header: Vec<_> = list
@@ -1559,6 +1625,7 @@ mod tests {
                 beam_start: false,
                 beam_dir: None,
                 grace: false,
+                ..Default::default()
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
@@ -1566,6 +1633,7 @@ mod tests {
             clef_name: "gClef",
             key_fifths: 0,
             mm_rest_count: 1,
+            ..Default::default()
         };
         let list = page(&[atom], &PageSpec::default(), 0);
         let accidental = list
