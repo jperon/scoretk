@@ -1363,3 +1363,38 @@ Re-measured on all 261 files, same instrument, same inherent citations:
 defects 446 (`pitch` 416, `glyph` 16, `custos` 10, `attribute` 2, `clef` 1,
 `text` 1). The other four destinations are unchanged by this step
 (MusicXML 90.89 %, MIDI 95.45 %, LilyPond 92.01 %, MEI 98.90 %).
+
+## 23. LilyPond Vaticana: defect inventory, then readable note annotations (2026-11-27)
+
+Step 2 of the campaign. The defects of `--ly-gregorian` were first listed by
+kind with their counts in the corrected instrument (92.01 %, 8 708 defects,
+5 041 inherent): `glyph` 3 875, `text` 3 239, `rubric` 448, `pitch` 411,
+`shape` 357, `attribute` 332, `custos` 22, `mora` 10, `ictus` 9, `clef` 8,
+`letter` 7, `attribute` 3. They had two causes, both in our writer/reader:
+
+1. The Vatican style (Notation Reference §17.4.7) has commands for neume
+   shapes but not for GABC spacing/fusion characters (`/`, `!`, `*`, `x`,
+   digits), nor for bracketed attributes, custos tokens or `alt:` text.
+2. `\lyricsto` emitted a lyric token only for syllables with text, so empty
+   groups were merged into the previous syllable; 3 239 text facts and many
+   pitches were lost on return.
+
+A rejected experiment encoded those facts as hex inside `^"…"` annotations.
+It has been discarded: the new `scoretk-lilypond-common/src/gregorian.rs`
+table writes **readable labels** instead — `^"glyph: virga augmentum spacing |
+attribute: [oh:h] | custos: z | clef: c3 | above: …"`. Standard Vatican
+commands (`\quilisma`, `\ictus`, `\episemInitium`, `\virga`, `\[ … \]`,
+divisiones) are still emitted; the annotation only completes what the style
+does not name. Every lyric syllable now gets a quoted token, even an empty
+one, and `--` marks word continuation. User-defined `\header` identifiers
+were renamed `chantHeader*` so no `gabc`-prefixed token remains; the reader
+still accepts `gabcHeader*` documents written earlier.
+
+Re-measured on all 261 files with the same instrument: **99.28 %**
+(110 316 / 111 116; raw 96.72 %), inherent 2 941, residual defects 800
+(`rubric` 303, `pitch` 234, `glyph` 212, `custos` 21, `text` 11, `clef` 10,
+`letter` 7, `attribute` 2). No inherent citation was added or changed, and
+no private carrier is counted. `e2e_corpus` 8/8 and
+`gabc_standard_carriers` 3/3 still pass; default `.ly` bytes are unchanged.
+No generated `.ly` was compiled outside a bwrap sandbox (none was compiled in
+this step).

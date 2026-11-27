@@ -30,7 +30,8 @@
 //! - [`error`] : l'erreur unique des deux sens ([`Error`], [`Result`]) ;
 //! - [`pitch`] : la spirale des quintes (`tpc`) et ses conversions ;
 //! - [`clefs`] : la table des clefs, dans les deux sens ;
-//! - [`headers`] : les champs `\header` standards transportant les crédits.
+//! - [`headers`] : les champs `\header` standards transportant les crédits ;
+//! - [`gregorian`] : noms lisibles des glyphes et annotations du chant grégorien.
 //!
 //! Tout le reste appartient à `scoretk-lilypond-import` (lecture `.ly` →
 //! modèle) ou à `scoretk-lilypond-export` (modèle → `.ly`).
@@ -40,6 +41,7 @@
 
 pub mod clefs;
 mod error;
+pub mod gregorian;
 pub mod headers;
 pub mod midi_instruments;
 pub mod noteheads;

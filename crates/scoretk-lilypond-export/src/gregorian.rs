@@ -32,8 +32,11 @@
 
 use std::fmt::Write as _;
 
-use scoretk_core::model::{BarKind, Gregorian, GregorianNote, Score, SignKind, Syllable};
+use scoretk_core::model::{
+    BarKind, Gregorian, GregorianNote, GroupTokenKind, Score, SignKind, Syllable,
+};
 use scoretk_gabc_common::syntax::diatonic_step;
+use scoretk_lilypond_common::gregorian as carrier;
 
 const STEPS: &[u8; 7] = b"cdefgab";
 
@@ -70,7 +73,8 @@ fn write_header(out: &mut String, gregorian: &Gregorian) {
     }
     for (index, header) in gregorian.headers.iter().enumerate() {
         // Un identifiant LilyPond ne peut pas finir par un chiffre : on utilise
-        // des lettres (`gabcHeaderA`, `gabcHeaderB`…).
+        // des lettres (`chantHeaderA`, `chantHeaderB`…), jamais un préfixe
+        // `gabc` réservé au format source.
         let _ = writeln!(
             out,
             "  {} = \"{}\"",
@@ -82,7 +86,7 @@ fn write_header(out: &mut String, gregorian: &Gregorian) {
 }
 
 fn header_name(index: usize) -> String {
-    let mut name = String::from("gabcHeader");
+    let mut name = String::from("chantHeader");
     let mut value = index;
     loop {
         name.push((b'A' + (value % 26) as u8) as char);
@@ -112,6 +116,20 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
     if ligature {
         out.push_str("      \\[ ");
     }
+    // §"Text annotations" : l'orthographe exacte des glyphes que le style
+    // Vatican ne nomme pas (espacements, fusions), les attributs crochetés,
+    // les custos et les textes au-dessus de la portée sont écrits comme des
+    // annotations de note **lisibles**, jamais comme des codes.
+    let mut suffixes: Vec<Vec<&str>> = vec![Vec::new(); sung.len() + 1];
+    let mut custos: Vec<Vec<&str>> = vec![Vec::new(); sung.len() + 1];
+    for token in &syllable.group_tokens {
+        let at = token.notes_before.min(sung.len());
+        if token.kind == GroupTokenKind::Custos {
+            custos[at].push(&token.text);
+        } else if !matches!(token.kind, GroupTokenKind::Bar | GroupTokenKind::Clef) {
+            suffixes[at].push(&token.text);
+        }
+    }
     let mut previous_step = None;
     for (index, note) in sung.iter().enumerate() {
         if index > 0 {
@@ -127,6 +145,42 @@ fn write_syllable(out: &mut String, syllable: &Syllable, clef: &str) {
         write_prefixes(out, note);
         let _ = write!(out, "{}", pitch_name(diatonic_step(note.letter, clef)));
         write_postfixes(out, note);
+        let mut glyph = note.glyph.clone();
+        for suffix in &suffixes[index] {
+            glyph.push_str(suffix);
+        }
+        let mut facts: Vec<(&str, String)> = Vec::new();
+        facts.push(("glyph", carrier::glyph_label(&glyph)));
+        for attribute in &note.attributes {
+            facts.push(("attribute", attribute.text.clone()));
+        }
+        for raw in &custos[index] {
+            facts.push(("custos", (*raw).to_owned()));
+        }
+        if index + 1 == sung.len() {
+            for attribute in &syllable.leading_attributes {
+                facts.push(("attribute", attribute.clone()));
+            }
+            for suffix in &suffixes[sung.len()] {
+                facts.push(("sign", (*suffix).to_owned()));
+            }
+            for sign in &syllable.signs {
+                facts.push(("sign", sign.raw.clone()));
+            }
+            if let Some(change) = &syllable.clef {
+                facts.push(("clef", change.clone()));
+            }
+            if let Some(above) = &syllable.above_text {
+                facts.push(("above", above.clone()));
+            }
+            for raw in &custos[sung.len()] {
+                facts.push(("custos", (*raw).to_owned()));
+            }
+        }
+        if !facts.is_empty() {
+            let annotation = carrier::annotation(&facts);
+            let _ = write!(out, "{annotation}");
+        }
     }
     if ligature {
         out.push_str(" \\]\n");
@@ -174,9 +228,9 @@ fn write_postfixes(out: &mut String, note: &GregorianNote) {
     }
 }
 
-/// `\lyricsto` aligne une syllabe par note : la première note du groupe
-/// reçoit le texte, les suivantes reçoivent `_` (mélisme, §2.1.3). Le tiret
-/// `--` marque la continuation du mot (`space_after = false`).
+/// `\lyricsto` aligne un jeton par note : une chaîne `"…"` (même vide) ouvre
+/// une syllabe, les suivantes reçoivent `_` (mélisme, §2.1.3). Le tiret `--`
+/// marque la continuation du mot (`space_after = false`).
 fn write_lyrics(out: &mut String, syllables: &[Syllable]) {
     out.push_str("    \\new VaticanaLyrics \\lyricsto \"cantus\" {\n      ");
     let mut first = true;
@@ -199,7 +253,9 @@ fn write_lyrics(out: &mut String, syllables: &[Syllable]) {
                     out.push(' ');
                 }
             }
-            if note_index == 0 && !syllable.text.is_empty() {
+            // Une chaîne (même vide) ouvre une syllabe : un groupe sans texte
+            // est un fait GABC, pas un mélisme sur la syllabe précédente.
+            if note_index == 0 {
                 let _ = write!(out, "\"{}\"", escape(&syllable.text));
             } else {
                 out.push('_');

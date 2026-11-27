@@ -10964,3 +10964,26 @@ command at a time, worktree-local `CARGO_TARGET_DIR`, with
 -D warnings`, `cargo test --workspace --no-fail-fast`,
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
+
+## Gregorian carrier annotations (opt-in `--ly-gregorian`)
+
+The ancient-notation dialect uses the standard Vatican vocabulary of Notation
+Reference §17.4 (`VaticanaVoice`, `\clef "vaticana-doN"`, `\[ … \]`,
+`\quilisma`, `\ictus`, `\episemInitium`, `\virga`, divisiones,
+`Custos_engraver`). Some GABC facts have no Vatican command: source spacing
+characters, bracketed attributes, custos spelling and `alt:` text. They are
+written as standard note annotations `^"…"` (§"Text annotations") with
+**readable labels**, defined in `scoretk-lilypond-common/src/gregorian.rs`:
+
+```
+g,^"glyph: virga augmentum spacing | attribute: [oh:h] | custos: z"
+```
+
+`glyph:` values are neume/sign names separated by spaces (`quilisma`,
+`spacing`, `augmentum`, …), never hex codes; the inverse table is used by the
+reader. `\lyricsto` writes one quoted token per syllable, including `""` for
+a silent group, and `--` for word continuation, which restores the exact
+syllable grouping. The reader recognises both `chantHeader*` (new) and
+`gabcHeader*` (older documents). Without `--ly-gregorian`, nothing changes.
+The measured GABC full-support figure for this dialect is 99.28 %
+(`docs/agents/gabc.md` §23).
