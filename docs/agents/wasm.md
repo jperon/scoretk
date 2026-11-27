@@ -8,12 +8,15 @@ project core (rules, commands, index) remains in `AGENTS.md`.
 
 `crates/scoretk-wasm` is a **wasm-bindgen wrapper** of the
 `crates/scoretk` facade: no conversion logic, only exposure of
-`read`/`write`/`Format` to JavaScript. It enables **all** the features of the
-facade (`musicxml-import`, `midi`, `lilypond`, `lilypond-import`, `mscx`,
-`abc`, `gabc`), like the `scoretk` CLI: the browser package can therefore read
-and write all eight formats. `formats()` reports `gabc` with
-extensions `["gabc"]` and both directions enabled; no other API signature
-changed (AGENTS.md invariant 5).
+`read`/`write`/`Format` to JavaScript. It enables **all conversion features**
+of the facade (the twelve import/export directions), like the `scoretk` CLI;
+the optional `engrave` feature stays disabled here for size reasons. The
+browser package can therefore read and write the nine conversion formats.
+`formats()` uses the facade helper `scoretk::formats()`, which lists only
+formats with at least one compiled direction: it reports `gabc` with
+extensions `["gabc"]` and both directions enabled, and omits `svg` because
+neither direction is compiled. No other API signature changed
+(AGENTS.md invariant 5).
 
 | Crate | Surface | Nix package |
 | --- | --- | --- |
@@ -598,8 +601,13 @@ as `string | null`, `formats` as `FormatInfo[]` and `convertWithTimeline` as
 | `convertWithTimeline` | `(input: Uint8Array, options?: ConvertOptions) => PlaybackResult` | identified MusicXML + MIDI + time map; `to` ignored |
 | `convertDetailed` | `(input: Uint8Array, options?: ConvertOptions) => DetailedResult` | additive: same bytes as `convert` plus `{ bytes, losses }` |
 | `detect` | `(input: Uint8Array) => string \| null` | `Format::detect` (content) |
-| `formats` | `() => FormatInfo[]` | seven entries, actual capabilities |
+| `formats` | `() => FormatInfo[]` | nine entries in this package, actual capabilities |
 | `version` | `() => string` | library version |
+
+The `FormatInfo[]` is built from `scoretk::formats()`: a format whose read and
+write features are both disabled is not listed. In this package that excludes
+`svg`; cantus sees the same nine `{ name, extensions, read, write }` objects as
+before the SVG format was added.
 
 ```ts
 interface ConvertOptions {
@@ -737,7 +745,7 @@ as produced by `nix build` and covers the following cases (numbered 1 to 27
 in the script):
 
 - `version()` equals `package.json` ;
-- `formats()`: seven entries, `read`/`write` `true`, MusicXML extensions ;
+- `formats()`: nine entries, `read`/`write` `true`, MusicXML extensions ;
 - `detect`: `.mscx`, `.musicxml`, `.abc`, `.ly`, unknown content (`null`) ;
 - `convert`: default MusicXML with `encodingDate`/`software`, `.mscx` → `.mscx`,
   `.mscx` → `.mscz` read back then → MIDI, MusicXML → LilyPond/ABC/MIDI,

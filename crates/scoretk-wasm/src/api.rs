@@ -295,12 +295,12 @@ pub fn detect(input: &[u8]) -> JsValue {
     }
 }
 
-/// Décrit les huit formats reconnus et leurs capacités compilées.
+/// Décrit les formats disponibles dans cette compilation et leurs capacités.
 #[wasm_bindgen(skip_typescript)]
 pub fn formats() -> js_sys::Array {
     let array = js_sys::Array::new();
-    for format in scoretk::Format::ALL {
-        array.push(&formats::to_js(format));
+    for info in scoretk::formats() {
+        array.push(&formats::to_js(info));
     }
     array
 }

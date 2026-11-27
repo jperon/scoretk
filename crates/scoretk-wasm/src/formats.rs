@@ -15,25 +15,21 @@
 // this program. If not, see the LICENSE file at the root of this repository or
 // <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Conversion d'un [`scoretk::Format`] en objet JavaScript `FormatInfo`.
+//! Conversion d'un [`scoretk::FormatInfo`] en objet JavaScript `FormatInfo`.
 
 use wasm_bindgen::JsValue;
 
-/// Décrit un format pour JavaScript : `{ name, extensions, read, write }`.
-pub(crate) fn to_js(format: scoretk::Format) -> JsValue {
+/// Décrit un format disponible pour JavaScript : `{ name, extensions, read, write }`.
+pub(crate) fn to_js(info: scoretk::FormatInfo) -> JsValue {
     let object = js_sys::Object::new();
-    set(&object, "name", JsValue::from_str(format.as_str()));
+    set(&object, "name", JsValue::from_str(info.name()));
     let extensions = js_sys::Array::new();
-    for extension in format.extensions() {
+    for extension in info.extensions() {
         extensions.push(&JsValue::from_str(extension));
     }
     set(&object, "extensions", extensions.into());
-    set(&object, "read", JsValue::from_bool(format.supports_read()));
-    set(
-        &object,
-        "write",
-        JsValue::from_bool(format.supports_write()),
-    );
+    set(&object, "read", JsValue::from_bool(info.read));
+    set(&object, "write", JsValue::from_bool(info.write));
     object.into()
 }
 

@@ -92,6 +92,7 @@
 mod convert;
 mod error;
 mod format;
+mod formats;
 mod hooks;
 mod options;
 
@@ -99,6 +100,7 @@ mod options;
 pub use convert::{convert, convert_with_report, ConvertOptions, OutputFormat};
 pub use error::Error;
 pub use format::{Format, Sens};
+pub use formats::{formats, FormatInfo};
 pub use options::{MidiOptions, Options};
 pub use scoretk_core::model;
 pub use scoretk_core::model::Score;

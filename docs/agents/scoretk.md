@@ -17,6 +17,7 @@ the only one to touch the disk.
 | Element | Location |
 | --- | --- |
 | Formats, detection | `crates/scoretk/src/format.rs` |
+| Available formats | `crates/scoretk/src/formats.rs` |
 | Errors | `crates/scoretk/src/error.rs` |
 | Write options | `crates/scoretk/src/options.rs` |
 | `read`/`write` routing | `crates/scoretk/src/lib.rs` |
@@ -27,15 +28,24 @@ the only one to touch the disk.
 ## 2. API
 
 ```rust
-pub enum Format { Mscz, Mscx, MusicXml, Mxl, Ly, Abc, Midi }
+pub enum Format { Mscz, Mscx, MusicXml, Mxl, Mei, Ly, Abc, Midi, Gabc, Svg }
 pub enum Sens { Lecture, Ecriture }
 
 pub fn read(bytes: &[u8], format: Format) -> Result<Score>;
 pub fn write(score: &Score, format: Format, options: &Options) -> Result<Vec<u8>>;
 
+pub struct FormatInfo { format: Format, read: bool, write: bool }
+pub fn formats() -> Vec<FormatInfo>;
+
 #[cfg(all(feature = "midi-export", feature = "musicxml-export"))]
 pub fn write_playback(score: &Score, options: &Options) -> Result<PlaybackOutput>;
 ```
+
+`formats()` lists only the formats this build can actually read or write: a
+format with every direction disabled is omitted. `Format::ALL` still enumerates
+every format known to the facade. `FormatInfo::{name, extensions}` carries the
+same data as the wasm `FormatInfo` object; the wasm `formats()` and the CLI
+`--list-formats` both use this helper.
 
 `Options` contains `software`, `encoding_date`, `concert_pitch` and `midi`.
 `MidiOptions { expand_repeats: bool }` (default `true`) controls repeat
@@ -244,6 +254,9 @@ helper `scripts/oracle/common.py` — never to hide a regression.
 
 - `crates/scoretk/tests/formats.rs`: extensions, paths, `FromStr`, content
   detection (XML, `.mscz`/`.mxl` ZIP, MIDI, LilyPond, ABC, unknown).
+- `crates/scoretk/tests/formats_capabilities.rs`: `formats()` lists exactly the
+  formats with a compiled direction; with only `abc-import` it reports ABC as
+  read-only, and SVG is listed as write-only only with `engrave`.
 - `crates/scoretk/tests/parite.rs`: `.mscz` → MusicXML **byte-for-byte
   identical** to `scoretk::convert` on the corpus (`dynamics`, `hairpin_simple`,
   `hairpins_and_repeats`), `.mxl` (container + `score.xml`), MIDI reading into

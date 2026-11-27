@@ -461,8 +461,8 @@ fn print_formats() {
         "{:<9} {:<20} {:<8} ÉCRITURE",
         "FORMAT", "EXTENSIONS", "LECTURE"
     );
-    for format in Format::ALL {
-        let extensions = format
+    for info in scoretk::formats() {
+        let extensions = info
             .extensions()
             .iter()
             .map(|extension| format!(".{extension}"))
@@ -471,10 +471,10 @@ fn print_formats() {
         let yes_no = |supported: bool| if supported { "oui" } else { "non" };
         println!(
             "{:<9} {:<20} {:<8} {}",
-            format.as_str(),
+            info.name(),
             extensions,
-            yes_no(format.supports_read()),
-            yes_no(format.supports_write()),
+            yes_no(info.read),
+            yes_no(info.write),
         );
     }
 }
