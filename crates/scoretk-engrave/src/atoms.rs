@@ -787,9 +787,13 @@ pub fn rest_name(duration: u8) -> &'static str {
     }
 }
 
-/// True for the duration codes that carry a stem (whole and breve do not).
+/// True for the duration codes that carry a stem.
+/// // Port of `TDuration::hasStem` (`durationtype.cpp:222-241`): long and
+/// half through 1024th have a stem; breve, whole, measure, zero and invalid
+/// do not. The codes are those of `duration_code` above, where the long note
+/// is 0 (MuseScore's `V_LONG` is listed explicitly in `hasStem`).
 pub fn has_stem(duration: u8) -> bool {
-    duration >= 3
+    duration == 0 || (3..=12).contains(&duration)
 }
 
 /// // Port of `horizontalspacing.cpp:805-812` (`durationStretchForTicks`):
@@ -966,35 +970,54 @@ fn voice_collision_offsets(chords: &[CollisionChord]) -> alloc::vec::Vec<i32> {
     offsets
 }
 
-/// // Port of `stemlayout.cpp:42-160` (`StemLayout::calcDefaultStemLength`):
+/// // Port of `StemLayout::calcDefaultStemLength` (`stemlayout.cpp:42-160`):
 /// all internal arithmetic is in quarter spaces; with line distance 1 and
 /// magnitude 1, `defaultStemLength = stemLength * 4 = 14`, `quarterSpacesPerLine
 /// = floor(lineDistance * 2) = 2`, `chordHeight = (downLine - upLine) * 2`,
 /// `shortestStem = 2.5 * 4 = 10` and the final length is
 /// `chordHeight / 4 * sp + stemLength / 4 * sp`, to which the middle-line
-/// extension of `:122-159` is added. Beams and tremolos are P3.
-/// Hooks and stem shortening follow `stemlayout.cpp:326-397` below.
-fn stem_length(lines: &[i32], heads: &[&str], up: bool, duration: u8) -> i32 {
+/// extension of `:122-159` is added. Beam additions, the per-beam shortening
+/// table, the optical adjustment and the beamed minimum are ported from
+/// `stemlayout.cpp:326-423` and `:415-471` below.
+fn stem_length(
+    lines: &[i32],
+    heads: &[&str],
+    up: bool,
+    duration: u8,
+    beams: u8,
+    beamed: bool,
+) -> i32 {
     if lines.is_empty() {
         return 3584;
     }
-    // // Port of `stemlayout.cpp:60-63, 345-373`: the head's SMuFL stem
-    // anchor adds to `shortestStem` (2.5 sp * 4 quarter spaces).
-    let anchor_head = if up { heads.first() } else { heads.last() };
+    // // Port of `stemlayout.cpp:60-63`: `extraHeight` reads the stem anchor
+    // of `upNote()` for an up stem and of `downNote()` for a down stem. The
+    // model stores the notes in pitch order, so those are the last and first
+    // heads respectively (`chord.cpp:107-164`).
+    let anchor_head = if up { heads.last() } else { heads.first() };
     let anchor_units = anchor_head.map_or(40, |name| stem_anchor_units(name, up));
-    let min_qs = 10 + (i32::from(anchor_units).abs() * 4 / 250).max(0);
+    let mut min_qs = 10 + (i32::from(anchor_units).abs() * 4 / 250).max(0);
     let top = *lines.iter().min().unwrap();
     let bottom = *lines.iter().max().unwrap();
     let chord_height_qs = (bottom - top) * 2;
-    let default_qs = 14;
+    // `hook()`: a duration below a quarter carries traditional flags unless
+    // it is attached to a beam (`chord.cpp:1067-1075`, styledef.cpp:216).
+    let hook = beams > 0 && !beamed;
+    let beam_count = if hook { 0 } else { usize::from(beams) };
+    // // Port of `stemlayout.cpp:326-342` (`stemLengthBeamAddition`).
+    let beam_addition = if hook || beams < 3 {
+        0
+    } else if beams == 3 {
+        2
+    } else {
+        (i32::from(beams) - 3) * 3
+    };
+    let default_qs = 14 + beam_addition;
     let mut stem_qs = default_qs;
-    // // Port of `stemlayout.cpp:77, 345-397` (`maxReduction`, style
-    // `shortenStem` true, `shortStemStartLocation` 1, traditional hooks):
-    // a stem ending outside the staff is shortened by up to one staff space
-    // according to the [extension][beamCount] table; traditional hooks cap
-    // the reduction at one quarter space.
-    let short_start = 3; // shortStemStartLocation 1 * quarterSpacesPerLine 2 + 1
-    let down_short_start = (5 - 1) * (2 * 2) + short_start; // 19
+    // // Port of `stemlayout.cpp:77-117`: with `shortStemStartLocation` 1 the
+    // shortening starts at 3 (up) / 19 (down) quarter spaces outside the staff.
+    let short_start = 3;
+    let down_short_start = (5 - 1) * (2 * 2) + short_start;
     let end = if up {
         top * 2 - default_qs
     } else {
@@ -1012,34 +1035,69 @@ fn stem_length(lines: &[i32], heads: &[&str], up: bool, duration: u8) -> i32 {
         None
     };
     if let Some(extension) = outside {
-        const REDUCTIONS: [i32; 5] = [1, 2, 3, 4, 4];
+        // // Port of `StemLayout::maxReduction` (`stemlayout.cpp:345-397`),
+        // rows indexed by beam count, columns by extension in half-spaces.
+        const REDUCTIONS: [[i32; 5]; 4] = [
+            [1, 2, 3, 4, 4],
+            [0, 1, 2, 3, 3],
+            [0, 1, 1, 1, 1],
+            [0, 0, 0, 1, 1],
+        ];
         let half_spaces = (extension / 2).min(4) as usize;
-        let mut reduction = REDUCTIONS[half_spaces];
-        if duration >= 5 {
-            // Traditional flag (`useStraightNoteFlags` false, styledef.cpp:216).
+        let row = REDUCTIONS.get(beam_count).copied().unwrap_or([0; 5]);
+        let mut reduction = row[half_spaces];
+        // Exceptions for normal-sized chords (`stemlayout.cpp:379-390`).
+        if beam_count == 1 && half_spaces < 2 {
+            reduction = 2;
+        } else if beam_count == 3 && half_spaces == 3 {
+            reduction = 0;
+        }
+        if hook {
+            // Traditional flags cap the reduction (`stemlayout.cpp:389-391`).
+            // Measured against 4.7.4: Leland's flags are shorter than the
+            // metadata predicts, so the observed cap is two quarter spaces.
             reduction = reduction.min(2);
         }
         stem_qs = (stem_qs - reduction).max(min_qs);
     }
+    // // Port of `StemLayout::calcMinStemLength` (`stemlayout.cpp:415-471`):
+    // an inner stem of a beamed group must leave room for the beam height.
+    if beamed {
+        const INNER: [i32; 4] = [10, 9, 8, 7];
+        let beams_height = 3 * i32::from(beams) - 1;
+        min_qs = min_qs.max(INNER[usize::from(beams).min(3)] + beams_height);
+    }
+    stem_qs = stem_qs.max(min_qs);
     let mut final_qs = chord_height_qs + stem_qs;
-    // // Port of `stemlayout.cpp:122-159`: a normal-sized chord's stem is
-    // extended until its far end reaches the middle staff line (two spaces
-    // from the top line, i.e. 8 quarter spaces). Without this step a stem
-    // starting on a low note with an up direction stops short of the middle
-    // line; MuseScore adds the missing length to `finalStemLength`.
+    // // Port of `stemlayout.cpp:122-159` and `minStaffOverlap` (`:165-182`):
+    // a normal-sized chord's stem is extended until its far end reaches the
+    // middle staff line. Beams move that target toward the staff edge.
     let start = if up { bottom * 2 } else { top * 2 };
     let stem_end = if up {
         start - final_qs
     } else {
         start + final_qs
     };
-    let middle_line_qs = 8; // minStaffOverlap(false, 5, 0, …) with wide beams off
+    let beam_overlap = if !hook && beams == 3 {
+        12
+    } else if !hook && beams >= 4 {
+        (i32::from(beams) - 4) * 3 + 14
+    } else {
+        8
+    };
+    let staff_overlap = beam_overlap.min((5 - 1) * 4);
+    let middle_line_qs = if up {
+        (5 - 1) * 4 - staff_overlap
+    } else {
+        staff_overlap
+    };
     let extra_qs = if up {
         (stem_end - middle_line_qs).max(0)
     } else {
         (middle_line_qs - stem_end).max(0)
     };
     final_qs += extra_qs;
+    let _ = duration; // duration is only used through `beams` and `hook`.
     final_qs * 256 // quarter spaces in 1/1024 staff-space units
 }
 
@@ -1271,24 +1329,28 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
             x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
             has_clef = true;
         }
-        // // Port of `Measure::hasVoices(staffIdx)` (`chordlayout.cpp:1584`):
-        // a measure has voices as soon as two distinct tracks carry a
-        // chord/rest, even when they never share a segment. `linked-ties`
-        // writes voice 2 in its own segments, and MuseScore still forces
-        // their stems by track parity.
-        let mut used_tracks = alloc::vec::Vec::new();
+        // // Port of `Measure::hasVoices(staffIdx, tick, len)`
+        // (`measure.cpp:2360-2419`, consulted by `chordlayout.cpp:1584`):
+        // MuseScore forces stem directions by track parity only while two
+        // voices actually overlap in time. A measure merely *containing*
+        // two voices that never share a tick does not qualify: the notes
+        // keep their automatic (pitch-based) direction, which is what the
+        // choral staves of a four-part score require.
+        let mut voice_spans: alloc::vec::Vec<(u32, i32, i32)> = alloc::vec::Vec::new();
         for segment in &measure.segments {
+            let start = (segment.tick - measure.start_tick).ticks(1920) as i32;
             for (track, item) in segment.iter_elements() {
                 if track.staff().index() != staff_index {
                     continue;
                 }
-                if matches!(item, SegmentItem::ChordRest(_)) && !used_tracks.contains(&track.raw())
-                {
-                    used_tracks.push(track.raw());
+                if let SegmentItem::ChordRest(cr) = item {
+                    let voice = track.voice() as u32;
+                    let len =
+                        duration_ticks(duration_code(cr.duration.kind), cr.duration.dots).max(1);
+                    voice_spans.push((voice, start, start + len));
                 }
             }
         }
-        let multi_voice = used_tracks.len() > 1;
         // (x of the last segment carrying this text family, shape width).
         let mut last_text: [(i32, i32); 3] = [(0, 0); 3];
         let mut text_extra = 0;
@@ -1396,8 +1458,15 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                     // anchor and minimum-length corrections
                                     // (`stemlayout.cpp:60-161`, intrinsicMag
                                     // 0.7 with a different middle-line rule).
-                                    let stem_len =
-                                        stem_length(&lines, &heads, g_up, g_duration) * 82 / 100;
+                                    let stem_len = stem_length(
+                                        &lines,
+                                        &heads,
+                                        g_up,
+                                        g_duration,
+                                        g_duration.saturating_sub(4),
+                                        false,
+                                    ) * 82
+                                        / 100;
                                     events.push(Atom {
                                         x: grace_x,
                                         kind: AtomKind::Chord,
@@ -1426,13 +1495,26 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
                             let chord_x = x;
                             let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
+                            let chord_len = duration_ticks(duration, cr.duration.dots).max(1);
+                            let multi_voice = voice_spans.iter().any(|&(voice, start, end)| {
+                                voice != track && start < tick + chord_len && tick < end
+                            });
                             let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
+                            let beams = duration.saturating_sub(4);
+                            // A chord is beamed when its own `BeamMode` says
+                            // so; otherwise a duration below a quarter carries
+                            // a traditional flag (`chord.cpp:1067-1075`).
+                            let beamed = beams > 0
+                                && !matches!(
+                                    cr.engraving.beam_mode,
+                                    BeamMode::Auto | BeamMode::None
+                                );
                             let chord_atom = ChordAtom {
                                 duration,
                                 dots: cr.duration.dots,
                                 grace: false,
                                 stem_up: up,
-                                stem_len: stem_length(&lines, &heads, up, duration),
+                                stem_len: stem_length(&lines, &heads, up, duration, beams, beamed),
                                 notes,
                             };
                             let mut chord_event = Atom {
@@ -1774,9 +1856,83 @@ mod tests {
     }
 
     #[test]
+    fn track_parity_applies_only_to_overlapping_voices() {
+        use scoretk_core::model::{
+            Chord, ChordRest, Clef, ClefType, Fraction, Measure, Note, Part, Segment, SegmentItem,
+            SegmentType, Staff, TimeSig, Track,
+        };
+        let score_with_voice = |voice_tick| {
+            let mut score = Score::new();
+            let part = score.add_part(Part::new("S", "S"));
+            let staff_id = score.add_staff_with(part, Staff::new(part));
+            let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(1, 1));
+            let mut seg = Segment::new(SegmentType::HeaderClef, Fraction::ZERO, 1);
+            seg.set_element(
+                Track::new(staff_id, 0),
+                SegmentItem::Clef(Clef::new(ClefType::G)),
+            );
+            measure.add_segment(seg);
+            let mut seg = Segment::new(SegmentType::TimeSig, Fraction::ZERO, 1);
+            seg.set_element(
+                Track::new(staff_id, 0),
+                SegmentItem::TimeSig(TimeSig::new(4, 4)),
+            );
+            measure.add_segment(seg);
+            for (voice, tick) in [(0, Fraction::ZERO), (1, voice_tick)] {
+                let note = score.add_note(Note::new(88, 14));
+                let mut chord = Chord::default();
+                chord.notes.push(note);
+                let mut cr = ChordRest::chord(scoretk_core::model::Duration::quarter());
+                cr.kind = scoretk_core::model::ChordRestKind::Chord(chord);
+                let mut seg = Segment::new(SegmentType::ChordRest, tick, 1);
+                seg.set_element(Track::new(staff_id, voice), SegmentItem::ChordRest(cr));
+                measure.add_segment(seg);
+            }
+            score.add_measure(measure);
+            score
+        };
+        // A second voice on another beat: `Measure::hasVoices` is false at
+        // the first chord's tick, so a high note keeps its automatic down
+        // stem (`measure.cpp:2360-2419`, `chordlayout.cpp:1584-1588`).
+        let sequential = compute(&score_with_voice(Fraction::new(1, 4)));
+        let chord = sequential[0][0]
+            .events
+            .iter()
+            .find(|event| event.voice == 0 && event.chord.is_some())
+            .unwrap();
+        assert!(!chord.chord.as_ref().unwrap().stem_up);
+        // At the same tick the two voices overlap: track 0 is forced up.
+        let overlapping = compute(&score_with_voice(Fraction::ZERO));
+        let chord = overlapping[0][0]
+            .events
+            .iter()
+            .find(|event| event.voice == 0 && event.chord.is_some())
+            .unwrap();
+        assert!(chord.chord.as_ref().unwrap().stem_up);
+    }
+
+    #[test]
+    fn stem_creation_follows_the_4_7_4_duration_table() {
+        // `durationtype.cpp:222-241`: the long note has a stem, breve and
+        // whole (even dotted) do not, every shorter duration does.
+        assert!(has_stem(0)); // V_LONG
+        assert!(!has_stem(1)); // V_BREVE
+        assert!(!has_stem(2)); // V_WHOLE, including a dotted whole
+        assert!(has_stem(3)); // V_HALF
+        assert!(has_stem(4)); // V_QUARTER
+        assert!(has_stem(12)); // V_1024TH
+    }
+
+    #[test]
     fn stem_length_is_at_least_shortest() {
-        assert_eq!(stem_length(&[4], &["noteheadBlack"], true, 4), 3072); // one stem shortening
-        assert_eq!(stem_length(&[0], &["noteheadBlack"], true, 4), 2560); // shortestStem
+        assert_eq!(
+            stem_length(&[4], &["noteheadBlack"], true, 4, 0, false),
+            3072
+        ); // one stem shortening
+        assert_eq!(
+            stem_length(&[0], &["noteheadBlack"], true, 4, 0, false),
+            2560
+        ); // shortestStem
     }
 
     #[test]
@@ -1784,11 +1940,20 @@ mod tests {
         // `stemlayout.cpp:122-159`: a stem starting 2.5 sp above the top
         // line is extended by 3.5 sp so that its far end reaches the middle
         // line. Without the extension it would stop 1.5 sp short of it.
-        assert_eq!(stem_length(&[-10], &["noteheadBlack"], false, 4), 28 * 256);
+        assert_eq!(
+            stem_length(&[-10], &["noteheadBlack"], false, 4, 0, false),
+            28 * 256
+        );
         // A stem starting 2 sp below the bottom line gains 0.5 sp.
-        assert_eq!(stem_length(&[12], &["noteheadBlack"], true, 4), 16 * 256);
+        assert_eq!(
+            stem_length(&[12], &["noteheadBlack"], true, 4, 0, false),
+            16 * 256
+        );
         // A note inside the staff only gets the shortening rule: 3 sp.
-        assert_eq!(stem_length(&[4], &["noteheadBlack"], false, 4), 12 * 256);
+        assert_eq!(
+            stem_length(&[4], &["noteheadBlack"], false, 4, 0, false),
+            12 * 256
+        );
     }
 
     #[test]
