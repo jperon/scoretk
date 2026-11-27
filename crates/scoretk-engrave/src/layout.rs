@@ -1301,11 +1301,17 @@ fn place_chord(
     for (note_index, note) in chord.notes.iter().enumerate() {
         let head = glyph(note.head).unwrap();
         let head_width = units_to_fixed(head.bbox[2]);
+        // `layoutChords2` (`chordlayout.cpp:2316-2415`) moves a conflicting
+        // head to the *other side* of the stem. The displacement is the
+        // glyph's full bbox width, not the distance from its origin to the
+        // right edge: using the latter left adjacent heads overlapping by
+        // the glyph's negative left bearing (three pairs in `moonlight`).
+        let mirror_width = units_to_fixed(head.bbox[2] - head.bbox[0]);
         let head_x = if mirrored[note_index] {
             if up {
-                x - head_width
+                x - mirror_width
             } else {
-                x + head_width
+                x + mirror_width
             }
         } else {
             x
@@ -2398,6 +2404,67 @@ mod tests {
             .position(|item| item.kind == ItemKind::Notehead)
             .unwrap();
         assert!(accidental_index < head_index);
+    }
+
+    #[test]
+    fn an_augmentation_dot_clears_the_following_notehead() {
+        // `chordlayout.cpp:2490-2562` (`placeDots`) and `paddingtable.cpp:94`
+        // (`dotNoteDistance`, `dotDotDistance`): the dot sits after the head
+        // and must not overlap the next segment's head.
+        let first = atom(4);
+        let mut second = atom(4);
+        second.events[0].x = 8 * SP;
+        second.events[0].chord.as_mut().unwrap().dots = 1;
+        let mut atom = first;
+        atom.events[0].chord.as_mut().unwrap().dots = 1;
+        let list = page(&[atom, second], &PageSpec::default(), 0);
+        let dots: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Dot)
+            .collect();
+        assert_eq!(dots.len(), 2);
+        let dot = dots[0].bbox(&list).unwrap();
+        let heads: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Notehead)
+            .collect();
+        for head in &heads[1..] {
+            let box_head = head.bbox(&list).unwrap();
+            let overlap_x = dot.2.min(box_head.2) - dot.0.max(box_head.0);
+            let overlap_y = dot.3.min(box_head.3) - dot.1.max(box_head.1);
+            assert!(
+                overlap_x <= 0 || overlap_y <= 0,
+                "dot overlaps the next head by {overlap_x},{overlap_y}"
+            );
+        }
+    }
+
+    #[test]
+    fn seconds_heads_do_not_overlap_after_mirroring() {
+        // `layoutChords2` (`chordlayout.cpp:2316-2415`) mirrors a head on the
+        // same or an adjacent step. Three `moonlight` pairs overlapped by
+        // 0.3 sp because the mirror used the glyph's right bearing instead
+        // of its full width.
+        let mut atom = atom(4);
+        let mut second = atom.events[0].chord.as_ref().unwrap().notes[0].clone();
+        second.line = 5;
+        atom.events[0].chord.as_mut().unwrap().notes.push(second);
+        let list = page(&[atom], &PageSpec::default(), 0);
+        let heads: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Notehead)
+            .collect();
+        assert_eq!(heads.len(), 2);
+        let boxes: Vec<_> = heads.iter().map(|head| head.bbox(&list).unwrap()).collect();
+        let overlap_x = boxes[0].2.min(boxes[1].2) - boxes[0].0.max(boxes[1].0);
+        let overlap_y = boxes[0].3.min(boxes[1].3) - boxes[0].1.max(boxes[1].1);
+        assert!(
+            overlap_x <= 0 || overlap_y <= 0,
+            "mirrored seconds overlap by {overlap_x},{overlap_y}"
+        );
     }
 
     #[test]

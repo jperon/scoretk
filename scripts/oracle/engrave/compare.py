@@ -213,6 +213,19 @@ def parse_svg(path: Path) -> dict:
             (sx * box[0] + tx, sy * box[1] + ty, sx * box[2] + tx, sy * box[3] + ty)
         )
     result["barlines_abs"] = [(x, y) for y, x, _ in raw_barlines]
+    # Notehead/notehead bbox collisions. Unisons deliberately share one head
+    # centre in MuseScore, so coincident centres are not counted. Heads on
+    # adjacent staff lines touch by about 0.06 sp in both engines; only an
+    # overlap beyond 0.2 sp in both axes is counted as a defect.
+    boxes = result["note_boxes_abs"]
+    result["note_overlaps"] = sum(
+        1
+        for i, (ax0, ay0, ax1, ay1) in enumerate(boxes)
+        for bx0, by0, bx1, by1 in boxes[i + 1:]
+        if min(ax1, bx1) - max(ax0, bx0) > 0.2 * spatium
+        and min(ay1, by1) - max(ay0, by0) > 0.2 * spatium
+        and abs((ax0 + ax1) - (bx0 + bx1)) > 0.05 * spatium
+    )
     # Lyrics are paths in both SVGs; their bounding box is used to detect
     # collisions with a staff's five-line band (the user-visible defect of
     # step 2). Elements that fail to parse are not silently dropped: the
@@ -340,6 +353,8 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
     lyric_hits_ours = 0
     barline_hits_ref = 0
     barline_hits_ours = 0
+    note_hits_ref = 0
+    note_hits_ours = 0
 
     def barline_crossings(parsed: dict) -> int:
         """Noteheads whose right edge passes the next bar line of their staff.
@@ -363,6 +378,9 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
                 )
         return hits
 
+    def note_collisions(parsed: dict) -> int:
+        return parsed.get("note_overlaps", 0)
+
     def lyric_collisions(parsed: dict) -> tuple[int, int]:
         """(number of lyric glyphs, number intersecting a staff band)."""
         boxes = parsed.get("lyric_boxes", [])
@@ -383,8 +401,11 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         nonlocal gap_ref_sum, gap_ours_sum, overlaps_ref, overlaps_ours
         nonlocal lyrics_ref, lyrics_ours, lyric_hits_ref, lyric_hits_ours
         nonlocal barline_hits_ref, barline_hits_ours
+        nonlocal note_hits_ref, note_hits_ours
         barline_hits_ref += barline_crossings(ref)
         barline_hits_ours += barline_crossings(our)
+        note_hits_ref += note_collisions(ref)
+        note_hits_ours += note_collisions(our)
         ref_lyrics, ref_hits = lyric_collisions(ref)
         our_lyrics, our_hits = lyric_collisions(our)
         lyrics_ref += ref_lyrics
@@ -452,6 +473,8 @@ def pages(reference: list[Path], ours: list[Path]) -> dict:
         "lyric_hits_ours": lyric_hits_ours,
         "barline_hits_ref": barline_hits_ref,
         "barline_hits_ours": barline_hits_ours,
+        "note_hits_ref": note_hits_ref,
+        "note_hits_ours": note_hits_ours,
     }
 
 
@@ -574,6 +597,7 @@ def main() -> int:
         "lyrics_ref": 0, "lyrics_ours": 0,
         "lyric_hits_ref": 0, "lyric_hits_ours": 0,
         "barline_hits_ref": 0, "barline_hits_ours": 0,
+        "note_hits_ref": 0, "note_hits_ours": 0,
     }
     for source in corpus:
         if not source.strip():
@@ -644,6 +668,8 @@ def main() -> int:
         totals["lyric_hits_ours"] += page_values["lyric_hits_ours"]
         totals["barline_hits_ref"] += page_values["barline_hits_ref"]
         totals["barline_hits_ours"] += page_values["barline_hits_ours"]
+        totals["note_hits_ref"] += page_values["note_hits_ref"]
+        totals["note_hits_ours"] += page_values["note_hits_ours"]
         rows.append(row)
 
     (out / "raw.jsonl").write_text(
@@ -713,6 +739,8 @@ def main() -> int:
         f"{totals['lyric_hits_ref']} / {totals['lyric_hits_ours']} |",
         f"| Noteheads crossing a bar line (reference / ours) | "
         f"{totals['barline_hits_ref']} / {totals['barline_hits_ours']} |",
+        f"| Overlapping notehead pairs (reference / ours) | "
+        f"{totals['note_hits_ref']} / {totals['note_hits_ours']} |",
         "",
         "## Failures",
         "",

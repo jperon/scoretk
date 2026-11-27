@@ -1624,6 +1624,35 @@ crossings, the three remaining ones overlapping by at most 0.03 sp except one
 
 The two lost element matches are reported, not excluded: this step trades a
 small corpus regression for removing the visible private-score collision.
+
+### 15.3 Collision checks and mirrored heads (2026-11-27)
+
+The oracle now counts overlapping notehead bounding-box pairs on both sides
+(unisons with coincident centres are excluded; heads on adjacent steps touch
+by ~0.06 sp in both engines, so the defect threshold is 0.2 sp). `place_chord`
+uses the head glyph's full bbox width when mirroring a second
+(`chordlayout.cpp:2316-2415`), rather than only its right bearing; this is
+correct for heads whose bbox starts left of the origin. Bbox unit tests were
+added for mirrored seconds and for an augmentation dot against the following
+head, alongside the existing accidental/head and header tests. Voice-collision
+offsets now widen the segment in which they are applied (§15.2), so a shifted
+head stays inside the measure.
+
+| Metric | Step 2 | After step 3 |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2 490 | 0 / 2 490 |
+| Within 0.1 sp, both axes | 0.1478 (368/2 490) | 0.1478 (368/2 490) |
+| Note x mean abs. error, sp | 2.713 | 2.713 |
+| Measure widths within 0.1 sp | 66/394 | 66/394 |
+| Overlapping notehead pairs (reference / ours) | 0 / 3 | 0 / 3 |
+| Files with identical system breaks | 37/56 | 37/56 |
+
+The three remaining overlaps are all `moonlight` pairs of heads on adjacent
+steps about 1 sp apart; Leland's `noteheadBlack` has a zero left bearing, so
+the full-width mirror change is inert for this corpus but prevents the same
+defect for heads with a negative bearing. They remain reported as debt, not
+excluded from the metric. The private page-1 PNG is regenerated from the
+committed tree (`engrave-img/eng9/after.png`).
 ## 16. Resource budget (Kobo Mini)
 
 ### 16.1 Method

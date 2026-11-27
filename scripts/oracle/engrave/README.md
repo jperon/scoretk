@@ -42,6 +42,8 @@ files and writes SVGs into an unversioned output directory.
    - noteheads that cross the next bar line of their staff (notehead bounding
      boxes against the bar lines of the same five-line staff), reported on
      both sides: this is the "notes beyond the barline" defect;
+   - overlapping notehead bounding-box pairs (unisons with coincident centres
+     are excluded), reported on both sides;
    - measure widths from consecutive bar lines and the per-system measure
      counts (system breaks). Bar lines are grouped by **absolute** y: their
      local y repeats on every system of the page, so grouping by local y
