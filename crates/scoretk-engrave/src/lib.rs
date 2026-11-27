@@ -367,6 +367,25 @@ mod tests {
     }
 
     #[test]
+    fn lyric_size_scales_only_the_lyric_text() {
+        let score = one_staff_score();
+        let normal = Engraver::from_score(&score).unwrap();
+        let options = EngraveOptions {
+            lyric_size: 9.0, // twice Verovio's 4.5 default
+            ..EngraveOptions::default()
+        };
+        let bigger = Engraver::from_score_with_options(&score, &options).unwrap();
+        assert_eq!(normal.spec().lyric_font_size, 10.0);
+        assert_eq!(bigger.spec().lyric_font_size, 20.0);
+        let em = |engraver: &Engraver| {
+            crate::layout::text_em(engraver.spec(), engraver.spec().lyric_font_size)
+        };
+        assert_eq!(em(&bigger), 2 * em(&normal));
+        // Note glyphs use their SMuFL size, not the text style.
+        assert_eq!(bigger.staffs()[0].mag, normal.staffs()[0].mag);
+    }
+
+    #[test]
     fn adjust_page_height_shrinks_the_viewbox_to_the_content() {
         let score = one_staff_score();
         let print = Engraver::from_score(&score).unwrap();

@@ -204,6 +204,7 @@ impl PageSpec {
         if options.page_width_px.is_none()
             && options.page_height_px.is_none()
             && options.scale == 1.0
+            && options.lyric_size == crate::options::VEROVIO_LYRIC_SIZE
         {
             return Self::from_score_plain(score);
         }
@@ -227,6 +228,12 @@ impl PageSpec {
                 }
             }
         };
+        // Verovio's `lyricSize` is in MEI units (default 4.5); our style is
+        // a 10 pt text size, so the factor keeps the default byte-identical.
+        if options.lyric_size != crate::options::VEROVIO_LYRIC_SIZE {
+            spec.lyric_font_size =
+                print.lyric_font_size * options.lyric_size / crate::options::VEROVIO_LYRIC_SIZE;
+        }
         spec.title_frame_height = print.title_frame_height;
         spec.text_scale = (spec.printable_width.max(1) as f64
             / print.printable_width.max(1) as f64)

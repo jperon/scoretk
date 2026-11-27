@@ -2634,3 +2634,11 @@ viewBox to `content_height = max(system.y + system.height) + margin_top`,
 clamped to the original height. Neither moves a drawn item. Tests cover the
 pixel/zoom round trip, one page per system and the shortened page height;
 both flags default to `false`, so the print SVG is untouched.
+
+### 33.3 Lyric size (step 3)
+
+`lyric_size` uses Verovio's MEI unit (4.5 by default), mapped onto our 10 pt
+lyricist style by `font_size = 10 * lyric_size / 4.5`. It changes only
+`PageSpec::lyric_font_size`, hence the Edwin em of lyric glyphs and their
+verse baselines; note and staff magnitudes are untouched. A test checks that
+9.0 doubles the lyric em while every staff mag stays 1.0.
