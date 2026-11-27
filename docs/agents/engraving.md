@@ -1153,12 +1153,12 @@ stem-length cases.
 | Measure widths | 69/399 | 69/399 |
 | System breaks | 34/56 | 34/56 |
 
-The private page is byte-identical for its stems: the visible "missing"
-stems are the dotted whole/chord heads whose reference stems are also absent
-(`ref-1.svg` has no `Stem` at their x), and the short-looking stems of the
-lower voices belong to measures pushed into the neighbouring system. Root
-cause of the crowding is still the page geometry (three systems on page 1
-against four in 4.7.4), not a missing `Chord::createStem` call.
+This measurement was taken with a **stale CLI binary**: `after.png` had been
+rendered before the commit, so the identical figure said nothing about the
+change. A fresh build leaves the 56-file figure unchanged (the duration table
+was already correct) and a fresh private render is in §13.6. Root cause of
+the crowding is still the page geometry (three systems on page 1 against
+four in 4.7.4), not a missing `Chord::createStem` call.
 
 ### 13.2 End-of-measure spacing (step 2, reverted)
 
@@ -1168,9 +1168,14 @@ figure: measure widths 69/399 → 56/398, system breaks 34/56 → 33/56, element
 384/2771 → 362/2771, page-break patterns 48/58 unchanged. The segment's
 `minRight()` already contains that margin in MuseScore; adding it again
 stretches every measure. The experiment was reverted and is not committed;
-the last segment and bar line are at the oracle x in the private page (gaps
-of 2.9 and 3.5 sp at the ends of the first two systems), so the reported
-"note beyond the bar line" is not reproducible on this render.
+the last segment and bar line are at the oracle x in the private page, so the
+reported "note beyond the bar line" is not reproducible on this render. A
+second measurement on the fresh build (§13.7) gives the mechanism: the
+measure width is `atom.width`, which already ends with the last segment's own
+width; the bar line is drawn at that cursor, leaving 1.82 sp (system 1),
+1.51 sp (system 2), 1.39 sp (system 3) and 1.41 sp (system 4) between the
+last eighth-note segment and the bar line. Adding `barNoteDistance` again
+double-counts the right margin.
 
 ### 13.3 Grand-staff bar lines (step 3)
 
@@ -1190,8 +1195,8 @@ voice sounds during the chord. A unit test covers sequential and overlapping
 voices. The 56-file figures and the private page-1 stems are unchanged
 (0.6550, 384/2771, 34/56); the score's beams carry no explicit `<Beam>` or
 `<StemDirection>`, so their automatic groups keep the same default stems.
-The remaining overlap complaints come from the system-height/page geometry,
-not from a wrong beam direction.
+At that point only the atoms were fixed: `layout.rs::plan_beams` still used a
+system-wide voice count and ignored the chord's own direction (§13.8).
 
 ### 13.5 Lyrics spacing re-measured (step 5, switch kept off)
 
@@ -1214,3 +1219,80 @@ clearance would be a metric that excludes its own failures. A faithful fix
 needs the full `HorizontalSpacing::computePadding`/`Skyline` port, where the
 lyric shape pushes the *following* segment instead of inflating every
 segment carrying text.
+
+### 13.6 Beamed stems anchored in the group's direction (step 6)
+
+The fresh private render of §13.1 still looked stemless on the beamed notes
+of `moonlight`: 234 of its stems were emitted as rectangles of **negative**
+height (−0.23 sp), hence invisible. `plan_beams` chose the group direction
+from an explicit `<Beam><StemDirection>down</StemDirection>` but computed the
+beam's anchor tips from each chord's *own* up direction
+(`own_up = chord.stem_up`). The slab was consequently anchored above the
+heads while the stems were drawn down, and `(far_end - note_y).max(0)`
+collapsed to zero. `Beam::layout1` (`beamlayout.cpp:169-199`) applies one
+direction to the whole group, so the anchor now uses that same `up`. A unit
+test pins the explicit-down case (it failed before the fix).
+
+| Metric | Before | After anchor fix |
+| --- | ---: | ---: |
+| Stem-length agreement (684 stems) | 0.6550 | **0.6608** |
+| Within 0.1 sp, both axes | 384/2771 | 384/2771 |
+| Measure widths | 69/399 | 69/399 |
+| System breaks | 34/56 | 34/56 |
+
+The private page's SVG still has 292 stems, 19 flags, 44 beams and no
+negative-height stem; `engrave-img/eng7/after.png` was regenerated from the
+fixed build and the visible up/down stems now reach their noteheads.
+
+### 13.7 Voice direction of beamed groups and the end-of-measure diagnosis (step 7)
+
+The second half of defect 4 was in `plan_beams`: when any two voices existed
+in the system, it forced `voice.is_multiple_of(2)` regardless of whether they
+overlapped in time, whereas the atoms already use `Measure::hasVoices`
+(`measure.cpp:2360-2419`, `chordlayout.cpp:1584`). The group now takes the
+first chord's `stem_up`, overridden by an explicit beam direction, and the
+unit test `a_beam_follows_its_chord_when_two_voices_do_not_overlap` fails on
+the previous code.
+
+| Metric | Anchor fix | + chord direction |
+| --- | ---: | ---: |
+| Stem-length agreement (684 stems) | 0.6608 | 0.6579 |
+| Within 0.1 sp, both axes | 384/2771 | 384/2771 |
+| Measure widths | 69/399 | 69/399 |
+| System breaks | 34/56 | 34/56 |
+
+The −2 matched stems are both in `testTuplets8` (4→2 within 0.1 sp): its
+first chord has an explicit down stem while the former group-wide pitch rule
+gave up; following the chord is the faithful 4.7.4 behaviour. Net gain over
+the campaign baseline is +2 stems (0.6550 → 0.6579). The private score has
+no overlapping voices in a beamed group, so its page is unchanged; the
+remaining overlap complaints there come from system height, not beam
+direction.
+
+For defect 2, the fresh private render was measured per measure on the
+organ-right-hand staff: the distance from the last eighth-note segment to
+the bar line is **1.82 sp** (system 1), **1.51 sp** (system 2), **1.39 sp**
+(system 3) and **1.41 sp** (system 4), all measured at the system's own
+justification scale (800, 663, 610, 619). The bar line is drawn at
+`x0 + atom.width × scale`, i.e. after the last segment's own width, so the
+noteheads are before it; the earlier `barNoteDistance` experiment
+double-counted the margin and is not committed (§13.2).
+
+### 13.8 Lyrics re-measured after the stem/beam fixes (step 8)
+
+`LYRIC_WIDTH_SPACING = true` was measured once more on the final build
+(`/tmp/.../oracle-eng7-lyrics-on3`):
+
+| Metric | Kept (off) | Lyrics on |
+| --- | ---: | ---: |
+| Elements within 0.1 sp | 384/2771 | **369/2771** |
+| Stem-length agreement | 0.6579 | 0.6579 |
+| Measure widths within 0.1 sp | 69/399 | 68/399 |
+| Files with identical system breaks | 34/56 | 34/56 |
+| Files with the oracle page count | 53/56 | 53/56 |
+| Pages with identical system breaks | 48/58 | 48/58 |
+
+The per-file causes are unchanged from §13.5 (`copypastesymbollist-lyrics`
+35→26, `testExcludeInvisibleElements` one measure width). The switch stays
+off; the visual lyric overlap of the private page remains a P2 debt of the
+incomplete `HorizontalSpacing::computePadding`/`Skyline` port.
