@@ -196,6 +196,28 @@ python3 scripts/gen-instruments-table.py \
 nix develop -c node crates/scoretk-wasm/tests/node-smoke.mjs
 ```
 
+For day-to-day CLI work, use `nix develop -c cargo run -p scoretk-cli -- <args>`:
+Cargo recompiles only the changed crates, while `nix run . -- <args>` goes
+through the Nix derivation. Both `nix run .` and `nix build .` resolve to the
+same derivation as `nix build .#scoretk`; use them to check the delivered
+binary, not as the inner development loop.
+
+### Cargo profiles
+
+Two profiles share the same source tree:
+
+| Profile | Settings | Used by |
+| --- | --- | --- |
+| `release` | `lto = "thin"`, `codegen-units = 16`, `opt-level = 3` | host CLI (`nix build .#scoretk`, `nix run .`) and the native release archives |
+| `wasm` | inherits `release`, then `lto = true`, `codegen-units = 1`, `opt-level = "z"` | `nix build .#wasm`, `wasmCargoArtifacts`, `wasm32Build` and the `wasm32-unknown-unknown` check |
+
+The wasm derivations set `CARGO_PROFILE = "wasm"` and read the cdylib from
+`target/wasm32-unknown-unknown/wasm/`. The size profile keeps the settings of
+the former `release` profile, so the browser binary is byte-identical to the
+one built before the split. `packages.default` is an alias of
+`packages.scoretk`; with `doCheck = false` the CLI derivation no longer
+replays the test suite (`checks.tests` remains the place where it runs).
+
 `nix flake check` works offline (crane vendors the crates from
 `Cargo.lock`, `CARGO_NET_OFFLINE`): any dependency change requires an up-to-date
 `Cargo.lock` and a documented entry in `docs/licences-tierces.md`.
@@ -267,7 +289,9 @@ Nix (same toolchain as `nix develop -c`):
   `tests/corpus` corpus is versioned; the only test reading a file outside the repository
   (`change_dans_beam_cross_staff` of `scoretk-lilypond-import`) silently returns
   when that file is absent, hence has no effect on CI.
-- `release.yml` — see below.
+- `release.yml` — native CLI archives use the host `release` profile (fast);
+  the wasm job calls `nix build .#wasm`, i.e. the size-oriented `wasm`
+  profile. See below.
 
 Both files can be validated locally with `actionlint` (`act` is not
 installed in the dev shell):

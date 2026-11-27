@@ -109,6 +109,9 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
+      # Native CLI release uses the host [profile.release] (lto = "thin",
+      # codegen-units = 16, opt-level = 3). This does not affect cross builds:
+      # the musl, macOS and Windows binaries all share the same profile.
       - name: Build the CLI
         env:
           TARGET: ${{ matrix.target }}
@@ -182,6 +185,8 @@ jobs:
       - name: Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v15
 
+      # The browser package selects CARGO_PROFILE=wasm: the separate size
+      # profile keeps the wasm binary unchanged.
       - name: Build the package
         run: nix build .#wasm
 

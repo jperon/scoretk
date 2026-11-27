@@ -43,10 +43,13 @@ nix develop -c cargo bench -p scoretk --bench conversion
 ```
 
 Settings: 20 samples, 1 s warm-up, 3 s measurement per data point,
-**median** retained, throughput in Mo (10⁶ bytes) per second. The `bench`
-profile inherits from `[profile.release]` (`opt-level = "z"`, `lto = true`,
-`codegen-units = 1`): the figures apply to the delivered binaries, not to
-a `debug` build.
+**median** retained, throughput in Mo (10⁶ bytes) per second. At the time of
+the campaign the `bench` profile inherited from `[profile.release]`
+(`opt-level = "z"`, `lto = true`, `codegen-units = 1`): the figures apply to
+the delivered binaries, not to a `debug` build. Since 2026-11-27 the host
+`release` profile is `lto = "thin"`, `codegen-units = 16`, `opt-level = 3`
+(which `bench` now inherits), while the size settings remain in
+`[profile.wasm]`; these figures are historical, not a new baseline.
 
 Run retained for the table: 2026-11-18, 11:55–12:00, `loadavg`
 4.3 → 7.8 on 6 logical processors, without core pinning.
@@ -391,7 +394,8 @@ measured effect.
   processes) ; no CPU governor setting is possible here.
 - The corpus is small (410 ko at most): the measurement describes scores of
   a few tens of thousands of notes, not an orchestral score.
-- `opt-level = "z"` and `lto = true` (delivery profile) change inlining:
+- `opt-level = "z"` and `lto = true` (the delivery profile at the time, now
+  the `wasm` profile) change inlining:
   perf and Callgrind see only the functions that remain after
   optimisation, and some are merged (`Context::new` absorbs several
   constructors).

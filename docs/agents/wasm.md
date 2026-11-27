@@ -58,6 +58,14 @@ pass (2026-11-21):
 | `scoretk_wasm_bg.wasm` (after wasm-bindgen) | 4 223 436 bytes | — | — |
 | `scoretk_wasm_bg.wasm` (after `wasm-opt -Oz --strip-debug --converge`) | **1 924 141 bytes** | **782 198 bytes** | **597 632 bytes** |
 
+These figures were measured when the size settings lived in
+`[profile.release]`. They now live in `[profile.wasm]` (see below), with the
+same values, and the Nix derivation selects it via `CARGO_PROFILE = "wasm"`.
+On 2026-11-27 the same source produced a **2 923 970-byte** `.wasm` (1 143 588
+gzip) both before and after the profile split — byte-identical (SHA-256
+`4b5d83f7…`), i.e. 0 % size change. The host `[profile.release]` is now tuned
+for CLI build speed and is not used for the browser package.
+
 The two `esm` and `classic` variants share the same binary byte for byte.
 The package remains **complete, all features enabled**: it stays below
 Cantus's limit (≈ 2.5 Mo raw).
@@ -159,9 +167,9 @@ twiggy reports 10 bytes more per segment (alignment).
 ```sh
 nix build .#wasm
 # INPUT_WASM: the cdylib produced by rustc, before wasm-bindgen
-nix develop -c cargo build --release -p scoretk-wasm --target wasm32-unknown-unknown
+nix develop -c cargo build --profile wasm -p scoretk-wasm --target wasm32-unknown-unknown
 nix develop -c wasm-bindgen --target web --out-dir /tmp/m/esm --out-name scoretk_wasm \
-  target/wasm32-unknown-unknown/release/scoretk_wasm.wasm
+  target/wasm32-unknown-unknown/wasm/scoretk_wasm.wasm
 nix develop -c wasm-opt -Oz --debuginfo /tmp/m/esm/scoretk_wasm_bg.wasm -o /tmp/m/debug.wasm
 nix shell nixpkgs#twiggy -c twiggy top -f csv -o /tmp/m/top.csv /tmp/m/debug.wasm
 nix shell nixpkgs#twiggy -c twiggy dominators -d 3 /tmp/m/debug.wasm
@@ -306,8 +314,10 @@ one, so only the deltas are meaningful):
   into a JavaScript `RuntimeError` (not a silent failure).
 - **`opt-level = "s"` is not kept**: after `wasm-opt -Oz`, `"z"` is
   decisively smaller (13.7 % raw). `lto = "thin"` was already documented as a
-  tie with `lto = true`; `codegen-units = 1` is already in
-  `[profile.release]`.
+  tie with `lto = true`; `codegen-units = 1` remains in `[profile.wasm]`.
+  These local measurements used the old size-tuned `release` profile; the
+  same values now belong to `wasm`, so they still describe the shipped
+  binary.
 - **`strip` gives nothing**: the release cdylib has no name or DWARF sections
   (the 3 824 function names appear only in the `--debuginfo` twiggy variant);
   `--strip-debug` is therefore already the minimal form. The `producers` and
@@ -347,8 +357,9 @@ one, so only the deltas are meaningful):
 ## Binary composition (twiggy) — historical measurement (a7f690c)
 
 Measurement made on commit `a7f690c` (`mesure-twiggy` branch), the workspace's
-`[profile.release]` profile (`opt-level = "z"`, `lto = true`,
-`codegen-units = 1`), with `wasm-bindgen 0.2.130` and `wasm-opt -Oz`.
+`[profile.release]` profile at that time (`opt-level = "z"`, `lto = true`,
+`codegen-units = 1` — these values are now in `[profile.wasm]`), with
+`wasm-bindgen 0.2.130` and `wasm-opt -Oz`.
 
 ### Reproduction method
 
@@ -569,9 +580,12 @@ of the wasm contract, except crate merging (3.8 %) and `-Z share-generics`.
 The build is in two steps:
 
 1. `wasm32Build`: `craneLib.cargoBuild` with
-   `CARGO_BUILD_TARGET = "wasm32-unknown-unknown"`, on the already compiled
-   dependency artefacts (`wasmCargoArtifacts`); only the `.wasm` of the cdylib
-   `scoretk_wasm` is copied to the output.
+   `CARGO_BUILD_TARGET = "wasm32-unknown-unknown"` and
+   `CARGO_PROFILE = "wasm"`, on the already compiled dependency artefacts
+   (`wasmCargoArtifacts`, built with the same target and profile); only the
+   `.wasm` of the cdylib `scoretk_wasm`, from
+   `target/wasm32-unknown-unknown/wasm/`, is copied to the output. The
+   `wasm32-unknown-unknown` check uses the same profile and artefacts.
 2. `wasm`: `runCommand` calling `wasm-bindgen` twice (targets `web` and
    `no-modules`), passing each `.wasm` through `wasm-opt`, installing the wrapper
    `classic/scoretk.js`, a `package.json` generated from `version`, and writing
@@ -845,8 +859,12 @@ no conversion code (`crates/*/src`) was modified. Package built by
 `nix build .#wasm` (`./result`, binary of 1 549 059 bytes / 640 274 gzip,
 `cat result/SIZE`), native CLI by
 `nix develop -c cargo build --release -p scoretk-cli`
-(`./target/release/scoretk`, identical `release` profile: `opt-level = "z"`,
-`lto`, `codegen-units = 1`).
+(`./target/release/scoretk`, at that time the same size-tuned `release`
+profile: `opt-level = "z"`, `lto = true`, `codegen-units = 1`). Since
+2026-11-27 the host `release` profile is tuned for build speed
+(`lto = "thin"`, `codegen-units = 16`, `opt-level = 3`) and the wasm package
+uses `[profile.wasm]`; these native timings are historical and not directly
+comparable with a new native build.
 
 - Wasm: `nix shell nixpkgs#nodejs -c node crates/scoretk-wasm/tests/node-bench.mjs ./result`
   (and its `--json` variant, three runs). The script loads the ESM variant

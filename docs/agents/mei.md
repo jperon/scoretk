@@ -151,7 +151,8 @@ lines.
 
 ## 6. Wasm size
 
-`nix build .#wasm` (release, `opt-level = "z"`): the ESM wasm grew from
+`nix build .#wasm` (size settings in `[profile.wasm]`, `opt-level = "z"`;
+they were in `release` when this was measured): the ESM wasm grew from
 **2 379 470** to **2 453 424** bytes, i.e. **+73 954 bytes (+3.11 %)**.
 The stable contract (`convert`, `detect`, `formats`, `version`,
 `convertWithTimeline`) is unchanged; `formats()` now reports `mei` as the
