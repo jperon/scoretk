@@ -160,6 +160,8 @@ nix develop -c cargo build -p scoretk-wasm --target wasm32-unknown-unknown
 nix develop -c cargo test -p scoretk --test e2e_corpus -- --nocapture
 ```
 
+Full checks run in CI on `dev`; `master` only receives CI-green dev commits (merge agent branches into `dev` after targeted local tests, then fast-forward `master` only when that commit's CI is green).
+
 Derived data is regenerated with `scripts/gen-references.sh` and
 `scripts/gen-instruments-table.py`; the wasm package is tested with
 `crates/scoretk-wasm/tests/node-smoke.mjs` (after `nix build .#wasm`).

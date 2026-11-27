@@ -347,14 +347,17 @@ Those that produce no visible error:
 Two GitHub Actions workflows live in `.github/workflows/` and build on
 Nix (same toolchain as `nix develop -c`):
 
-- `ci.yml` — on push and pull request to `master`: `cargo fmt --check`,
-  `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`, the `wasm32-unknown-unknown` builds of the list in
-  § Commands of `AGENTS.md`, `nix build .#wasm` then the Node test
-  `node-smoke.mjs`. The
-  `tests/corpus` corpus is versioned; the only test reading a file outside the repository
-  (`change_dans_beam_cross_staff` of `scoretk-lilypond-import`) silently returns
-  when that file is absent, hence has no effect on CI.
+- `ci.yml` — on push to `master` and `dev`, and pull request to `master`:
+  `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --no-fail-fast` (including `e2e_corpus`),
+  `cargo test -p scoretk --features engrave`, the licence check
+  (`python3 -I scripts/check-licences.py`), the `wasm32-unknown-unknown`
+  builds of the portable crates (list in § Commands of `AGENTS.md`, plus the
+  GABC, MEI, engraving and rendering crates), `nix build .#wasm` then the Node
+  test `node-smoke.mjs`. The `tests/corpus` corpus is versioned; the only test
+  reading a file outside the repository (`change_dans_beam_cross_staff` of
+  `scoretk-lilypond-import`) silently returns when that file is absent, hence
+  has no effect on CI.
 - `release.yml` — native CLI archives are built with `cargo build --profile
   dist` and copied from `target/<target>/dist/` (compact published binaries);
   the wasm job calls `nix build .#wasm`, i.e. the size-oriented `wasm`
@@ -366,6 +369,13 @@ installed in the dev shell):
 ```sh
 nix-shell -p actionlint --run 'actionlint .github/workflows/*.yml'
 ```
+
+### Branching workflow
+
+Agent branches are merged into `dev` after their targeted local tests pass and
+pushed; CI runs the full suite on GitHub for every push to `dev`. `master` is
+fast-forwarded to a `dev` commit only when that commit's CI is green, so the
+release and nightly workflows on `master` only see verified commits.
 
 ### Publishing a version
 
