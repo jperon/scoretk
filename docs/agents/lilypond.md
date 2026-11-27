@@ -10965,6 +10965,119 @@ command at a time, worktree-local `CARGO_TARGET_DIR`, with
 `cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8) and
 `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`: all green.
 
+## 63. Reading campaign, ninth phase: exclusions audited and the Gregorian leak closed (2026-11-27)
+
+### 63.1 Protocol
+
+The frozen manifests (`ra` 1726, `mut` 1377, `rw` 1448 rows), the reference
+tree `ly95lect-refs-54`, the §52.5 exactness rule, the Q16 grid, the
+comparator and the exclusion rules are unchanged; `--refs-only --python-ly ''
+--music21 ''` was used for every lot, one lot at a time, one cargo command at
+a time, a worktree-local `CARGO_TARGET_DIR` and
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`. The
+baseline binary was rebuilt from `a1d3d3bd` and frozen as `ly98-base-scoretk`;
+each candidate was frozen before measurement (`ly98-fix0-scoretk`). No
+reference was regenerated, no comparison was relaxed and no failure was
+excluded. Third-party `.ly` sources were compiled only under
+`bwrap --unshare-all --die-with-parent`; downloaded data was inspected with
+`python3 -I` scripts that only read the frozen JSONL, MIDI and MusicXML files.
+
+### 63.2 The 61 `mut` and 83 `rw` exclusions, file by file
+
+The raw JSONL holds **1377** `mut` and **1448** `rw` rows. The 61/83 marked
+`exclu` are removed from *both* numerator and denominator before aggregation,
+which is why the summary shows 1316/1365 measured files. Every one of them is
+an input for which the oracle has no usable MIDI, never a scoretk conversion
+failure:
+
+| Category | `mut` | `rw` | Evidence |
+| --- | ---: | ---: | --- |
+| Removed LilyPond commands (obsolete source) | 60 | 60 | The declared commands (`\setTextCresc` 24 files, `\sustainUp` 17, `\sustainDown` 16, `\arpeggioUp` 16, `\deprecatedcresc` 7, `\setTextDim` 5, `\deprecatedendcresc` 3, `\deprecateddim` 3, `\setTextDecresc` 2, `\setHairpinCresc` 2, `\setHairpinDim` 1; 96 declarations over 60 files) were verified present in each source or its direct `\include`s. Compiling all 60 with LilyPond 2.27 under bwrap gives 41 "unknown command" errors, 18 warnings-only compilations and 1 timeout; the cached MIDI comes from an older compiler. Re-measuring those 60 with the obsolete-source exclusion disabled gives 60/60 successful scoretk conversions but only **21/60 exact** and **54.29 % N2**: LilyPond's error recovery shifts the reference, whereas the reader ignores the removed command (§50). Not the reader's fault, so the exclusion stays. |
+| No MIDI from LilyPond | 1 | 23 | `27-tmeiskin.orig.ly` is common to both lots: LilyPond compiles it (exit 0) but it has no `\midi` score, hence no `ly.midi`. Of the 22 additional `rw` files, 16 are rejected with the `convert-ly` upgrade hint (only the `.ly` files were collected, not the openLilyLib library they `\include`, e.g. `\useLibrary "openlilylib"`; this covers the nine `partial-compilation-*` files and the `auto-transpose` examples), 3 fail with an unbound Guile variable and 1 with a `ly:parser-define!` arity error; 3 more compile but emit no MIDI (no playable score). All 24 no-MIDI inputs convert successfully with scoretk (24/24 exit 0), so none is a hidden reader failure. |
+
+The `mut` set is a subset of the `rw` set (61 common, 22 `rw`-only). All 61
+and 83 paths remain listed in the raw `mut.jsonl` / `rw.jsonl` with their
+`raison_exclusion`, so the basket is explicit and reproducible. Reporting both
+denominators:
+
+| Lot | Exact | Raw rows | Raw score | Measured rows | Measured score |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ra` | 1706 | 1726 | **98.84 %** | 1726 | **98.84 %** (0 exclusions) |
+| `mut` | 1254 | 1377 | 91.07 % | 1316 | **95.29 %** |
+| `rw` | 1299 | 1448 | 89.71 % | 1365 | **95.16 %** |
+
+No denominator was changed by this audit: a conversion that succeeds but has
+no faithful oracle is legitimately unmeasurable; a conversion that fails would
+stay in the denominator.
+
+### 63.3 Family clustering of the non-exact files
+
+The 62 `mut` and 66 `rw` non-exact rows are the same 62 files plus four
+`rw`-only external examples. Clustering by the first divergent
+`(pitch, Q16 attack)` of the raw `ly98-fix0` measurements gives:
+
+| Disjoint family (first divergence) | Files | Status |
+| --- | ---: | --- |
+| Version-dependent bare `\relative`: +8/+12/+15 semitones from the first attack (`14/16/20/21title-hub`, `alas`, `prelude`, `henwlad`, `eugenia`, `sonate`, `rimsky-korsakov-op11-1/-3`) | 11 | Reference artefact with the raw tree: LilyPond 2.27 applies the modern `f` default, the reader honours the declared 2.7–2.10 `c'` default as required by §51; fixing it would regress fidelity. |
+| Obsolete `\compressMusic`, `\compressFullBarRests`, `\autochange`, `\partcombine`, `\fermataMarkup` (timing shifts, N1 often 100 %) | 15 | Same faulty-reference category as the 60 exclusions; these commands are not in `common.COMMANDES_OBSOLETES` because converted references repair them, but the frozen tree is the raw one. |
+| Empty reference (`sor_op2_3`; `main.ly` is the fourth `rw`-only example) | 1 + 1 | Both sides have no notes; the comparator requires a non-empty reference, so they can never be exact. Not excluded: the reader still writes notes for `sor_op2_3`. |
+| Small extra/missing attacks at the same pitch and tick, N1 = N2 = 100 % (`BWV533`, `BWV-830-4/6`, `BWV857_Praeludium12`, `bwv910`, `rach-prelude23-05`, `schumann-op68-26-sans-titre`) | 8 | Tie/unison re-articulation. The per-Voice split of §60.4 and the unison merge of §59.3 were both measured and rejected: they trade exact files for wrong engraving. |
+| Scheme-generated music (`saltarello`) | 1 | Needs a Scheme evaluator (`lilypond-scheme.md`); no comparator rule was relaxed. |
+| Other first divergences: 1/16–1/4 attack shifts, single-note pitch errors, local octave/unison misses (`bwv-568`, `bwv663-a4/let`, `QuartetOpus18_No4_1`, `ballade-4`, `violinoII`, `Chop-28-21/23/24`, `chopin_prelude_op45`, `debussy_Ste_Bergamesq_Clair`, …) | 26 | Grace real-time timing (`lily/grace-iterator.cc`) and `Staff_performer` track allocation (`lily/staff-performer.cc`); a reader-side grace-offset change would break the 44 `mut` / 45 `rw` files that are exact only through the N2-grace rule. |
+
+The 62 `mut` rows are exactly those six disjoint families (11+15+1+8+1+26);
+the 66 `rw` rows add four external examples, none of which is a reader
+regression. Counts come from the frozen Q16 rows; the clustering is a
+diagnosis, not a new exclusion. The largest recoverable family is already
+covered by the reference-policy decision above; no reader change was
+committed for a file whose reference is known to be faulty.
+
+### 63.4 Fix — the Gregorian dialect is opt-in on reading too
+
+The previous phase had made `gregorian::restore` run unconditionally in
+`read_lilypond_with_includes`, so every `\new VaticanaVoice`
+(`lily/parser.yy` `NEWCONTEXT`, Notation Reference §17.4) became a Gregorian
+L6 payload on the default path. On the raw `ra` lot this lost `augmentum.ly`,
+`custos.ly` and `episema.ly` (candidate +12 semitones, `octave`/`transposition`
+flags): the documented 1706 exact files had become 1703 at `a1d3d3bd`, even
+though no LilyPond reader code had changed since §62.
+
+`scoretk-lilypond-import::read_lilypond_with_dialect(src, bool)` and
+`read_lilypond_with_includes_and_dialect(src, resolve, bool)` now gate the
+restore on the explicit flag; the facade exposes the same pair and the CLI
+passes `--ly-gregorian` to the **reader** as well as to the writer (the GABC
+full-support oracle already passed that flag on the return conversion). The
+default `.ly` bytes, the `read` API and the wasm contract are unchanged.
+Reduced test `lilypond_gregorian_default` (fails on the old binary: the
+Gregorian payload leaked into the plain reader) and the updated
+`gabc_standard_carriers` opt-in round trip pass.
+
+Measured on the three lots, before → after this fix:
+
+| Lot | Exact before | Exact after | Gain / loss |
+| --- | ---: | ---: | ---: |
+| `ra` | 1703/1726 (98.7 %) | **1706/1726 (98.8 %)** | +3 / 0 |
+| `mut` | 1254/1316 (95.3 %) | 1254/1316 (95.3 %) | 0 / 0 |
+| `rw` | 1299/1365 (95.2 %) | 1299/1365 (95.2 %) | 0 / 0 |
+
+`ra` is back to its §62 level and stays above the 1706 floor; `mut` and `rw`
+are unchanged. The 98 % target on those two lots is not reached by this
+phase: 27 and 36 further exact files would be needed, and the families above
+are either reference artefacts or the previously rejected tie/track changes.
+
+### 63.5 Verification
+
+All script self-tests pass (`lots.sh` with `LOTS_SELFTEST=1`,
+`ly_notes.py selftest`, `mesure.py --selftest`, `references.py --selftest`,
+`ecriture.py --selftest`, `lots-externes.py --causes-selftest`). One cargo
+command at a time, worktree-local `CARGO_TARGET_DIR`, with
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 nix develop -c …`:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings`, `cargo test --workspace --no-fail-fast`,
+`cargo test -p scoretk --test e2e_corpus -- --nocapture` (8/8),
+`cargo build -p scoretk-wasm --target wasm32-unknown-unknown` and the wasm
+build of the three LilyPond crates: all green.
+
 ## Gregorian dialect (opt-in `--ly-gregorian`)
 
 The ancient-notation dialect uses the standard Vatican vocabulary of Notation
@@ -10981,5 +11094,8 @@ text have no Vatican command. They are **not carried**: writing them as
 `^"glyph: …"` / `^""` note annotations would print a GABC dump over the notes
 and no LilyPond tool reads it. The writer emits none and the reader ignores
 them. `scripts/oracle/gabc/full_support.py` strips any such label and fails
-loudly if one remains in the measured output. Without `--ly-gregorian`,
+loudly if one remains in the measured output. Since §63 the flag also enables
+the additive reading dialect (`scoretk::read_lilypond_with_dialect`) on the CLI
+and in the facade: without `--ly-gregorian`, a `\new VaticanaVoice` is read by
+the general parser and no Gregorian payload is restored. Without the flag,
 nothing changes. The honest measured figure is in `docs/agents/gabc.md` §26.
