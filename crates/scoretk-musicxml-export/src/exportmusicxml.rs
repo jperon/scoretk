@@ -2227,6 +2227,11 @@ impl Context<'_> {
                             breath,
                             self.options.gabc_neume_smufl,
                             self.options.full_support,
+                            source.gregorian_note == 0,
+                            gregorian
+                                .syllables
+                                .get(source.gregorian_syllable)
+                                .map_or("", |syllable| syllable.text.as_str()),
                         );
                         // Un neume est le groupe parenthesé source
                         // (`Gabc.tex:36-58`) : une liure par syllabe chantée,

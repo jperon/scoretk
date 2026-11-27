@@ -1398,3 +1398,33 @@ no private carrier is counted. `e2e_corpus` 8/8 and
 `gabc_standard_carriers` 3/3 still pass; default `.ly` bytes are unchanged.
 No generated `.ly` was compiled outside a bwrap sandbox (none was compiled in
 this step).
+
+## 24. MusicXML standard carriers: readable technical labels (2026-11-27)
+
+Step 3 of the campaign. The corrected audit left `glyph` 4 093, `letter`
+3 390, `rubric` 795, `shape` 537, `pitch` 427, `ictus` 105 and smaller
+defects. One SMuFL name per note cannot spell a multi-character GABC glyph,
+and the derived clef/pitch projection does not restore every staff position.
+No new inherent classification was introduced: `musicxml-4.0.xsd`
+`other-technical` (`other-placement-text`, `:5625`, xs:string) is already the
+standard carrier for arbitrary technical text.
+
+In `--xml-full-support` mode the writer now adds three readable
+`<other-technical>` values per sung note, next to the SMuFL glyph:
+`letter: <GABC staff letter>`, `glyph: <neume names separated by spaces>` and,
+on the first note of a syllable, `syllable-text: <exact text with markup>`.
+Names come from `Gabc.tex:452-700` (`quilisma`, `virga`, `spacing`,
+`augmentum`, …); there is no hex encoding and no `gabc:` prefix. The
+standard-only reader `scoretk-musicxml-import/src/chant_smufl.rs` restores the
+exact letter, glyph and syllable text from those values. A pre-existing bug
+was also fixed there: lyric text alone used to mark *any* sung MusicXML as a
+Gregorian score (breaking `aller_retour` on `changevisibility`, `repeat65`,
+…); the marker now requires an actual chant carrier.
+
+Re-measured on all 261 files: **98.05 %** (101 747 / 103 778; raw 89.21 %),
+inherent 10 284, residual defects 2 026 (`glyph` 569, `pitch` 425, `letter`
+335, `shape` 330, `rubric` 325, `custos` 22, `text` 10, `clef` 8,
+`attribute` 2). The private `gabc:` directions are still written by the
+writer but stripped by the oracle and never counted. `e2e_corpus` 8/8,
+`gabc_standard_carriers` 3/3, and all MusicXML import/export tests pass;
+default XML bytes are unchanged.

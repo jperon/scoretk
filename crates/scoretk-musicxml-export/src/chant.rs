@@ -291,6 +291,59 @@ pub(crate) fn bar_breath(gregorian: &Gregorian, source: &NoteSource) -> bool {
     false
 }
 
+/// Nom lisible d'un caractère de glyphe GABC (`Gabc.tex:452-700`).
+///
+/// Les noms sont ceux des neumes et signes grégoriens ; aucun octet n'est
+/// encodé en hexadécimal. Un lecteur MusicXML les affiche comme du texte.
+fn glyph_name(character: char) -> &'static str {
+    match character {
+        '.' => "augmentum",
+        '\'' => "ictus",
+        '_' => "episema",
+        'w' => "quilisma",
+        '/' => "spacing",
+        '!' => "zero-space",
+        '~' => "deminutum",
+        'v' => "virga",
+        'x' => "flat",
+        '*' => "asterisk",
+        '>' => "diminutum",
+        'o' => "oriscus",
+        '1' => "one",
+        '0' => "zero",
+        'y' => "natural",
+        'V' => "virga-reversa",
+        's' => "stropha",
+        'O' => "oriscus-scampus",
+        '2' => "two",
+        'r' => "cavum",
+        '`' => "virgula",
+        '-' => "hyphen",
+        '+' => "plus",
+        ':' => "colon",
+        '{' => "brace-open",
+        '}' => "brace-close",
+        '@' => "fusion",
+        '3' => "three",
+        '<' => "auctum",
+        'u' => "u",
+        '"' => "quote",
+        '†' => "dagger",
+        '#' => "sharp",
+        _ => "sign",
+    }
+}
+
+/// Orthographe exacte d'un glyphe sous forme de noms séparés par des espaces.
+pub(crate) fn glyph_label(glyph: &str) -> String {
+    glyph
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .map(|character| glyph_name(character).to_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Signes attachés à une note : `<other-technical>` (XSD 4.0,
 /// `complexType other-technical`).
 /// Glyphe SMuFL d'une note grégorienne (`smufl-glyph-name`, XSD 4.0).
@@ -325,6 +378,8 @@ pub(crate) fn write_note_signs(
     breath: bool,
     smufl: bool,
     standard_attributes: bool,
+    first_in_syllable: bool,
+    syllable_text: &str,
 ) {
     if smufl {
         // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
@@ -350,6 +405,30 @@ pub(crate) fn write_note_signs(
                 &[("print-object", "no")],
                 &attribute.text,
             );
+        }
+        out.xml.end_element();
+        out.xml.end_element();
+    }
+    if standard_attributes {
+        // XSD 4.0 `other-technical` (`other-placement-text`, xs:string) : la
+        // position GABC et l'orthographe exacte du glyphe sont écrites avec
+        // des noms lisibles. Le lecteur standard les relit sans aucun champ
+        // privé `gabc:` ; un tiers voit un texte de technique « letter: e,
+        // glyph: virga augmentum » au lieu d'un code opaque.
+        out.xml
+            .start_element("notations", &[("print-object", "no")]);
+        out.xml.start_element("technical", &[]);
+        let readable = [
+            Some(format!("letter: {}", note.letter)),
+            Some(format!("glyph: {}", glyph_label(&note.glyph))),
+            first_in_syllable.then(|| format!("syllable-text: {syllable_text}")),
+        ];
+        for value in readable.into_iter().flatten() {
+            if value.ends_with(": ") {
+                continue; // syllabe sans texte : rien à porter
+            }
+            out.xml
+                .tag_with("other-technical", &[("print-object", "no")], &value);
         }
         out.xml.end_element();
         out.xml.end_element();

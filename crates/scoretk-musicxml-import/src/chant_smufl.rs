@@ -136,6 +136,9 @@ impl Reader {
             let mut attributes = Vec::new();
             let mut mora = false;
             let mut episema = false;
+            let mut exact_glyph: Option<String> = None;
+            let mut exact_letter: Option<char> = None;
+            let mut syllable_text: Option<String> = None;
             for duration_type in note.children_named("type") {
                 // XSD 4.0 `note/type` : une figure doublée est un punctum mora
                 // projection `Gabc.tex:742-755`.
@@ -163,9 +166,21 @@ impl Reader {
                                 text: text.to_owned(),
                             });
                             self.found = true;
+                        } else if let Some(value) = text.strip_prefix("glyph: ") {
+                            exact_glyph = Some(glyph_from_label(value));
+                            self.found = true;
+                        } else if let Some(value) = text.strip_prefix("letter: ") {
+                            exact_letter = value.chars().next();
+                            self.found = true;
+                        } else if let Some(value) = text.strip_prefix("syllable-text: ") {
+                            syllable_text = Some(value.to_owned());
+                            self.found = true;
                         }
                     }
                 }
+            }
+            if let Some(exact) = &exact_glyph {
+                glyph = exact.clone();
             }
             if glyph.is_empty() {
                 if mora {
@@ -188,6 +203,9 @@ impl Reader {
                 .unwrap_or('g');
             if inclinatum {
                 letter = letter.to_ascii_uppercase();
+            }
+            if let Some(exact) = exact_letter {
+                letter = exact;
             }
             if self.syllables.is_empty()
                 || self.syllables.last().is_some_and(|s| !s.notes.is_empty())
@@ -217,10 +235,18 @@ impl Reader {
                         .map(|syllabic| syllabic.text_trimmed())
                         .unwrap_or("single");
                     if !text.is_empty() {
+                        // Des paroles seules ne prouvent pas qu'il s'agit
+                        // d'un chant grégorien : sinon tout MusicXML chanté
+                        // serait reconstruit en charge L6 (aller-retour
+                        // `changevisibility`, `repeat65`, …).
                         syllable.text = text;
-                        self.found = true;
                     }
                     ends_syllable |= matches!(syllabic, "single" | "end");
+                }
+                if let Some(text) = &syllable_text {
+                    // Le texte source, balises `<sp>` comprises, est porté par
+                    // `other-technical` (xs:string) et relu sans préfixe privé.
+                    syllable.text = text.clone();
                 }
             }
             if ends_syllable {
@@ -247,6 +273,30 @@ impl Reader {
         }
         let _ = index;
     }
+}
+
+/// Nom lisible d'un caractère de glyphe GABC → caractère source.
+fn glyph_char(name: &str) -> Option<char> {
+    const NAMES: &[(&str, char)] = &[
+        ("augmentum", '.'), ("ictus", '\''), ("episema", '_'), ("quilisma", 'w'),
+        ("spacing", '/'), ("zero-space", '!'), ("deminutum", '~'), ("virga", 'v'),
+        ("flat", 'x'), ("asterisk", '*'), ("diminutum", '>'), ("oriscus", 'o'),
+        ("one", '1'), ("zero", '0'), ("natural", 'y'), ("virga-reversa", 'V'),
+        ("stropha", 's'), ("oriscus-scampus", 'O'), ("two", '2'), ("cavum", 'r'),
+        ("virgula", '`'), ("hyphen", '-'), ("plus", '+'), ("colon", ':'),
+        ("brace-open", '{'), ("brace-close", '}'), ("fusion", '@'), ("three", '3'),
+        ("auctum", '<'), ("u", 'u'), ("quote", '"'), ("dagger", '†'),
+        ("sharp", '#'), ("linea", '='),
+    ];
+    NAMES.iter().find(|(label, _)| *label == name).map(|(_, gabc)| *gabc)
+}
+
+/// Relit une orthographe de glyphe écrite en noms lisibles.
+fn glyph_from_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .map(|word| glyph_char(word).map_or_else(|| word.to_owned(), |gabc| gabc.to_string()))
+        .collect()
 }
 
 /// Nom SMuFL officiel du registre « Medieval and Renaissance » → jeton GABC.
@@ -297,6 +347,38 @@ mod tests {
         assert_eq!(glyph_from_smufl("chantIctusAbove"), Some(("'", false)));
         assert_eq!(glyph_from_smufl("chantPunctumInclinatum"), Some(("", true)));
         assert_eq!(glyph_from_smufl("pianoPedalPed"), None);
+    }
+
+    #[test]
+    fn readable_technical_labels_restore_exact_letter_and_glyph() {
+        let xml = r#"<score-partwise version="4.0">
+  <identification><miscellaneous>
+    <miscellaneous-field name="language">latin</miscellaneous-field>
+  </miscellaneous></identification>
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><clef><sign>C</sign><line>3</line></clef></attributes>
+    <note><pitch><step>G</step><octave>3</octave></pitch><type>quarter</type>
+      <notations><other-notation type="single" smufl="chantQuilisma"/></notations>
+      <notations><technical>
+        <other-technical>letter: e</other-technical>
+        <other-technical>glyph: virga augmentum spacing</other-technical>
+        <other-technical>syllable-text: &lt;sp&gt;Ve&lt;/sp&gt;</other-technical>
+      </technical></notations>
+      <lyric number="1"><syllabic>single</syllabic><text>Ve</text></lyric>
+    </note>
+  </measure></part>
+</score-partwise>"#;
+        let root = scoretk_xml_common::parse(xml.as_bytes()).expect("XML");
+        let mut score = Score::default();
+        assert!(restore(&root, &mut score));
+        let Some(Extension::Gregorian(payload)) = &score.extensions.format else {
+            panic!("payload");
+        };
+        assert_eq!(payload.syllables[0].notes[0].letter, 'e');
+        assert_eq!(payload.syllables[0].notes[0].glyph, "v./");
+        assert_eq!(payload.syllables[0].text, "<sp>Ve</sp>");
+        assert!(!xml.contains("gabc:"), "no private carrier in the source");
     }
 
     #[test]
