@@ -1496,3 +1496,36 @@ the words. Lyrics, hyphens and dashes are not extracted by the geometric
 oracle, so the unchanged figures above are expected; the visual comparison
 of `engrave-img/eng8/after.png` against `before.png` and `ref.png` is the
 evidence for this step.
+
+### 14.5 Private page count after the lyric spacing port (2026-11-27)
+
+The private score now engraves in **6 pages** (5 pages of 3 systems plus a
+short sixth page with 1 system), against **7** in MuseScore 4.7.4 (six pages
+of 3 systems and a final page of 3–4 systems). The page count is measured by
+rendering each page until a page without `class="StaffLines"` is produced;
+no score data is copied into the repository.
+
+The difference is horizontal, not vertical. On page 1 the staff tops are
+24.6, 40.5/51.0/61.5, 80.5/97.4/107.9/118.4 and
+137.4/152.8/163.3/173.8 sp against 25.4, 41.9/52.4/64.4,
+83.4/98.4/108.8/120.9 and 139.8/157.4/167.9/179.4 sp in 4.7.4 (within
+about 1 sp), and the system top-to-top distances are 56–57 sp against
+56–58 sp. What differs is how many measures a system holds: counting bar
+line positions on the top staff of each system gives 4–5 measures per
+system in 4.7.4 (22 systems over 7 pages) against 4–7 in our output (16
+systems over 6 pages, with up to 7 on page 2).
+
+`SystemLayout::getNextSystem` fills a system until its measured minimum
+width reaches the printable width (`systemlayout.cpp:95-225`), and
+`HorizontalSpacing::computeSpacingForFullSystem` supplies those widths
+(`horizontalspacing.cpp:47-89`). Our break decision still discounts every
+multi-staff measure to `header + (atom.width - header) * 3 / 5`
+(`breaking.rs::collect_systems`, the eng5 estimate for dense organ/choir
+measures). The §14.3 lyric demand widens `atom.width`, but the discount
+absorbs most of it, so a fifth or sixth measure still fits where 4.7.4
+breaks. A trial using the full `atom.width` there moved the organ notes past
+the right margin (the system's fixed headers are staff-specific) and is not
+committed. The remaining causes are the P2 spacing debt already measured in
+§9.10–§9.23 (natural 3.5 sp springs, no harmony/tempo shapes, approximate
+glyph minima) and the absent courtesies. This is a diagnosis only: the
+page-count gate is not redefined, and no file or failure is excluded.
