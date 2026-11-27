@@ -127,6 +127,19 @@ impl SkylineLine {
         distance
     }
 
+    /// Lowest ink within an x range, used by `LyricsLayout::
+    /// checkCollisionsWithStaffElements` (`lyricslayout.cpp:616-652`) to keep
+    /// a lyric line clear of the staff's own outline.
+    pub fn max_at(&self, x0: i32, x1: i32) -> Option<i32> {
+        let mut lowest: Option<i32> = None;
+        for interval in &self.intervals {
+            if interval.x1 > x0 && interval.x0 < x1 {
+                lowest = Some(lowest.map_or(interval.y1, |value| value.max(interval.y1)));
+            }
+        }
+        lowest
+    }
+
     /// Number of contributing intervals, for diagnostics and tests.
     pub fn len(&self) -> usize {
         self.intervals.len()

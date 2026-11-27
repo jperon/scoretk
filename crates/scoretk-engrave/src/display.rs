@@ -210,6 +210,21 @@ impl DisplayItem {
         }
     }
 
+    /// Moves one drawn item down by `dy`, used by lyric autoplace.
+    pub fn translate_y(&mut self, dy: i32) {
+        match &mut self.geometry {
+            Geometry::Glyph { y, .. }
+            | Geometry::Path { y, .. }
+            | Geometry::Text { y, .. }
+            | Geometry::Scaled { y, .. }
+            | Geometry::Rect { y, .. } => *y += dy,
+            Geometry::Beam { y1, y2, .. } => {
+                *y1 += dy;
+                *y2 += dy;
+            }
+        }
+    }
+
     /// Position of the item's origin in fixed-point staff spaces.
     pub const fn origin(&self) -> (i32, i32) {
         match self.geometry {
