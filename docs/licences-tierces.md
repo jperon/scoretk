@@ -265,6 +265,27 @@ $ cargo tree -p scoretk-render-raster --edges normal,dev --prefix none --format 
 BSD-3-Clause was already in the whitelist of `scripts/check-licences.py`; no
 script change is needed. The in-house rasteriser itself has no dependency.
 
+### Optional measurement feature (`dhat`)
+
+`crates/scoretk-cli` declares `dhat` 0.3.3 as an **optional** dependency behind
+the `memory-report` feature, used only by `scripts/measure-engrave-memory.sh`
+(`docs/agents/engraving.md` § 15). It is not linked into a default CLI build,
+a library or the wasm package, and does not change the 46-crate
+`normal,build` graph. Surveyed on 2026-11-27 with:
+
+```console
+$ cargo tree -p scoretk-cli --features memory-report --edges normal \
+    --prefix none --format '{p}|{l}'
+```
+
+| Crate | Version | Declared licence | Role |
+| --- | --- | --- | --- |
+| `dhat` | 0.3.3 | MIT OR Apache-2.0 | measuring allocator and heap report |
+| `backtrace`, `addr2line`, `gimli`, `object`, `rustc-demangle` | see main table | MIT / Apache-2.0 | allocation backtraces |
+| `mintex`, `serde`, `serde_json`, `parking_lot`, `rustc-hash`, `thousands` | see main table | MIT / Apache-2.0 | dhat report generation |
+
+All licences are already accepted by `scripts/check-licences.py`.
+
 Build tools outside Cargo (not linked in the delivered binaries):
 `wasm-bindgen-cli` (MIT OR Apache-2.0), `binaryen` (Apache-2.0),
 `nodejs` (MIT) and the Rust toolchain (MIT OR Apache-2.0).

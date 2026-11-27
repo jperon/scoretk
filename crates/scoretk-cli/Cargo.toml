@@ -35,8 +35,18 @@ scoretk = { path = "../scoretk", features = [
     "engrave",
 ] }
 clap = { workspace = true }
+# Facultatif, gate par la feature `memory-report` : hors de la compilation
+# habituelle et des binaires distribués (docs/agents/engraving.md,
+# "Resource budget (Kobo Mini)").
+dhat = { version = "0.3.2", optional = true }
 
 [dev-dependencies]
 scoretk-musescore-import = { path = "../scoretk-musescore-import" }
 scoretk-musicxml-export = { path = "../scoretk-musicxml-export" }
 zip = { workspace = true }
+
+[features]
+# Outillage de mesure uniquement : dhat n'entre ni dans la compilation
+# habituelle ni dans les binaires distribués (docs/agents/engraving.md,
+# "Resource budget (Kobo Mini)").
+memory-report = ["dep:dhat"]

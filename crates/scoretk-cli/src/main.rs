@@ -36,6 +36,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 
+// Measuring allocator behind `memory-report` only: the delivered CLI never
+// links dhat (see docs/agents/engraving.md, "Resource budget (Kobo Mini)").
+#[cfg(feature = "memory-report")]
+#[global_allocator]
+static ALLOCATOR: dhat::Alloc = dhat::Alloc;
+
 use scoretk::{Format, MidiOptions, Options, Score};
 
 /// Version affichée par `--version` : en plus du numéro, la licence et
@@ -188,6 +194,11 @@ fn parse_quant_value(valeur: &str) -> Result<u16, String> {
 }
 
 fn main() -> ExitCode {
+    // dhat starts before input is read and reports after the SVG is written;
+    // the diagnostic is mandatory only for the engraving measurement path.
+    #[cfg(feature = "memory-report")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let cli = Cli::parse();
 
     if cli.list_formats {

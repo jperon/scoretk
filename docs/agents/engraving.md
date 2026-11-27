@@ -1586,3 +1586,113 @@ regression is `testWedge4` (28.7 → 45.4 sp width, 42.6 → 69.7 sp x error); i
 is reported, not excluded. The oracle script and its README document the new
 columns. The private score's before/after/reference page-1 PNGs are in
 `engrave-img/eng9`; the page count is still measured separately in §15.4.
+
+## 16. Resource budget (Kobo Mini)
+
+### 16.1 Method
+
+`scripts/measure-engrave-memory.sh [--build] [--out DIR] FILE…` builds the CLI
+with the **feature-gated** `memory-report` dependency (`dhat` 0.3.3, never in
+a default build or a distributed binary), then runs
+`scoretk <file> -o out.svg` once per file in a throwaway directory. dhat gives
+total allocations, heap at peak (`t-gmax`) and its `dhat-heap.json` backtraces;
+GNU `time` gives wall time and max RSS. The SVG and the JSON are written
+outside the repository; the private score is read from its absolute path and
+never copied into the worktree. Host: the shared Intel U300 machine of
+`performance.md` §2, `release` profile (`opt-level = 1`, no LTO).
+
+### 16.2 Measured baseline
+
+The three corpus files are the largest by `<Note>` count in `tests/corpus`
+(1 180, 63 and 56 notes). All figures are for one engraved page (page 0);
+"heap" is dhat's `t-gmax`, not RSS.
+
+| File | Input | Wall | Max RSS | Total allocated | Heap at peak | Allocations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Private `.mscz` (4 871 notes, 2.05 MB `.mscx` in ZIP) | 348 KB | 1.06 s | 76.1 MB | 109.9 MB | **63.1 MB** | 577 053 |
+| `v3/moonlight.mscx` | 410 KB | 0.11 s | 15.6 MB | 13.1 MB | 6.77 MB | 50 300 |
+| `v4/voiceswitching.mscx` | 31 KB | 0.02 s | 10.4 MB | 1.43 MB | 0.64 MB | 9 372 |
+| `v4/testExcludeInvisibleElements.mscx` | 29 KB | 0.03 s | 10.4 MB | 1.50 MB | 0.71 MB | 9 657 |
+
+The RSS floor of ~10 MB is binary, static glyph/Edwin tables and libc, not
+heap. Repeats of the private measurement gave 1.06–1.25 s wall and the same
+dhat figures to within 0.01 %; the corpus wall times vary by ±0.02 s.
+
+### 16.3 Breakdown at peak
+
+Cumulative bytes per subsystem from the dhat backtraces (a single allocation
+belongs to one family; the "peak live" column is the largest live set seen in
+that family and is not additive across families). Raster is not used by the
+SVG path; glyph tables are static and therefore absent from dhat.
+
+| Family | Private: cumulative / peak live | `moonlight`: cumulative / peak live |
+| --- | ---: | ---: |
+| Parse (4.x DOM / 3.x XML tree, ZIP, input bytes) | 35.4 / 20.9 MB | 5.11 / 4.25 MB |
+| Pivot model construction (`Reader`, `Score::add_note`) | 12.3 / 12.1 MB | 0.02 / 0.02 MB |
+| Layout, skylines, display list, SVG string | 11.0 / 10.5 MB | 0.64 / 0.34 MB |
+| Atoms (per-measure/per-event POD) | 1.47 / 1.23 MB | 0.69 / 0.63 MB |
+
+Top 10 inclusive allocation frames on the private score (shares overlap; the
+deepest useful frame is named): `read4xx::read_with_style` 57.7 MB,
+`read::read_score` 45.5 MB, `hooks::read_musescore` 34.1 MB,
+`read4xx::dom::parse` 31.8 MB, `Reader::read_score` 25.9 MB,
+`Engraver::new` 23.6 MB, `build_page_with_skylines` 22.3 MB,
+`Reader::read_voice` 20.9 MB, `dom::escape_into` 20.9 MB (51 753 blocks,
+the intermediate XML text), `Reader::read_voice` (second site) 13.7 MB. On
+`moonlight`: `read302::read_with_origin` 5.68 MB,
+`read302::xml::parse` 4.33 MB, `xml::push_text` 4.25 MB (10 217 blocks),
+`measure::read_measure` 1.26 MB, `MeasureAtom::with_system_header` /
+`Segment::new` 0.69 MB. Interpretation: reading the source dominates, then
+the model; the engraver itself is ≤ 11 MB even on the 88-page score, and no
+glyph data is allocated per page.
+
+### 16.4 ARMv7 build and size
+
+Cross-compilation to `armv7-unknown-linux-gnueabihf` **works** with the
+std artifact present in `/nix/store` (1.100.0) and the Nixpkgs GCC wrapper as
+linker:
+
+```sh
+CC=/nix/store/…/armv7l-unknown-linux-gnueabihf-gcc \
+CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=$CC \
+RUSTFLAGS='--sysroot=/nix/store/…-rust-std-1.100.0-armv7-unknown-linux-gnueabihf' \
+  cargo build --target armv7-unknown-linux-gnueabihf \
+  -p scoretk-engrave -p scoretk-render-svg
+```
+
+Both engraving crates compile for that target. The whole CLI in the stripped
+`dist` profile builds as a 32-bit ARM ELF of **5 217 408 B** (5.0 MiB),
+including all twelve conversion directions; this is above the 1.5 MiB
+library budget of §1, which applies to the engraving library/FFI, not to the
+kitchen-sink CLI. No Kobo device measurement was made: the numbers above are
+host measurements. The QEMU batches of §9.3 measured 35–75× slower than the
+host for a raster-only loop; on real ARMv7 hardware a conservative
+extrapolation factor of **10×** is used here (it is an estimate, not a device
+measurement). The private score's 1.06 s host pass would therefore take
+roughly 10 s for page 1 on the Kobo, and its 63 MB peak leaves no margin in
+249 MB shared with KOReader.
+
+### 16.5 Proposed budget and rule for agents
+
+Target budgets for the 1.7 MB / 88-page class of score, to be verified on the
+device (P7 gate), **not met by the current baseline**:
+
+| Metric | Budget | Current host figure |
+| --- | --- | --- |
+| Peak heap, full engraving of a page | ≤ 32 MB | 63.1 MB (private), 6.8 MB (moonlight) |
+| Time to first page on ARMv7 | ≤ 1 s | ≈ 10 s extrapolated (1.06 s × 10) |
+| Heap of one engraved page once the score is loaded | ≤ 2 MB | ≤ 11 MB today (with the whole score live) |
+
+**Rule for agents.** Port algorithms faithfully, choose compact data: no
+per-element boxing when a `Vec` of POD works, layout system by system and
+emit pages incrementally where upstream allows, only used glyphs. Measure
+with `scripts/measure-engrave-memory.sh` before and after any change
+claiming a memory gain; check SVG byte identity on the oracle corpus and the
+private score. Leads, with ceilings from §16.3 and `performance.md` §4/6:
+(a) stream/parse the 4.x DOM instead of materialising it (up to 21 MB, the
+largest single item); (b) share text bytes instead of copying per XML node
+(20.9 MB cumulative on the private score; 3.x `push_text` is the known lead
+6 there); (c) drop the pivot model before engraving page > 0 (12 MB);
+(d) re-use the per-page display-list and skyline arenas (10 MB). Leads (a)
+and (b) are reader work; (c) and (d) touch the engraver but not the layout
+algorithms.
