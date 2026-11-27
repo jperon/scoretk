@@ -29,7 +29,7 @@ members = [
     "crates/scoretk-smufl",
     "crates/scoretk-engrave",
     "crates/scoretk-render-svg",
-    "crates/scoretk-engrave-ffi",
+    "crates/scoretk-engrave-serve",
 ]
 
 [workspace.package]
