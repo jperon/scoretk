@@ -488,6 +488,10 @@ the initial `scoreDef`), with a unit test.
 | `dynamic` | 192 | 85 |
 | Full support | 98.98 % | **99.43 %** |
 
+This 99.43 % is the historical figure of the then-single writer (later the
+default path); it is not the baseline of §14, where the same row measured
+97.94 % with `mei_full_support` after the §12 consolidation (§14.1).
+
 Remaining leaders: `articulation` 376, `note` 329, `slur` 267, `stem` 219,
 `rest` 114, `tuplet-member` 114.
 
@@ -503,7 +507,8 @@ and `music` as document roots. The reader now accepts these four roots (or
 importer starts at `<mei>` only.
 
 The measurement tests now assert **130 files read, 0 skipped, 0 unreadable**;
-the full support stays at **99.43 %**. The 37 header fragments remain in
+the full support stays at **99.43 %** (historical, pre-option writer; §14.1).
+The 37 header fragments remain in
 `EXCLUDED.tsv` (no `<score>`) and are still read by `mei_samples_never_panic`.
 
 ### 9.9 Sixth fix: `@curvedir` from the import-completeness audit
@@ -521,8 +526,9 @@ the score, and the audit marks the attribute as mapped.
 | Attributes ignored | 65 552 (5.02 %) | 51 838 (3.97 %) |
 | Elements ignored | 19 681 (4.25 %) | 19 681 (unchanged) |
 
-The round-trip figure stays at 99.43 % (the inventory does not key slur/tie
-placement), but the reader now consumes an additional 13 714 MEI attributes
+The round-trip figure stays at 99.43 % (historical, pre-option writer;
+§14.1 — the inventory does not key slur/tie placement), but the reader now
+consumes an additional 13 714 MEI attributes
 that were previously ignored. Unit tests cover a tie and a slur with opposite
 `@curvedir` values.
 
@@ -541,6 +547,12 @@ first six were. The largest ignored *elements* are header prose (`p` 1 674,
 mapping those would require a model slot for editorial markup or a full
 span-based tuplet reader, neither of which MuseScore 4.7.4 has. No declaration
 was narrowed and no item was removed from the denominator at any step.
+
+**Update (2026-11-27, §14):** these are the figures at the end of the §9
+campaign. The §12 consolidation changed the code path without re-measuring the
+external samples; the baseline of the final campaign was 97.94 % with
+`mei_full_support`, and its final figure is 99.99 % full support / 99.91 %
+default on the same 130 files (§14.3).
 
 ## 10. Additive MEI 5.1 carriers (2026-11-26, branch `mei2`)
 
@@ -570,6 +582,9 @@ reader fixes (below).
 | Official MEI 5.1 samples round trip (130 files) | 99.43 % | **99.75 %** | **99.87 %** |
 | Import of MuseScore `*.ref.mei` (main figure) | 87.16 % | **87.53 %** | unchanged (reference-bound) |
 | Import, carriers MuseScore never writes excluded | 95.66 % | **96.08 %** | unchanged |
+
+The 99.43 % of the "Before (§9.10)" column is the §9 default-writer figure,
+not the baseline of the §14 campaign (97.94 % with `mei_full_support`, §14.1).
 
 The 99.9 % target is reached **neither** row: the external samples are
 closest at 99.87 % with the option, the corpus at 99.06 %. Both import
@@ -783,7 +798,9 @@ of +182 169 raw / +61 743 gzip.
 after the rebase on `master` and the consolidation below, the 56 additive
 exports validate **56/56** against `mei-all-5.1.rng` with `jing`, and the full
 support round trip remains **100.00 %** (0/5 879 missing). A coverage figure
-obtained from schema-invalid MEI does not count.
+obtained from schema-invalid MEI does not count. On the separate 130-file lot
+of official external encodings, the final figures are 99.99 % with the option
+and 99.91 % by default (§14.3).
 
 The default path was brought back to **byte identity with `master`**: two
 carriers of this campaign (the `<fb><f>` figure and the tremolo-bar `<dir>`)
@@ -1114,3 +1131,72 @@ multi-character glyph spelling and bracketed attributes are counted as defects
 when no normative MEI element carries them. Without the option no private
 annotation is emitted; the 56/56 MuseScore 4.7.4 MEI references stay
 byte-identical. The honest figure is in `docs/agents/gabc.md` §26.
+
+## 14. Final external-samples campaign (branch `meifull`, 2026-11-27)
+
+The six commits of this branch are **reader-only**: no writer, facade or wasm
+code changed. Every figure below is `MEI → model → MEI → model` on all 130
+official MEI 5.1 encodings of §9 (0 skipped, 0 unreadable), with the same
+declared L0–L5 kinds as §9. No declaration was narrowed and no item was removed
+from a denominator.
+
+### 14.1 The real baseline: 97.94 %, not the documented 99.43 %
+
+At the end of §9 the external-samples row read **99.43 %**. Git history
+explains why that is not the baseline of this campaign: §9 predates
+`Options::mei_full_support` (introduced in §10), so its single writer is the
+path that later became the **default** 4.7.4-faithful writer. §10.2 then
+measured 99.75 % (default) and 99.87 % (`mei_full_support`) just after the
+option was added; §12 moved the additive carriers to RNG-valid elements,
+restored the default bytes to `master`'s bytes and kept the 56-score corpus
+headline at 100.00 %, but did **not** re-measure the external-samples
+full-support row. Re-measured at the start of this branch (parent `e834be69`)
+with the current `mei_samples_full_support_residual` harness, the honest
+baseline is **97.94 % full support / 97.85 % default** (first commit
+`2cf2ebae`). The documented 99.43 % was therefore **not reproduced** on the
+current code path: it belongs to a different writer at a different point in
+history, not to the starting point of these six fixes. The §9/§10 rows remain
+valid measurements of their own commits and are marked historical in place.
+
+### 14.2 The six fixes, per kind, with norm citations
+
+| Commit / fix | Kinds before → after | Full support → | Default → | MEI 5.1 citation and mechanism |
+| --- | --- | ---: | ---: | --- |
+| `2cf2ebae` — metric `@tstamp` fallback | `note` 2 363, `stem` 1 769, `lyric` 784, `rest` 619, `slur` 385 missing on 55 files → cascade gone (`tuplet-member` 96 becomes the next leader) | 97.94 % → **99.94 %** | 97.85 % → 99.84 % | *Guidelines* §4.2.6 defines `@tstamp` as a written metric position (1 … numerator+1); RNG `mei_att.timestamp.log.attributes` types it as `data.NUMBER`. The reader falls back to the unreduced denominator when MuseScore's reduced convention puts the event outside the measure; annotation-only segments no longer lengthen a measure (control events follow `<staff>`, §2/§10). |
+| `6e43d49e` — tuplet base under `<beam>` | `tuplet-member` 96 → 3 (the diagnostic also attributed 37 `tuplet` and 3 `tuplet-bracket` losses to the wrong base length) | 99.94 % → **99.98 %** | 99.84 % → 99.88 % | *Guidelines* §4.3.4 defines the ratio by `@num`/`@numbase`; RNG `mei_tuplet` (:11105) admits `model.eventLike.cmn`, including `<beam>` wrappers. The search descends to the first event carrying `@dur` instead of assuming a quarter for the wrapper; a beamed-triplet unit test was added. |
+| `02454c76` — `@meter.sym` alone on `<staffDef>` | `time-sig` 36 → 0 (nine files) | 99.98 % → **99.99 %** | 99.88 % → 99.89 % | RNG `mei_att.meterSigDefault.log.attribute.meter.sym` (:21691) defines `@meter.sym` as a replacement for the numeric signature (`common` = 4/4, `cut` = 2/2). Both the `scoreDef` and `staffDef` paths now apply the written numbers instead of returning 4/4 when `@meter.count` is absent. |
+| `105da917` — chord duration on its notes | `tuplet-member` 3 → 0 (`tuplet` 4 → 3) | **99.99 %** (unchanged) | **99.89 %** | MEI 5.1 `att.duration.musical` is inherited by `<note>` and `<chord>`; `format-ref/mei.md` §8 notes that writers normally place `@dur` on `<chord>`, and the official files' variant on a child `<note>` is equally legal. The reader falls back to the first `<note>` carrying `@dur`. |
+| `f5b8ddad` — score under `<music>`, not the `<meiHead>` incip | `note` 18 → 15 (`hairpin` 0 → 6, losses previously masked by reading the incip) | **99.99 %** (unchanged) | **99.89 %** | RNG `mei_score` (:27789) and `MeiImporter::readScore` (`meiimporter.cpp:1011`) select `./music//score`. The search now excludes the `<meiHead>` subtree, with a fallback to the old behaviour for `anyStart` roots without `<music>`. |
+| `2b1db5a9` — limit the metric fallback to reduced denominators > 1 | no full-support kind change; `mei_conformity` 7/7 | **99.99 %** (unchanged) | 99.89 % → **99.91 %** | The §4.2.6 fallback disturbed MuseScore 4.7.4's 4/4 convention, where `tstamp="2"`/`tstamp2="3"` use the reduced numerator (`mei_conformity::tstamp_uses_the_reduced_numerator`). It is now restricted to measures whose reduced denominator is greater than 1. |
+
+### 14.3 Final figures and residual table
+
+| Measurement (130 files, 0 skipped) | Baseline (`e834be69`) | Final (`2b1db5a9`) |
+| --- | ---: | ---: |
+| Round trip, `mei_full_support` | 97.94 % | **99.99 %** |
+| Round trip, default export | 97.85 % | **99.91 %** |
+| `mei_conformity` | — | **7/7** |
+| `e2e_corpus` | — | **8/8** |
+
+The remaining full-support items, printed by
+`mei_samples_full_support_residual`, are:
+
+| Kind | Missing | Status |
+| --- | ---: | --- |
+| `note` | 15 | Anchoring/rounding at a few specific ticks; the MEI 5.1 note carriers exist. |
+| `slur` | 12 | Unresolved `@startid`/`@endid` anchors on specific encodings (§10.3). |
+| `staff-text` | 7 | Reader/anchor difference on `<dir>` text (§10.4), not a format gap. |
+| `tuplet` | 3 | Outer n-olet reconstruction at tick 1/4; `@num`/`@numbase` exist (§4.3.4). |
+| `tuplet-bracket` | 3 | Same outer-n-olet residue; `mei_tuplet` has `@bracket.visible`/`@bracket.place` (`format-ref/mei.md` §9). |
+| `clef` | 2 | Duplicate clef segments at one tick/track, a pivot `Segment` limit (§10.5). |
+| `ottava` | 1 | Single control-event anchor; `<octave>` exists in MEI 5.1. |
+| `pedal` | 1 | Single control-event anchor; `<pedal @dir>` exists (§12.3). |
+| `tie` | 1 | Single `@startid`/`@endid` anchor; `<tie>` exists (§10). |
+
+All nine kinds stay inside the declared L0–L5 denominator: they are current
+**implementation or model limits**, not claims that MEI 5.1 lacks a carrier.
+The default export has a larger, documented residual (`articulation` 166,
+`arpeggio` 38, `ornament` 37, `multi-measure-rest` 20, `slur` 17, `note` 15,
+`dynamic-velocity` 13, …) because it stays faithful to MuseScore 4.7.4; those
+items are likewise not hidden by changing a declaration. The wasm contract and
+the default MEI bytes are unchanged by this campaign.

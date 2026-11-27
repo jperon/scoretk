@@ -110,7 +110,7 @@ measurement and no tolerated regression).
 | Direction | Batch | Oracle | State / target |
 | --- | --- | --- | --- |
 | Writing | 56 corpus `.mscx` exported to `.ref.mei` | MuseScore 4.7.4 `mscore -o out.mei in.mscx`, compared with normalised events (`mei_conformity.rs`) | 96.54 % normalised conformity |
-| Reading | the same 56 `.ref.mei` | MuseScore 4.7.4 `.mscx` reference model, `layer_coverage.rs` | 96.76 % essential, 81.90 % full (layout/style absent from MEI Basic) |
+| Reading | the same 56 `.ref.mei`; 130 official MEI 5.1 encodings (`mei.md` §9/§14) | MuseScore 4.7.4 `.mscx` reference model, `layer_coverage.rs`; external round trip (`mei_samples.rs`) | 98.57 % essential (§3), 87.80 % full / 96.38 % excluding carriers MuseScore never writes on the 56 references; 99.99 % full support / 99.91 % default on the 130 files (`mei.md` §12.1, §14.3) |
 
 ## 4. Phases and proposed order
 
