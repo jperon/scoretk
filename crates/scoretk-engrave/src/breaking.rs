@@ -360,6 +360,7 @@ pub fn page_count(systems: &[SystemPlan]) -> usize {
 mod tests {
     use super::*;
     use crate::atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
+    use crate::identity::NoteIdentity;
     use crate::style::SP;
     use alloc::vec;
 
@@ -390,6 +391,7 @@ mod tests {
                             line: 4,
                             head: "noteheadBlack",
                             accidental: None,
+                            id: NoteIdentity::default(),
                         }],
                     }),
                     voice: 0,

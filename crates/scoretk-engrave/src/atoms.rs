@@ -33,12 +33,14 @@ use alloc::vec::Vec;
 
 use scoretk_core::model::{
     AccidentalType, Annotation, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType,
-    Fraction, LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId,
+    Fraction, GraceType, LyricsSyllabic, NoteHeadType, Score, SegmentItem, SegmentType, StaffId,
     StemDirection, StyleSettings, Track, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
 use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
+
+use crate::identity::{NoteIdentity, NoteSourceRange};
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
@@ -60,6 +62,8 @@ pub struct NoteAtom {
     pub line: i32,
     pub head: &'static str,
     pub accidental: Option<&'static str>,
+    /// Stable MusicXML identity of the source note (or rest).
+    pub id: NoteIdentity,
 }
 
 /// A chord with everything the page pass needs.
@@ -152,6 +156,10 @@ pub struct Atom {
     /// Lyrics syllables attached to this chord/rest (`LyricsLayout::layout`,
     /// `lyricslayout.cpp:45-170`); one entry per verse.
     pub lyrics: Vec<LyricAtom>,
+    /// Stable identity of a rest, or of the first note of a chord. Used for
+    /// note-level items that are not attached to one particular notehead
+    /// (stems, flags and lyric syllables).
+    pub id: NoteIdentity,
 }
 
 impl Default for Atom {
@@ -171,6 +179,7 @@ impl Default for MeasureAtom {
     fn default() -> Self {
         Self {
             number: 0,
+            ordinal: 0,
             width: 0,
             spring: 0,
             events: Vec::new(),
@@ -207,6 +216,7 @@ impl Atom {
             grace: false,
             segment,
             lyrics: Vec::new(),
+            id: NoteIdentity::default(),
         }
     }
 }
@@ -219,6 +229,10 @@ pub struct BarCode(pub u8);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeasureAtom {
     pub number: usize,
+    /// Index in `Score::measures` (0-based), the time map's `ordinal`. Unlike
+    /// `number` it is unaffected by displayed-number offsets and section
+    /// numbering resets.
+    pub ordinal: usize,
     /// Minimum width from the natural spring lengths of `HorizontalSpacing`.
     pub width: i32,
     /// Sum of the segments' duration stretches (1/1024); each segment's
@@ -1156,9 +1170,10 @@ fn note_atoms(
     duration: DurationType,
     bottom: i32,
     inverse: Option<Transpose>,
+    identity: NoteIdentity,
 ) -> Vec<NoteAtom> {
     let mut notes = Vec::new();
-    for id in &chord.notes {
+    for (index, id) in chord.notes.iter().enumerate() {
         let Some(note) = score.notes.get(id.index()) else {
             continue;
         };
@@ -1180,10 +1195,19 @@ fn note_atoms(
             }
             None => (note.tpc, note.pitch),
         };
+        // The exporter's `n{index}` is the rank in `Chord::notes` (model
+        // order), not the line-sorted position in this atom.
+        let mut note_identity = identity;
+        note_identity.note = index as u32;
+        note_identity.source = note.source.map(|source| NoteSourceRange {
+            offset: source.offset as u32,
+            end: source.end as u32,
+        });
         notes.push(NoteAtom {
             line: note_line(written_tpc, written_pitch, bottom),
             head,
             accidental,
+            id: note_identity,
         });
     }
     notes.sort_by_key(|note| note.line);
@@ -1393,6 +1417,10 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 
     let mut measure_index = 0;
     while let Some(measure) = score.measures.get(measure_index) {
+        let ordinal = measure_index;
+        // `writeMeasureTracks` ranks the `ChordRest`s of each voice including
+        // rests. The rank is the one embedded in every stable note id.
+        let mut chord_ranks = [0usize; 4];
         // A `<multiMeasureRest>N</multiMeasureRest>` folds N source measures
         // into one displayed measure (`measurelayout.cpp:194-524`).
         let mm_count = measure.multi_measure_rest.unwrap_or(1).max(1) as usize;
@@ -1432,7 +1460,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     })
             })
             .is_some_and(|(chord, duration)| {
-                has_seconds(&note_atoms(chord, score, duration, bottom, inverse))
+                has_seconds(&note_atoms(
+                    chord,
+                    score,
+                    duration,
+                    bottom,
+                    inverse,
+                    NoteIdentity::default(),
+                ))
             });
         let mut x = if first {
             bar_note_distance.max(SYSTEM_HEADER_MIN_START)
@@ -1462,7 +1497,14 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                     })
             })
             .is_some_and(|(chord, duration)| {
-                has_seconds(&note_atoms(chord, score, duration, bottom, inverse))
+                has_seconds(&note_atoms(
+                    chord,
+                    score,
+                    duration,
+                    bottom,
+                    inverse,
+                    NoteIdentity::default(),
+                ))
             });
         let mut events = Vec::new();
         let mut spring = 0;
@@ -1658,6 +1700,15 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                 }
                 let segment_start = events.len();
                 for (track, cr) in chord_rests {
+                    // Same rank as `writeMeasureTracks` in the MusicXML
+                    // exporter, which also counts rests and skips time-tick
+                    // segments (`exportmusicxml.rs:1282-1393`).
+                    let chord_rank = chord_ranks.get_mut(track as usize).map_or(0, |rank| {
+                        let current = *rank;
+                        *rank += 1;
+                        current
+                    });
+                    let staff_raw = staff_index as u32;
                     let duration = duration_code(cr.duration.kind);
                     let stretch = if mm_stretch > 0 && matches!(cr.kind, ChordRestKind::Rest(_)) {
                         mm_stretch
@@ -1701,13 +1752,33 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             let head_w = glyph_width("noteheadBlack");
                             let grace_w = head_w * 7 / 10;
                             let mut grace_x = x - head_w - MIN_NOTE_DISTANCE - grace_w;
-                            for grace in chord.grace_chords.iter().rev() {
+                            for (grace_index, grace) in chord.grace_chords.iter().enumerate().rev()
+                            {
+                                // The exporter keeps the original index in
+                                // `grace_chords` and derives the side from the
+                                // grace type (`grace_is_after`, :3695).
+                                let before = !matches!(
+                                    grace.chord.grace.unwrap_or(GraceType::Appoggiatura),
+                                    GraceType::Grace8After
+                                        | GraceType::Grace16After
+                                        | GraceType::Grace32After
+                                );
+                                let grace_identity = NoteIdentity::grace(
+                                    ordinal,
+                                    staff_raw,
+                                    track as u8,
+                                    chord_rank,
+                                    grace_index,
+                                    0,
+                                    before,
+                                );
                                 let notes = note_atoms(
                                     &grace.chord,
                                     score,
                                     grace.duration.kind,
                                     bottom,
                                     inverse,
+                                    grace_identity,
                                 );
                                 if !notes.is_empty() {
                                     let lines: Vec<i32> =
@@ -1730,6 +1801,8 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                         false,
                                     ) * 82
                                         / 100;
+                                    let grace_id =
+                                        notes.first().map_or(grace_identity, |note| note.id);
                                     events.push(Atom {
                                         x: grace_x,
                                         kind: AtomKind::Chord,
@@ -1750,11 +1823,22 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                         grace: true,
                                         segment: seg,
                                         lyrics: Vec::new(),
+                                        id: grace_id,
                                     });
                                 }
                                 grace_x -= grace_w + MIN_NOTE_DISTANCE * 7 / 10;
                             }
-                            let notes = note_atoms(chord, score, cr.duration.kind, bottom, inverse);
+                            let chord_identity =
+                                NoteIdentity::note(ordinal, staff_raw, track as u8, chord_rank, 0);
+                            let notes = note_atoms(
+                                chord,
+                                score,
+                                cr.duration.kind,
+                                bottom,
+                                inverse,
+                                chord_identity,
+                            );
+
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
                             let chord_x = x;
                             let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
@@ -1772,6 +1856,8 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                     cr.engraving.beam_mode,
                                     BeamMode::Auto | BeamMode::None
                                 );
+                            let event_identity =
+                                notes.first().map_or(chord_identity, |note| note.id);
                             let chord_atom = ChordAtom {
                                 duration,
                                 dots: cr.duration.dots,
@@ -1812,6 +1898,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                                         melisma_end: melisma_end(lyric.melisma),
                                     })
                                     .collect(),
+                                id: event_identity,
                             };
                             let voice = track;
                             let prev = prev_beam
@@ -1854,6 +1941,8 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
                             );
                             rest.voice = track;
                             rest.measure = measure.number;
+                            rest.id =
+                                NoteIdentity::note(ordinal, staff_raw, track as u8, chord_rank, 0);
                             rest.beams = duration.saturating_sub(4);
                             let prev = prev_beam
                                 .iter()
@@ -2012,6 +2101,7 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 
         let mut atom = MeasureAtom {
             number: measure.number,
+            ordinal,
             width: x + text_extra,
             spring,
             events,

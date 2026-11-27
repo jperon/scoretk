@@ -97,6 +97,8 @@ scoretk-gabc-import = { path = "../scoretk-gabc-import" }
 scoretk-gabc-export = { path = "../scoretk-gabc-export" }
 scoretk-gabc-common = { path = "../scoretk-gabc-common" }
 quick-xml = { workspace = true }
+# Test d'identité entre les têtes de notes gravées et la carte des temps.
+scoretk-engrave = { path = "../scoretk-engrave" }
 # Oracle SMF indépendant de l'importeur : lit les bytes écrits avec `midly`.
 midly = { version = "0.5.3", default-features = false, features = ["alloc", "std"] }
 similar = "3"

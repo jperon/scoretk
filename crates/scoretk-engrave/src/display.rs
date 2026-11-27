@@ -27,6 +27,8 @@ use alloc::vec::Vec;
 
 use scoretk_smufl::{units_to_fixed, GLYPHS};
 
+use crate::identity::{NoteIdentity, NoteSourceRange, SourceRef};
+
 /// The role of an item, used by the SVG backend's class attribute and by the
 /// geometric oracle to identify noteheads, stems and bar lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -140,6 +142,10 @@ pub enum Geometry {
 pub struct DisplayItem {
     pub kind: ItemKind,
     pub geometry: Geometry,
+    /// Compact reference to the source element: system, measure ordinal,
+    /// staff, part and, for note-level items, the stable note identity.
+    /// Stamped by `DisplayList::push` from the list's current context.
+    pub source: SourceRef,
 }
 
 impl DisplayItem {
@@ -147,6 +153,7 @@ impl DisplayItem {
         Self {
             kind,
             geometry: Geometry::Glyph { glyph, x, y },
+            source: SourceRef::none(),
         }
     }
 
@@ -154,6 +161,7 @@ impl DisplayItem {
         Self {
             kind,
             geometry: Geometry::Path { glyph, x, y },
+            source: SourceRef::none(),
         }
     }
 
@@ -161,6 +169,7 @@ impl DisplayItem {
         Self {
             kind,
             geometry: Geometry::Rect { x, y, w, h },
+            source: SourceRef::none(),
         }
     }
 
@@ -174,6 +183,7 @@ impl DisplayItem {
                 y2,
                 width,
             },
+            source: SourceRef::none(),
         }
     }
 
@@ -194,6 +204,7 @@ impl DisplayItem {
                 size,
                 bold,
             },
+            source: SourceRef::none(),
         }
     }
 
@@ -207,6 +218,7 @@ impl DisplayItem {
                 sx,
                 sy,
             },
+            source: SourceRef::none(),
         }
     }
 
@@ -307,6 +319,14 @@ impl DisplayItem {
 pub struct DisplayList {
     pub page: usize,
     pub items: Vec<DisplayItem>,
+    /// Compact table of textual source ranges, interned by `set_note` and
+    /// de-duplicated: only GABC notes carry one. The string identifier is
+    /// derived from it at serialisation time.
+    pub sources: Vec<NoteSourceRange>,
+    /// Placement inherited by the next pushed items.
+    context: SourceRef,
+    /// Note identity inherited by the next pushed note-level items.
+    current_note: Option<NoteIdentity>,
 }
 
 impl DisplayList {
@@ -314,11 +334,44 @@ impl DisplayList {
         Self {
             page,
             items: Vec::new(),
+            sources: Vec::new(),
+            context: SourceRef::none(),
+            current_note: None,
         }
     }
 
-    pub fn push(&mut self, item: DisplayItem) {
+    /// Stamps an item with the current placement and note identity. All
+    /// geometry stays byte-identical: only the two packed words change.
+    pub fn push(&mut self, mut item: DisplayItem) {
+        let mut source = self.context;
+        if let Some(note) = &self.current_note {
+            source.set_note(note, &mut self.sources);
+        }
+        item.source = source;
         self.items.push(item);
+    }
+
+    /// Items with no measure (title, system decorations).
+    pub fn set_system(&mut self, system: usize) {
+        self.context = SourceRef::system(system);
+        self.current_note = None;
+    }
+
+    /// Items of one staff in the current system.
+    pub fn set_staff(&mut self, system: usize, staff: usize, part: usize) {
+        self.context = SourceRef::staff_placement(system, staff, part);
+        self.current_note = None;
+    }
+
+    /// Items of one displayed measure; `measure` is the 0-based ordinal of
+    /// `Score::measures`, i.e. `timeline.measures[].ordinal`.
+    pub fn set_measure(&mut self, measure: usize, part: usize) {
+        self.context = self.context.with_measure(measure, part);
+    }
+
+    /// Note identity of the next note-level items; `None` clears it.
+    pub fn set_note(&mut self, note: Option<NoteIdentity>) {
+        self.current_note = note;
     }
 
     /// Adds a glyph by SMuFL name; unknown names are ignored (the generated

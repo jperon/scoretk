@@ -1678,6 +1678,9 @@ fn place_chord(
         mirrored.push(mirror);
     }
     for (note_index, note) in chord.notes.iter().enumerate() {
+        // Notehead, accidental, ledger lines and dots all carry this note's
+        // stable identity; the string id is only built by the backends.
+        out.set_note(Some(note.id));
         let head = glyph(note.head).unwrap();
         let head_width = units_to_fixed(head.bbox[2]);
         // `layoutChords2` (`chordlayout.cpp:2316-2415`) moves a conflicting
@@ -1739,7 +1742,12 @@ fn place_chord(
         }
     }
 
+    // The stem and its flag belong to the chord's anchor notehead.
+    if let Some(anchor) = chord.notes.first() {
+        out.set_note(Some(anchor.id));
+    }
     if chord.notes.is_empty() || !crate::atoms::has_stem(chord.duration) {
+        out.set_note(None);
         return;
     }
     let top = chord.notes.iter().map(|n| n.line).min().unwrap();
@@ -1795,6 +1803,7 @@ fn place_chord(
             out.glyph(ItemKind::Flag, name, stem_x, flag_y);
         }
     }
+    out.set_note(None);
 }
 
 /// Vertical extent of a rest glyph at its natural line, in staff-local
@@ -2042,6 +2051,7 @@ fn place_event(
             dots,
             measure,
         } => {
+            out.set_note(Some(event.id));
             // // Port of `RestLayout::computeVoiceOffset`
             // (`restlayout.cpp:694-765`): only a measure whose voices overlap
             // offsets rests, and the *first* voice moves one line **up**
@@ -2092,6 +2102,7 @@ fn place_event(
                         2 * SP,
                     ));
                 }
+                out.set_note(None);
                 return;
             }
             let width = glyph(name)
@@ -2116,6 +2127,7 @@ fn place_event(
                     rest_y,
                 );
             }
+            out.set_note(None);
         }
     }
 }
@@ -2248,6 +2260,9 @@ pub fn build_page_with_skylines(
         .enumerate()
     {
         let sy = system.y;
+        // Source identity of every item pushed from now on: the system index
+        // is the one used by `data-system` in the SVG backend.
+        out.set_system(system_index);
         let grids = shared_measures(atoms, system);
         // Items emitted before the first staff (measure number, brackets,
         // instrument names, initial bar line) belong to that staff's skyline.
@@ -2311,6 +2326,10 @@ pub fn build_page_with_skylines(
                     .or_else(|| staff_y.get(staff_index).copied())
                     .unwrap_or(0);
             let staff_start = out.items.len();
+            let part = staffs
+                .get(staff_index)
+                .map_or(staff_index, |info| info.part);
+            out.set_staff(system_index, staff_index, part);
             staff_starts.push(staff_start);
             // // Port of `SystemLayout`/`tdraw.cpp`: the staff lines end at the
             // system's last bar line. A short final system (below
@@ -2361,6 +2380,7 @@ pub fn build_page_with_skylines(
                 .iter()
                 .enumerate()
             {
+                out.set_measure(atom.ordinal, part);
                 place_measure(
                     &mut out,
                     atom,
@@ -2392,6 +2412,9 @@ pub fn build_page_with_skylines(
                 // the notehead; passing `event_x + SP / 2` here moved every
                 // syllable half a space right of its segment (and of the
                 // hyphen/ melisma lines planned from `event_x`).
+                // A syllable is a note-level item: it carries the identity
+                // of the chord/rest it is attached to.
+                out.set_note(Some(event.id));
                 place_lyrics(
                     &mut out,
                     &event.lyrics,
@@ -2401,6 +2424,7 @@ pub fn build_page_with_skylines(
                     spec,
                     &offsets,
                 );
+                out.set_note(None);
             }
             for item in plan_lyric_lines(&events, y, left + right, lyrics_em, spec, &offsets) {
                 out.push(item);
@@ -2488,6 +2512,7 @@ mod tests {
     use alloc::vec;
 
     use crate::atoms::NoteAtom;
+    use crate::identity::NoteIdentity;
 
     fn page(atoms: &[MeasureAtom], spec: &PageSpec, number: usize) -> DisplayList {
         let systems = crate::breaking::compute(atoms, spec);
@@ -2516,6 +2541,7 @@ mod tests {
                         line,
                         head: "noteheadBlack",
                         accidental: None,
+                        id: NoteIdentity::default(),
                     }],
                 }),
                 voice: 0,
@@ -3456,6 +3482,7 @@ mod tests {
                             line: 4,
                             head: "noteheadBlack",
                             accidental: None,
+                            id: NoteIdentity::default(),
                         }],
                     }),
                     voice: 0,
@@ -3525,6 +3552,7 @@ mod tests {
                         line: 4,
                         head: "noteheadBlack",
                         accidental: Some("accidentalSharp"),
+                        id: NoteIdentity::default(),
                     }],
                 }),
                 voice: 0,
