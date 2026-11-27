@@ -48,6 +48,21 @@ pub struct Element {
     pub raw_inner: String,
     /// Enfants, dans l'ordre du fichier.
     pub children: Vec<Element>,
+    /// Vrai si le contenu mixte de cet élément (ou d'un ancêtre) est lu comme
+    /// du balisage : seuls ces éléments reconstruisent `raw_inner`. Les
+    /// milliers d'éléments purement numériques n'allouent plus cette copie.
+    raw: bool,
+}
+
+/// Éléments dont le contenu mixte est effectivement consommé comme balisage.
+///
+/// `read_text_base`, `RichText::from_markup`, `plain_text` et
+/// `legacy_staff_name` lisent `raw_inner` sur ces noms (ou leurs descendants).
+fn keeps_raw_inner(name: &str) -> bool {
+    matches!(
+        name,
+        "text" | "beginText" | "endText" | "name" | "shortName" | "longName"
+    )
 }
 
 /// Retire le balisage d'un contenu mixte, en gardant le texte des enfants.
@@ -184,24 +199,32 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
     loop {
         match reader.read_event()? {
             Event::Start(start) => {
-                let element = element_from_start(&start)?;
+                let mut element = element_from_start(&start)?;
+                element.raw =
+                    stack.last().is_some_and(|parent| parent.raw) || keeps_raw_inner(&element.name);
                 stack.push(element);
             }
             Event::Empty(start) => {
-                let element = element_from_start(&start)?;
+                let mut element = element_from_start(&start)?;
+                element.raw =
+                    stack.last().is_some_and(|parent| parent.raw) || keeps_raw_inner(&element.name);
                 if let Some(parent) = stack.last_mut() {
-                    parent.raw_inner.push_str(&start_tag(&element, true));
+                    if parent.raw {
+                        parent.raw_inner.push_str(&start_tag(&element, true));
+                    }
                 }
                 attach(&mut stack, &mut root, element);
             }
             Event::End(_) => {
                 if let Some(element) = stack.pop() {
                     if let Some(parent) = stack.last_mut() {
-                        parent.raw_inner.push_str(&start_tag(&element, false));
-                        parent.raw_inner.push_str(&element.raw_inner);
-                        parent.raw_inner.push_str("</");
-                        parent.raw_inner.push_str(&element.name);
-                        parent.raw_inner.push('>');
+                        if parent.raw {
+                            parent.raw_inner.push_str(&start_tag(&element, false));
+                            parent.raw_inner.push_str(&element.raw_inner);
+                            parent.raw_inner.push_str("</");
+                            parent.raw_inner.push_str(&element.name);
+                            parent.raw_inner.push('>');
+                        }
                     }
                     attach(&mut stack, &mut root, element);
                 }
@@ -210,16 +233,20 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                 let raw = text.xml_content(XmlVersion::Implicit1_0);
                 if let Some(current) = stack.last_mut() {
                     current.text.push_str(&unescape(&raw));
-                    escape_into(&mut current.raw_inner, &raw);
+                    if current.raw {
+                        escape_into(&mut current.raw_inner, &raw);
+                    }
                 }
             }
             Event::GeneralRef(reference) => {
                 let entity = reference.as_ref();
                 if let Some(current) = stack.last_mut() {
                     current.text.push_str(&decode_reference(entity));
-                    current.raw_inner.push('&');
-                    current.raw_inner.push_str(entity);
-                    current.raw_inner.push(';');
+                    if current.raw {
+                        current.raw_inner.push('&');
+                        current.raw_inner.push_str(entity);
+                        current.raw_inner.push(';');
+                    }
                 }
             }
             Event::Eof => break,
@@ -243,6 +270,7 @@ fn element_from_start(start: &BytesStart<'_>) -> Result<Element> {
         text: String::new(),
         raw_inner: String::new(),
         children: Vec::new(),
+        raw: false,
     })
 }
 
@@ -352,6 +380,24 @@ mod tests {
         let part = score.child("Part").unwrap();
         assert_eq!(part.attr_i64("id"), Some(1));
         assert_eq!(part.child("trackName").unwrap().text(), "Fl&ucirc;te");
+    }
+
+    #[test]
+    fn raw_inner_only_for_markup_text() {
+        let xml = br#"<museScore version="4.60"><Score><Staff id="1"><Measure>
+            <voice><Chord><Note><pitch>60</pitch></Note></Chord></voice></Measure>
+            <name>Piano<br/>Forte</name></Staff></Score></museScore>"#;
+        let root = parse(xml).unwrap();
+        let score = root.child("Score").unwrap();
+        let staff = score.child("Staff").unwrap();
+        let measure = staff.child("Measure").unwrap();
+        let voice = measure.child("voice").unwrap();
+        let chord = voice.child("Chord").unwrap();
+        let note = chord.child("Note").unwrap();
+        assert_eq!(note.child("pitch").unwrap().text(), "60");
+        assert!(note.raw_inner.is_empty());
+        assert!(staff.raw_inner.is_empty());
+        assert_eq!(staff.child("name").unwrap().raw_inner, "Piano<br/>Forte");
     }
 
     #[test]

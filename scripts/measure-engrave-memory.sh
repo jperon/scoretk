@@ -92,7 +92,10 @@ for file in "$@"; do
   fi
   cat "$WORK/time.txt"
   # dhat prints total allocations, t-gmax peak and allocations still live.
-  grep '^dhat:' "$WORK/dhat.txt" || { echo "dhat report missing" >&2; exit 1; }
+  grep '^dhat:' "$WORK/dhat.txt" || {
+    echo "dhat report missing: rebuild with --build (feature memory-report)" >&2
+    exit 1
+  }
   if [[ -n "$OUT" ]]; then
     cp "$WORK/dhat-heap.json" "$OUT/$id.dhat-heap.json"
   fi
