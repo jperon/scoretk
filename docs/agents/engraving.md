@@ -907,14 +907,16 @@ is ready for the full `computePadding`/`Skyline` port in P4. This is the
 same decision as for the character-count estimate of §9.18, now with
 measured font advances instead of a guess.
 
-## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
+## 10. P3/P2 gate status at the end of eng3b (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,
-1 261 elements; failures and unmatched elements stay in every denominator):
+1 261 elements; failures and unmatched elements stay in every denominator),
+run `/tmp/oracle-p3b-step5j` after the reviewed beam/staff/rest/frame fixes
+and the measured-but-disabled text spacing of §9.23:
 
-| Metric | P1 baseline | After eng3 | Gate | Result |
+| Metric | P1 baseline | After eng3b | Gate | Result |
 | --- | ---: | ---: | ---: | --- |
-| Stem-length agreement | 0.0711 | **0.8000** (316/395) | ≥ 0.90 | not met |
+| Stem-length agreement | 0.0711 | **0.8076** (319/395) | ≥ 0.90 | not met |
 | Measure widths within 0.1 sp | — | **0.3594** (69/192) | ≥ 0.90 | not met |
 | Files with identical system breaks | — | **34/44** (0.773) | ≥ 0.90 | not met |
 | Within 0.1 sp, both axes | 0.0083 | 0.2895 (365/1261) | — | reported |
@@ -926,9 +928,9 @@ against 0/6 before; stem length on the 352 stems outside the three
 beam-heavy files 0.7727 at step 8 (the figure now includes the beams and
 grace stems, so it is no longer comparable).
 
-The P3 gate is **not met**: the remaining 0.20 stem-length deficit is
+The P3 gate is **not met**: the remaining 0.19 stem-length deficit is
 mostly automatically grouped beams (tuplets) and 0.25–0.5 sp shortening
-differences. The P2 gate is **not met**: 123 measure widths and 10 system
+differences (the explicit beams of `Beam-CrossM1` now all match, §9.19). The P2 gate is **not met**: 123 measure widths and 10 system
 breaks still differ, largely from text-driven segment widths (needs text
 metrics, P4), multi-voice collisions and courtesy headers. Both remain
 open work, not a redefinition of the gate.
