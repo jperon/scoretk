@@ -1200,3 +1200,87 @@ The default export has a larger, documented residual (`articulation` 166,
 `dynamic-velocity` 13, …) because it stays faithful to MuseScore 4.7.4; those
 items are likewise not hidden by changing a declaration. The wasm contract and
 the default MEI bytes are unchanged by this campaign.
+
+## 15. Are the 99.99 % free of private carriers? (branch `meiclean`, 2026-11-27)
+
+**Short answer: the figure is honest in extent but not carrier-free.** Of the
+130 `mei_full_support` round trips of §14, 81 files still contain a MuseScore
+4.7.4-private token (category **b**) and none contains a scoretk-private token
+(category **c**) after this campaign. A reader that ignores *all* private
+carriers recovers **99.99 %** (same headline as the ordinary reader), with seven
+`staff-text` facts that depend on MuseScore's own `@type="mscore-staff-text"`.
+The default export stays byte-identical to 4.7.4 (`mei_conformity` 7/7).
+
+### 15.1 Inventory of the 130 written files
+
+`crates/scoretk/tests/mei_samples.rs::mei_samples_private_carrier_inventory`
+walks every written element/attribute and prints counts by value, by file and
+by carrier class. Categories: **(a)** MEI 5.1 fact; **(b)** token written by
+MuseScore 4.7.4 itself; **(c)** scoretk-private extension.
+
+| Carrier | Before, occurrences / files | After, occurrences / files | Writer | Reader | Class |
+| --- | ---: | ---: | --- | --- | --- |
+| `@type="mscore-staff-text"` | 1 116 / 81 | 1 116 / 81 | `writer.rs:1392` | `controls.rs:648-661` (else branch, any `<dir>`) | **(b)** `meiexporter.cpp:872`, `:1701` → `Convert::dirToMEI`, `meiconverter.cpp:1216` |
+| `@type="mscore-ending-1/-2"` | 12 / 3 | 12 / 3 | `writer.rs:497` | `reader.rs:208-226` | **(b)** `meiconverter.cpp:1451`, `meiexporter.cpp:796` |
+| `@type="mscore-instrument-*"` (`<instrDef>`) | 476 / 173 value-file pairs | **0 / 0** | was `header.rs:427` | `header.rs:536-542` | **(c)** no `mscore-instrument` string in `meiexporter.cpp`/`meiconverter.*` |
+| `@type="mscore-ornament-*"` (`<ornam>`) | 328 / 36 value-file pairs (`TrillMark` 308, `InvertedMordent` 12, `Turn` 7, `Mordent` 1) | **0 / 0** | was `writer.rs:1513` | `controls.rs:882-888` | **(c)** 4.7.4 writes `<trill>`/`<mordent>`/`<turn>` instead |
+| `@type="composer"/"poet"/"title"` on `<rend>` | 390 / 130 | 390 / 130 | `header.rs:135-195` (`convert::text_to_mei`) | `header.rs:274` | **(a)** `att.typed/@type`, free `NMTOKEN` |
+| `@label="1."/"2."` on `<ending>` | 12 / 3 | 12 / 3 | `writer.rs:489` | not decoded (`@type`/`@n` anchor) | **(a)** `att.labelled/@label`, `data.string` |
+| `@n` on `<staff>`, `<layer>`, `<verse>`, `<rend>` | 116 074 in the 80 leading values / 130 files | same | `writer.rs`/`header.rs` | `reader.rs`/`header.rs` | **(a)** `att.numbered`/`att.common/@n` (no encoded payload) |
+| `xml:id` (`n9…`, `m9s9l9`, `m9s9`, `r9s9i9`, `mr9s9`, `sp9`, `s9`) | 292 855 in the 80 leading shapes / 130 files | same | `writer.rs:538`, `:563`, `:794`, `:1218`, etc. | `reader.rs:759`, `:814`, `:1189` | **(a)** opaque anchors resolved by `@startid`/`@endid`; the digits are structural indices, not a private grammar. MuseScore's own `xml:id="mscore-…"` (`meiexporter.cpp:148`, `:2694`) does not occur here. |
+| `<annot>`, `<extMeta>`, `@class`, encoded `<f>` strings, private `@label` (`mscore-frame:`, `mscore-tbox:`, `mscore-instrument-change:`, `layout:`) | 0 / 0 | 0 / 0 | — | — | n/a on these 130 CMN encodings |
+
+The worst-file examples (scoretk-private occurrences before removal) were
+`Hummel_Concerto_for_trumpet_E-major.mei` 66,
+`Bach-JS_BrandenburgConcert_No4_II_BWV1049.mei` 46 and `Handel_Messias.mei` 46;
+after removal the only remaining tokens in those files are category (b)
+(255, 105 and 79 occurrences respectively).
+
+Other scoretk-private carriers documented in §12 (`mscore-grace-*`,
+`mscore-tbox-*`, `mscore-frame-*`, `mscore-figured-bass`, …) are only written
+for MuseScore-specific model facts; **none occurs in the 130 official
+encodings**, so none takes part in the 99.99 % measurement. They remain behind
+`MeiOptions::full_support` for those other scenarios.
+
+### 15.2 Re-measurement with a private-carrier-blind reader
+
+`without_private_carriers` in `mei_samples.rs` parses the written document,
+removes every attribute value carrying a `mscore-`/`gabc`/`scoretk`/`layout:`
+token and every `<annot>`/`<extMeta>`, and feeds the sanitized document back to
+the *unmodified* reader. No writer option, declaration or denominator changes.
+
+| Measurement (130 files, 0 skipped) | Before removal of (c) | After removal of (c) |
+| --- | ---: | ---: |
+| `mei_samples_full_support_residual` (ordinary reader) | 99.99 % | **99.99 %** |
+| `mei_samples_full_support_without_private_carriers` (blind reader) | 99.98 % | **99.99 %** |
+| Newly missing kinds in the blind row | `ornament` 37, `staff-text` 7 | `staff-text` 7 only |
+
+The 37 `ornament` facts were carried only by `@type="mscore-ornament-*"`;
+the seven `staff-text` facts still depend on category (b). Instrument identity
+lost no fact: `<label>`/`<labelAbbr>` and `@midi.instrnum` let
+`recognize_musicxml_id` rebuild it, as verified by the instrument unit test.
+
+### 15.3 Native replacements and the guard test
+
+- Instrument id: `instr_def_attributes` no longer writes `@type`; the native
+  carriers are `<label>`/`<labelAbbr>` (`mei_staffGrp`) plus
+  `@midi.instrnum`/`@midi.channel`/`@midi.volume`/`@midi.pan`. The exact pivot
+  id string is no longer reconstructed when only a MIDI program is available
+  (`voice.vocals` → `voice`), an honest loss rather than a smuggled id.
+- Ornaments: `native_ornament` writes `<trill>`, `<turn form="upper|lower">`
+  or `<mordent form="upper|lower">` (`meiconverter.cpp:2389-2424`,
+  `:3705-3728`, `:3545-3594`); the barred turn uses `@glyph.auth="smufl"`
+  `@glyph.name="ornamentTurnSlash"` (`meiconverter.cpp:3722-3725`), read by
+  `controls.rs:875-884`. Variants without a native term are now an honest
+  loss, not a `@type` token.
+- `mei_samples_full_support_has_no_scoretk_private_token` fails on any
+  scoretk-private token, `<annot>`, `<extMeta>` or encoded string in any of
+  the 130 full-support outputs. It deliberately does **not** flag the
+  category-(b) values that MuseScore 4.7.4 writes in its own default export;
+  those are measured by the blind-reader row above instead.
+
+**Honest headline: 99.99 % full support survives a reader that ignores every
+private carrier, but the output is not free of private extensions: 81 files
+still rely on MuseScore 4.7.4's own `mscore-*` vocabulary (7 carried
+`staff-text` facts). No scoretk-private extension is needed to reach the
+figure.**
