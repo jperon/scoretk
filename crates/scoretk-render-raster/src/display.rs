@@ -100,12 +100,7 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
 }
 
 /// Draws a full page into `buf` (255 = white background, 0 = black ink).
-pub fn draw_display_list(
-    list: &DisplayList,
-    buf: &mut Gray8<'_>,
-    origin: Point,
-    staff_px: i32,
-) {
+pub fn draw_display_list(list: &DisplayList, buf: &mut Gray8<'_>, origin: Point, staff_px: i32) {
     buf.clear(255);
     for item in &list.items {
         draw_item(buf, item, origin, staff_px, 0);
@@ -120,8 +115,14 @@ mod tests {
     #[test]
     fn draws_rectangles_and_glyphs() {
         let mut list = DisplayList::new(0);
-        list.push(DisplayItem::rect(ItemKind::StaffLine, 0, 0, 100 * 1024, 113));
-        list.path(ItemKind::Notehead, "noteheadBlack", 8 * 1024, 1 * 1024);
+        list.push(DisplayItem::rect(
+            ItemKind::StaffLine,
+            0,
+            0,
+            100 * 1024,
+            113,
+        ));
+        list.path(ItemKind::Notehead, "noteheadBlack", 8 * 1024, 1024);
         let mut pixels = [255u8; 64 * 32];
         let mut buf = Gray8::new(&mut pixels, 64, 32).unwrap();
         draw_display_list(&list, &mut buf, Point::new(0, 0), 14);

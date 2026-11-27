@@ -130,8 +130,8 @@ impl Engraver {
 mod tests {
     use super::*;
     use scoretk_core::model::{
-        Chord, ChordRest, Clef, ClefType, Duration, Fraction, KeySig, Measure, Note, Part,
-        Segment, SegmentItem, SegmentType, Staff, TimeSig, Track,
+        Chord, ChordRest, Clef, ClefType, Duration, Fraction, KeySig, Measure, Note, Part, Segment,
+        SegmentItem, SegmentType, Staff, TimeSig, Track,
     };
 
     fn one_staff_score() -> Score {
@@ -140,7 +140,10 @@ mod tests {
         score.add_staff_with(part, Staff::new(part));
         let mut measure = Measure::new(0, Fraction::ZERO, Fraction::new(1, 1));
         let mut seg = Segment::new(SegmentType::HeaderClef, Fraction::ZERO, 1);
-        seg.set_element(Track::from_raw(0), SegmentItem::Clef(Clef::new(ClefType::G)));
+        seg.set_element(
+            Track::from_raw(0),
+            SegmentItem::Clef(Clef::new(ClefType::G)),
+        );
         measure.add_segment(seg);
         let mut seg = Segment::new(SegmentType::KeySig, Fraction::ZERO, 1);
         seg.set_element(
@@ -149,10 +152,7 @@ mod tests {
         );
         measure.add_segment(seg);
         let mut seg = Segment::new(SegmentType::TimeSig, Fraction::ZERO, 1);
-        seg.set_element(
-            Track::from_raw(0),
-            SegmentItem::TimeSig(TimeSig::new(4, 4)),
-        );
+        seg.set_element(Track::from_raw(0), SegmentItem::TimeSig(TimeSig::new(4, 4)));
         measure.add_segment(seg);
         for (tick, pitch, duration) in [
             (Fraction::ZERO, 67, Duration::quarter()),

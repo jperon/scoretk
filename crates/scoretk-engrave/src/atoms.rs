@@ -31,8 +31,8 @@
 use alloc::vec::Vec;
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, ChordRestKind, ClefType, DurationType, NoteHeadType,
-    Score, SegmentItem, SegmentType, StemDirection, Transpose,
+    AccidentalType, BarLineType, ChordRestKind, ClefType, DurationType, NoteHeadType, Score,
+    SegmentItem, SegmentType, StemDirection, Transpose,
 };
 
 use crate::style::{FIRST_MEASURE_EXTRA, MEASURE_GAP, SEGMENT_WIDTH};
@@ -119,12 +119,19 @@ fn diatonic(tpc_value: i8, pitch: u8) -> i32 {
 /// steps lower for each staff line below it.
 fn bottom_line_note(clef: ClefType) -> i32 {
     let (reference, line) = match clef {
-        ClefType::G | ClefType::G8Vb | ClefType::G8Va | ClefType::G15Mb
-        | ClefType::G15Ma | ClefType::G1 => (4 * 7 + 4, 2), // G4 on line 2
-        ClefType::F | ClefType::F8Vb | ClefType::F8Va | ClefType::F15Mb
-        | ClefType::F15Ma | ClefType::FBaritone | ClefType::FSubbass => {
-            (3 * 7 + 3, 4)
-        } // F3 on line 4
+        ClefType::G
+        | ClefType::G8Vb
+        | ClefType::G8Va
+        | ClefType::G15Mb
+        | ClefType::G15Ma
+        | ClefType::G1 => (4 * 7 + 4, 2), // G4 on line 2
+        ClefType::F
+        | ClefType::F8Vb
+        | ClefType::F8Va
+        | ClefType::F15Mb
+        | ClefType::F15Ma
+        | ClefType::FBaritone
+        | ClefType::FSubbass => (3 * 7 + 3, 4), // F3 on line 4
         ClefType::C1 => (4 * 7, 1),
         ClefType::C2 => (4 * 7, 2),
         ClefType::C3 => (4 * 7, 3),
@@ -300,7 +307,7 @@ fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
     // a stem ending outside the staff is shortened by up to one staff space
     // according to the [extension][beamCount] table; traditional hooks cap
     // the reduction at one quarter space.
-    let short_start = 1 * 2 + 1; // 3 quarter spaces
+    let short_start = 3; // shortStemStartLocation 1 * quarterSpacesPerLine 2 + 1
     let down_short_start = (5 - 1) * (2 * 2) + short_start; // 19
     let end = if up {
         top * 2 - default_qs
@@ -334,9 +341,15 @@ fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
 fn bar_code(kind: BarLineType) -> BarCode {
     match kind {
         BarLineType::Normal | BarLineType::Tick | BarLineType::Short => BarCode(1),
-        BarLineType::Double | BarLineType::StartRepeat | BarLineType::EndRepeat
-        | BarLineType::EndStartRepeat | BarLineType::DoubleShort | BarLineType::Dotted
-        | BarLineType::DoubleDotted | BarLineType::Broken | BarLineType::Dashed => BarCode(2),
+        BarLineType::Double
+        | BarLineType::StartRepeat
+        | BarLineType::EndRepeat
+        | BarLineType::EndStartRepeat
+        | BarLineType::DoubleShort
+        | BarLineType::Dotted
+        | BarLineType::DoubleDotted
+        | BarLineType::Broken
+        | BarLineType::Dashed => BarCode(2),
         BarLineType::End => BarCode(3),
     }
 }
@@ -361,7 +374,11 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
 
     for measure in &score.measures {
         let first = atoms.is_empty();
-        let mut x = if first { FIRST_MEASURE_EXTRA } else { MEASURE_GAP };
+        let mut x = if first {
+            FIRST_MEASURE_EXTRA
+        } else {
+            MEASURE_GAP
+        };
         let mut events = Vec::new();
         let mut has_clef = false;
         let mut has_key = false;
@@ -371,10 +388,14 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             if segment.kind == SegmentType::ChordRest {
                 // P1: fixed proportional spacing, one x per chord/rest segment
                 // (plan §4, stage 1; P2 replaces this with real springs).
-                let item = segment.elements().iter().flatten().find_map(|item| match item {
-                    SegmentItem::ChordRest(cr) => Some(cr),
-                    _ => None,
-                });
+                let item = segment
+                    .elements()
+                    .iter()
+                    .flatten()
+                    .find_map(|item| match item {
+                        SegmentItem::ChordRest(cr) => Some(cr),
+                        _ => None,
+                    });
                 let Some(cr) = item else {
                     x += SEGMENT_WIDTH;
                     continue;
@@ -399,8 +420,12 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                         // The pitch class keeps its spelling for
                                         // octave transpositions; other intervals
                                         // are P3 (accidental/stack work).
-                                        (note.tpc,
-                                         (i32::from(note.pitch) + interval.chromatic).clamp(0, 127) as u8)
+                                        (
+                                            note.tpc,
+                                            (i32::from(note.pitch) + interval.chromatic)
+                                                .clamp(0, 127)
+                                                as u8,
+                                        )
                                     }
                                     None => (note.tpc, note.pitch),
                                 };
@@ -446,9 +471,12 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     SegmentItem::Clef(new_clef) if segment.kind.is_clef_type() && !has_clef => {
                         clef = new_clef.concert;
                         bottom = bottom_line_note(clef);
-                        events.push(Atom::simple(x, AtomKind::Clef {
-                            name: clef_name(clef),
-                        }));
+                        events.push(Atom::simple(
+                            x,
+                            AtomKind::Clef {
+                                name: clef_name(clef),
+                            },
+                        ));
                         x += SEGMENT_WIDTH;
                         has_clef = true;
                     }
@@ -462,7 +490,9 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                         x += SEGMENT_WIDTH;
                         has_key = true;
                     }
-                    SegmentItem::TimeSig(time) if segment.kind == SegmentType::TimeSig && !has_time => {
+                    SegmentItem::TimeSig(time)
+                        if segment.kind == SegmentType::TimeSig && !has_time =>
+                    {
                         events.push(Atom::simple(
                             x,
                             AtomKind::TimeSig {
@@ -483,7 +513,12 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             // no explicit clef segment (`staff.defaultClefType()`).
             events.insert(
                 0,
-                Atom::simple(0, AtomKind::Clef { name: clef_name(clef) }),
+                Atom::simple(
+                    0,
+                    AtomKind::Clef {
+                        name: clef_name(clef),
+                    },
+                ),
             );
         }
         atoms.push(MeasureAtom {

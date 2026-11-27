@@ -144,7 +144,11 @@ mod tests {
                     }
                 }
             }
-            assert!(x.abs() < 1 << 16 && y.abs() < 1 << 16, "{} : point final déborde", g.name);
+            assert!(
+                x.abs() < 1 << 16 && y.abs() < 1 << 16,
+                "{} : point final déborde",
+                g.name
+            );
         }
     }
 

@@ -97,16 +97,16 @@ fn write_item(out: &mut String, item: &DisplayItem) {
 /// geometric oracle can extract noteheads, stems and bar lines.
 pub fn render_page(list: &DisplayList, spec: &PageSpec) -> String {
     let width = spec.printable_width + 2 * spec.margin_left;
-    let height =
-        2 * spec.margin_top + i32::from(spec.systems_per_page as i32) * 12 * 1024;
+    let height = 2 * spec.margin_top + spec.systems_per_page as i32 * 12 * 1024;
     let width_mm = PageSpec::fixed_to_mm(width);
     let height_mm = PageSpec::fixed_to_mm(height);
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = write!(
         out,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width_mm:.3}mm\" \
-         height=\"{height_mm:.3}mm\" viewBox=\"0 0 {width} {height}\">\n"
+         height=\"{height_mm:.3}mm\" viewBox=\"0 0 {width} {height}\">"
     );
+    out.push('\n');
     let _ = write!(
         out,
         "<rect class=\"Page\" x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"#fff\"/>"
@@ -159,7 +159,10 @@ mod tests {
     fn notehead_uses_quadratic_commands() {
         let svg = render_page(&sample_list(), &PageSpec::default());
         let note = svg.split("class=\"Note\"").nth(1).unwrap();
-        assert!(note.contains('Q'), "notehead should have quadratic segments");
+        assert!(
+            note.contains('Q'),
+            "notehead should have quadratic segments"
+        );
     }
 
     #[test]

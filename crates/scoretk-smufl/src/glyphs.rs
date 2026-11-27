@@ -64,6 +64,7 @@ pub struct Default {
 
 pub const UPEM: i16 = 1000;
 pub const SPATIUM_UNITS: i16 = 250;
+#[rustfmt::skip]
 pub const GLYPHS: [Glyph; 308] = [
     Glyph { name: "4stringTabClef", codepoint: 0xE06E, advance: 294, bbox: [0, -497, 294, 500], edges: (0, 45), anchors: (0, 0) },
     Glyph { name: "6stringTabClef", codepoint: 0xE06D, advance: 439, bbox: [0, -743, 439, 746], edges: (45, 42), anchors: (0, 0) },
@@ -376,6 +377,7 @@ pub const GLYPHS: [Glyph; 308] = [
 ];
 
 #[allow(clippy::large_const_arrays)]
+#[rustfmt::skip]
 pub const EDGES: [Edge; 14386] = [
     Edge::Move(186, -37),
     Edge::Line(-79, 0),
@@ -14765,6 +14767,7 @@ pub const EDGES: [Edge; 14386] = [
     Edge::Line(0, 669),
 ];
 
+#[rustfmt::skip]
 pub const ANCHORS: [Anchor; 339] = [
     Anchor { name: 0, x: 145, y: -30 },
     Anchor { name: 1, x: 50, y: -30 },
@@ -15107,6 +15110,7 @@ pub const ANCHORS: [Anchor; 339] = [
     Anchor { name: 9, x: 172, y: 0 },
 ];
 
+#[rustfmt::skip]
 pub const ANCHOR_NAMES: [&str; 10] = [
     "cutOutSE",
     "cutOutSW",
@@ -15120,6 +15124,7 @@ pub const ANCHOR_NAMES: [&str; 10] = [
     "repeatOffset",
 ];
 
+#[rustfmt::skip]
 pub const DEFAULTS: [Default; 29] = [
     Default { name: "arrowShaftThickness", value: 102 },
     Default { name: "barlineSeparation", value: 379 },

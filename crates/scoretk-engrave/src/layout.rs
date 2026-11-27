@@ -80,12 +80,7 @@ impl PageSpec {
 }
 
 /// Place one measure's events at `x0` on the system at `system_y`.
-fn place_measure(
-    out: &mut DisplayList,
-    atom: &MeasureAtom,
-    x0: i32,
-    system_y: i32,
-) {
+fn place_measure(out: &mut DisplayList, atom: &MeasureAtom, x0: i32, system_y: i32) {
     for event in &atom.events {
         place_event(out, event, x0 + event.x, system_y);
     }
@@ -223,12 +218,7 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     for note in &chord.notes {
         let ny = y + note.line * HALF_SP;
         if let Some(name) = note.accidental {
-            out.glyph(
-                ItemKind::Accidental,
-                name,
-                x - 7 * HALF_SP,
-                ny,
-            );
+            out.glyph(ItemKind::Accidental, name, x - 7 * HALF_SP, ny);
         }
         let head = glyph(note.head).unwrap();
         let head_w = units_to_fixed(head.bbox[2]);
@@ -250,8 +240,7 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
                 0
             };
             for index in 0..usize::from(chord.dots) {
-                let dx = x + head_w + DOT_NOTE_DISTANCE
-                    + index as i32 * DOT_DOT_DISTANCE;
+                let dx = x + head_w + DOT_NOTE_DISTANCE + index as i32 * DOT_DOT_DISTANCE;
                 let dy = y + (note.line + dot_offset) * HALF_SP;
                 out.glyph(ItemKind::Dot, "augmentationDot", dx, dy);
             }
@@ -326,11 +315,7 @@ fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32) {
 }
 
 /// Builds the display list of one page from the atoms prepared in `new()`.
-pub fn build_page(
-    atoms: &[MeasureAtom],
-    spec: &PageSpec,
-    page: usize,
-) -> DisplayList {
+pub fn build_page(atoms: &[MeasureAtom], spec: &PageSpec, page: usize) -> DisplayList {
     let mut out = DisplayList::new(page);
     let per_system = spec.measures_per_system.max(1);
     if atoms.is_empty() {
@@ -342,8 +327,7 @@ pub fn build_page(
         if first >= atoms.len() {
             break;
         }
-        let sy = spec.margin_top
-            + local_system as i32 * (STAFF_HEIGHT + 8 * SP);
+        let sy = spec.margin_top + local_system as i32 * (STAFF_HEIGHT + 8 * SP);
         // // Port of `tdraw.cpp`'s staff-line drawing: five pixel-snapped
         // rectangles, thickness `staffLineWidth`.
         for line in 0..5 {

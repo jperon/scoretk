@@ -29,10 +29,9 @@ fn svg_output_is_a_page_display_list() {
     );
     let bytes = std::fs::read(path).expect("corpus .mscx");
     let score = read(&bytes, Format::Mscx).expect("lecture MuseScore");
-    let svg = String::from_utf8(
-        write(&score, Format::Svg, &Options::default()).expect("écriture SVG"),
-    )
-    .expect("UTF-8");
+    let svg =
+        String::from_utf8(write(&score, Format::Svg, &Options::default()).expect("écriture SVG"))
+            .expect("UTF-8");
     assert!(svg.contains("class=\"StaffLines\""));
     assert!(svg.contains("class=\"Note\""));
     assert!(svg.contains("class=\"Stem\""));
