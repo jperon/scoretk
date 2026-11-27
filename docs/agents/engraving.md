@@ -485,3 +485,23 @@ the remaining deficits are special noteheads (`testNoteheads2`: 9/26),
 beams/tuplets (`testTuplets8`: 9/21, `Beam-CrossM1`: 3/9) and multi-voice
 overlaps (`voiceswitching`: 24/62), all belonging to P3's beam/voice work.
 `worst.py /tmp/oracle-engrave 20 Stem` lists the worst cases.
+
+### 9.8 Header segment (step 1, 2026-11-27)
+
+The first measure's x positions are now derived from SMuFL outline widths and
+the 4.7.4 style defaults (`horizontalspacing.cpp:1183-1214`,
+`styledef.cpp:174-190`, `:220`, `:241`): clef at `clefLeftMargin` 0.75 sp,
+width + `clefKeyRightMargin` 0.8 sp before the key, one accidental width +
+`keysigAccidentalDistance` 0.3 sp between key accidentals,
+`keyTimesigDistance` 1.0 sp before the time signature, and
+`barNoteDistance` 1.25 sp before the first chord. `DisplayItem::bbox` gives
+each emitted item's box and a unit test asserts that clef, key, time and
+notehead boxes do not intersect.
+
+| Metric | After step 0 | After step 1 |
+| --- | ---: | ---: |
+| Within 0.1 sp, both axes | 0.0083 | **0.0174** (23/1319) |
+| Within 0.1 sp, x only | 0.0159 | **0.0273** |
+| Within 0.1 sp, y only | 0.5246 | 0.5269 |
+| Vertical pitch / ledger agreement | 0.9652 | 0.9652 |
+| Stem-length agreement | 0.6967 | 0.6967 |

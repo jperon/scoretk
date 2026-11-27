@@ -144,14 +144,20 @@ const FLAT_LINES: [i32; 7] = [4, 1, 5, 2, 6, 3, 0];
 
 fn place_key_sig(out: &mut DisplayList, fifths: i8, x: i32, y: i32) {
     let count = fifths.unsigned_abs().min(7) as usize;
+    let mut gx = x;
     for index in 0..count {
         let (line, name) = if fifths > 0 {
             (SHARP_LINES[index], "accidentalSharp")
         } else {
             (FLAT_LINES[index], "accidentalFlat")
         };
-        let gx = x + index as i32 * 614;
         out.glyph(ItemKind::Accidental, name, gx, y + line * HALF_SP);
+        // // Port of `styledef.cpp:241` (`keysigAccidentalDistance` 0.3 sp):
+        // one SMuFL glyph width plus a fixed gap between accidentals.
+        let width = glyph(name)
+            .map(|g| units_to_fixed(g.bbox[2] - g.bbox[0]))
+            .unwrap_or(SP);
+        gx += width + KEYSIG_ACCIDENTAL_DISTANCE;
     }
 }
 
@@ -442,6 +448,78 @@ mod tests {
         let many: Vec<_> = (0..33).map(|i| atom(i % 8)).collect();
         assert_eq!(page_count(&many, &spec), 2);
         assert!(build_page(&atoms, &spec, 1).items.is_empty());
+    }
+
+    #[test]
+    fn header_segments_and_first_note_do_not_overlap() {
+        // Same spacing as the atoms stage; the test catches a regression of
+        // the clef/key/time widths against the 4.7.4 style defaults.
+        let width = |name: &str| {
+            let g = scoretk_smufl::glyph(name).unwrap();
+            units_to_fixed(g.bbox[2] - g.bbox[0])
+        };
+        let clef_x = CLEF_LEFT_MARGIN;
+        let key_x = clef_x + width("gClef") + CLEF_KEY_RIGHT_MARGIN;
+        let time_x = key_x + 4 * (width("accidentalSharp") + KEYSIG_ACCIDENTAL_DISTANCE)
+            + KEY_TIME_DISTANCE;
+        let note_x = time_x + width("timeSig4") + BAR_NOTE_DISTANCE;
+        let atom = MeasureAtom {
+            number: 0,
+            width: note_x + SEGMENT_WIDTH,
+            events: vec![
+                Atom::simple(clef_x, AtomKind::Clef { name: "gClef" }),
+                Atom::simple(key_x, AtomKind::KeySig { fifths: 4 }),
+                Atom::simple(
+                    time_x,
+                    AtomKind::TimeSig {
+                        numerator: 4,
+                        denominator: 4,
+                    },
+                ),
+                Atom {
+                    x: note_x,
+                    kind: AtomKind::Chord,
+                    chord: Some(ChordAtom {
+                        duration: 4,
+                        dots: 0,
+                        stem_up: true,
+                        stem_len: 3072,
+                        notes: vec![NoteAtom {
+                            line: 4,
+                            head: "noteheadBlack",
+                            accidental: None,
+                        }],
+                    }),
+                },
+            ],
+            start_bar: crate::atoms::BarCode(1),
+            end_bar: crate::atoms::BarCode(1),
+        };
+        let list = build_page(&[atom], &PageSpec::default(), 0);
+        let header: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    ItemKind::Clef | ItemKind::Accidental | ItemKind::TimeSig | ItemKind::Notehead
+                )
+            })
+            .collect();
+        for (index, left) in header.iter().enumerate() {
+            for right in header.iter().skip(index + 1) {
+                let (ax0, ay0, ax1, ay1) = left.bbox(&list).unwrap();
+                let (bx0, by0, bx1, by1) = right.bbox(&list).unwrap();
+                let overlap_x = ax0.min(bx1) - bx0.max(ax0);
+                let overlap_y = ay0.min(by1) - by0.max(ay0);
+                assert!(
+                    overlap_x <= 0 || overlap_y <= 0,
+                    "{:?} and {:?} overlap by {overlap_x},{overlap_y}",
+                    left.kind,
+                    right.kind
+                );
+            }
+        }
     }
 
     #[test]

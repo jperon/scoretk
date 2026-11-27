@@ -25,7 +25,7 @@
 
 use alloc::vec::Vec;
 
-use scoretk_smufl::GLYPHS;
+use scoretk_smufl::{units_to_fixed, GLYPHS};
 
 /// The role of an item, used by the SVG backend's class attribute and by the
 /// geometric oracle to identify noteheads, stems and bar lines.
@@ -109,6 +109,27 @@ impl DisplayItem {
         match self.geometry {
             Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => (x, y),
             Geometry::Rect { x, y, .. } => (x, y),
+        }
+    }
+
+    /// Axis-aligned bounding box in fixed-point staff spaces.
+    ///
+    /// SMuFL bounding boxes use up-positive y; the display list uses
+    /// down-positive y (`tdraw.cpp:2602-2614`), so the glyph's top edge is
+    /// `y - bbox[3]`.
+    pub fn bbox(&self, list: &DisplayList) -> Option<(i32, i32, i32, i32)> {
+        match self.geometry {
+            Geometry::Rect { x, y, w, h } => Some((x, y, x + w, y + h)),
+            Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => {
+                let g = list.glyph_name(self).and_then(scoretk_smufl::glyph)?;
+                let b = g.bbox;
+                Some((
+                    x + units_to_fixed(b[0]),
+                    y - units_to_fixed(b[3]),
+                    x + units_to_fixed(b[2]),
+                    y - units_to_fixed(b[1]),
+                ))
+            }
         }
     }
 }

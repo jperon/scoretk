@@ -53,6 +53,14 @@ pub const DOT_DOT_DISTANCE: i32 = 665; // styledef.cpp:266  (0.65 sp)
 pub const CLEF_LEFT_MARGIN: i32 = 768; // styledef.cpp:174  (0.75 sp)
 pub const CLEF_KEY_DISTANCE: i32 = 768; // styledef.cpp:181  (0.75 sp)
 pub const KEY_TIME_DISTANCE: i32 = 1024; // styledef.cpp:182 (1.0 sp)
+/// // Port of `styledef.cpp:174-190`: header margins and distances.
+pub const KEYSIG_LEFT_MARGIN: i32 = 512; // 0.5 sp
+pub const TIMESIG_LEFT_MARGIN: i32 = 645; // 0.63 sp
+pub const CLEF_KEY_RIGHT_MARGIN: i32 = 819; // 0.8 sp
+pub const KEYSIG_ACCIDENTAL_DISTANCE: i32 = 307; // 0.3 sp (styledef.cpp:241)
+pub const BAR_NOTE_DISTANCE: i32 = 1280; // 1.25 sp (styledef.cpp:220)
+pub const TIMESIG_BARLINE_DISTANCE: i32 = 512; // 0.5 sp (styledef.cpp:191)
+pub const SYSTEM_HEADER_MIN_START: i32 = 1280; // 1.25 sp
 pub const THIN_BARLINE_WIDTH: i32 = 184; // SMuFL thinBarlineThickness 0.18 sp
 pub const THICK_BARLINE_WIDTH: i32 = 563; // SMuFL thickBarlineThickness 0.55 sp
 pub const BARLINE_SEPARATION: i32 = 379; // SMuFL barlineSeparation 0.37 sp

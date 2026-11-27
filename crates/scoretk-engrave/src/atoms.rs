@@ -35,7 +35,19 @@ use scoretk_core::model::{
     SegmentItem, SegmentType, StemDirection, Transpose,
 };
 
-use crate::style::{FIRST_MEASURE_EXTRA, MEASURE_GAP, SEGMENT_WIDTH};
+use scoretk_smufl::{glyph, units_to_fixed};
+
+use crate::style::{
+    BAR_NOTE_DISTANCE, CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEY_TIME_DISTANCE,
+    KEYSIG_ACCIDENTAL_DISTANCE, SEGMENT_WIDTH, SYSTEM_HEADER_MIN_START,
+};
+
+/// Width of a SMuFL outline in fixed staff spaces (em = 4 sp).
+fn glyph_width(name: &str) -> i32 {
+    glyph(name)
+        .map(|g| units_to_fixed(g.bbox[2] - g.bbox[0]))
+        .unwrap_or(1024)
+}
 
 /// A note inside a chord atom: position in half-spaces (top line = 0) and
 /// the SMuFL head name.
@@ -76,7 +88,7 @@ pub struct Atom {
 }
 
 impl Atom {
-    fn simple(x: i32, kind: AtomKind) -> Self {
+    pub(crate) fn simple(x: i32, kind: AtomKind) -> Self {
         Self {
             x,
             kind,
@@ -398,15 +410,22 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
 
     for measure in &score.measures {
         let first = atoms.is_empty();
-        let mut x = if first {
-            FIRST_MEASURE_EXTRA
-        } else {
-            MEASURE_GAP
-        };
+        let mut x = BAR_NOTE_DISTANCE.max(SYSTEM_HEADER_MIN_START);
         let mut events = Vec::new();
         let mut has_clef = false;
         let mut has_key = false;
         let mut has_time = false;
+        if first {
+            // // Port of `horizontalspacing.cpp:1199-1207`
+            // (`getFirstSegmentXPos`): the header clef starts at
+            // `clefLeftMargin`; its width and `clefKeyRightMargin` determine
+            // where the key signature segment can start.
+            let name = clef_name(clef);
+            let clef_x = CLEF_LEFT_MARGIN;
+            events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
+            x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN;
+            has_clef = true;
+        }
         // // Port of `chordlayout.cpp:1584` (`measure()->hasVoices`): once a
         // measure contains two voices, the stems of every voice in it are
         // forced by track parity, not only the chords sharing a segment.
@@ -508,36 +527,41 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     SegmentItem::Clef(new_clef) if segment.kind.is_clef_type() && !has_clef => {
                         clef = new_clef.concert;
                         bottom = bottom_line_note(clef);
-                        events.push(Atom::simple(
-                            x,
-                            AtomKind::Clef {
-                                name: clef_name(clef),
-                            },
-                        ));
-                        x += SEGMENT_WIDTH;
+                        let name = clef_name(clef);
+                        let clef_x = x + CLEF_LEFT_MARGIN;
+                        events.push(Atom::simple(clef_x, AtomKind::Clef { name }));
+                        x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN;
                         has_clef = true;
                     }
                     SegmentItem::KeySig(key) if segment.kind == SegmentType::KeySig && !has_key => {
-                        events.push(Atom::simple(
-                            x,
-                            AtomKind::KeySig {
-                                fifths: key.concert_key.fifths(),
-                            },
-                        ));
-                        x += SEGMENT_WIDTH;
+                        let fifths = key.concert_key.fifths();
+                        events.push(Atom::simple(x, AtomKind::KeySig { fifths }));
+                        // // Port of `styledef.cpp:241` (`keysigAccidentalDistance`):
+                        // consecutive accidentals are one glyph width plus
+                        // 0.3 sp apart; `keyTimesigDistance` follows them.
+                        let accidental = if fifths > 0 {
+                            "accidentalSharp"
+                        } else {
+                            "accidentalFlat"
+                        };
+                        let count = fifths.unsigned_abs().min(7) as i32;
+                        x += count * (glyph_width(accidental) + KEYSIG_ACCIDENTAL_DISTANCE)
+                            + KEY_TIME_DISTANCE;
                         has_key = true;
                     }
                     SegmentItem::TimeSig(time)
                         if segment.kind == SegmentType::TimeSig && !has_time =>
                     {
+                        let numerator = u8::try_from(time.numerator).unwrap_or(4);
+                        let denominator = u8::try_from(time.denominator).unwrap_or(4);
                         events.push(Atom::simple(
                             x,
                             AtomKind::TimeSig {
-                                numerator: u8::try_from(time.numerator).unwrap_or(4),
-                                denominator: u8::try_from(time.denominator).unwrap_or(4),
+                                numerator,
+                                denominator,
                             },
                         ));
-                        x += SEGMENT_WIDTH;
+                        x += glyph_width("timeSig4") + BAR_NOTE_DISTANCE;
                         has_time = true;
                     }
                     _ => {}
@@ -545,19 +569,6 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             }
         }
 
-        if first && !has_clef {
-            // The clef at the start of a staff is generated when the file has
-            // no explicit clef segment (`staff.defaultClefType()`).
-            events.insert(
-                0,
-                Atom::simple(
-                    0,
-                    AtomKind::Clef {
-                        name: clef_name(clef),
-                    },
-                ),
-            );
-        }
         atoms.push(MeasureAtom {
             number: measure.number,
             width: x + SEGMENT_WIDTH,
