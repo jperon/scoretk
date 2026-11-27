@@ -2206,6 +2206,31 @@ Two unit tests pin the budget/grid identity and the lyric offset.
 `engrave-img/eng9/step11-p2.png` (whole page inspected) has no stroke outside
 the last measure of a system, and `step11-p1.png` keeps page 1 correct.
 
+## 27. Review of the private page 2: multi-voice rests (2026-11-27)
+
+The organ's two-voice measures (m.27–28) drew rests on the same line as the
+other voice's noteheads. `RestLayout::computeVoiceOffset`
+(`restlayout.cpp:694-765`) offsets a rest only when the measure actually has
+overlapping voices, and moves voices 0/2 one line **up** (`upSign = -1`) and
+voices 1/3 one line down. The engraver left voice 0 on its natural line and
+pushed voice 1 down onto the first voice's notes.
+
+`place_event` now receives the staff's `multi_voice` flag from
+`build_page_with_skylines`: a monophonic measure keeps every rest at its
+natural line, a polyphonic one moves voice 0/2 up by one sp and voice 1/3 down
+by one sp. The voice-2 rests in the organ treble of m.27–28 are now a full line
+apart from the voice-1 notes; a unit test pins both directions and the
+monophonic case. Rests are not extracted by the geometric oracle, so its 56
+files report identical figures before and after (`oracle-eng9-p2-step14`).
+
+Still visible on the inspected page, and out of scope of this fix: the "Ah"
+extender of m.31 stays open at the system edge (as in the 4.7.4 page), the
+accidental stacks of the organ chord at m.27 remain tighter than the
+reference, and the private score's measures 20–31 fall on page 2 while 4.7.4
+starts that page at measure 13 — a pre-existing pagination difference. The
+final full-page renders are `engrave-img/eng9/final-p2.png` and
+`final-p1.png`.
+
 | Metric (`oracle-eng9-review-step3` → `oracle-eng9-p2-step6b`) | Before | After |
 | --- | ---: | ---: |
 | Failures / elements | 0 / 2 209 | 0 / 2 209 |

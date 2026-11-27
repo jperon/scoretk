@@ -962,6 +962,7 @@ fn place_measure(
     lyrics_em: i32,
     spec: &PageSpec,
     grid: &SharedMeasure,
+    multi_voice: bool,
 ) -> i32 {
     for (index, event) in atom.events.iter().enumerate() {
         let absolute_x = events
@@ -985,6 +986,7 @@ fn place_measure(
             plan.stems.get(event_offset + index).copied().flatten(),
             lyrics_em,
             spec,
+            multi_voice,
         );
     }
     // // Port of `tdraw.cpp` bar-line drawing: thin lines use the style width,
@@ -1778,6 +1780,7 @@ fn place_event(
     beam: Option<(bool, i32)>,
     _lyrics_em: i32,
     _spec: &PageSpec,
+    multi_voice: bool,
 ) {
     match event.kind {
         AtomKind::Clef { name } => {
@@ -1804,10 +1807,20 @@ fn place_event(
             measure,
         } => {
             // // Port of `RestLayout::computeVoiceOffset`
-            // (`restlayout.cpp:694-765`): in a multi-voice measure the rests
-            // of voices 2 and 4 move one line space down, those of voices 1
-            // and 3 one up, so they do not collide with the other voice.
-            let voice_offset = if event.voice.is_multiple_of(2) { 0 } else { SP };
+            // (`restlayout.cpp:694-765`): only a measure whose voices overlap
+            // offsets rests, and the *first* voice moves one line **up**
+            // (`up = voice 0 or 2`, `upSign = -1`), the second one down. The
+            // former code left voice 0 on the middle line and pushed voice 1
+            // onto it, which superposed rests and notes in the organ part.
+            let voice_offset = if multi_voice {
+                if event.voice.is_multiple_of(2) {
+                    -SP
+                } else {
+                    SP
+                }
+            } else {
+                0
+            };
             let name = rest_name(duration);
             let rest_y = y + HALF_SP + voice_offset;
             // The MMRest branch keeps the header exception of
@@ -2112,6 +2125,7 @@ pub fn build_page_with_skylines(
                     lyrics_em,
                     spec,
                     &grids[measure],
+                    multi_voice,
                 );
                 x += grids[measure].end();
                 event_offset += atom.events.len();
@@ -2732,6 +2746,75 @@ mod tests {
         // A plain start bar line is implicit in MuseScore; only the end bar
         // line of the measure is drawn.
         assert_eq!(list.count(ItemKind::BarLine), 1);
+    }
+
+    #[test]
+    fn multi_voice_rests_move_in_opposite_directions() {
+        // `RestLayout::computeVoiceOffset` (`restlayout.cpp:694-765`):
+        // voices 0/2 move one line up, voices 1/3 one line down, and a
+        // monophonic measure keeps the rest at its natural line.
+        let rest = |voice| Atom {
+            voice,
+            ..Atom::at_segment(
+                0,
+                AtomKind::Rest {
+                    duration: 4,
+                    dots: 0,
+                    measure: false,
+                },
+                0,
+            )
+        };
+        let y = 5 * SP;
+        let mut out = DisplayList::new(0);
+        place_event(
+            &mut out,
+            &rest(0),
+            SP,
+            2 * SP,
+            0,
+            2 * SP,
+            y,
+            1,
+            None,
+            0,
+            &PageSpec::default(),
+            true,
+        );
+        place_event(
+            &mut out,
+            &rest(1),
+            3 * SP,
+            4 * SP,
+            0,
+            4 * SP,
+            y,
+            1,
+            None,
+            0,
+            &PageSpec::default(),
+            true,
+        );
+        let first = out.items[0].origin().1;
+        let second = out.items[1].origin().1;
+        assert_eq!(first, y - SP / 2);
+        assert_eq!(second, y + 3 * SP / 2);
+        let mut mono = DisplayList::new(0);
+        place_event(
+            &mut mono,
+            &rest(1),
+            0,
+            SP,
+            0,
+            SP,
+            y,
+            1,
+            None,
+            0,
+            &PageSpec::default(),
+            false,
+        );
+        assert_eq!(mono.items[0].origin().1, y + SP / 2);
     }
 
     #[test]
