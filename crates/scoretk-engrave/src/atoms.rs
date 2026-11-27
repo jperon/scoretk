@@ -41,6 +41,7 @@ use scoretk_core::model::NoteHeadGroup;
 use scoretk_smufl::{anchor, glyph, text_width, units_to_fixed};
 
 use crate::identity::{NoteIdentity, NoteSourceRange};
+use crate::options::EngraveOptions;
 
 use crate::style::{
     CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE, KEY_TIME_DISTANCE,
@@ -2174,6 +2175,13 @@ fn compute_staff(score: &Score, staff_index: usize) -> Vec<MeasureAtom> {
 /// pivot model shares its segments between staves, so the segment index is
 /// the alignment key.
 pub fn compute(score: &Score) -> Vec<Vec<MeasureAtom>> {
+    compute_with_options(score, &EngraveOptions::default())
+}
+
+/// Same pass with rendering options. Transposition and other option-driven
+/// changes are applied to the compact atoms, never to the pivot model.
+pub fn compute_with_options(score: &Score, options: &EngraveOptions) -> Vec<Vec<MeasureAtom>> {
+    let _ = options; // reserved for the transposition pass (step 5)
     let all: Vec<Vec<MeasureAtom>> = visible_staves(score)
         .into_iter()
         .map(|index| compute_staff(score, index))

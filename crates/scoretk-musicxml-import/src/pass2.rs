@@ -988,6 +988,18 @@ fn read_staff_details(
         element.attribute("print-object") == Some("no"),
         element.attribute("print-spacing") == Some("yes"),
     ));
+    // MusicXML 4.0 `xsd:staff-details/staff-size` is the staff size as a
+    // percentage of the default size (a decimal, e.g. 70 for a small staff).
+    // MuseScore keeps that value in `StaffType::userMag` / `<mag>`; the pivot
+    // model exposes it as `Staff::user_mag_percent` for the engraver.
+    if let Some(size) = element
+        .child_text("staff-size")
+        .and_then(|text| text.parse::<f64>().ok())
+    {
+        if size.is_finite() && size > 0.0 {
+            score.staff_mut(staff_id).user_mag_percent = (size.round() as i32).clamp(1, 400);
+        }
+    }
     let Some(lines) = element.child_int("staff-lines") else {
         return;
     };

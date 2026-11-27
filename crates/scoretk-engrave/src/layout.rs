@@ -192,6 +192,20 @@ impl PageSpec {
     /// Arithmetic stays in `f64` here (no libm call), then rounds to fixed
     /// staff spaces; the rest of the engraver stays fixed point.
     pub fn from_score(score: &Score) -> Self {
+        Self::from_score_with_options(score, &crate::options::EngraveOptions::default())
+    }
+
+    /// Style-driven geometry with the caller's rendering options applied.
+    /// Without options this is byte-for-byte `from_score`.
+    pub fn from_score_with_options(
+        score: &Score,
+        options: &crate::options::EngraveOptions,
+    ) -> Self {
+        let _ = options;
+        Self::from_score_plain(score)
+    }
+
+    fn from_score_plain(score: &Score) -> Self {
         let style = &score.engraving.style;
         let spatium = style.spatium_mm.max(0.1);
         let to_fixed = |mm: f64| ((mm / spatium) * SP as f64 + 0.5) as i32;
@@ -2500,6 +2514,17 @@ pub fn build_page_with_skylines(
                 spec,
                 &offsets,
                 part,
+            );
+            // // Port of `EngravingItem::mag()` (`engravingitem.cpp:2911-2918`)
+            // and `Staff::staffMag` (`staff.cpp:991-1004`): one staff's
+            // spatium is the score spatium times its mag. Scale its ink
+            // around its own top line after all items are emitted, so the
+            // shared segment grid and every other staff stay untouched.
+            out.scale_staff_range(
+                staff_start,
+                out.items.len(),
+                y,
+                staffs.get(staff_index).map_or(1024, |staff| staff.mag),
             );
             // `plan_lyric_lines` stamps each dash with its syllable's measure;
             // restore the staff's last measure for the end bar line.

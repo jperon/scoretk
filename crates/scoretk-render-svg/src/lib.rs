@@ -184,11 +184,20 @@ fn write_item(out: &mut String, item: &DisplayItem) {
             write_outline(out, glyph);
             out.push_str("\"/>");
         }
-        Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {
-            let _ = write!(
-                out,
-                "<path class=\"{class}\" transform=\"translate({x},{y})\" d=\""
-            );
+        Geometry::Glyph { glyph, x, y, mag } | Geometry::Path { glyph, x, y, mag } => {
+            if mag == 1024 {
+                let _ = write!(
+                    out,
+                    "<path class=\"{class}\" transform=\"translate({x},{y})\" d=\""
+                );
+            } else {
+                let _ = write!(
+                    out,
+                    "<path class=\"{class}\" transform=\"translate({x},{y}) scale("
+                );
+                write_ratio(out, mag);
+                let _ = write!(out, ")\" d=\"");
+            }
             write_outline(out, glyph);
             out.push_str("\"/>");
         }

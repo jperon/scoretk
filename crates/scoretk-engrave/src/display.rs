@@ -92,11 +92,15 @@ pub enum Geometry {
         glyph: u16,
         x: i32,
         y: i32,
+        /// Staff magnitude in 1/1024 (`EngravingItem::mag`, 1024 = 1.0).
+        /// Only the outline is scaled: the segment x is shared by all staves.
+        mag: i32,
     },
     Path {
         glyph: u16,
         x: i32,
         y: i32,
+        mag: i32,
     },
     Rect {
         x: i32,
@@ -152,7 +156,12 @@ impl DisplayItem {
     pub const fn glyph(kind: ItemKind, glyph: u16, x: i32, y: i32) -> Self {
         Self {
             kind,
-            geometry: Geometry::Glyph { glyph, x, y },
+            geometry: Geometry::Glyph {
+                glyph,
+                x,
+                y,
+                mag: 1024,
+            },
             source: SourceRef::none(),
         }
     }
@@ -160,7 +169,33 @@ impl DisplayItem {
     pub const fn path(kind: ItemKind, glyph: u16, x: i32, y: i32) -> Self {
         Self {
             kind,
-            geometry: Geometry::Path { glyph, x, y },
+            geometry: Geometry::Path {
+                glyph,
+                x,
+                y,
+                mag: 1024,
+            },
+            source: SourceRef::none(),
+        }
+    }
+
+    /// A glyph drawn at a non-unit staff magnitude. Port of
+    /// `EngravingItem::mag()` (`engravingitem.cpp:2911-2918`) and
+    /// `Staff::staffMag` (`staff.cpp:991-1004`): only the outline scales,
+    /// the shared segment x does not.
+    pub const fn glyph_mag(kind: ItemKind, glyph: u16, x: i32, y: i32, mag: i32) -> Self {
+        Self {
+            kind,
+            geometry: Geometry::Glyph { glyph, x, y, mag },
+            source: SourceRef::none(),
+        }
+    }
+
+    /// Quadratic outline at a non-unit staff magnitude.
+    pub const fn path_mag(kind: ItemKind, glyph: u16, x: i32, y: i32, mag: i32) -> Self {
+        Self {
+            kind,
+            geometry: Geometry::Path { glyph, x, y, mag },
             source: SourceRef::none(),
         }
     }
@@ -237,6 +272,52 @@ impl DisplayItem {
         }
     }
 
+    /// Scales one item to a staff's magnitude around its staff's top line.
+    ///
+    /// // Port of `EngravingItem::mag()` (`engravingitem.cpp:2911-2918`) and
+    /// `Staff::staffMag` (`staff.cpp:991-1004`): the staff spatium is the
+    /// score spatium times `mag`, so glyph outlines, stems, ledger lines,
+    /// lyric text and inter-staff distances all scale. Horizontal segment
+    /// positions are shared by every staff of a system and are left alone.
+    /// `mag == 1024` is a no-op, so the default output is byte-identical.
+    pub fn scale_staff(&mut self, staff_y: i32, mag: i32) {
+        if mag == 1024 {
+            return;
+        }
+        let scaled = |value: i32| value * mag / 1024;
+        let at = |value: i32| staff_y + scaled(value - staff_y);
+        match &mut self.geometry {
+            Geometry::Glyph { y, mag: m, .. } | Geometry::Path { y, mag: m, .. } => {
+                *y = at(*y);
+                *m = scaled(*m);
+            }
+            Geometry::Text { y, size, .. } => {
+                *y = at(*y);
+                *size = scaled(*size);
+            }
+            Geometry::Rect { y, w, h, .. } => {
+                *y = at(*y);
+                // A system's staff lines and bar lines span the shared
+                // horizontal grid; their width is not a staff-size quantity.
+                if self.kind != ItemKind::StaffLine
+                    && self.kind != ItemKind::BarLine
+                    && self.kind != ItemKind::Bracket
+                {
+                    *w = scaled(*w);
+                }
+                *h = scaled(*h);
+            }
+            Geometry::Beam { y1, y2, width, .. } => {
+                *y1 = at(*y1);
+                *y2 = at(*y2);
+                *width = scaled(*width);
+            }
+            // Braces are stretched to the bracket height by `decor`, in
+            // absolute staff spaces, and are not part of a staff's ink.
+            Geometry::Scaled { .. } => {}
+        }
+    }
+
     /// Position of the item's origin in fixed-point staff spaces.
     pub const fn origin(&self) -> (i32, i32) {
         match self.geometry {
@@ -263,14 +344,15 @@ impl DisplayItem {
                 y2,
                 width,
             } => Some((x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2) + width)),
-            Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => {
+            Geometry::Glyph { x, y, mag, .. } | Geometry::Path { x, y, mag, .. } => {
                 let g = list.glyph_name(self).and_then(scoretk_smufl::glyph)?;
                 let b = g.bbox;
+                let scaled = |units: i16| units_to_fixed(units) * mag / 1024;
                 Some((
-                    x + units_to_fixed(b[0]),
-                    y - units_to_fixed(b[3]),
-                    x + units_to_fixed(b[2]),
-                    y - units_to_fixed(b[1]),
+                    x + scaled(b[0]),
+                    y - scaled(b[3]),
+                    x + scaled(b[2]),
+                    y - scaled(b[1]),
                 ))
             }
             Geometry::Scaled {
@@ -386,6 +468,18 @@ impl DisplayList {
     pub fn path(&mut self, kind: ItemKind, name: &str, x: i32, y: i32) {
         if let Some(index) = scoretk_smufl::glyph_index(name) {
             self.push(DisplayItem::path(kind, index, x, y));
+        }
+    }
+
+    /// Applies a staff magnitude to the items emitted for one staff. The
+    /// caller passes the half-open index range of that staff's items, so
+    /// system decorations and other staves are untouched.
+    pub fn scale_staff_range(&mut self, start: usize, end: usize, staff_y: i32, mag: i32) {
+        if mag == 1024 {
+            return;
+        }
+        for item in &mut self.items[start..end] {
+            item.scale_staff(staff_y, mag);
         }
     }
 

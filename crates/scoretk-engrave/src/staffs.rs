@@ -29,6 +29,7 @@ use alloc::vec::Vec;
 use scoretk_core::model::{Score, StaffBracket, StaffId};
 
 use crate::layout::PageSpec;
+use crate::options::EngraveOptions;
 use crate::style::STAFF_HEIGHT;
 
 /// A staff that MuseScore engraves: hidden staves, hidden parts and excerpts
@@ -54,18 +55,37 @@ pub struct StaffInfo {
     /// `Staff::shouldMergeMatchingRests()` (`<mergeMatchingRests>`), used by
     /// `RestLayout::computeVoiceOffset` (`restlayout.cpp:724-753`).
     pub merge_matching_rests: bool,
+    /// `Staff::staffMag(stt)` in 1/1024 (`staff.cpp:991-1004`): the small-staff
+    /// style magnitude times the user magnitude, or a runtime part override.
+    pub mag: i32,
 }
 
 impl StaffInfo {
     pub fn from_score(score: &Score) -> Vec<Self> {
+        Self::from_score_with_options(score, &EngraveOptions::default())
+    }
+
+    /// Same traversal, with a runtime part-size override. // Port of
+    /// `Staff::staffMag` (`staff.cpp:991-1004`): `(isSmall ? smallStaffMag : 1)
+    /// * userMag`, read from `Staff::user_mag_percent` by the 3.x/4.x and MEI
+    /// readers; a `part_mag_percent` entry replaces `userMag`.
+    pub fn from_score_with_options(score: &Score, options: &EngraveOptions) -> Vec<Self> {
+        let small_mag = score.engraving.style.small_staff_mag;
         (0..score.staves.len())
             .filter(|&index| score.staff_shown(StaffId::from_raw(index as u32)))
             .map(|index| {
                 let staff = &score.staves[index];
                 let part = &score.parts[staff.part.index()];
-                // A `<longName>` may contain `<br/>`, which MuseScore lays
-                // out as a line break; a plain Edwin run uses a space.
                 let clean = |name: &str| name.replace("<br/>", " ");
+                let percent = options
+                    .part_mag(staff.part.index())
+                    .unwrap_or(staff.user_mag_percent);
+                let mag = EngraveOptions::mag_fixed(percent);
+                let mag = if staff.small {
+                    (mag as f64 * small_mag) as i32
+                } else {
+                    mag
+                };
                 Self {
                     index,
                     part: staff.part.index(),
@@ -74,9 +94,16 @@ impl StaffInfo {
                     brackets: staff.brackets.clone(),
                     bar_line_span: staff.bar_line_span,
                     merge_matching_rests: staff.merge_matching_rests,
+                    mag: mag.max(1),
                 }
             })
             .collect()
+    }
+
+    /// Height of this staff in fixed score-staff spaces (`staffMag` scales
+    /// its spatium, `staff.cpp:977-985`).
+    pub fn height(&self) -> i32 {
+        STAFF_HEIGHT * self.mag / 1024
     }
 
     /// `true` if a bracket or brace starting on this staff covers `span`
@@ -99,22 +126,26 @@ impl StaffInfo {
 pub fn system_geometry(staffs: &[StaffInfo], spec: &PageSpec) -> (Vec<i32>, i32) {
     let mut ys = Vec::with_capacity(staffs.len());
     let mut y = 0;
-    for _ in staffs {
+    for staff in staffs {
         ys.push(y);
-        y += STAFF_HEIGHT;
+        y += staff.height();
     }
-    // Turn the offsets into positions including the intervening distances.
+    // Turn the offsets into positions including the intervening distances;
+    // `SystemLayout::minDistance` multiplies the distance by the next staff's
+    // mag (`systemlayout.cpp:2488-2582`).
     let mut cursor = 0;
     for (index, position) in ys.iter_mut().enumerate() {
         *position += cursor;
-        if index + 1 < staffs.len() {
-            cursor += if staffs[index].part == staffs[index + 1].part {
+        if let Some(next) = staffs.get(index + 1) {
+            let distance = if staffs[index].part == next.part {
                 spec.akkolade_distance
             } else {
                 spec.staff_distance
             };
+            cursor += distance * next.mag / 1024;
         }
     }
-    let height = ys.last().copied().unwrap_or(0) + STAFF_HEIGHT;
+    let height =
+        ys.last().copied().unwrap_or(0) + staffs.last().map_or(STAFF_HEIGHT, StaffInfo::height);
     (ys, height)
 }

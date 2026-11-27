@@ -94,7 +94,7 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
             path.close();
             buf.fill_path(&path, ink);
         }
-        Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {
+        Geometry::Glyph { glyph, x, y, mag } | Geometry::Path { glyph, x, y, mag } => {
             let Some(g) = GLYPHS.get(usize::from(glyph)) else {
                 return;
             };
@@ -102,6 +102,7 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
                 origin.x + to_pixels(x, staff_px),
                 origin.y + to_pixels(y, staff_px),
             );
+            let fixed = |units: i16| units_to_fixed(units) * mag / 1024;
             let mut path = Path::new();
             let mut cursor = base;
             let start = usize::from(g.edges.0);
@@ -112,27 +113,27 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
                     // up-positive, the framebuffer y is down-positive.
                     Edge::Move(x, y) => {
                         cursor = Point::new(
-                            base.x + to_pixels(units_to_fixed(x), staff_px),
-                            base.y - to_pixels(units_to_fixed(y), staff_px),
+                            base.x + to_pixels(fixed(x), staff_px),
+                            base.y - to_pixels(fixed(y), staff_px),
                         );
                         path.move_to(cursor);
                     }
                     Edge::Line(dx, dy) => {
                         let next = Point::new(
-                            cursor.x + to_pixels(units_to_fixed(dx), staff_px),
-                            cursor.y - to_pixels(units_to_fixed(dy), staff_px),
+                            cursor.x + to_pixels(fixed(dx), staff_px),
+                            cursor.y - to_pixels(fixed(dy), staff_px),
                         );
                         path.line_to(next);
                         cursor = next;
                     }
                     Edge::Quad(qx, qy, x, y) => {
                         let control = Point::new(
-                            cursor.x + to_pixels(units_to_fixed(qx), staff_px),
-                            cursor.y - to_pixels(units_to_fixed(qy), staff_px),
+                            cursor.x + to_pixels(fixed(qx), staff_px),
+                            cursor.y - to_pixels(fixed(qy), staff_px),
                         );
                         let next = Point::new(
-                            cursor.x + to_pixels(units_to_fixed(x), staff_px),
-                            cursor.y - to_pixels(units_to_fixed(y), staff_px),
+                            cursor.x + to_pixels(fixed(x), staff_px),
+                            cursor.y - to_pixels(fixed(y), staff_px),
                         );
                         path.quad_to(control, next);
                         cursor = next;

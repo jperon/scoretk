@@ -61,6 +61,7 @@ pub mod display;
 pub mod identity;
 pub mod layout;
 pub mod layout_data;
+pub mod options;
 pub mod screen;
 pub mod skyline;
 pub mod spacing;
@@ -74,6 +75,7 @@ pub use display::{DisplayItem, DisplayList, Geometry, ItemKind};
 pub use identity::{GraceIdentity, NoteIdentity, NoteSourceRange, SourceRef};
 pub use layout::PageSpec;
 pub use layout_data::{BBox, MeasureLayout, NoteLayout, PageLayout, SystemLayout};
+pub use options::EngraveOptions;
 pub use screen::screen_staff_px;
 pub use staffs::StaffInfo;
 pub use style::SP;
@@ -112,11 +114,21 @@ pub struct Engraver {
 impl Engraver {
     /// Computes the atoms of the whole score (one O(n) pass).
     pub fn new(score: &Score, spec: PageSpec) -> Result<Self, EngraveError> {
-        let staffs = StaffInfo::from_score(score);
+        Self::new_with_options(score, spec, &EngraveOptions::default())
+    }
+
+    /// Builds an engraver with explicit rendering options. The score is only
+    /// read during construction; `page(n)` never needs it again.
+    pub fn new_with_options(
+        score: &Score,
+        spec: PageSpec,
+        options: &EngraveOptions,
+    ) -> Result<Self, EngraveError> {
+        let staffs = StaffInfo::from_score_with_options(score, options);
         if staffs.is_empty() {
             return Err(EngraveError::NoStaff);
         }
-        let atoms = atoms::compute(score);
+        let atoms = atoms::compute_with_options(score, options);
         let credits = score.engraving.credits.clone();
         let (_, height) = staffs::system_geometry(&staffs, &spec);
         // One height per system: spacers are not modelled yet, but the
@@ -143,7 +155,17 @@ impl Engraver {
     /// `<Style>` (page size, margins, spatium). The facade uses this entry
     /// point; `new` remains available for an explicit page geometry.
     pub fn from_score(score: &Score) -> Result<Self, EngraveError> {
-        Self::new(score, layout::PageSpec::from_score(score))
+        Self::from_score_with_options(score, &EngraveOptions::default())
+    }
+
+    /// Page geometry and options derived from the score and the caller's
+    /// settings. // Port of the style-driven geometry of `pagestyle.cpp:26-41`.
+    pub fn from_score_with_options(
+        score: &Score,
+        options: &EngraveOptions,
+    ) -> Result<Self, EngraveError> {
+        let spec = layout::PageSpec::from_score_with_options(score, options);
+        Self::new_with_options(score, spec, options)
     }
 
     /// Engraves one page from the cached atoms and breaking plan.
@@ -239,6 +261,83 @@ mod tests {
         }
         score.add_measure(measure);
         score
+    }
+
+    /// A 70 % staff has 70 % noteheads (and stems, ledgers and lyrics),
+    /// as `Staff::staffMag` scales the staff's spatium (`staff.cpp:977-1004`)
+    /// and `EngravingItem::mag` its drawn items (`engravingitem.cpp:2911`).
+    #[test]
+    fn a_seventy_percent_staff_draws_seventy_percent_noteheads() {
+        let mut score = one_staff_score();
+        let second_part = score.add_part(Part::new("Bass", "B."));
+        let second_staff = score.add_staff(second_part);
+        let track = Track::new(second_staff, 0);
+        for segment in &mut score.measures[0].segments {
+            let copy = segment
+                .iter_elements()
+                .find(|(source, _)| source.voice() == 0)
+                .map(|(_, item)| item.clone());
+            if matches!(copy, Some(SegmentItem::ChordRest(_))) {
+                segment.set_element(track, copy.unwrap());
+            }
+        }
+        score.staves[1].user_mag_percent = 70;
+        let engraver = Engraver::from_score(&score).unwrap();
+        let page = engraver.page(0);
+        let head_width = |staff: usize| -> i32 {
+            let item = page
+                .items
+                .iter()
+                .find(|item| item.kind == ItemKind::Notehead && item.source.staff() == Some(staff))
+                .expect("a notehead");
+            let (x0, _, x1, _) = item.bbox(&page).expect("a notehead box");
+            x1 - x0
+        };
+        let full = head_width(0);
+        let small = head_width(1);
+        let expected = full * EngraveOptions::mag_fixed(70) / 1024;
+        assert!(
+            (small - expected).abs() <= 2,
+            "head widths: full {full}, small {small}, expected {expected}"
+        );
+        assert!(page.count(ItemKind::StaffLine) == 10);
+    }
+
+    /// A runtime part override replaces `Staff::user_mag_percent` without
+    /// touching the model: cantus can change a staff size at a new layout.
+    #[test]
+    fn a_part_mag_override_scales_that_part_only() {
+        let mut score = one_staff_score();
+        let second_part = score.add_part(Part::new("Bass", "B."));
+        let second_staff = score.add_staff(second_part);
+        let track = Track::new(second_staff, 0);
+        for segment in &mut score.measures[0].segments {
+            let copy = segment
+                .iter_elements()
+                .find(|(source, _)| source.voice() == 0)
+                .map(|(_, item)| item.clone());
+            if matches!(copy, Some(SegmentItem::ChordRest(_))) {
+                segment.set_element(track, copy.unwrap());
+            }
+        }
+        let options = EngraveOptions {
+            part_mag_percent: alloc::vec![(1, 70)],
+            ..EngraveOptions::default()
+        };
+        let engraver = Engraver::from_score_with_options(&score, &options).unwrap();
+        assert_eq!(score.staves[1].user_mag_percent, 100, "model unchanged");
+        assert_eq!(engraver.staffs()[0].mag, 1024);
+        assert_eq!(engraver.staffs()[1].mag, EngraveOptions::mag_fixed(70));
+        let page = engraver.page(0);
+        let heads: Vec<&crate::display::DisplayItem> = page
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Notehead)
+            .collect();
+        assert!(heads.iter().any(|item| matches!(
+            item.geometry,
+            crate::display::Geometry::Path { mag, .. } if mag == EngraveOptions::mag_fixed(70)
+        )));
     }
 
     #[test]

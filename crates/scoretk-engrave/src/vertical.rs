@@ -662,6 +662,7 @@ mod tests {
                 brackets: Vec::new(),
                 bar_line_span: false,
                 merge_matching_rests: false,
+                mag: 1024,
             },
             StaffInfo {
                 index: 1,
@@ -671,6 +672,7 @@ mod tests {
                 brackets: Vec::new(),
                 bar_line_span: false,
                 merge_matching_rests: false,
+                mag: 1024,
             },
         ];
         spread_all(&mut systems, &staffs, &spec);

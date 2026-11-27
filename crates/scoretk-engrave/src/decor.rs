@@ -306,6 +306,7 @@ mod tests {
             }],
             bar_line_span,
             merge_matching_rests: false,
+            mag: 1024,
         }
     }
 

@@ -2581,3 +2581,36 @@ atom vectors, +1 004 blocks) and RSS moves by at most 0.18 MB, i.e. within
 run-to-run noise. The SVG grouping adds no allocation: ids are formatted
 into the output string only. The Kobo budget of §20 is therefore not
 regressed by this step; no device measurement was made.
+
+## 33. Cantus rendering options (engopt, 2026-11-28)
+
+Goal: replace the options cantus sends to Verovio today
+(`~/programmes/musique/cantus/src/worker.coffee:168-194`: `pageWidth`,
+`pageHeight`, `scale`, `adjustPageHeight`, `lyricSize`, `condense`,
+`condenseFirstPage: false`, `systemMaxPerPage`, `transpose`) with a single
+`EngraveOptions` in `scoretk-engrave`, plus relayout at a new width. Defaults
+are a no-op: the print oracle of § 6 and every default SVG stay byte-identical.
+No wasm wiring in this step (the stable contract of `AGENTS.md` § 5 is kept).
+
+### 33.1 Per-staff size (step 1)
+
+`Staff::user_mag_percent` was already filled by the 3.x/4.x and MEI readers
+but ignored by the engraver. `StaffInfo::from_score_with_options` now converts
+it to a fixed magnitude — `(isSmall ? smallStaffMag : 1) * userMag`
+(`ref-musescore-474` clone `src/engraving/dom/staff.cpp:977-1004`, tag v4.7.4;
+`EngravingItem::mag`, `dom/engravingitem.cpp:2911-2918`) — and applies a
+runtime `part_mag_percent` override. `Geometry::Glyph`/`Path` carry that mag,
+so noteheads, clefs, accidentals, rests and flags scale; `DisplayItem::
+scale_staff` also scales stems, ledger lines, bar lines, lyric text and beam
+width around the staff's top line, and `staffs::system_geometry` scales staff
+heights and inter-staff distances. The shared segment x is never scaled: all
+staves of a system still align on one segment grid
+(`horizontalspacing.cpp:47-89`). A `mag == 1024` is a no-op, so no byte changes
+in the default path and no per-item memory is added.
+
+`read_staff_details` in `scoretk-musicxml-import` now reads MusicXML 4.0
+`staff-details/staff-size` (a percentage of the default staff size) into
+`user_mag_percent`, before its early return on missing `staff-lines`, which is
+how cantus feeds small staves today. Tests: a two-staff score with one staff at
+70 % has noteheads 0.7×; an option override changes only that part and leaves
+the model untouched; the MusicXML reader maps 70 and 55.5.
