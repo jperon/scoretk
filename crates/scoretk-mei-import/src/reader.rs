@@ -765,7 +765,13 @@ impl<'a> Reader<'a> {
 
     /// `MeiImporter::readChord` (`meiimporter.cpp:1835`).
     fn read_chord(&mut self, node: &Element, measure: usize, track: Track, ticks: &mut Fraction) {
-        let duration = duration_of(node);
+        // MEI 5.1 met normalement `@dur` sur `<chord>` (`format-ref/mei.md` §8),
+        // mais les encodages officiels le portent souvent sur chaque `<note>`
+        // enfant. Sans repli, la durée retombait à une ronde/quarter et le
+        // n-olet changeait de `base_len` au second aller-retour.
+        let duration = duration_of_opt(node)
+            .or_else(|| node.children_named("note").find_map(duration_of_opt))
+            .unwrap_or_else(Duration::quarter);
         let index = self.add_chord_rest(node, measure, track, *ticks, duration, false);
         let staff_idx = track.staff().raw() as usize;
         let transpose = self.transpose.get(&staff_idx).copied().unwrap_or_default();

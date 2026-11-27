@@ -272,6 +272,28 @@ mod tests {
         assert_eq!(score.measures[1].start_tick, tick + tick);
     }
 
+    /// MEI 5.1 : la durée d'un `<chord>` peut être portée par ses `<note>`
+    /// enfants (`format-ref/mei.md` §8, piège 5).
+    #[test]
+    fn chord_duration_falls_back_to_its_first_note() {
+        let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1">
+          <music><body><mdiv><score>
+            <scoreDef><staffGrp><staffDef n="1" lines="5" meter.count="4" meter.unit="4"/></staffGrp></scoreDef>
+            <section><measure n="1"><staff n="1"><layer n="1">
+              <chord><note dur="8" pname="c" oct="4"/><note dur="8" pname="e" oct="4"/></chord>
+              <note dur="4" pname="g" oct="4"/>
+            </layer></staff></measure></section>
+          </score></mdiv></body></music></mei>"#;
+        let score = read_mei(bytes).expect("MEI chord with note durations");
+        assert!(score.measures[0].segments.iter().any(|segment| {
+            segment.tick == scoretk_core::model::Fraction::new(1, 8)
+                && segment
+                    .iter_elements()
+                    .filter_map(|(_, item)| item.as_chord_rest())
+                    .any(|cr| cr.duration.kind == scoretk_core::model::DurationType::Quarter)
+        }));
+    }
+
     #[test]
     fn reads_a_minimal_score() {
         let bytes = br#"<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.1+basic">
