@@ -699,3 +699,34 @@ The headline width figure drops by three measures: they were counted as
 matching only because a wrongly justified system pushed a bar line onto a
 reference boundary by coincidence. Fidelity of the last system is the
 regression being repaired; the width metric remains the primary P2 figure.
+
+### 9.17 Beams, grace notes and stem direction (steps 1–2, 2026-11-27)
+
+Beam groups now come from `BeamMode`, `<Beam>` starts and measure boundaries
+(`beamlayout.cpp:546-809`, `:622-809`); the model carries a new
+`ChordRestEngraving::beam_start` flag so an empty 4.x `<Beam>` still starts a
+group. The slab, slant and stem extension follow `createBeamSegment`
+(`beamlayout.cpp:1215-1307`) and `calculateAnchors`
+(`beamtremololayout.cpp:591-770`): max slope by interval and beam width,
+quarter-space anchors, and stems ending at the beam centre
+(`tdraw.cpp:920-936`). Automatically grouped beams (tuplets) still use the
+default stems — their slant depends on tuplet grouping not yet ported; the
+main figure below includes them, no file is excluded. Grace notes before a
+chord are emitted at `graceNoteMag` (`chordlayout.cpp:631-645`) with their
+own stems. Finally, `computeAutoStemDirection` (`chordlayout.cpp:1626-1642`)
+returns 0 when the notes cancel, so a middle-line note gets a **down** stem;
+the old `true` default put those stems on the wrong side of the head.
+
+| Metric | After step 0 | After steps 1–2 | Gate |
+| --- | ---: | ---: | --- |
+| Stem-length agreement (389 → 395 stems) | 0.7404 (288/389) | **0.8000** (316/395) | ≥ 0.90 — failed |
+| Within 0.1 sp, both axes | 0.2887 (364/1261) | 0.2871 (362/1261) | — |
+| Vertical pitch/ledger agreement | 0.9613 (517) | 0.9618 (523) | ≥ 0.95 — met |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+
+The 395-stem denominator includes the six grace stems newly drawn (they
+were unmatched before); 316 agree, against 288 before. The slight fall of
+the both-axes share is those grace noteheads/stems, whose x is still
+approximate. Before/after/reference PNGs of `Beam-CrossM1`:
+`/tmp/beam-before.png`, `/tmp/beam-after.png`, `/tmp/beam-ref.png`.

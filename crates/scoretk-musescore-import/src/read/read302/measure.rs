@@ -153,6 +153,7 @@ fn read_voice(
     // `<Beam><StemDirection>` s'applique au premier accord ou silence qui
     // suit (`MeasureRead::readVoice` : `startingBeam`).
     let mut pending_beam: Option<StemDirection> = None;
+    let mut pending_beam_start = false;
 
     for child in node.children() {
         match child.name() {
@@ -180,6 +181,7 @@ fn read_voice(
                 }
                 cr.tuplet = ctx.tuplets.last().copied();
                 cr.engraving.beam_direction = pending_beam.take();
+                cr.engraving.beam_start = core::mem::take(&mut pending_beam_start);
                 let measure_len = reader.score.measures[index].len;
                 let advance = chord::advance(&cr, measure_len, &ctx.tuplets, &reader.score);
                 segment_mut(
@@ -191,6 +193,9 @@ fn read_voice(
                 ctx.tick += advance;
             }
             "Beam" => {
+                // A `<Beam>` starts a group even when it carries no
+                // `<StemDirection>`: 3.x writes user beams as `<l1>/<l2>`.
+                pending_beam_start = true;
                 pending_beam = child
                     .child("StemDirection")
                     .map(|direction| tables::stem_direction(&direction.trimmed_text()));

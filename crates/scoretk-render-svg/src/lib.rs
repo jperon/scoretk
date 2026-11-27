@@ -86,6 +86,21 @@ fn write_item(out: &mut String, item: &DisplayItem) {
                 "<rect class=\"{class}\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\"/>"
             );
         }
+        Geometry::Beam {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+        } => {
+            let _ = write!(
+                out,
+                "<path class=\"{class}\" d=\"M{x1},{y1} L{x2},{y2} \
+                 L{x2},{bottom2} L{x1},{bottom1} Z\"/>",
+                bottom1 = y1 + width,
+                bottom2 = y2 + width,
+            );
+        }
         Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {
             let _ = write!(
                 out,

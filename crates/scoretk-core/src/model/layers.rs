@@ -317,6 +317,10 @@ pub struct ChordRestEngraving {
     /// group; its explicit direction then overrides the computed one. `None`
     /// means no direction was written (4.x files write an empty `<Beam>`).
     pub beam_direction: Option<StemDirection>,
+    /// A `<Beam>` element was attached to this chord/rest: it starts a beam
+    /// group (`beamlayout.cpp:525-540, 780-790`). Unlike `beam_direction`
+    /// this survives an empty `<Beam>` with no `<StemDirection>` child.
+    pub beam_start: bool,
 }
 
 /// L5 engraving flags attached to a [`super::Chord`].

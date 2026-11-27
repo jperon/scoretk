@@ -76,10 +76,13 @@ fn collect_systems(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
                 .events
                 .iter()
                 .find(|event| {
-                    matches!(
-                        event.kind,
-                        crate::AtomKind::Chord | crate::AtomKind::Rest { .. }
-                    )
+                    // Grace notes share the segment of the following chord
+                    // and sit to its left; they are not a header segment.
+                    !event.grace
+                        && matches!(
+                            event.kind,
+                            crate::AtomKind::Chord | crate::AtomKind::Rest { .. }
+                        )
                 })
                 .map_or(atom.width, |event| event.x);
             if count > 0 && (width + atom.width > printable || atoms[first + count - 1].line_break)
@@ -228,6 +231,7 @@ mod tests {
                     chord: Some(ChordAtom {
                         duration: 4,
                         dots: 0,
+                        grace: false,
                         stem_up: true,
                         stem_len: 3072,
                         notes: vec![NoteAtom {
@@ -236,6 +240,13 @@ mod tests {
                             accidental: None,
                         }],
                     }),
+                        voice: 0,
+                measure: 0,
+                        beams: 0,
+                        beam_mode: scoretk_core::model::BeamMode::Auto,
+                    beam_start: false,
+                        beam_dir: None,
+                        grace: false,
                 },
             ],
             start_bar: BarCode(1),

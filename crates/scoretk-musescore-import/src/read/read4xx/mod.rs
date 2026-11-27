@@ -1050,6 +1050,7 @@ impl Reader {
         // `<Beam><StemDirection>` s'applique au premier accord ou silence qui
         // suit (`MeasureRead::readVoice` : `startingBeam`).
         let mut pending_beam: Option<StemDirection> = None;
+        let mut pending_beam_start = false;
 
         for child in &element.children {
             match child.name.as_str() {
@@ -1098,6 +1099,7 @@ impl Reader {
                     chord_rest.tuplet = tuplet;
                     chord_rest.engraving.beam_mode = beam;
                     chord_rest.engraving.beam_direction = pending_beam.take();
+                    chord_rest.engraving.beam_start = core::mem::take(&mut pending_beam_start);
                     chord_rest.lyrics = lyrics;
                     chord_rest.kind = ChordRestKind::Chord(chord);
                     self.insert_item(
@@ -1124,6 +1126,7 @@ impl Reader {
                     chord_rest.tuplet = tuplet;
                     chord_rest.lyrics = lyrics;
                     chord_rest.engraving.beam_direction = pending_beam.take();
+                    chord_rest.engraving.beam_start = core::mem::take(&mut pending_beam_start);
                     if let Some(rest) = chord_rest.rest_mut() {
                         rest.gap = gap;
                         rest.visible = visible;
@@ -1139,6 +1142,10 @@ impl Reader {
                     tick += actual_ticks(ticks, &tuplets, stretch);
                 }
                 "Beam" => {
+                    // An empty `<Beam>` (4.x writes only an `<eid>`) still
+                    // starts a beam group: the `Beam` object is attached to
+                    // the next chord/rest (`beamlayout.cpp:780-790`).
+                    pending_beam_start = true;
                     pending_beam = child.child("StemDirection").map(|direction| {
                         match direction.text().trim() {
                             "up" => StemDirection::Up,

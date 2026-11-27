@@ -50,6 +50,39 @@ fn draw_item(buf: &mut Gray8<'_>, item: &DisplayItem, origin: Point, staff_px: i
                 ink,
             );
         }
+        Geometry::Beam {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+        } => {
+            let mut path = Path::new();
+            let points = [
+                Point::new(
+                    origin.x + to_pixels(x1, staff_px),
+                    origin.y + to_pixels(y1, staff_px),
+                ),
+                Point::new(
+                    origin.x + to_pixels(x2, staff_px),
+                    origin.y + to_pixels(y2, staff_px),
+                ),
+                Point::new(
+                    origin.x + to_pixels(x2, staff_px),
+                    origin.y + to_pixels(y2 + width, staff_px),
+                ),
+                Point::new(
+                    origin.x + to_pixels(x1, staff_px),
+                    origin.y + to_pixels(y1 + width, staff_px),
+                ),
+            ];
+            path.move_to(points[0]);
+            for point in &points[1..] {
+                path.line_to(*point);
+            }
+            path.close();
+            buf.fill_path(&path, ink);
+        }
         Geometry::Glyph { glyph, x, y } | Geometry::Path { glyph, x, y } => {
             let Some(g) = GLYPHS.get(usize::from(glyph)) else {
                 return;

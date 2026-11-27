@@ -42,6 +42,7 @@ pub enum ItemKind {
     TimeSig,
     Dot,
     Flag,
+    Beam,
 }
 
 impl ItemKind {
@@ -58,6 +59,7 @@ impl ItemKind {
             Self::TimeSig => "TimeSig",
             Self::Dot => "NoteDot",
             Self::Flag => "Hook",
+            Self::Beam => "Beam",
         }
     }
 }
@@ -73,6 +75,16 @@ pub enum Geometry {
     Glyph { glyph: u16, x: i32, y: i32 },
     Path { glyph: u16, x: i32, y: i32 },
     Rect { x: i32, y: i32, w: i32, h: i32 },
+    /// A slanted beam: the top edge runs `(x1,y1) → (x2,y2)`, the bottom
+    /// edge is `beamWidth` lower (`beamlayout.cpp:1215-1216`,
+    /// `createBeamSegment`). // Port of `tdraw.cpp`'s beam polygon.
+    Beam {
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        width: i32,
+    },
 }
 
 /// One drawable element of a page.
@@ -104,11 +116,24 @@ impl DisplayItem {
         }
     }
 
+    pub const fn beam(kind: ItemKind, x1: i32, y1: i32, x2: i32, y2: i32, width: i32) -> Self {
+        Self {
+            kind,
+            geometry: Geometry::Beam {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+            },
+        }
+    }
+
     /// Position of the item's origin in fixed-point staff spaces.
     pub const fn origin(&self) -> (i32, i32) {
         match self.geometry {
             Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => (x, y),
-            Geometry::Rect { x, y, .. } => (x, y),
+            Geometry::Rect { x, y, .. } | Geometry::Beam { x1: x, y1: y, .. } => (x, y),
         }
     }
 
@@ -120,6 +145,18 @@ impl DisplayItem {
     pub fn bbox(&self, list: &DisplayList) -> Option<(i32, i32, i32, i32)> {
         match self.geometry {
             Geometry::Rect { x, y, w, h } => Some((x, y, x + w, y + h)),
+            Geometry::Beam {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+            } => Some((
+                x1.min(x2),
+                y1.min(y2),
+                x1.max(x2),
+                y1.max(y2) + width,
+            )),
             Geometry::Glyph { x, y, .. } | Geometry::Path { x, y, .. } => {
                 let g = list.glyph_name(self).and_then(scoretk_smufl::glyph)?;
                 let b = g.bbox;
@@ -180,7 +217,7 @@ impl DisplayList {
             Geometry::Glyph { glyph, .. } | Geometry::Path { glyph, .. } => {
                 GLYPHS.get(usize::from(glyph)).map(|g| g.name)
             }
-            Geometry::Rect { .. } => None,
+            Geometry::Rect { .. } | Geometry::Beam { .. } => None,
         }
     }
 }

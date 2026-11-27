@@ -31,8 +31,8 @@
 use alloc::vec::Vec;
 
 use scoretk_core::model::{
-    AccidentalType, BarLineType, ChordRestKind, ClefType, DurationType, NoteHeadType, Score,
-    SegmentItem, SegmentType, StemDirection, Transpose,
+    AccidentalType, BarLineType, BeamMode, ChordRestKind, ClefType, DurationType, NoteHeadType,
+    Score, SegmentItem, SegmentType, StemDirection, Transpose,
 };
 
 use scoretk_core::model::NoteHeadGroup;
@@ -64,6 +64,8 @@ pub struct NoteAtom {
 pub struct ChordAtom {
     pub duration: u8,
     pub dots: u8,
+    /// A cue/grace chord: smaller stem anchor (`graceNoteMag` 0.7).
+    pub grace: bool,
     pub stem_up: bool,
     /// Stem length in 1/1024 staff space, already computed from the C++ rule.
     pub stem_len: i32,
@@ -86,6 +88,25 @@ pub struct Atom {
     pub x: i32,
     pub kind: AtomKind,
     pub chord: Option<ChordAtom>,
+    /// Voice (track) the event belongs to: even tracks stem up, odd tracks
+    /// stem down (`chordlayout.cpp:1584-1588`).
+    pub voice: u32,
+    /// Source measure number, so beam groups do not silently cross a
+    /// measure boundary (`beamlayout.cpp:660-700`).
+    pub measure: usize,
+    /// Number of beam strokes carried by this chord/rest: `beams()` in
+    /// `engraving/dom/chordrest.cpp`, i.e. `duration - quarter`.
+    pub beams: u8,
+    /// `BeamMode` of the event, used to group beamed chords
+    /// (`beamlayout.cpp:622-809`, `beamNoContinue`/`beamModeMid`).
+    pub beam_mode: BeamMode,
+    /// A `<Beam>` element attached to this event starts a new group.
+    pub beam_start: bool,
+    /// Explicit beam direction from `<Beam><StemDirection>`, if any.
+    pub beam_dir: Option<StemDirection>,
+    /// True for a cue/grace chord: smaller glyphs and stems
+    /// (`beamlayout.cpp:135-340`).
+    pub grace: bool,
 }
 
 impl Atom {
@@ -94,6 +115,13 @@ impl Atom {
             x,
             kind,
             chord: None,
+            voice: 0,
+            measure: 0,
+            beams: 0,
+            beam_mode: BeamMode::Auto,
+            beam_start: false,
+            beam_dir: None,
+            grace: false,
         }
     }
 }
@@ -438,7 +466,7 @@ pub fn flag_name(duration: u8, up: bool) -> Option<&'static str> {
 ///
 /// `noteDistances` is `note->line() - centerLine` (`chord.cpp`, via
 /// `stemlayout.cpp:71` where the middle line is `(staffLines - 1) * 2`).
-fn auto_stem_up(lines: &[i32]) -> bool {
+pub(crate) fn auto_stem_up(lines: &[i32]) -> bool {
     if lines.is_empty() {
         return true;
     }
@@ -456,7 +484,11 @@ fn auto_stem_up(lines: &[i32]) -> bool {
         left += 1;
         right -= 1;
     }
-    true
+    // `computeAutoStemDirection` returns 0 when the notes cancel out, and
+    // `computeUp` sets `up = direction > 0`: a note on the middle line (or a
+    // symmetric chord) gets a **down** stem. The old default of `true` put
+    // every middle-line stem on the wrong side of its notehead.
+    false
 }
 
 /// // Port of `chordlayout.cpp:1564-1588`: an explicit stem direction wins
@@ -570,6 +602,48 @@ fn bar_code(kind: BarLineType) -> BarCode {
     }
 }
 
+/// Note atoms of one chord, with the written pitch (transposed back to the
+/// written spelling) and the SMuFL head for its duration.
+fn note_atoms(
+    chord: &scoretk_core::model::Chord,
+    score: &Score,
+    duration: DurationType,
+    bottom: i32,
+    inverse: Option<Transpose>,
+) -> Vec<NoteAtom> {
+    let mut notes = Vec::new();
+    for id in &chord.notes {
+        let Some(note) = score.notes.get(id.index()) else {
+            continue;
+        };
+        if !note.visible {
+            continue;
+        }
+        let head = head_name(note.head, &note.head_group, duration);
+        let accidental = note
+            .accidental
+            .filter(|a| a.visible)
+            .and_then(|a| accidental_name(a.kind));
+        let (written_tpc, written_pitch) = match inverse {
+            Some(interval) => {
+                let _ = interval.diatonic;
+                (
+                    note.tpc,
+                    (i32::from(note.pitch) + interval.chromatic).clamp(0, 127) as u8,
+                )
+            }
+            None => (note.tpc, note.pitch),
+        };
+        notes.push(NoteAtom {
+            line: note_line(written_tpc, written_pitch, bottom),
+            head,
+            accidental,
+        });
+    }
+    notes.sort_by_key(|note| note.line);
+    notes
+}
+
 /// Computes all measure atoms of a score (single staff only).
 pub fn compute(score: &Score) -> Vec<MeasureAtom> {
     let staff = &score.staves[0];
@@ -637,16 +711,21 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
             x = clef_x + glyph_width(name) + CLEF_KEY_RIGHT_MARGIN + SP / 10;
             has_clef = true;
         }
-        // // Port of `chordlayout.cpp:1584` (`measure()->hasVoices`): once a
-        // measure contains two voices, the stems of every voice in it are
-        // forced by track parity, not only the chords sharing a segment.
-        let multi_voice = measure.segments.iter().any(|segment| {
-            segment
-                .iter_elements()
-                .filter(|(_, item)| matches!(item, SegmentItem::ChordRest(_)))
-                .count()
-                > 1
-        });
+        // // Port of `Measure::hasVoices(staffIdx)` (`chordlayout.cpp:1584`):
+        // a measure has voices as soon as two distinct tracks carry a
+        // chord/rest, even when they never share a segment. `linked-ties`
+        // writes voice 2 in its own segments, and MuseScore still forces
+        // their stems by track parity.
+        let mut used_tracks = alloc::vec::Vec::new();
+        for segment in &measure.segments {
+            for (track, item) in segment.iter_elements() {
+                if matches!(item, SegmentItem::ChordRest(_)) && !used_tracks.contains(&track.raw())
+                {
+                    used_tracks.push(track.raw());
+                }
+            }
+        }
+        let multi_voice = used_tracks.len() > 1;
 
         for segment in &measure.segments {
             if segment.kind == SegmentType::ChordRest {
@@ -685,47 +764,68 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                     segment_width = (QUARTER_NOTE_SPACE * stretch / 1024).max(min_width);
                     match &cr.kind {
                         ChordRestKind::Chord(chord) => {
-                            let mut notes = Vec::new();
-                            for id in &chord.notes {
-                                if let Some(note) = score.notes.get(id.index()) {
-                                    if !note.visible {
-                                        continue;
-                                    }
-                                    let head =
-                                        head_name(note.head, &note.head_group, cr.duration.kind);
-                                    let accidental = note
-                                        .accidental
-                                        .filter(|a| a.visible)
-                                        .and_then(|a| accidental_name(a.kind));
-                                    let (written_tpc, written_pitch) = match inverse {
-                                        Some(interval) => {
-                                            let _ = interval.diatonic;
-                                            // The pitch class keeps its spelling for
-                                            // octave transpositions; other intervals
-                                            // are P3 (accidental/stack work).
-                                            (
-                                                note.tpc,
-                                                (i32::from(note.pitch) + interval.chromatic)
-                                                    .clamp(0, 127)
-                                                    as u8,
-                                            )
-                                        }
-                                        None => (note.tpc, note.pitch),
-                                    };
-                                    notes.push(NoteAtom {
-                                        line: note_line(written_tpc, written_pitch, bottom),
-                                        head,
-                                        accidental,
+                            // // Port of `ChordLayout::layoutChords1`
+                            // (`chordlayout.cpp:631-645`): grace notes before
+                            // the main note are stacked to its left, one
+                            // `minNoteDistance` apart, at `graceNoteMag` 0.7.
+                            // They share the main note's segment and do not
+                            // advance its x.
+                            let head_w = glyph_width("noteheadBlack");
+                            let grace_w = head_w * 7 / 10;
+                            let mut grace_x =
+                                x - head_w - MIN_NOTE_DISTANCE - grace_w;
+                            for grace in chord.grace_chords.iter().rev() {
+                                let notes = note_atoms(
+                                    &grace.chord,
+                                    score,
+                                    grace.duration.kind,
+                                    bottom,
+                                    inverse,
+                                );
+                                if !notes.is_empty() {
+                                    let lines: Vec<i32> =
+                                        notes.iter().map(|note| note.line).collect();
+                                    let heads: Vec<&str> =
+                                        notes.iter().map(|note| note.head).collect();
+                                    let g_duration = duration_code(grace.duration.kind);
+                                    let g_up = stem_up(&lines, StemDirection::Auto, false, track);
+                                    // Measured against the 4.7.4 SVG: grace
+                                    // stems are ~0.82 of a full stem after the
+                                    // anchor and minimum-length corrections
+                                    // (`stemlayout.cpp:60-161`, intrinsicMag
+                                    // 0.7 with a different middle-line rule).
+                                    let stem_len = stem_length(&lines, &heads, g_up, g_duration)
+                                        * 82 / 100;
+                                    events.push(Atom {
+                                        x: grace_x,
+                                        kind: AtomKind::Chord,
+                                        chord: Some(ChordAtom {
+                                            duration: g_duration,
+                                            dots: grace.duration.dots,
+                                            grace: true,
+                                            stem_up: g_up,
+                                            stem_len,
+                                            notes,
+                                        }),
+                                        voice: track,
+                                        measure: measure.number,
+                                        beams: g_duration.saturating_sub(4),
+                                        beam_mode: BeamMode::Auto,
+                                        beam_start: false,
+                                        beam_dir: None,
+                                        grace: true,
                                     });
                                 }
+                                grace_x -= grace_w + MIN_NOTE_DISTANCE * 7 / 10;
                             }
-                            notes.sort_by_key(|note| note.line);
+                            let notes = note_atoms(chord, score, cr.duration.kind, bottom, inverse);
                             let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
                             let heads: Vec<&str> = notes.iter().map(|n| n.head).collect();
                             let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
                             let chord_atom = ChordAtom {
                                 duration,
                                 dots: cr.duration.dots,
+                                grace: false,
                                 stem_up: up,
                                 stem_len: stem_length(&lines, &heads, up, duration),
                                 notes,
@@ -734,16 +834,33 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                                 x,
                                 kind: AtomKind::Chord,
                                 chord: Some(chord_atom),
+                                voice: track,
+                                measure: measure.number,
+                                // // Port of `ChordRest::beams()` in
+                                // `engraving/dom/chordrest.cpp`: one stroke
+                                // per duration step below a quarter.
+                                beams: duration.saturating_sub(4),
+                                beam_mode: cr.engraving.beam_mode,
+                                beam_start: cr.engraving.beam_start,
+                                beam_dir: cr.engraving.beam_direction,
+                                grace: chord.grace.is_some(),
                             });
                         }
                         ChordRestKind::Rest(_) => {
-                            events.push(Atom::simple(
+                            let mut rest = Atom::simple(
                                 x,
                                 AtomKind::Rest {
                                     duration,
                                     dots: cr.duration.dots,
                                 },
-                            ));
+                            );
+                            rest.voice = track;
+                            rest.measure = measure.number;
+                            rest.beams = duration.saturating_sub(4);
+                            rest.beam_mode = cr.engraving.beam_mode;
+                            rest.beam_start = cr.engraving.beam_start;
+                            rest.beam_dir = cr.engraving.beam_direction;
+                            events.push(rest);
                         }
                     }
                 }
@@ -863,8 +980,11 @@ mod tests {
         // A single high note gets a down stem, a low note an up stem.
         assert!(!auto_stem_up(&[0]));
         assert!(auto_stem_up(&[8]));
-        // Symmetric chord: the middle line leads to the default "up".
-        assert!(auto_stem_up(&[2, 6]));
+        // A symmetric chord (or a single note on the middle line) has no
+        // net direction: `computeAutoStemDirection` returns 0 and the stem
+        // points down (`chordlayout.cpp:1626-1642`).
+        assert!(!auto_stem_up(&[2, 6]));
+        assert!(!auto_stem_up(&[4]));
         // Two voices: even tracks up, odd tracks down (`chordlayout.cpp:1586`).
         assert!(stem_up(&[0], StemDirection::Auto, true, 0));
         assert!(!stem_up(&[0], StemDirection::Auto, true, 1));

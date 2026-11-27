@@ -26,9 +26,10 @@
 //! Page-local placement from precomputed atoms. `page(n)` never touches the
 //! `Score` and never recomputes an atom.
 
+use alloc::vec;
 use alloc::vec::Vec;
 
-use scoretk_core::model::Score;
+use scoretk_core::model::{BeamMode, Score, StemDirection};
 use scoretk_smufl::{anchor, glyph, units_to_fixed};
 
 use crate::atoms::{flag_name, rest_name, Atom, AtomKind, ChordAtom, MeasureAtom};
@@ -124,6 +125,328 @@ impl PageSpec {
     }
 }
 
+/// Beam width (0.5 sp, `styledef.cpp:225`) and distance between successive
+/// beams (`beamSpacing = 3`, `beamlayout.cpp:328-331`: 3/4 sp).
+const BEAM_WIDTH: i32 = 512;
+const BEAM_DIST: i32 = 768;
+/// // Port of `beamtremololayout.cpp:48` (`_maxSlopes`): the maximum slant
+/// in quarter spaces for a given note interval (seconds, thirds, …).
+const MAX_SLOPES: [i32; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+
+/// Beam geometry of one system: display items plus a stem override per
+/// event (system-local event index).
+#[derive(Default)]
+struct BeamPlan {
+    items: Vec<DisplayItem>,
+    /// `Some((stem_up, stem_length))` for a chord whose stem must reach a
+    /// beam instead of stopping at the default length.
+    stems: Vec<Option<(bool, i32)>>,
+}
+
+fn round_quarter(value: i32) -> i32 {
+    // Rust truncates toward zero; round half away from zero like C++'s
+    // `std::round` (`beamtremololayout.cpp:703-704`).
+    if value >= 0 {
+        (value + 128) / 256 * 256
+    } else {
+        (value - 128) / 256 * 256
+    }
+}
+
+fn beam_no_continue(mode: BeamMode) -> bool {
+    matches!(mode, BeamMode::End | BeamMode::None)
+}
+
+fn beam_mode_mid(mode: BeamMode) -> bool {
+    matches!(mode, BeamMode::Mid | BeamMode::Begin16 | BeamMode::Begin32)
+}
+
+/// // Port of `BeamLayout::createBeams` (`beamlayout.cpp:622-809`) and
+/// `beamGraceNotes` (`:546-619`): walk the events of one voice and split
+/// them at beam boundaries. `beamNoContinue` ends a group, `beamModeMid`
+/// continues it, `Begin` starts a new one, `Auto` continues over rests and
+/// short notes only while the strokes continue.
+fn beam_groups(events: &[(i32, &Atom)], voice: u32) -> Vec<Vec<usize>> {
+    let mut groups = Vec::new();
+    let mut current: Vec<usize> = Vec::new();
+    for (index, (_, event)) in events.iter().enumerate() {
+        if event.voice != voice {
+            continue;
+        }
+        let mode = event.beam_mode;
+        let close = |current: &mut Vec<usize>, groups: &mut Vec<Vec<usize>>| {
+            if current.len() > 1 {
+                groups.push(core::mem::take(current));
+            } else {
+                current.clear();
+            }
+        };
+        if beam_no_continue(mode) {
+            close(&mut current, &mut groups);
+            continue;
+        }
+        if event.beam_start || matches!(mode, BeamMode::Begin | BeamMode::Begin16 | BeamMode::Begin32) {
+            close(&mut current, &mut groups);
+            current.push(index);
+            continue;
+        }
+        // `beamModeMid` keeps a beam open over a segment or measure
+        // boundary (`beamlayout.cpp:660, 748`); an `Auto` event only
+        // continues while it carries strokes or is a rest beamed over, and
+        // never crosses a measure without an explicit continuation.
+        let crosses_measure = current
+            .last()
+            .is_some_and(|&previous| events[previous].1.measure != event.measure);
+        if crosses_measure && !beam_mode_mid(mode) {
+            close(&mut current, &mut groups);
+        }
+        if event.beams == 0 && !matches!(event.kind, AtomKind::Rest { .. }) && !beam_mode_mid(mode) {
+            close(&mut current, &mut groups);
+            continue;
+        }
+        current.push(index);
+    }
+    if current.len() > 1 {
+        groups.push(current);
+    }
+    groups
+}
+
+/// // Port of `BeamTremoloLayout::calculateAnchors`
+/// (`beamtremololayout.cpp:591-770`) and `computeDesiredSlant` (`:1094-1156`):
+/// the beam's two ends sit on the default stem tips of the first and last
+/// chords, quantised to quarter spaces; the slant is limited both by the
+/// note interval and by the beam's width in staff spaces. The inner stems
+/// are then extended to the beam line (`beamlayout.cpp:1262-1307`).
+fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> BeamPlan {
+    let mut plan = BeamPlan {
+        items: Vec::new(),
+        stems: vec![None; events.len()],
+    };
+    let mut voices = Vec::new();
+    for (_, event) in events {
+        if !voices.contains(&event.voice) {
+            voices.push(event.voice);
+        }
+    }
+    for voice in voices {
+        for group in beam_groups(events, voice) {
+            if group.iter().all(|&index| events[index].1.beams == 0) {
+                continue;
+            }
+            // Automatically grouped tuplets/beams still use the default
+            // stems here: their slant is governed by the tuplet beam
+            // grouping of `Groups::actualBeamMode`, which this page-local
+            // pass does not yet reproduce. Only groups anchored by an
+            // explicit `<Beam>` or `BeamMode` are ported (P3 debt).
+            let anchored = group.first().is_some_and(|&index| {
+                events[index].1.beam_start
+                    || !matches!(events[index].1.beam_mode, BeamMode::Auto)
+            });
+            if !anchored {
+                continue;
+            }
+            let chords: Vec<usize> = group
+                .iter()
+                .copied()
+                .filter(|&index| events[index].1.chord.is_some())
+                .collect();
+            if chords.len() < 2 {
+                continue;
+            }
+            let first = chords[0];
+            let last = chords[chords.len() - 1];
+            let explicit = events[group[0]].1.beam_dir;
+            let up = match explicit {
+                Some(StemDirection::Up) => true,
+                Some(StemDirection::Down) => false,
+                _ if multi_voice => voice.is_multiple_of(2),
+                _ => {
+                    let lines: Vec<i32> = group
+                        .iter()
+                        .filter_map(|&index| events[index].1.chord.as_ref())
+                        .flat_map(|chord| chord.notes.iter().map(|note| note.line))
+                        .collect();
+                    crate::atoms::auto_stem_up(&lines)
+                }
+            };
+            // Override every chord of the group with the beam direction
+            // (`beamlayout.cpp:169-199`, `layout1`).
+            for &index in &chords {
+                if let Some(chord) = &events[index].1.chord {
+                    plan.stems[index] = Some((up, chord.stem_len));
+                }
+            }
+            let line_of = |index: usize| {
+                let chord = events[index].1.chord.as_ref().unwrap();
+                let mut lines = chord.notes.iter().map(|note| note.line);
+                if up {
+                    lines.min().unwrap_or(4)
+                } else {
+                    lines.max().unwrap_or(4)
+                }
+            };
+            let start_line = line_of(first);
+            let end_line = line_of(last);
+            // The anchor is the stem tip with the chord's own direction,
+            // before the beam is attached (quarter-space grid).
+            let anchor = |index: usize| {
+                let chord = events[index].1.chord.as_ref().unwrap();
+                let own_up = chord.stem_up;
+                let line = if own_up {
+                    chord.notes.iter().map(|note| note.line).min().unwrap_or(4)
+                } else {
+                    chord.notes.iter().map(|note| note.line).max().unwrap_or(4)
+                };
+                let note_y = line * HALF_SP;
+                let tip = if own_up {
+                    note_y - chord.stem_len
+                } else {
+                    note_y + chord.stem_len
+                };
+                round_quarter(tip)
+            };
+            let start_y = anchor(first);
+            let end_y = anchor(last);
+            let x1 = events[first].0;
+            let x2 = events[last].0;
+            if x2 <= x1 {
+                continue;
+            }
+            let width_sp = (x2 - x1) / SP;
+            let max_slope = if width_sp < 3 {
+                1
+            } else if width_sp < 5 {
+                2
+            } else if width_sp < 8 {
+                3
+            } else if width_sp < 10 {
+                4
+            } else if width_sp < 15 {
+                5
+            } else if width_sp < 20 {
+                6
+            } else {
+                7
+            };
+            let interval = (start_line - end_line).abs().min(7) as usize;
+            let slant = max_slope.min(MAX_SLOPES[interval]) * if up { 1 } else { -1 };
+            let start_dictator = if up {
+                start_line < end_line
+            } else {
+                start_line > end_line
+            };
+            let mut dictator = if start_dictator { start_y } else { end_y };
+            let mut pointer = if start_dictator { end_y } else { start_y };
+            let dictator_is_start = start_dictator;
+            let ascending = start_line > end_line;
+            let backwards = (dictator > pointer) != if dictator_is_start {
+                ascending
+            } else {
+                !ascending
+            };
+            if backwards {
+                dictator = pointer - slant * 256;
+            } else {
+                pointer = dictator + slant * 256;
+            }
+            let y1 = if start_dictator { dictator } else { pointer };
+            let y2 = if start_dictator { pointer } else { dictator };
+            let beam_y = |x: i32| y1 + (i64::from(y2 - y1) * i64::from(x - x1) / i64::from(x2 - x1)) as i32;
+            let max_beams = group
+                .iter()
+                .map(|&index| usize::from(events[index].1.beams))
+                .max()
+                .unwrap_or(0);
+            for level in 0..max_beams {
+                // One beam segment per maximal run of chords carrying this
+                // level (`createBeamSegment`, beamlayout.cpp:1215-1216).
+                let mut run: Vec<usize> = Vec::new();
+                let flush = |run: &mut Vec<usize>, plan: &mut BeamPlan| {
+                    if run.len() < 2 {
+                        run.clear();
+                        return;
+                    }
+                    let sx = events[run[0]].0;
+                    let ex = events[*run.last().unwrap()].0;
+                    let offset = if up {
+                        -(level as i32) * BEAM_DIST
+                    } else {
+                        (level as i32) * BEAM_DIST
+                    };
+                    plan.items.push(DisplayItem::beam(
+                        ItemKind::Beam,
+                        sx,
+                        system_y + beam_y(sx) + offset - BEAM_WIDTH / 2,
+                        ex,
+                        system_y + beam_y(ex) + offset - BEAM_WIDTH / 2,
+                        BEAM_WIDTH,
+                    ));
+                    for &index in run.iter() {
+                        if let Some(chord) = &events[index].1.chord {
+                            let line = line_of(index);
+                            let note_y = line * HALF_SP;
+                            // `place_chord` measures the stem from the note
+                            // line (`ny ± length`); the SMuFL anchor only
+                            // moves the drawn near end by `anchor_y`.
+                            let far_end = beam_y(events[index].0) + offset;
+                            let length = if up {
+                                (note_y - far_end).max(0)
+                            } else {
+                                (far_end - note_y).max(0)
+                            };
+                            plan.stems[index] = Some((up, length));
+                        }
+                    }
+                    run.clear();
+                };
+                for &index in &group {
+                    if events[index].1.beams as usize > level {
+                        run.push(index);
+                    } else {
+                        flush(&mut run, &mut plan);
+                    }
+                }
+                flush(&mut run, &mut plan);
+            }
+        }
+    }
+    plan
+}
+
+/// Absolute x of every event of a system, in the same order as
+/// `place_measure` advances its cursor. Shared by beam layout and drawing so
+/// both agree after justification.
+fn system_events<'a>(
+    atoms: &'a [MeasureAtom],
+    system: &crate::breaking::SystemPlan,
+    left: i32,
+) -> Vec<(i32, &'a Atom)> {
+    let mut events = Vec::new();
+    let mut measure_x = left;
+    for atom in &atoms[system.first..system.first + system.count] {
+        let mut cursor = atom.events.first().map_or(0, |event| event.x);
+        for (index, event) in atom.events.iter().enumerate() {
+            events.push((measure_x + cursor, event));
+            let width = if index + 1 < atom.events.len() {
+                atom.events[index + 1].x - event.x
+            } else {
+                atom.width - event.x
+            };
+            let stretched = if !event.grace
+            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+        {
+                width * system.scale / 1024
+            } else {
+                width
+            };
+            cursor += stretched;
+        }
+        measure_x += cursor;
+    }
+    events
+}
+
 /// Place one measure's events at `x0` on the system at `system_y`.
 ///
 /// // Port of `horizontalspacing.cpp:214-219` and `:1087-1111`: chord/rest
@@ -135,18 +458,24 @@ fn place_measure(
     x0: i32,
     system_y: i32,
     scale: i32,
+    events: &[(i32, &Atom)],
+    event_offset: usize,
+    plan: &BeamPlan,
 ) -> i32 {
     // The first header event sits at its own x (e.g. clefLeftMargin); the
     // loop below then advances by the gap to the following event.
     let mut cursor = atom.events.first().map_or(0, |event| event.x);
     for (index, event) in atom.events.iter().enumerate() {
-        place_event(out, event, x0 + cursor, system_y);
+        let absolute_x = events.get(event_offset + index).map_or(x0 + cursor, |item| item.0);
+        place_event(out, event, absolute_x, system_y, plan.stems.get(event_offset + index).copied().flatten());
         let width = if index + 1 < atom.events.len() {
             atom.events[index + 1].x - event.x
         } else {
             atom.width - event.x
         };
-        let stretched = if matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
+        let stretched = if !event.grace
+            && matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. })
+        {
             width * scale / 1024
         } else {
             width
@@ -321,7 +650,13 @@ fn stem_anchor_offset(head: &str, up: bool) -> i32 {
     }
 }
 
-fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
+fn place_chord(
+    out: &mut DisplayList,
+    chord: &ChordAtom,
+    x: i32,
+    y: i32,
+    beam: Option<(bool, i32)>,
+) {
     for note in &chord.notes {
         let ny = y + note.line * HALF_SP;
         // // Port of `accidentalslayout.cpp:286-305` (`stackAccidental`) and
@@ -375,9 +710,11 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     let bottom = chord.notes.iter().map(|n| n.line).max().unwrap();
     let head = glyph(chord.notes[0].head).unwrap();
     let head_w = units_to_fixed(head.bbox[2]);
-    let anchor_line = if chord.stem_up { bottom } else { top };
+    let up = beam.map_or(chord.stem_up, |(up, _)| up);
+    let stem_len = beam.map_or(chord.stem_len, |(_, length)| length);
+    let anchor_line = if up { bottom } else { top };
     let ny = y + anchor_line * HALF_SP;
-    let stem_x = if chord.stem_up {
+    let stem_x = if up {
         x + head_w - STEM_WIDTH / 2
     } else {
         x - STEM_WIDTH / 2
@@ -387,21 +724,24 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
     // centre. SMuFL anchor y is up-positive; our page coordinates are
     // down-positive, hence the sign flip. `stemlayout.cpp:227-242`
     // (`StemLayout::stemPos`) supplies the horizontal side of the stem.
-    let anchor_head = if chord.stem_up {
+    let anchor_head = if up {
         chord.notes.first()
     } else {
         chord.notes.last()
     };
     let anchor_y = stem_anchor_offset(
         anchor_head.map_or("noteheadBlack", |note| note.head),
-        chord.stem_up,
+        up,
     );
+    // `graceNoteMag` 0.7 scales the head and its stem anchor
+    // (`beamlayout.cpp:339-341`, `styledef.cpp:474`).
+    let anchor_y = if chord.grace { anchor_y * 7 / 10 } else { anchor_y };
     // The far end stays at `note ± stemLength`; only the notehead end moves
     // to the anchor (`tlayout.cpp:5198-5201` computes y2 independently).
-    let (sy, ey) = if chord.stem_up {
-        (ny - chord.stem_len, ny + anchor_y)
+    let (sy, ey) = if up {
+        (ny - stem_len, ny + anchor_y)
     } else {
-        (ny + anchor_y, ny + chord.stem_len)
+        (ny + anchor_y, ny + stem_len)
     };
     // // Port of `stemlayout.cpp:227-242` and `tlayout.cpp:5143-5175`: a
     // stem is a rectangle from the notehead anchor to `stemLength` away.
@@ -412,14 +752,22 @@ fn place_chord(out: &mut DisplayList, chord: &ChordAtom, x: i32, y: i32) {
         STEM_WIDTH,
         ey - sy,
     ));
-    if let Some(name) = flag_name(chord.duration, chord.stem_up) {
-        let _ = (top, bottom);
-        let flag_y = if chord.stem_up { sy } else { ey };
-        out.glyph(ItemKind::Flag, name, stem_x, flag_y);
+    if beam.is_none() {
+        if let Some(name) = flag_name(chord.duration, up) {
+            let _ = (top, bottom);
+            let flag_y = if up { sy } else { ey };
+            out.glyph(ItemKind::Flag, name, stem_x, flag_y);
+        }
     }
 }
 
-fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32) {
+fn place_event(
+    out: &mut DisplayList,
+    event: &Atom,
+    x: i32,
+    y: i32,
+    beam: Option<(bool, i32)>,
+) {
     match event.kind {
         AtomKind::Clef { name } => {
             // Leland's clef origin sits near the second staff line; the
@@ -433,7 +781,7 @@ fn place_event(out: &mut DisplayList, event: &Atom, x: i32, y: i32) {
         } => place_time_sig(out, numerator, denominator, x, y),
         AtomKind::Chord => {
             if let Some(chord) = &event.chord {
-                place_chord(out, chord, x, y);
+                place_chord(out, chord, x, y, beam);
             }
         }
         AtomKind::Rest { duration, dots } => {
@@ -483,9 +831,23 @@ pub fn build_page(
                 STAFF_LINE_WIDTH,
             ));
         }
+        let events = system_events(atoms, system, left);
+        let mut voices = alloc::vec::Vec::new();
+        for (_, event) in &events {
+            if !voices.contains(&event.voice) {
+                voices.push(event.voice);
+            }
+        }
+        let multi_voice = voices.len() > 1;
+        let plan = plan_beams(&events, multi_voice, sy);
+        for item in &plan.items {
+            out.push(*item);
+        }
         let mut x = left;
+        let mut event_offset = 0;
         for atom in &atoms[system.first..system.first + system.count] {
-            x += place_measure(&mut out, atom, x, sy, system.scale);
+            x += place_measure(&mut out, atom, x, sy, system.scale, &events, event_offset, &plan);
+            event_offset += atom.events.len();
         }
         // // Port of `measurelayout.cpp` / `tdraw.cpp`: a plain start bar
         // line is not drawn at the beginning of a system (the 4.7.4 SVG has
@@ -541,6 +903,7 @@ mod tests {
                 chord: Some(ChordAtom {
                     duration: 4,
                     dots: 0,
+                    grace: false,
                     stem_up: true,
                     stem_len: 3584,
                     notes: vec![NoteAtom {
@@ -549,6 +912,13 @@ mod tests {
                         accidental: None,
                     }],
                 }),
+                    voice: 0,
+                measure: 0,
+                    beams: 0,
+                    beam_mode: scoretk_core::model::BeamMode::Auto,
+                    beam_start: false,
+                    beam_dir: None,
+                    grace: false,
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
@@ -624,6 +994,7 @@ mod tests {
                     chord: Some(ChordAtom {
                         duration: 4,
                         dots: 0,
+                        grace: false,
                         stem_up: true,
                         stem_len: 3072,
                         notes: vec![NoteAtom {
@@ -632,6 +1003,13 @@ mod tests {
                             accidental: None,
                         }],
                     }),
+                        voice: 0,
+                measure: 0,
+                        beams: 0,
+                        beam_mode: scoretk_core::model::BeamMode::Auto,
+                    beam_start: false,
+                        beam_dir: None,
+                        grace: false,
                 },
             ],
             start_bar: crate::atoms::BarCode(1),
@@ -682,6 +1060,7 @@ mod tests {
                 chord: Some(ChordAtom {
                     duration: 4,
                     dots: 0,
+                    grace: false,
                     stem_up: true,
                     stem_len: 3072,
                     notes: vec![NoteAtom {
@@ -690,6 +1069,13 @@ mod tests {
                         accidental: Some("accidentalSharp"),
                     }],
                 }),
+                    voice: 0,
+                measure: 0,
+                    beams: 0,
+                    beam_mode: scoretk_core::model::BeamMode::Auto,
+                    beam_start: false,
+                    beam_dir: None,
+                    grace: false,
             }],
             start_bar: crate::atoms::BarCode(1),
             end_bar: crate::atoms::BarCode(1),
@@ -727,6 +1113,49 @@ mod tests {
             .position(|item| item.kind == ItemKind::Notehead)
             .unwrap();
         assert!(accidental_index < head_index);
+    }
+
+    #[test]
+    fn an_explicit_beam_extends_both_stems_to_its_centre() {
+        // `beamlayout.cpp:1262-1307`: a beam anchored by `<Beam>` extends
+        // each stem to the beam line; the beam is drawn around that line
+        // (`tdraw.cpp:920-936`) with `beamWidth` thickness.
+        let mut first = atom(6);
+        let mut second = atom(6);
+        first.events[0].beams = 1;
+        first.events[0].beam_start = true;
+        second.events[0].beams = 1;
+        first.events[0].x = 4 * SP;
+        second.events[0].x = 12 * SP;
+        let mut score_atoms = vec![first, second];
+        score_atoms[1].events[0].x = 12 * SP;
+        let list = page(&score_atoms, &PageSpec::default(), 0);
+        assert_eq!(list.count(ItemKind::Beam), 1);
+        let beam = list
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Beam)
+            .unwrap();
+        let Geometry::Beam { y1, y2, width, .. } = beam.geometry else {
+            panic!("beam must be a slanted rectangle");
+        };
+        assert_eq!(width, BEAM_WIDTH);
+        // The notes are level, so the beam is horizontal and sits above the
+        // staff (up stem) with its centre on the stem tips.
+        assert_eq!(y1, y2);
+        let stems: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Stem)
+            .collect();
+        assert_eq!(stems.len(), 2);
+        for stem in stems {
+            let Geometry::Rect { y, h, .. } = stem.geometry else {
+                panic!("stem must be a rectangle");
+            };
+            assert_eq!(y, y1 + BEAM_WIDTH / 2);
+            assert!(h > 0);
+        }
     }
 
     #[test]

@@ -189,6 +189,7 @@ pub(crate) fn read_chord_rest(
         engraving: ChordRestEngraving {
             beam_mode: beam,
             beam_direction: None,
+            beam_start: false,
         },
         kind,
     }
