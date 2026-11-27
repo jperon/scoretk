@@ -61,10 +61,12 @@ FULL_SUPPORT_EXTRA: dict[str, tuple[str, ...]] = {
 # Occurrences of the `gabc` marker in any carrier, including `gabc:` fields,
 # `type="gabc-*"`, `gabc:layout:` labels and private `gabcHeader*` variables.
 GABC_RE = re.compile(r"(?i)gabc")
-# An invisible MusicXML element that actually carries text.
+# An invisible MusicXML extension element that actually carries text. Native
+# hidden text such as `<part-name print-object="no">Gregorian</part-name>` is
+# not a private dump and is deliberately excluded.
 HIDDEN_TEXT_RE = re.compile(
-    r"<([A-Za-z][\w:-]*)\b([^>]*\bprint-object\s*=\s*\"no\"[^>]*)>"
-    r"([^<]+)</\1>")
+    r"<(other-direction|other-notation|other-technical|words|annot)"
+    r"\b([^>]*\bprint-object\s*=\s*\"no\"[^>]*)>([^<]+)</\1>")
 # MEI labels encoding source-private layout details (`layout:`, `gabc:`).
 PRIVATE_LABEL_RE = re.compile(
     r'\b(?:label|name|type|value)="(?:gabc:|layout:)[^"]*"')

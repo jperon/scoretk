@@ -1116,11 +1116,17 @@ impl<'a> Context<'a> {
             if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
                 out.attr(false);
                 if measure_index == 0 {
-                    chant::write_header_directions(out, gregorian);
+                    // Les champs `gabc:` sont le porteur exact du mode par
+                    // défaut (octets conformes à 4.7.4) ; `full_support`
+                    // n'écrit que les porteurs XSD 4.0, sans aucun texte
+                    // caché ni préfixe privé.
+                    let private = !self.options.full_support;
+                    chant::write_header_directions(out, gregorian, private);
                     chant::write_all_syllable_directions(
                         out,
                         gregorian,
                         self.options.gabc_neume_smufl,
+                        private,
                     );
                 }
             }
@@ -2289,6 +2295,7 @@ impl Context<'_> {
                             gregorian_note,
                             source.gregorian_syllable,
                             source.gregorian_note,
+                            !self.options.full_support,
                         );
                         // Une barre de séparation ferme la mesure sur la
                         // dernière note *chantée* du groupe source. Seules
@@ -2304,6 +2311,7 @@ impl Context<'_> {
                                 syllable_index: source.gregorian_syllable,
                                 breath,
                                 smufl: self.options.gabc_neume_smufl,
+                                private: !self.options.full_support,
                             },
                         );
                         // Un neume est le groupe parenthesé source

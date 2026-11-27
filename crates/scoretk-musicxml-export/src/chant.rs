@@ -80,7 +80,14 @@ pub(crate) fn field(key: char, value: &str) -> String {
 ///
 /// `<other-direction>` est le point d'extension normalisé pour une direction
 /// que MusicXML ne décrit pas (XSD 4.0, `complexType other-direction`).
-pub(crate) fn write_header_directions(out: &mut Out, gregorian: &Gregorian) {
+pub(crate) fn write_header_directions(
+    out: &mut Out,
+    gregorian: &Gregorian,
+    private: bool,
+) {
+    if !private {
+        return;
+    }
     out.attr(false);
     for header in &gregorian.headers {
         let text = format!(
@@ -412,9 +419,14 @@ pub(crate) fn write_printed_rubrics(out: &mut Out, syllable: &Syllable) {
 /// il y a donc moins de mesures que de syllabes. Les directions privées sont
 /// regroupées au début du document pour que l'aller-retour L6 ne dépende pas
 /// du nombre de mesures projetées.
-pub(crate) fn write_all_syllable_directions(out: &mut Out, gregorian: &Gregorian, styled: bool) {
+pub(crate) fn write_all_syllable_directions(
+    out: &mut Out,
+    gregorian: &Gregorian,
+    styled: bool,
+    private: bool,
+) {
     for index in 0..gregorian.syllables.len() {
-        write_syllable_direction(out, gregorian, index, styled);
+        write_syllable_direction(out, gregorian, index, styled, private);
     }
 }
 
@@ -424,38 +436,41 @@ pub(crate) fn write_syllable_direction(
     gregorian: &Gregorian,
     index: usize,
     styled: bool,
+    private: bool,
 ) {
     let Some(syllable) = gregorian.syllables.get(index) else {
         return;
     };
-    let mut text = format!(
-        "{PREFIX}syllable:{}|{}|{}",
-        field('i', &index.to_string()),
-        field('t', &syllable.text),
-        field('w', if syllable.space_after { "1" } else { "0" })
-    );
-    if let Some(clef) = &syllable.clef {
-        text.push('|');
-        text.push_str(&field('c', clef));
+    if private {
+        let mut text = format!(
+            "{PREFIX}syllable:{}|{}|{}",
+            field('i', &index.to_string()),
+            field('t', &syllable.text),
+            field('w', if syllable.space_after { "1" } else { "0" })
+        );
+        if let Some(clef) = &syllable.clef {
+            text.push('|');
+            text.push_str(&field('c', clef));
+        }
+        if let Some(rubric) = &syllable.rubric {
+            text.push('|');
+            text.push_str(&field('r', rubric));
+        }
+        if let Some(above) = &syllable.above_text {
+            text.push('|');
+            text.push_str(&field('A', above));
+        }
+        for bar in &syllable.bars {
+            text.push('|');
+            text.push_str(&field('b', bar.as_str()));
+        }
+        for sign in &syllable.signs {
+            text.push('|');
+            text.push_str(&field('z', &sign.raw));
+        }
+        out.attr(false);
+        write_direction(out, &text);
     }
-    if let Some(rubric) = &syllable.rubric {
-        text.push('|');
-        text.push_str(&field('r', rubric));
-    }
-    if let Some(above) = &syllable.above_text {
-        text.push('|');
-        text.push_str(&field('A', above));
-    }
-    for bar in &syllable.bars {
-        text.push('|');
-        text.push_str(&field('b', bar.as_str()));
-    }
-    for sign in &syllable.signs {
-        text.push('|');
-        text.push_str(&field('z', &sign.raw));
-    }
-    out.attr(false);
-    write_direction(out, &text);
     if let Some(above) = &syllable.above_text {
         // XSD 4.0 `words` / `placement=above` : le texte `[alt:…]` devient
         // lisible par n'importe quel lecteur MusicXML, sans le préfixe GABC.
@@ -478,29 +493,31 @@ pub(crate) fn write_syllable_direction(
     // chantée : la projection dérivée ne produit donc aucun `<note>` pour
     // elle. Son rang source est transporté séparément pour que l'aller-retour
     // L6 reste exact ; aucun consommateur tiers n'a besoin de ce champ.
-    for (note_index, note) in syllable.notes.iter().enumerate() {
-        if note
-            .signs
-            .iter()
-            .any(|sign| sign.kind == SignKind::Alteration)
-        {
-            let mut text = format!(
-                "{PREFIX}alter:{}|{}|{}|{}",
-                field('i', &index.to_string()),
-                field('a', &note_index.to_string()),
-                field('l', &note.letter.to_string()),
-                field('g', &note.glyph)
-            );
-            if let Some(offset) = note.source_offset {
-                text.push('|');
-                text.push_str(&field('o', &offset.to_string()));
+    if private {
+        for (note_index, note) in syllable.notes.iter().enumerate() {
+            if note
+                .signs
+                .iter()
+                .any(|sign| sign.kind == SignKind::Alteration)
+            {
+                let mut text = format!(
+                    "{PREFIX}alter:{}|{}|{}|{}",
+                    field('i', &index.to_string()),
+                    field('a', &note_index.to_string()),
+                    field('l', &note.letter.to_string()),
+                    field('g', &note.glyph)
+                );
+                if let Some(offset) = note.source_offset {
+                    text.push('|');
+                    text.push_str(&field('o', &offset.to_string()));
+                }
+                if let Some(end) = note.source_end {
+                    text.push('|');
+                    text.push_str(&field('e', &end.to_string()));
+                }
+                out.attr(false);
+                write_direction(out, &text);
             }
-            if let Some(end) = note.source_end {
-                text.push('|');
-                text.push_str(&field('e', &end.to_string()));
-            }
-            out.attr(false);
-            write_direction(out, &text);
         }
     }
 }
@@ -515,7 +532,11 @@ pub(crate) fn write_note_notation(
     note: &GregorianNote,
     syllable_index: usize,
     note_index: usize,
+    private: bool,
 ) {
+    if !private {
+        return;
+    }
     let mut text = format!(
         "{PREFIX}note:{}|{}|{}|{}",
         field('l', &note.letter.to_string()),
@@ -669,6 +690,7 @@ pub(crate) struct NoteSigns<'a> {
     pub syllable_index: usize,
     pub breath: bool,
     pub smufl: bool,
+    pub private: bool,
 }
 
 pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
@@ -677,6 +699,7 @@ pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
         syllable_index,
         breath,
         smufl,
+        private,
     } = *signs;
     if smufl {
         // XSD 4.0 `complexType other-notation` : l'attribut `smufl` donne une
@@ -702,7 +725,7 @@ pub(crate) fn write_note_signs(out: &mut Out, signs: &NoteSigns<'_>) {
     if note.signs.is_empty() && !breath {
         return;
     }
-    if !note.signs.is_empty() {
+    if private && !note.signs.is_empty() {
         out.xml
             .start_element("notations", &[("print-object", "no")]);
         out.xml.start_element("technical", &[]);
@@ -862,8 +885,8 @@ mod tests {
             }],
             ..Gregorian::default()
         };
-        write_header_directions(&mut out, &gregorian);
-        write_syllable_direction(&mut out, &gregorian, 0, false);
+        write_header_directions(&mut out, &gregorian, true);
+        write_syllable_direction(&mut out, &gregorian, 0, false, true);
         let xml = out.xml.finish();
         for absent in [
             "gabc:custos",
@@ -893,7 +916,7 @@ mod tests {
             ..Gregorian::default()
         };
         let mut out = Out::new_with(false, false);
-        write_syllable_direction(&mut out, &gregorian, 0, false);
+        write_syllable_direction(&mut out, &gregorian, 0, false, true);
         let xml = out.xml.finish();
         assert!(xml.contains("gabc:syllable:i=0|t=De\\|us|w=1"), "{xml}");
         assert!(xml.contains("|c=c3"), "{xml}");

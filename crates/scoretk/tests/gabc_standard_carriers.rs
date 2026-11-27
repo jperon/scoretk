@@ -63,6 +63,30 @@ fn smufl_chant_glyph_is_a_standard_musicxml_carrier() {
 }
 
 #[test]
+fn xml_full_support_writes_no_private_or_hidden_carrier() {
+    let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
+    let options = Options {
+        xml_full_support: true,
+        ..Options::default()
+    };
+    let xml = String::from_utf8(
+        write(&score, Format::MusicXml, &options).expect("full-support MusicXML"),
+    )
+    .expect("UTF-8");
+    assert!(xml.contains("<lyric"), "native lyric carrier missing: {xml}");
+    assert!(xml.contains("smufl=\"chant"), "SMuFL carrier missing: {xml}");
+    for dump in ["gabc", "<other-direction", "<other-technical"] {
+        assert!(!xml.contains(dump), "{dump} is a private carrier: {xml}");
+    }
+    // The default mode keeps the historical fields, so its bytes do not move.
+    let default = write(&score, Format::MusicXml, &Options::default()).expect("default MusicXML");
+    assert!(
+        String::from_utf8_lossy(&default).contains("gabc:syllable"),
+        "default private carrier removed"
+    );
+}
+
+#[test]
 fn gregorian_abc_carriers_are_readable_and_additive() {
     let score = read(GABC.as_bytes(), Format::Gabc).expect("GABC import");
     let default = write(&score, Format::Abc, &Options::default()).expect("default .abc");
