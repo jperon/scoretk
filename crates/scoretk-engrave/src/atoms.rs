@@ -38,8 +38,8 @@ use scoretk_core::model::{
 use scoretk_smufl::{glyph, units_to_fixed};
 
 use crate::style::{
-    BAR_NOTE_DISTANCE, CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEY_TIME_DISTANCE,
-    KEYSIG_ACCIDENTAL_DISTANCE, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH,
+    BAR_NOTE_DISTANCE, CLEF_KEY_RIGHT_MARGIN, CLEF_LEFT_MARGIN, KEYSIG_ACCIDENTAL_DISTANCE,
+    KEY_TIME_DISTANCE, MIN_NOTE_DISTANCE, QUARTER_NOTE_SPACE, SEGMENT_WIDTH,
     SYSTEM_HEADER_MIN_START,
 };
 
@@ -385,7 +385,11 @@ fn stem_length(lines: &[i32], up: bool, duration: u8) -> i32 {
     // starting on a low note with an up direction stops short of the middle
     // line; MuseScore adds the missing length to `finalStemLength`.
     let start = if up { bottom * 2 } else { top * 2 };
-    let stem_end = if up { start - final_qs } else { start + final_qs };
+    let stem_end = if up {
+        start - final_qs
+    } else {
+        start + final_qs
+    };
     let middle_line_qs = 8; // minStaffOverlap(false, 5, 0, …) with wide beams off
     let extra_qs = if up {
         (stem_end - middle_line_qs).max(0)
@@ -483,75 +487,75 @@ pub fn compute(score: &Score) -> Vec<MeasureAtom> {
                 // notehead/accidental/dot widths give the lower bound.
                 let mut segment_width = SEGMENT_WIDTH;
                 for (track, cr) in chord_rests {
-                let duration = duration_code(cr.duration.kind);
-                let stretch = duration_stretch(duration, cr.duration.dots);
-                spring += stretch;
-                let mut min_width = glyph_width("noteheadBlack") + MIN_NOTE_DISTANCE;
-                if cr.duration.dots > 0 {
-                    min_width += cr.duration.dots as i32 * glyph_width("augmentationDot");
-                }
-                segment_width = (QUARTER_NOTE_SPACE * stretch / 1024).max(min_width);
-                match &cr.kind {
-                    ChordRestKind::Chord(chord) => {
-                        let mut notes = Vec::new();
-                        for id in &chord.notes {
-                            if let Some(note) = score.notes.get(id.index()) {
-                                if !note.visible {
-                                    continue;
-                                }
-                                let head = head_name(note.head, cr.duration.kind);
-                                let accidental = note
-                                    .accidental
-                                    .filter(|a| a.visible)
-                                    .and_then(|a| accidental_name(a.kind));
-                                let (written_tpc, written_pitch) = match inverse {
-                                    Some(interval) => {
-                                        let _ = interval.diatonic;
-                                        // The pitch class keeps its spelling for
-                                        // octave transpositions; other intervals
-                                        // are P3 (accidental/stack work).
-                                        (
-                                            note.tpc,
-                                            (i32::from(note.pitch) + interval.chromatic)
-                                                .clamp(0, 127)
-                                                as u8,
-                                        )
-                                    }
-                                    None => (note.tpc, note.pitch),
-                                };
-                                notes.push(NoteAtom {
-                                    line: note_line(written_tpc, written_pitch, bottom),
-                                    head,
-                                    accidental,
-                                });
-                            }
-                        }
-                        notes.sort_by_key(|note| note.line);
-                        let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
-                        let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
-                        let chord_atom = ChordAtom {
-                            duration,
-                            dots: cr.duration.dots,
-                            stem_up: up,
-                            stem_len: stem_length(&lines, up, duration),
-                            notes,
-                        };
-                        events.push(Atom {
-                            x,
-                            kind: AtomKind::Chord,
-                            chord: Some(chord_atom),
-                        });
+                    let duration = duration_code(cr.duration.kind);
+                    let stretch = duration_stretch(duration, cr.duration.dots);
+                    spring += stretch;
+                    let mut min_width = glyph_width("noteheadBlack") + MIN_NOTE_DISTANCE;
+                    if cr.duration.dots > 0 {
+                        min_width += cr.duration.dots as i32 * glyph_width("augmentationDot");
                     }
-                    ChordRestKind::Rest(_) => {
-                        events.push(Atom::simple(
-                            x,
-                            AtomKind::Rest {
+                    segment_width = (QUARTER_NOTE_SPACE * stretch / 1024).max(min_width);
+                    match &cr.kind {
+                        ChordRestKind::Chord(chord) => {
+                            let mut notes = Vec::new();
+                            for id in &chord.notes {
+                                if let Some(note) = score.notes.get(id.index()) {
+                                    if !note.visible {
+                                        continue;
+                                    }
+                                    let head = head_name(note.head, cr.duration.kind);
+                                    let accidental = note
+                                        .accidental
+                                        .filter(|a| a.visible)
+                                        .and_then(|a| accidental_name(a.kind));
+                                    let (written_tpc, written_pitch) = match inverse {
+                                        Some(interval) => {
+                                            let _ = interval.diatonic;
+                                            // The pitch class keeps its spelling for
+                                            // octave transpositions; other intervals
+                                            // are P3 (accidental/stack work).
+                                            (
+                                                note.tpc,
+                                                (i32::from(note.pitch) + interval.chromatic)
+                                                    .clamp(0, 127)
+                                                    as u8,
+                                            )
+                                        }
+                                        None => (note.tpc, note.pitch),
+                                    };
+                                    notes.push(NoteAtom {
+                                        line: note_line(written_tpc, written_pitch, bottom),
+                                        head,
+                                        accidental,
+                                    });
+                                }
+                            }
+                            notes.sort_by_key(|note| note.line);
+                            let lines: Vec<i32> = notes.iter().map(|n| n.line).collect();
+                            let up = stem_up(&lines, chord.engraving.stem, multi_voice, track);
+                            let chord_atom = ChordAtom {
                                 duration,
                                 dots: cr.duration.dots,
-                            },
-                        ));
+                                stem_up: up,
+                                stem_len: stem_length(&lines, up, duration),
+                                notes,
+                            };
+                            events.push(Atom {
+                                x,
+                                kind: AtomKind::Chord,
+                                chord: Some(chord_atom),
+                            });
+                        }
+                        ChordRestKind::Rest(_) => {
+                            events.push(Atom::simple(
+                                x,
+                                AtomKind::Rest {
+                                    duration,
+                                    dots: cr.duration.dots,
+                                },
+                            ));
+                        }
                     }
-                }
                 }
                 x += segment_width;
                 continue;

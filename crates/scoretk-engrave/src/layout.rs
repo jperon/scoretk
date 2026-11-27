@@ -108,9 +108,7 @@ fn place_measure(
         } else {
             atom.width - event.x
         };
-        let stretched = if matches!(event.kind, AtomKind::Chord | AtomKind::Rest {
-            ..
-        }) {
+        let stretched = if matches!(event.kind, AtomKind::Chord | AtomKind::Rest { .. }) {
             width * scale / 1024
         } else {
             width
@@ -394,7 +392,12 @@ pub fn build_page(
         }
         // // Port of `systemlayout.cpp`: the start bar line closes the
         // system; its x is the staff origin.
-        place_barline(&mut out, atoms[system.first].start_bar, spec.margin_left, sy);
+        place_barline(
+            &mut out,
+            atoms[system.first].start_bar,
+            spec.margin_left,
+            sy,
+        );
     }
     out
 }
@@ -498,8 +501,8 @@ mod tests {
         };
         let clef_x = CLEF_LEFT_MARGIN;
         let key_x = clef_x + width("gClef") + CLEF_KEY_RIGHT_MARGIN;
-        let time_x = key_x + 4 * (width("accidentalSharp") + KEYSIG_ACCIDENTAL_DISTANCE)
-            + KEY_TIME_DISTANCE;
+        let time_x =
+            key_x + 4 * (width("accidentalSharp") + KEYSIG_ACCIDENTAL_DISTANCE) + KEY_TIME_DISTANCE;
         let note_x = time_x + width("timeSig4") + BAR_NOTE_DISTANCE;
         let atom = MeasureAtom {
             number: 0,

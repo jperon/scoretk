@@ -144,8 +144,8 @@ pub fn page_count(systems: &[SystemPlan]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use crate::atoms::{Atom, AtomKind, BarCode, ChordAtom, MeasureAtom, NoteAtom};
+    use alloc::vec;
 
     fn quarter(at: i32) -> MeasureAtom {
         MeasureAtom {
@@ -153,7 +153,13 @@ mod tests {
             width: at + 3584 + 1280,
             spring: 1024,
             events: vec![
-                Atom::simple(1280, AtomKind::Rest { duration: 4, dots: 0 }),
+                Atom::simple(
+                    1280,
+                    AtomKind::Rest {
+                        duration: 4,
+                        dots: 0,
+                    },
+                ),
                 Atom {
                     x: at,
                     kind: AtomKind::Chord,
