@@ -141,13 +141,20 @@ pub(crate) fn mmrest_group_start(measures: &[Measure], target: usize) -> usize {
 pub fn read_score(container: &MsczContainer) -> Result<Score> {
     let version = container.version()?;
     let mut score = match version.as_u32() {
-        400..=500 => read4xx::read(container.main_mscx(), version)?,
+        400..=500 => {
+            read4xx::read_with_style(container.main_mscx(), version, container.style_mss())?
+        }
         300..=399 => read302::read(container.main_mscx(), version)?,
         115..=207 => read206::read(container.main_mscx(), version)?,
         _ => return Err(Error::UnsupportedVersion(version)),
     };
-    if let Some(mss) = container.style_mss() {
-        apply_style_file(&mut score, mss)?;
+    // 4.x reads `score_style.mss` inside `read_with_style`, before the inline
+    // style; applying it here would override inline values. The compat
+    // readers of 3.x still need the three fields below.
+    if version.as_u32() < 400 {
+        if let Some(mss) = container.style_mss() {
+            apply_style_file(&mut score, mss)?;
+        }
     }
     // `Measure::checkMeasure` est appelé juste après la lecture de chaque
     // mesure par MuseScore ; les silences « gap » qui en résultent font
@@ -211,5 +218,25 @@ mod tests {
                 "version {version} lue"
             );
         }
+    }
+
+    #[test]
+    fn the_style_file_is_read_before_the_inline_style() {
+        use crate::container::MscVersion;
+
+        let mscx =
+            br#"<museScore version="4.70"><Score><Division>480</Division></Score></museScore>"#;
+        let mss = br#"<museScore version="4.70"><Style><spatium>1.3</spatium><enableVerticalSpread>0</enableVerticalSpread><staffDistance>6.5</staffDistance></Style></museScore>"#;
+        let score = read4xx::read_with_style(mscx, MscVersion::from_raw(470), Some(mss))
+            .expect("style file");
+        assert!((score.engraving.style.spatium_mm - 1.3).abs() < 1e-9);
+        assert!(!score.engraving.style.enable_vertical_spread);
+        assert!((score.engraving.style.staff_distance_sp - 6.5).abs() < 1e-9);
+
+        let inline = br#"<museScore version="4.70"><Score><Style><spatium>2</spatium></Style><Division>480</Division></Score></museScore>"#;
+        let score = read4xx::read_with_style(inline, MscVersion::from_raw(470), Some(mss))
+            .expect("inline override");
+        assert!((score.engraving.style.spatium_mm - 2.0).abs() < 1e-9);
+        assert!(!score.engraving.style.enable_vertical_spread);
     }
 }

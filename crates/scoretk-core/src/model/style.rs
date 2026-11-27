@@ -291,7 +291,10 @@ impl StyleSettings {
     pub fn set_value(&mut self, name: &str, value: &str) {
         let value = value.trim();
         match name {
-            "Spatium" => Self::set_positive(&mut self.spatium_mm, value),
+            // MuseScore 4.x writes the key in lower case in `score_style.mss`
+            // (`Sid::spatium`, styledef.cpp:752); 3.x inline styles use the
+            // capitalised spelling.
+            "spatium" | "Spatium" => Self::set_positive(&mut self.spatium_mm, value),
             "smallStaffMag" => Self::set_positive(&mut self.small_staff_mag, value),
             "pageWidth" => Self::set_positive(&mut self.page_width_in, value),
             "pageHeight" => Self::set_positive(&mut self.page_height_in, value),

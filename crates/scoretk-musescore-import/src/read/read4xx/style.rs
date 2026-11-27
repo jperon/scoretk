@@ -28,15 +28,24 @@
 //! fichier.
 
 use super::dom::Element;
+#[cfg(test)]
 use crate::container::MscVersion;
 use scoretk_core::model::StyleSettings;
 
-/// Lit un `<Style>` 4.x et complète les valeurs par défaut de `version`.
-pub(super) fn read(element: &Element, version: MscVersion) -> StyleSettings {
-    let mut style = StyleSettings::for_version(version.major());
+/// Applies one `<Style>` element on top of existing settings. MuseScore reads
+/// `score_style.mss` *before* the `.mscx`, whose inline `<Style>` only
+/// overrides the keys it contains (`MscLoader::read`, `rw/mscloader.cpp:86-94`).
+pub(super) fn apply(element: &Element, style: &mut StyleSettings) {
     for child in &element.children {
         style.set_value(&child.name, child.text());
     }
+}
+
+/// Lit un `<Style>` 4.x et complète les valeurs par défaut de `version`.
+#[cfg(test)]
+pub(super) fn read(element: &Element, version: MscVersion) -> StyleSettings {
+    let mut style = StyleSettings::for_version(version.major());
+    apply(element, &mut style);
     style
 }
 

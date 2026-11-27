@@ -78,6 +78,15 @@ fn has_page_break(element: &Element) -> bool {
 
 /// Lit un `.mscx` 4.x/5.x.
 pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
+    read_with_style(mscx, version, None)
+}
+
+/// Lit un `.mscx` 4.x/5.x avec le `score_style.mss` du `.mscz`, le cas
+/// échéant. // Port of `MscLoader::read` (`rw/mscloader.cpp:86-94`) and
+/// `MscReader::readStyleFile` (`infrastructure/mscreader.cpp:127-132`): the
+/// style file is applied first, then the inline `<Style>` of the `.mscx`
+/// overrides only the keys it carries.
+pub fn read_with_style(mscx: &[u8], version: MscVersion, mss: Option<&[u8]>) -> Result<Score> {
     let document = dom::parse(mscx)?;
     let score_element = if document.name == "Score" {
         &document
@@ -86,6 +95,12 @@ pub fn read(mscx: &[u8], version: MscVersion) -> Result<Score> {
     };
 
     let mut reader = Reader::new(version);
+    if let Some(mss) = mss {
+        let style_file = dom::parse(mss)?;
+        if let Some(style) = style_file.child("Style") {
+            style::apply(style, &mut reader.score.engraving.style);
+        }
+    }
     reader.read_score(score_element)?;
     Ok(reader.score)
 }
@@ -296,12 +311,9 @@ impl Reader {
                 }
                 "Part" => self.read_part(child),
                 "Style" => {
-                    self.score.engraving.style =
-                        style::read(child, MscVersion::from_raw(self.version));
-                    self.create_multi_measure_rests = child
-                        .child("createMultiMeasureRests")
-                        .and_then(Element::int)
-                        .is_some_and(|value| value != 0);
+                    style::apply(child, &mut self.score.engraving.style);
+                    self.create_multi_measure_rests =
+                        self.score.engraving.style.create_multi_measure_rests;
                 }
                 "metaTag" => self.read_meta_tag(child),
                 "workTitle" => self.score.metadata.work_title = child.text().to_owned(),

@@ -1362,3 +1362,47 @@ collision test compares the same glyph granularity on both sides. The visual
 evidence is `engrave-img/eng8/after.png`, rendered from the committed tree:
 every syllable of a verse now sits on one baseline on both systems of page 1.
 The remaining horizontal touching of adjacent syllables is P2 spacing debt.
+
+### 14.2 Review: read the `.mscz` style file before page layout (2026-11-27)
+
+The page-1 render was still over-spread: two systems of four staves against
+three in the 4.7.4 reference, with wide bands between the choir and organ
+staves. The style values were not wrong in our vertical code — they were
+**never read**. MuseScore loads `score_style.mss` from the `.mscz` first and
+then applies the inline `<Style>` of the `.mscx`
+(`rw/mscloader.cpp:86-94`, `infrastructure/mscreader.cpp:127-132`). Our 4.x
+reader only took three fields from that file and the engraver therefore used
+the built-in defaults: spatium 1.75 mm instead of the score's 1.3 mm,
+15 mm margins instead of 10 mm, `enableVerticalSpread` true instead of the
+score's `0`, and a 180 mm printable width instead of 190 mm. With a 170 sp
+page instead of the score's 228 sp, only two systems fitted.
+
+`read4xx::read_with_style` now applies every recognised `<Style>` key from
+`score_style.mss` to the style settings before the inline overrides, and the
+lower-case `spatium` key of 4.x style files is recognised alongside the
+legacy `Spatium` spelling (`styledef.cpp:752`). The vertical pass keeps the
+style distance as a floor and adds `minVerticalDistance` only where skylines
+actually overlap (`systemlayout.cpp:2564-2575, 2931-2989`); no clearance is
+added twice. Page breaking still uses `minSystemDistance` plus the measured
+system height (`pagelayout.cpp:248-265`), not the spread distances.
+
+| Private page 1 | Before | After | 4.7.4 |
+| --- | ---: | ---: | ---: |
+| Systems | 2 | **3** | 3 |
+| Staff tops, sp | 25.6, 45.6, 56.1, 76.0, 99.3, 119.3, 129.8, 149.8 | 24.6, 40.7, 51.2, 61.7, 80.7, 97.5, 108.0, 118.5, 137.5, 153.4, 163.9, 174.4 | 25.4, 41.9, 52.4, 64.5, 83.5, 98.5, 109.0, 121.0, 140.0, 157.6, 168.1, 179.6 |
+| System top-to-top, sp | 73.7 | **56.0, 56.9** | 58.0, 56.6 |
+| Page count | not measured on the previous build | 5 | 7 |
+
+| Oracle, 56 files | Before | After |
+| --- | ---: | ---: |
+| Failures / elements | 0 / 2490 | 0 / 2490 |
+| Elements within 0.1 sp | 378/2490 | 378/2490 |
+| Measure widths / system breaks | 69/394 / 34/56 | 69/394 / 34/56 |
+| Page counts / page-break patterns | 53/56 / 48/59 | 53/56 / 48/59 |
+| Staff tops / adjacent-staff gaps within 0.5 sp | 20/216 / 5/123 | 20/216 / 5/123 |
+
+The corpus is made of bare `.mscx` files with no `score_style.mss`, which is
+why its figures are unchanged; the private score's page geometry is the
+evidence for this step. The remaining gap to 4.7.4 is the total page count
+(5 vs 7) and the horizontal touching of adjacent syllables (P2 debt), neither
+of which is hidden by a metric. A unit test pins the style-file precedence.
