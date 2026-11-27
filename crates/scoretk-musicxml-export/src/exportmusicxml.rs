@@ -51,10 +51,10 @@ use scoretk_core::model::stable_ids::{
 use scoretk_core::model::{
     Accidental, AccidentalType, Annotation, ArticulationType, Chord, ChordRest, Clef, ClefType,
     Duration, Extension, Fraction, GraceChord, GraceType, Instrument, InstrumentChange, Key,
-    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType, Part,
-    Placement, Score, Segment, SegmentItem, SegmentType, SpannerType, StaffId, StemDirection,
-    Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId, TupletNumberType,
-    VOICES,
+    KeyMode, KeySig, Lyrics, LyricsSyllabic, Measure, Note, NoteHeadGroup, NoteHeadType,
+    NoteSource, Part, Placement, Score, Segment, SegmentItem, SegmentType, SpannerType, StaffId,
+    StemDirection, Tempo, TempoKind, Tick, TimeSig, TimeSigType, Track, Tuplet, TupletId,
+    TupletNumberType, VOICES,
 };
 
 use super::beams;
@@ -172,6 +172,7 @@ pub fn export_musicxml_with(score: &Score, options: &ExportOptions) -> Result<St
     // qui serait relu comme `TextLine`) dans les deux modes étendus.
     let mut nuances = Nuances::new(options.lossless_round_trip, options.full_support);
     context.write(&mut out, &mut nuances);
+    context.write_trailing_rubrics(&mut out);
     Ok(out.xml.finish())
 }
 
@@ -196,6 +197,9 @@ pub(crate) struct Out {
     pub(crate) attributes_has_details: bool,
     /// État des notations à numéroter (liaisons, glissandos, arpèges).
     pub(crate) notations: notations::NotationsState,
+    /// Première syllabe grégorienne dont le texte imprimé n'a pas encore été
+    /// écrit comme `<words>` (XSD 4.0 `:3495`). Additif au mode full support.
+    pub(crate) gregorian_rubric_index: usize,
 }
 
 impl Out {
@@ -207,6 +211,7 @@ impl Out {
             in_attributes: false,
             attributes_has_details: false,
             notations: notations::NotationsState::new(lossless, full_support),
+            gregorian_rubric_index: 0,
         }
     }
 
@@ -1112,7 +1117,11 @@ impl<'a> Context<'a> {
                 out.attr(false);
                 if measure_index == 0 {
                     chant::write_header_directions(out, gregorian);
-                    chant::write_all_syllable_directions(out, gregorian);
+                    chant::write_all_syllable_directions(
+                        out,
+                        gregorian,
+                        self.options.gabc_neume_smufl,
+                    );
                 }
             }
         }
@@ -1148,6 +1157,62 @@ impl<'a> Context<'a> {
         }
 
         out.xml.end_element();
+    }
+
+    /// Première source grégorienne d'un `ChordRest` chanté, quand elle existe.
+    fn chord_source(&self, item: &SegmentItem) -> Option<NoteSource> {
+        let SegmentItem::ChordRest(chord_rest) = item else {
+            return None;
+        };
+        let ChordRestKind::Chord(chord) = &chord_rest.kind else {
+            return None;
+        };
+        let id = chord.notes.first()?;
+        self.score.notes.get(id.index())?.source
+    }
+
+    /// Écrit les textes que la source grégorienne imprime réellement, à la
+    /// position de la première note chantée de chaque syllabe (XSD 4.0
+    /// `direction`/`words` :3495, `formatted-text` :2610). Additif au mode
+    /// `--xml-full-support` : aucun octet ne change sans cette option.
+    fn write_gregorian_rubrics(&self, out: &mut Out, syllable_index: usize, note_index: usize) {
+        let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format else {
+            return;
+        };
+        while let Some(syllable) = gregorian.syllables.get(out.gregorian_rubric_index) {
+            let current = out.gregorian_rubric_index;
+            if current > syllable_index {
+                break;
+            }
+            let first_sung = syllable.notes.iter().position(|note| {
+                !note
+                    .signs
+                    .iter()
+                    .any(|sign| sign.kind == scoretk_core::model::SignKind::Alteration)
+            });
+            let ready = match first_sung {
+                Some(index) if current == syllable_index => note_index >= index,
+                _ => true,
+            };
+            if !ready {
+                break;
+            }
+            chant::write_printed_rubrics(out, syllable);
+            out.gregorian_rubric_index += 1;
+        }
+    }
+
+    /// Rubriques de fin de partition, après la dernière note chantée.
+    fn write_trailing_rubrics(&self, out: &mut Out) {
+        if !self.options.gabc_neume_smufl {
+            return;
+        }
+        if let Some(Extension::Gregorian(gregorian)) = &self.score.extensions.format {
+            while let Some(syllable) = gregorian.syllables.get(out.gregorian_rubric_index) {
+                chant::write_printed_rubrics(out, syllable);
+                out.gregorian_rubric_index += 1;
+            }
+        }
     }
 
     /// Écrit les portées d'une mesure pour une partie (`writeMeasureStaves`).
@@ -1249,6 +1314,15 @@ impl<'a> Context<'a> {
                     // piste portant un élément, avec cette piste : une harmonie
                     // attachée à la voix 2 est écrite par la boucle de cette
                     // voix, pas par celle de la voix 1.
+                    if staff_position == 0 && voice == 0 && self.options.gabc_neume_smufl {
+                        if let Some(source) = self.chord_source(item) {
+                            self.write_gregorian_rubrics(
+                                out,
+                                source.gregorian_syllable,
+                                source.gregorian_note,
+                            );
+                        }
+                    }
                     self.harmonies(out, measure, segment, staff_id, track, xml_staff);
                     if annotation_track(segment, staff_id) == Some(track) {
                         self.annotations(out, segment, staff_id, xml_staff, false);
@@ -2262,8 +2336,26 @@ impl Context<'_> {
             }
 
             if first && grace.is_none() {
+                let style =
+                    if self.options.gabc_neume_smufl {
+                        note.source
+                            .and_then(|source| {
+                                self.score.extensions.format.as_ref().and_then(
+                                    |format| match format {
+                                        Extension::Gregorian(gregorian) => {
+                                            gregorian.syllables.get(source.gregorian_syllable)
+                                        }
+                                        _ => None,
+                                    },
+                                )
+                            })
+                            .map(chant::lyric_style)
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                 for lyric in &chord_rest.lyrics {
-                    write_lyric(out, lyric);
+                    write_lyric(out, lyric, &style);
                 }
             }
 
@@ -2385,7 +2477,7 @@ impl Context<'_> {
         notations.finish(&mut out.xml);
 
         for lyric in &chord_rest.lyrics {
-            write_lyric(out, lyric);
+            write_lyric(out, lyric, &[]);
         }
 
         out.xml.end_element();
@@ -3330,7 +3422,7 @@ fn write_tuplet_type_and_dots(out: &mut Out, base: Option<(&'static str, u8)>) {
 }
 
 /// Écrit une syllabe (`<lyric>`).
-fn write_lyric(out: &mut Out, lyric: &Lyrics) {
+fn write_lyric(out: &mut Out, lyric: &Lyrics, style: &[(&str, &str)]) {
     if lyric.text.is_empty() {
         return;
     }
@@ -3342,7 +3434,16 @@ fn write_lyric(out: &mut Out, lyric: &Lyrics) {
     let borrowed = borrow_attributes(&attributes);
     out.xml.start_element("lyric", &borrowed);
     out.xml.tag("syllabic", syllabic_name(lyric.syllabic));
-    out.xml.tag("text", &lyric.text);
+    if style.is_empty() {
+        out.xml.tag("text", &lyric.text);
+    } else {
+        let text_attrs: Vec<(&str, String)> = style
+            .iter()
+            .map(|(key, value)| (*key, (*value).to_owned()))
+            .collect();
+        out.xml
+            .tag_with("text", &borrow_attributes(&text_attrs), &lyric.text);
+    }
     // `ExportMusicXml::lyrics` (exportmusicxml.cpp:6130) n'écrit `<extend>`
     // que si `ticks().isNotZero()` : un `<ticks_f>0/16</ticks_f>` attentive
     // une syllabe sans prolongement, pas un melisma.

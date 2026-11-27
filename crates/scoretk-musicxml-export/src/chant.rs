@@ -40,7 +40,7 @@
 //! (`gabc-score-determination.y:870-907`) et ordre exact des barres à
 //! l'intérieur d'un groupe.
 
-use scoretk_core::model::{Gregorian, GregorianNote, NeumeSign, NoteSource, SignKind};
+use scoretk_core::model::{Gregorian, GregorianNote, NeumeSign, NoteSource, SignKind, Syllable};
 
 use crate::exportmusicxml::Out;
 
@@ -116,20 +116,233 @@ pub(crate) fn write_miscellaneous_headers(out: &mut Out, gregorian: &Gregorian) 
     }
 }
 
+/// Valeur imprimée d'un caractère spécial Gregorio (`Gabc.tex:345-378`).
+///
+/// La table ne contient que des caractères que GregorioTeX imprime réellement :
+/// les noms de commandes TeX ne sont pas des valeurs imprimées. Elle est
+/// l'inverse de la table de lecture de `scoretk-musicxml-import::chant_smufl`.
+fn printed_special(raw: &str) -> Option<&'static str> {
+    match raw {
+        "V/" => Some("V/"),
+        "R/" => Some("R/"),
+        "A/" => Some("A/"),
+        "ae" => Some("æ"),
+        "oe" => Some("œ"),
+        "'ae" => Some("'æ"),
+        "'oe" => Some("'œ"),
+        "*" => Some("✶"),
+        "+" => Some("†"),
+        "\\greheightstar" => Some("✳"),
+        "\\gresixstar" => Some("✦"),
+        "\\ddag\\ " => Some("‡"),
+        "\\Vbar" => Some("V̄"),
+        "$\\star$" => Some("★"),
+        "\\P\\ " => Some("¶"),
+        "(" => Some("("),
+        ")" => Some(")"),
+        _ => {
+            if let Some(inner) = raw
+                .strip_prefix("\\textcolor{red}{")
+                .and_then(|s| s.strip_suffix('}'))
+            {
+                match inner {
+                    "X" => Some("X"),
+                    "M" => Some("M"),
+                    "P" => Some("P"),
+                    "A" => Some("A"),
+                    "H" => Some("H"),
+                    "G" => Some("G"),
+                    "*" => Some("✳"),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Un fragment de texte imprimé par la source, avec l'indication s'il vient
+/// d'une balise (`<sp>`, `<v>`) ou du texte brut de la syllabe.
+#[derive(Clone, Debug)]
+struct PrintedFragment {
+    value: String,
+    markup: bool,
+}
+
+/// Fragments imprimés d'une syllabe, dans l'ordre du source.
+///
+/// `Gabc.tex:303-309,345-378` : `<sp>` et `<v>` ne sont **pas** des paroles
+/// chantées (`plain_lyric` les retire) ; ils impriment un caractère ou un
+/// texte. Les autres balises de style laissent leur contenu dans la lyric.
+fn printed_fragments(text: &str) -> Vec<PrintedFragment> {
+    let mut result = Vec::new();
+    let mut plain = String::new();
+    let mut index = 0;
+    let bytes = text.as_bytes();
+    while index < bytes.len() {
+        if bytes[index] == b'<' {
+            if let Some(relative) = text[index..].find('>') {
+                let end = index + relative;
+                let tag = text[index + 1..end].trim();
+                if matches!(tag, "sp" | "v") {
+                    let closing = format!("</{tag}>");
+                    if let Some(relative) = text[end + 1..].find(&closing) {
+                        let content_end = end + 1 + relative;
+                        let printed = printed_special(&text[end + 1..content_end]);
+                        if let Some(value) = printed {
+                            if !plain.is_empty() {
+                                result.push(PrintedFragment {
+                                    value: std::mem::take(&mut plain),
+                                    markup: false,
+                                });
+                            }
+                            result.push(PrintedFragment {
+                                value: value.to_owned(),
+                                markup: true,
+                            });
+                        }
+                        index = content_end + closing.len();
+                        continue;
+                    }
+                }
+                index = end + 1;
+                continue;
+            }
+        }
+        plain.push(bytes[index] as char);
+        index += 1;
+    }
+    if !plain.is_empty() {
+        result.push(PrintedFragment {
+            value: plain,
+            markup: false,
+        });
+    }
+    result
+}
+
+/// Vrai si le texte est une rubrique imprimée et non une parole chantée
+/// (`Gabc.tex:297-378` ; cf. la règle homologue de `full_support.py::facts`).
+fn printed_rubric_text(value: &str) -> bool {
+    value.contains(['\\', '{', '}'])
+        || value.starts_with("V/")
+        || value.starts_with("R/")
+        || value.starts_with("Ant.")
+        || value.starts_with("Ps.")
+        || value.starts_with("~~")
+        || value.starts_with('+')
+        || value
+            .strip_suffix('.')
+            .is_some_and(|head| !head.is_empty() && head.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Typographie XSD 4.0 d'une lyric entièrement stylée (`text-formatting`,
+/// `:2237`, `font` `:2005`).
+///
+/// `Gabc.tex:254-270` : les balises `<b>`, `<c>`, `<i>`, `<tt>` et `<ul>`
+/// appliquent un style au texte chanté. Quand une de ces balises enveloppe
+/// toute la syllabe, le style est porté par l'attribut standard du `<text>`
+/// de la lyric ; aucun texte n'est dupliqué dans une direction. Les balises
+/// partielles n'ont pas de porteur XSD (une seule `<text>` par syllabe) et
+/// restent des défauts.
+pub(crate) fn lyric_style(syllable: &Syllable) -> Vec<(&'static str, &'static str)> {
+    let text = syllable.text.trim();
+    let mut style = Vec::new();
+    for (tag, attribute, value) in [
+        ("b", "font-weight", "bold"),
+        ("i", "font-style", "italic"),
+        ("c", "color", "#FF0000"),
+        ("tt", "font-family", "monospace"),
+        ("ul", "underline", "1"),
+    ] {
+        if text.starts_with(&format!("<{tag}>")) && text.ends_with(&format!("</{tag}>")) {
+            style.push((attribute, value));
+        }
+    }
+    style
+}
+
+/// Porteur XSD 4.0 `words` (`formatted-text`, `:3495`, `:2610`) du texte que
+/// la source imprime réellement : caractères spéciaux `<sp>`/`<v>` et rubriques
+/// sans note chantée. La valeur est le texte imprimé, jamais une étiquette du
+/// source, jamais une copie d'une `<lyric>` et jamais un texte vide.
+pub(crate) fn write_printed_rubrics(out: &mut Out, syllable: &Syllable) {
+    let fragments = printed_fragments(&syllable.text);
+    let sung = syllable.notes.iter().any(|note| {
+        !note
+            .signs
+            .iter()
+            .any(|sign| sign.kind == SignKind::Alteration)
+    });
+    let values: Vec<String> = if sung {
+        // Le texte qui reste dans la lyric après retrait des balises ne doit
+        // jamais être réimprimé dans un `<words>` (XSD 4.0 `words` :3495) :
+        // ce serait une duplication et le contrôle de l'oracle le rejette.
+        let plain: String = fragments
+            .iter()
+            .filter(|fragment| !fragment.markup)
+            .flat_map(|fragment| fragment.value.chars())
+            .filter(|char| !matches!(char, '{' | '}' | '$'))
+            .collect();
+        fragments
+            .into_iter()
+            .filter(|fragment| {
+                let value = fragment.value.trim();
+                fragment.markup || (printed_rubric_text(value) && !plain.contains(value))
+            })
+            .map(|fragment| fragment.value)
+            .collect()
+    } else {
+        let joined = fragments
+            .iter()
+            .map(|fragment| fragment.value.as_str())
+            .collect::<String>();
+        let value = joined.trim();
+        if value.is_empty()
+            || !fragments
+                .iter()
+                .any(|fragment| fragment.markup || printed_rubric_text(value))
+        {
+            Vec::new()
+        } else {
+            vec![value.to_owned()]
+        }
+    };
+    for value in values {
+        // Une rubrique sans note chantée est imprimée au-dessus de la portée
+        // (numéro de verset, `V/`, `Ps.`) ; un caractère spécial inséré dans
+        // une syllabe est imprimé avec la lyric, au-dessous. Cette distinction
+        // est une position d'impression XSD (`placement`), pas un drapeau.
+        let placement = if sung { "below" } else { "above" };
+        out.xml
+            .start_element("direction", &[("placement", placement)]);
+        out.xml.start_element("direction-type", &[]);
+        out.xml.tag_with("words", &[("color", "#FF0000")], &value);
+        out.xml.end_element();
+        out.xml.end_element();
+    }
+}
+
 /// Écrit le payload L6 complet des syllabes dans la première mesure.
 ///
 /// Une mesure dérivée se termine sur une barre réelle, pas sur une syllabe :
 /// il y a donc moins de mesures que de syllabes. Les directions privées sont
 /// regroupées au début du document pour que l'aller-retour L6 ne dépende pas
 /// du nombre de mesures projetées.
-pub(crate) fn write_all_syllable_directions(out: &mut Out, gregorian: &Gregorian) {
+pub(crate) fn write_all_syllable_directions(out: &mut Out, gregorian: &Gregorian, styled: bool) {
     for index in 0..gregorian.syllables.len() {
-        write_syllable_direction(out, gregorian, index);
+        write_syllable_direction(out, gregorian, index, styled);
     }
 }
 
 /// Une syllabe et ses barres, indexée par sa position source.
-pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, index: usize) {
+pub(crate) fn write_syllable_direction(
+    out: &mut Out,
+    gregorian: &Gregorian,
+    index: usize,
+    styled: bool,
+) {
     let Some(syllable) = gregorian.syllables.get(index) else {
         return;
     };
@@ -167,7 +380,15 @@ pub(crate) fn write_syllable_direction(out: &mut Out, gregorian: &Gregorian, ind
         out.xml
             .start_element("direction", &[("placement", "above")]);
         out.xml.start_element("direction-type", &[]);
-        out.xml.tag_with("words", &[], above);
+        // `Gabc.tex:339-343` : le texte de traduction est imprimé en italique.
+        // L'attribut est additif au mode full support : les octets par défaut
+        // restent ceux de la référence 4.7.4.
+        if styled {
+            out.xml
+                .tag_with("words", &[("font-style", "italic")], above);
+        } else {
+            out.xml.tag_with("words", &[], above);
+        }
         out.xml.end_element();
         out.xml.end_element();
     }
@@ -560,7 +781,7 @@ mod tests {
             ..Gregorian::default()
         };
         write_header_directions(&mut out, &gregorian);
-        write_syllable_direction(&mut out, &gregorian, 0);
+        write_syllable_direction(&mut out, &gregorian, 0, false);
         let xml = out.xml.finish();
         for absent in [
             "gabc:custos",
@@ -590,7 +811,7 @@ mod tests {
             ..Gregorian::default()
         };
         let mut out = Out::new_with(false, false);
-        write_syllable_direction(&mut out, &gregorian, 0);
+        write_syllable_direction(&mut out, &gregorian, 0, false);
         let xml = out.xml.finish();
         assert!(xml.contains("gabc:syllable:i=0|t=De\\|us|w=1"), "{xml}");
         assert!(xml.contains("|c=c3"), "{xml}");
@@ -598,5 +819,25 @@ mod tests {
         assert!(xml.contains("|b=::"), "{xml}");
         assert!(xml.contains("|b=;2"), "{xml}");
         assert!(xml.contains("|z='"), "{xml}");
+    }
+
+    #[test]
+    fn printed_rubric_is_a_non_blank_words_carrier() {
+        // XSD 4.0 `words` (:3495) imprime du texte : la valeur est celle que
+        // le source imprime (`V/.`), jamais le jeton `<sp>` et jamais un
+        // drapeau de couleur. Aucune lyric n'est dupliquée.
+        let syllable = Syllable {
+            text: "<sp>V/</sp>.".to_owned(),
+            ..Syllable::default()
+        };
+        let mut out = Out::new_with(false, false);
+        write_printed_rubrics(&mut out, &syllable);
+        let xml = out.xml.finish();
+        assert!(
+            xml.contains(r##"<words color="#FF0000">V/.</words>"##),
+            "{xml}"
+        );
+        assert!(!xml.contains("<sp>"), "{xml}");
+        assert!(!xml.contains("<lyric"), "{xml}");
     }
 }

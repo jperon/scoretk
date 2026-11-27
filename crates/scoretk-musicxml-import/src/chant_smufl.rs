@@ -67,6 +67,18 @@ pub(crate) fn restore(root: &Element, score: &mut Score) -> bool {
     if !reader.found {
         return false;
     }
+    for text in std::mem::take(&mut reader.standalone_rubrics) {
+        reader.syllables.push(Syllable {
+            text,
+            ..Syllable::default()
+        });
+    }
+    if !reader.pending_rubrics.is_empty() {
+        let printed = reader.pending_rubrics.concat();
+        if let Some(last) = reader.syllables.last_mut() {
+            last.text.push_str(&printed);
+        }
+    }
     let clef = reader.clef.clone().unwrap_or_else(|| "c4".to_owned());
     let mut syllables = std::mem::take(&mut reader.syllables);
     if let Some(last) = syllables.last_mut() {
@@ -99,6 +111,15 @@ struct Reader {
     staff_lines: u8,
     syllables: Vec<Syllable>,
     found: bool,
+    /// Textes imprimés lus dans les `<direction placement="below">` avant la
+    /// note suivante (XSD 4.0 `words` :3495). Ils sont réécrits dans le
+    /// `<lyric>` du payload L6 comme texte ou comme balise Gregorio.
+    pending_rubrics: Vec<String>,
+    /// Rubriques imprimées au-dessus de la portée : elles forment une syllabe
+    /// sans note, distincte de la syllabe chantée suivante.
+    standalone_rubrics: Vec<String>,
+    /// La prochaine note doit ouvrir une nouvelle syllabe après une rubrique.
+    force_new_syllable: bool,
 }
 
 impl Reader {
@@ -111,6 +132,7 @@ impl Reader {
                     self.note(child, &clef);
                 }
                 "barline" => self.barline(child),
+                "direction" => self.rubric_direction(child),
                 _ => {}
             }
         }
@@ -161,6 +183,39 @@ impl Reader {
             self.syllables.push(Syllable::default());
         }
         self.syllables.last_mut().expect("syllable").bars.push(bar);
+    }
+
+    /// Lit un texte imprimé porté par `direction/words` (`:3495`).
+    ///
+    /// Seules les directions `placement="below"` sont des rubriques : le texte
+    /// `[alt:…]` est écrit `placement="above"` et garde son porteur dédié. La
+    /// valeur est le texte **imprimé**, jamais une étiquette du source ; la
+    /// table ci-dessous inverse celle de l'exporteur pour les caractères que
+    /// GregorioTeX imprime (`Gabc.tex:345-378`).
+    fn rubric_direction(&mut self, direction: &Element) {
+        let placement = direction.attribute("placement").unwrap_or("");
+        for kind in direction.children_named("direction-type") {
+            for words in kind.children_named("words") {
+                // Seul le rouge imprimé est une rubrique : le texte `[alt:…]`
+                // est en italique sans couleur, et un `<words>` d'une autre
+                // couleur n'est pas un porteur de rubrique (c3c6919f).
+                if words.attribute("color") != Some("#FF0000") {
+                    continue;
+                }
+                let printed = words.text_trimmed();
+                // Un `<words>` qui contient la balise source elle-même est un
+                // vidage, pas une valeur imprimée (revue c3c6919f).
+                if printed.is_empty() || printed.contains('<') {
+                    continue;
+                }
+                let value = printed_to_gabc(printed);
+                if placement == "above" {
+                    self.standalone_rubrics.push(value);
+                } else {
+                    self.pending_rubrics.push(value);
+                }
+            }
+        }
     }
 
     fn note(&mut self, note: &Element, clef: &str) {
@@ -215,8 +270,19 @@ impl Reader {
         if inclinatum {
             letter = letter.to_ascii_uppercase();
         }
-        if self.syllables.is_empty() || self.syllables.last().is_some_and(|s| !s.notes.is_empty()) {
+        for text in std::mem::take(&mut self.standalone_rubrics) {
+            self.syllables.push(Syllable {
+                text,
+                ..Syllable::default()
+            });
+            self.force_new_syllable = true;
+        }
+        if self.force_new_syllable
+            || self.syllables.is_empty()
+            || self.syllables.last().is_some_and(|s| !s.notes.is_empty())
+        {
             self.syllables.push(Syllable::default());
+            self.force_new_syllable = false;
         }
         let syllable_index = self.syllables.len() - 1;
         let mut ends_syllable = false;
@@ -229,11 +295,32 @@ impl Reader {
                 ..GregorianNote::default()
             });
             for lyric in note.children_named("lyric") {
-                let text = lyric
-                    .children_named("text")
-                    .next()
+                let element = lyric.children_named("text").next();
+                let text = element
                     .map(|text| text.text_trimmed().to_owned())
                     .unwrap_or_default();
+                // XSD 4.0 `text-formatting` : le style imprimé de la lyric
+                // restaure les balises `Gabc.tex:254-270` quand elles
+                // enveloppaient toute la syllabe. Aucune direction dupliquée.
+                let mut styled = text.clone();
+                if element
+                    .is_some_and(|element| element.attribute("font-family") == Some("monospace"))
+                {
+                    styled = format!("<tt>{styled}</tt>");
+                }
+                if element.is_some_and(|element| element.attribute("underline") == Some("1")) {
+                    styled = format!("<ul>{styled}</ul>");
+                }
+                if element.is_some_and(|element| element.attribute("font-weight") == Some("bold")) {
+                    styled = format!("<b>{styled}</b>");
+                }
+                if element.is_some_and(|element| element.attribute("font-style") == Some("italic"))
+                {
+                    styled = format!("<i>{styled}</i>");
+                }
+                if element.is_some_and(|element| element.attribute("color") == Some("#FF0000")) {
+                    styled = format!("<c>{styled}</c>");
+                }
                 let syllabic = lyric
                     .children_named("syllabic")
                     .next()
@@ -244,15 +331,114 @@ impl Reader {
                     // d'un chant grégorien : sinon tout MusicXML chanté
                     // serait reconstruit en charge L6 (aller-retour
                     // `changevisibility`, `repeat65`, …).
-                    syllable.text = text;
+                    syllable.text = styled;
                 }
                 ends_syllable |= matches!(syllabic, "single" | "end");
+            }
+            for printed in std::mem::take(&mut self.pending_rubrics) {
+                // Quand le `<words>` imprime la **même** syllabe avec sa
+                // typographie d'origine (`{ia}.` pour la lyric `ia.`), il
+                // remplace la lyric au lieu de la dupliquer. Un caractère
+                // spécial inséré (`<sp>*</sp>`) reste ajouté à la syllabe.
+                let plain: String = printed
+                    .chars()
+                    .filter(|char| !matches!(char, '{' | '}'))
+                    .collect();
+                let plain = plain
+                    .replace("<sp>", "")
+                    .replace("</sp>", "")
+                    .replace("<v>", "")
+                    .replace("</v>", "");
+                if !syllable.text.is_empty() && plain.contains(&syllable.text) {
+                    syllable.text = printed;
+                } else {
+                    syllable.text.push_str(&printed);
+                }
             }
         }
         if ends_syllable {
             self.syllables.push(Syllable::default());
         }
     }
+}
+
+/// Texte imprimé → balise Gregorio d'origine (`Gabc.tex:345-378`).
+///
+/// L'exporteur n'écrit que des valeurs imprimées dans `<words>` ; cette table
+/// en inverse les caractères spéciaux. Tout autre texte reste tel quel et est
+/// compté comme paroles/rubrique par le lecteur de faits GABC, sans inventer
+/// de balise. Aucun préfixe ni étiquette de vidage n'est utilisé.
+fn printed_to_gabc(printed: &str) -> String {
+    // Un même `<words>` peut imprimer un caractère spécial suivi de texte
+    // (`V/.`, `† Quan`) : on remplace chaque valeur connue, pas seulement la
+    // chaîne entière.
+    const SPECIALS: &[(&str, &str)] = &[
+        ("V/", "<sp>V/</sp>"),
+        ("R/", "<sp>R/</sp>"),
+        ("A/", "<sp>A/</sp>"),
+        ("æ", "<sp>ae</sp>"),
+        ("œ", "<sp>oe</sp>"),
+        ("'æ", "<sp>'ae</sp>"),
+        ("'œ", "<sp>'oe</sp>"),
+        ("✶", "<sp>*</sp>"),
+        ("†", "<sp>+</sp>"),
+        ("✳", "<v>\\greheightstar</v>"),
+        ("✦", "<v>\\gresixstar</v>"),
+        ("‡", "<v>\\ddag\\ </v>"),
+        ("V̄", "<v>\\Vbar</v>"),
+        ("★", "<v>$\\star$</v>"),
+        ("¶", "<v>\\P\\ </v>"),
+        ("X", "<v>\\textcolor{red}{X}</v>"),
+        ("M", "<v>\\textcolor{red}{M}</v>"),
+        ("P", "<v>\\textcolor{red}{P}</v>"),
+        ("A", "<v>\\textcolor{red}{A}</v>"),
+        ("H", "<v>\\textcolor{red}{H}</v>"),
+        ("G", "<v>\\textcolor{red}{G}</v>"),
+    ];
+    // Les lettres seules sont ambiguës : ne les remplacer que si le texte est
+    // exactement cette lettre (les initiales rouges sont des cas isolés).
+    let mut result = printed.to_owned();
+    for (glyph, markup) in SPECIALS {
+        // Les lettres et ligatures sont ambiguës dans un mot latin (`cælo`) :
+        // elles ne sont remplacées que pour une valeur imprimée exacte. Seuls
+        // les symboles non alphanumériques sont substitués dans un texte plus
+        // long (`V/.`, `† Quan`).
+        if glyph.chars().all(|c| c.is_alphanumeric()) {
+            if printed == *glyph {
+                return (*markup).to_owned();
+            }
+            continue;
+        }
+        result = result.replace(glyph, markup);
+    }
+    if result != printed {
+        return result;
+    }
+    let markup = match printed {
+        "V/" => "<sp>V/</sp>",
+        "R/" => "<sp>R/</sp>",
+        "A/" => "<sp>A/</sp>",
+        "æ" => "<sp>ae</sp>",
+        "œ" => "<sp>oe</sp>",
+        "'æ" => "<sp>'ae</sp>",
+        "'œ" => "<sp>'oe</sp>",
+        "✶" => "<sp>*</sp>",
+        "†" => "<sp>+</sp>",
+        "✳" => "<v>\\greheightstar</v>",
+        "✦" => "<v>\\gresixstar</v>",
+        "‡" => "<v>\\ddag\\ </v>",
+        "V̄" => "<v>\\Vbar</v>",
+        "★" => "<v>$\\star$</v>",
+        "¶" => "<v>\\P\\ </v>",
+        "X" => "<v>\\textcolor{red}{X}</v>",
+        "M" => "<v>\\textcolor{red}{M}</v>",
+        "P" => "<v>\\textcolor{red}{P}</v>",
+        "A" => "<v>\\textcolor{red}{A}</v>",
+        "H" => "<v>\\textcolor{red}{H}</v>",
+        "G" => "<v>\\textcolor{red}{G}</v>",
+        _ => return printed.to_owned(),
+    };
+    markup.to_owned()
 }
 
 /// Nom SMuFL officiel du registre « Medieval and Renaissance » → jeton GABC.
