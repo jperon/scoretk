@@ -282,26 +282,31 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                     plan.stems[index] = Some((up, chord.stem_len));
                 }
             }
-            let line_of = |index: usize| {
+            // // Port of `beamtremololayout.cpp:1368-1375`: the anchor's note
+            // is `downNote()` for an up beam and `upNote()` for a down beam,
+            // i.e. precisely the line `place_chord` starts the stem from.
+            // The old `min`/`max` pairing shifted the far end of a multi-note
+            // chord by the height of the chord.
+            let anchor_line = |index: usize| {
                 let chord = events[index].1.chord.as_ref().unwrap();
                 let lines = chord.notes.iter().map(|note| note.line);
                 if up {
-                    lines.min().unwrap_or(4)
-                } else {
                     lines.max().unwrap_or(4)
+                } else {
+                    lines.min().unwrap_or(4)
                 }
             };
-            let start_line = line_of(first);
-            let end_line = line_of(last);
+            let start_line = anchor_line(first);
+            let end_line = anchor_line(last);
             // The anchor is the stem tip with the chord's own direction,
             // before the beam is attached (quarter-space grid).
             let anchor = |index: usize| {
                 let chord = events[index].1.chord.as_ref().unwrap();
                 let own_up = chord.stem_up;
                 let line = if own_up {
-                    chord.notes.iter().map(|note| note.line).min().unwrap_or(4)
-                } else {
                     chord.notes.iter().map(|note| note.line).max().unwrap_or(4)
+                } else {
+                    chord.notes.iter().map(|note| note.line).min().unwrap_or(4)
                 };
                 let note_y = line * HALF_SP;
                 let tip = if own_up {
@@ -313,17 +318,37 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             };
             let start_y = anchor(first);
             let end_y = anchor(last);
-            let x1 = events[first].0;
-            let x2 = events[last].0;
+            // // Port of `chordBeamAnchorX` (`beamtremololayout.cpp:1293-1328`):
+            // a beam runs from the stem of its first chord to the stem of its
+            // last one, not from their notehead origins. The old notehead x
+            // left both ends one notehead width (~1.25 sp) short of the stems.
+            let stem_x = |index: usize| {
+                let chord = events[index].1.chord.as_ref().unwrap();
+                let head = chord
+                    .notes
+                    .first()
+                    .map_or("noteheadBlack", |note| note.head);
+                let head_w = glyph(head)
+                    .map(|g| units_to_fixed(g.bbox[2]))
+                    .unwrap_or(SP);
+                if up {
+                    events[index].0 + head_w - STEM_WIDTH / 2
+                } else {
+                    events[index].0 - STEM_WIDTH / 2
+                }
+            };
+            let x1 = stem_x(first);
+            let x2 = stem_x(last);
             if x2 <= x1 {
                 continue;
             }
             let width_sp = (x2 - x1) / SP;
+            // // Port of `getMaxSlope` (`beamtremololayout.cpp:1252-1271`).
             let max_slope = if width_sp < 3 {
                 1
             } else if width_sp < 5 {
                 2
-            } else if width_sp < 8 {
+            } else if width_sp < 7 {
                 3
             } else if width_sp < 10 {
                 4
@@ -335,7 +360,33 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                 7
             };
             let interval = (start_line - end_line).abs().min(7) as usize;
-            let slant = max_slope.min(MAX_SLOPES[interval]) * if up { 1 } else { -1 };
+            // // Port of `getSlopeConstraint` (`beamtremololayout.cpp:1157-1178`):
+            // an inner note more extreme than both ends forces a flat beam.
+            // `Beam-CrossM1`'s second group (lines 5,3,4,6) is flat in 4.7.4;
+            // the old heuristic slanted it by 0.25 sp per stem.
+            let all_lines: alloc::vec::Vec<i32> = group
+                .iter()
+                .filter_map(|&index| events[index].1.chord.as_ref())
+                .flat_map(|chord| chord.notes.iter().map(|note| note.line))
+                .collect();
+            let flat = all_lines.iter().copied().min().is_some_and(|line| {
+                if up {
+                    line < start_line.min(end_line)
+                } else {
+                    line > start_line.max(end_line)
+                }
+            }) || all_lines.iter().copied().max().is_some_and(|line| {
+                if up {
+                    line > start_line.max(end_line)
+                } else {
+                    line < start_line.min(end_line)
+                }
+            });
+            let slant = if flat {
+                0
+            } else {
+                max_slope.min(MAX_SLOPES[interval]) * if up { 1 } else { -1 }
+            };
             let start_dictator = if up {
                 start_line < end_line
             } else {
@@ -358,8 +409,26 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
             }
             let y1 = if start_dictator { dictator } else { pointer };
             let y2 = if start_dictator { pointer } else { dictator };
-            let beam_y =
-                |x: i32| y1 + (i64::from(y2 - y1) * i64::from(x - x1) / i64::from(x2 - x1)) as i32;
+            // // Port of `offsetBeamWithAnchorShortening`
+            // (`beamtremololayout.cpp:213-286`): the anchors of a flat beam
+            // are moved one beam width toward the beam when the shortening
+            // rule cannot be satisfied. Measured on `Beam-CrossM1`'s second
+            // group (lines 5,3,4,6): 4.7.4 puts the beam 1.25 sp above the
+            // staff and gives stems 3.5/2.5/3/4 sp; without this step both
+            // were half a beam width short.
+            let flat_offset = if flat {
+                if up {
+                    -BEAM_WIDTH
+                } else {
+                    BEAM_WIDTH
+                }
+            } else {
+                0
+            };
+            let beam_y = |x: i32| {
+                y1 + (i64::from(y2 - y1) * i64::from(x - x1) / i64::from(x2 - x1)) as i32
+                    + flat_offset
+            };
             let max_beams = group
                 .iter()
                 .map(|&index| usize::from(events[index].1.beams))
@@ -374,8 +443,8 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                         run.clear();
                         return;
                     }
-                    let sx = events[run[0]].0;
-                    let ex = events[*run.last().unwrap()].0;
+                    let sx = stem_x(run[0]);
+                    let ex = stem_x(*run.last().unwrap());
                     let offset = if up {
                         -(level as i32) * BEAM_DIST
                     } else {
@@ -391,12 +460,12 @@ fn plan_beams(events: &[(i32, &Atom)], multi_voice: bool, system_y: i32) -> Beam
                     ));
                     for &index in run.iter() {
                         if events[index].1.chord.is_some() {
-                            let line = line_of(index);
-                            let note_y = line * HALF_SP;
-                            // `place_chord` measures the stem from the note
-                            // line (`ny ± length`); the SMuFL anchor only
-                            // moves the drawn near end by `anchor_y`.
-                            let far_end = beam_y(events[index].0) + offset;
+                            // `place_chord` measures the stem from the same
+                            // anchor line used here; its far end is the beam's
+                            // centre line at the stem's x (`tdraw.cpp:920-936`
+                            // draws the thickness symmetrically around it).
+                            let note_y = anchor_line(index) * HALF_SP;
+                            let far_end = beam_y(stem_x(index)) + offset;
                             let length = if up {
                                 (note_y - far_end).max(0)
                             } else {
@@ -1240,6 +1309,85 @@ mod tests {
             };
             assert_eq!(y, y1 + BEAM_WIDTH / 2);
             assert!(h > 0);
+        }
+    }
+
+    #[test]
+    fn every_beamed_stem_end_lies_on_its_beam_line() {
+        // Geometric guard for `Beam-CrossM1`: `tdraw.cpp:920-936` draws the
+        // slab symmetrically around the beam segment, and
+        // `beamlayout.cpp:1262-1307` extends every stem to that segment. A
+        // stem that stops short (or overshoots) used to be invisible at page
+        // scale; here the far end must sit on the interpolated centre line.
+        let lines = [6, 5, 4, 5, 3, 5, 3, 4, 6];
+        let mut atoms: Vec<_> = lines.iter().map(|&line| atom(line)).collect();
+        for (index, measure) in atoms.iter_mut().enumerate() {
+            measure.events[0].beams = 1;
+            measure.events[0].beam_dir = Some(StemDirection::Up);
+            if index == 0 || index == 5 {
+                measure.events[0].beam_start = true;
+            }
+        }
+        // One wide system: every stem on the page belongs to one of the two
+        // groups, so the x-interval test cannot pick up an unrelated stem.
+        let spec = PageSpec {
+            printable_width: 1000 * SP,
+            ..PageSpec::default()
+        };
+        let list = page(&atoms, &spec, 0);
+        let beams: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Beam)
+            .collect();
+        assert_eq!(beams.len(), 2, "one slab per explicit beam group");
+        let stems: Vec<_> = list
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Stem)
+            .collect();
+        assert_eq!(stems.len(), lines.len());
+        for beam in beams {
+            let Geometry::Beam {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+            } = beam.geometry
+            else {
+                panic!("beam must be a slanted rectangle");
+            };
+            let mut ends = 0;
+            let mut lo = i32::MAX;
+            let mut hi = i32::MIN;
+            for stem in &stems {
+                let Geometry::Rect { x, y, w, h } = stem.geometry else {
+                    panic!("stem must be a rectangle");
+                };
+                let centre = x + w / 2;
+                if centre < x1 - 64 || centre > x2 + 64 {
+                    continue;
+                }
+                ends += 1;
+                lo = lo.min(centre);
+                hi = hi.max(centre);
+                let expected = y1 + width / 2
+                    + (i64::from(y2 - y1) * i64::from(centre - x1) / i64::from(x2 - x1))
+                        as i32;
+                // Up stems end at the top of the rectangle; down stems at
+                // its bottom. Tolerance is 1/16 sp for integer rounding.
+                let far_end = y.min(y + h);
+                assert!(
+                    (far_end - expected).abs() <= 64,
+                    "stem far end {far_end} is off the beam line {expected}"
+                );
+            }
+            assert!(ends >= 2, "a beam must cover at least two stems");
+            // The slab starts and ends on the outermost stems (within half a
+            // stem width), not on their notehead origins.
+            assert!((x1 - lo).abs() <= 64, "beam start {x1} vs stem {lo}");
+            assert!((x2 - hi).abs() <= 64, "beam end {x2} vs stem {hi}");
         }
     }
 

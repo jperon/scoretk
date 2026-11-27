@@ -762,6 +762,35 @@ Before/after/reference PNGs of `copypaste_parts`:
 `/tmp/copypaste_parts-p3-before.png`, `/tmp/copypaste_parts-after.png`,
 `/tmp/copypaste_parts-ref.png`.
 
+### 9.19 Beam anchors and stem ends (eng3b, step 1, 2026-11-27)
+
+Review of `/tmp/beam-after.png` against `/tmp/beam-ref.png` (`Beam-CrossM1`)
+showed the beam slab stopping short of the outer stems by one notehead
+width: `plan_beams` used each chord's notehead x, while `place_chord` draws
+the stem at the head's right edge (`StemLayout::stemPosX`). The slab now
+runs between the stem positions (`beamtremololayout.cpp:1293-1328`), the
+height comes from the stem's own anchor line (`chordBeamAnchorY`,
+`:1368-1375`), and the slant is flattened when an inner note is more
+extreme than both ends (`getSlopeConstraint`, `:1157-1178`). The flat-beam
+anchor shift follows `offsetBeamWithAnchorShortening` (`:213-286`),
+calibrated against the second group of `Beam-CrossM1` (1.25 sp above the
+staff, stems 3.5/2.5/3/4 sp). The slab remains symmetric around its segment
+line (`tdraw.cpp:920-936`), so every stem far end is on that line; a unit
+test now checks this for a slanted and a flat group.
+
+| Metric | Before | After | Gate |
+| --- | ---: | ---: | ---: |
+| Stem-length agreement | 0.8000 (316/395) | **0.8076** (319/395) | ≥ 0.90 — failed |
+| `Beam-CrossM1` stems | 6/9 | **9/9** | — |
+| Measure widths within 0.1 sp | 0.3594 (69/192) | 0.3594 (69/192) | ≥ 0.90 — failed |
+| Files with identical system breaks | 34/44 | 34/44 | ≥ 0.90 — failed |
+| Vertical pitch/ledger agreement | 0.9618 (523) | 0.9618 (523) | ≥ 0.95 — met |
+
+Before/after/reference PNGs: `/tmp/Beam-CrossM1-p3b-before.png`,
+`/tmp/Beam-CrossM1-p3b-after.png`, `/tmp/Beam-CrossM1-p3b-ref.png`. The
+oracle uses the SVGs in `/tmp/oracle-p3b-base` (before) and
+`/tmp/oracle-p3b-step1b` (after), with the same MuseScore references.
+
 ## 10. P3/P2 gate status at the end of eng3 (2026-11-27)
 
 Final oracle on the 44 single-staff corpus files (44 files, 0 failures,
