@@ -194,6 +194,14 @@ struct Cli {
     #[arg(long, value_name = "PX")]
     page_height_px: Option<u32>,
 
+    /// Gravure : interpréter les pixels comme une page Verovio (7,2 px/sp à 40 %)
+    #[arg(long)]
+    verovio_units: bool,
+
+    /// Gravure : ignorer les ruptures encodées (Verovio `breaks: auto`)
+    #[arg(long)]
+    auto_breaks: bool,
+
     /// Gravure : réduire la hauteur de page au contenu (adjustPageHeight)
     #[arg(long)]
     adjust_page_height: bool,
@@ -387,6 +395,12 @@ fn main() -> ExitCode {
         scale: cli.engrave_scale,
         page_width_px: cli.page_width_px,
         page_height_px: cli.page_height_px,
+        page_units: if cli.verovio_units {
+            scoretk::PageUnits::Verovio
+        } else {
+            scoretk::PageUnits::Score
+        },
+        ignore_encoded_breaks: cli.auto_breaks,
         adjust_page_height: cli.adjust_page_height,
         one_system_per_page: cli.one_system_per_page,
         lyric_size: cli.lyric_size,

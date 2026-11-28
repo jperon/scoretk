@@ -224,13 +224,29 @@ impl PageSpec {
         }
         let print = Self::from_score_plain(score);
         let mut spec = match (options.page_width_px, options.page_height_px) {
-            (Some(width), Some(height)) => Self::for_px(width, height, options.scale),
+            (Some(width), Some(height)) => match options.page_units {
+                crate::options::PageUnits::Verovio => {
+                    Self::for_verovio_px(width, height, options.scale)
+                }
+                crate::options::PageUnits::Score | crate::options::PageUnits::Screen => {
+                    Self::for_px(width, height, options.scale)
+                }
+            },
             (width, height) => {
                 // A single pixel dimension keeps the other one's physical
                 // size; zoom scales the page in fixed staff spaces.
                 let divisor = options.scale.max(1.0 / 1024.0);
+                let staff_px = match options.page_units {
+                    crate::options::PageUnits::Verovio => {
+                        crate::options::VEROVIO_STAFF_PX_AT_100 * options.scale
+                    }
+                    crate::options::PageUnits::Score | crate::options::PageUnits::Screen => {
+                        crate::options::REFERENCE_STAFF_PX as f64 * options.scale
+                    }
+                }
+                .max(1.0);
                 let width_sp = width.map_or(print.printable_width + 2 * print.margin_left, |px| {
-                    (px as f64 * SP as f64 / (14.0 * options.scale).max(1.0)) as i32
+                    (px as f64 * SP as f64 / staff_px) as i32
                 });
                 let height_sp =
                     height.map_or((print.page_height as f64 / divisor) as i32, |px| px as i32);

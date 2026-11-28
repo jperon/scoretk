@@ -106,7 +106,7 @@ pub use scoretk_core::model;
 pub use scoretk_core::model::Score;
 #[cfg(feature = "engrave")]
 pub use scoretk_engrave::{
-    options::{VEROVIO_DEFAULT_SCALE_PERCENT, VEROVIO_LYRIC_SIZE},
+    options::{PageUnits, VEROVIO_DEFAULT_SCALE_PERCENT, VEROVIO_LYRIC_SIZE},
     EngraveOptions, Engraver,
 };
 

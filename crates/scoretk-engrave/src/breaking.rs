@@ -59,6 +59,7 @@ fn collect_systems(
     atoms: &[MeasureAtom],
     spec: &PageSpec,
     staffs: &[crate::staffs::StaffInfo],
+    ignore_encoded_breaks: bool,
 ) -> Vec<SystemPlan> {
     let mut systems = Vec::new();
     let mut first = 0;
@@ -88,8 +89,12 @@ fn collect_systems(
             // while collecting a system (`horizontalspacing.cpp:730-745,
             // :47-89`); justification only redistributes them afterwards.
             let break_width = atom.width;
-            if count > 0 && (width + break_width > printable || atoms[first + count - 1].line_break)
-            {
+            // Verovio's `breaks: "auto"` discards encoded `<print
+            // new-system>`/`<print new-page>` and fills each system to the
+            // printable width. The default keeps MuseScore's encoded breaks.
+            let encoded_break =
+                count > 0 && atoms[first + count - 1].line_break && !ignore_encoded_breaks;
+            if count > 0 && (width + break_width > printable || encoded_break) {
                 break;
             }
             let (fixed, stretch) = crate::layout::stretch_budget(atom);
@@ -98,7 +103,7 @@ fn collect_systems(
             min_extra += atom.min_extra;
             width += break_width;
             count += 1;
-            if atom.line_break {
+            if atom.line_break && !ignore_encoded_breaks {
                 break;
             }
         }
@@ -307,9 +312,11 @@ pub fn compute_with_atoms(
     spec: &PageSpec,
     staffs: &[crate::staffs::StaffInfo],
     system_heights: &[i32],
+    ignore_encoded_breaks: bool,
 ) -> (Vec<SystemPlan>, Vec<Vec<MeasureAtom>>) {
     let mut augmented = all.to_vec();
-    let mut systems = collect_systems(&merged_score(&augmented), spec, staffs);
+    let mut systems =
+        collect_systems(&merged_score(&augmented), spec, staffs, ignore_encoded_breaks);
     for _ in 0..8 {
         let mut next = all.to_vec();
         for system in &systems {
@@ -328,7 +335,12 @@ pub fn compute_with_atoms(
             break;
         }
         augmented = next;
-        systems = collect_systems(&merged_score(&augmented), spec, staffs);
+        systems = collect_systems(
+            &merged_score(&augmented),
+            spec,
+            staffs,
+            ignore_encoded_breaks,
+        );
     }
     for system in &mut systems {
         system.staff_offsets = alloc::vec![0; all.len()];
@@ -351,7 +363,7 @@ pub fn compute_with_atoms(
 /// tests and by callers that already collapsed the staves).
 pub fn compute(atoms: &[MeasureAtom], spec: &PageSpec) -> Vec<SystemPlan> {
     let heights = alloc::vec![STAFF_HEIGHT; atoms.len()];
-    let mut systems = compute_with_atoms(&[atoms.to_vec()], spec, &[], &heights).0;
+    let mut systems = compute_with_atoms(&[atoms.to_vec()], spec, &[], &heights, false).0;
     crate::vertical::spread_all(&mut systems, &[], spec);
     systems
 }
@@ -489,6 +501,23 @@ mod tests {
     }
 
     #[test]
+    fn auto_breaks_discard_encoded_system_breaks() {
+        let spec = PageSpec::default();
+        let atoms: Vec<_> = (0..6)
+            .map(|_| {
+                let mut atom = quarter(1280);
+                atom.line_break = true;
+                atom
+            })
+            .collect();
+        assert_eq!(compute(&atoms, &spec).len(), 6);
+        let heights = vec![STAFF_HEIGHT; atoms.len()];
+        let (auto, _) = compute_with_atoms(&[atoms], &spec, &[], &heights, true);
+        assert_eq!(auto.len(), 1, "Verovio auto fills the system to the width");
+        assert_eq!(auto[0].count, 6);
+    }
+
+    #[test]
     fn pages_follow_system_heights() {
         let spec = PageSpec::default();
         let atoms: Vec<_> = (0..60).map(|i| quarter(1280 + i * 4864)).collect();
@@ -510,6 +539,37 @@ pub fn one_system_per_page(systems: &mut [SystemPlan], spec: &PageSpec) {
             } else {
                 spec.staff_upper_border
             };
+    }
+}
+
+/// Limits the number of systems on a page (`systemMaxPerPage` > 1). The
+/// measured vertical gaps from the skyline pass are kept; only the page
+/// assignment and the top y of the first system of each new page change.
+/// 0 means unlimited and leaves the plan untouched.
+pub fn limit_systems_per_page(systems: &mut [SystemPlan], spec: &PageSpec, max: usize) {
+    if max <= 1 {
+        return;
+    }
+    let mut page = 0;
+    let mut on_page = 0;
+    let mut y = spec.margin_top + spec.title_frame_height;
+    let mut previous: Option<(i32, i32)> = None;
+    for system in systems.iter_mut() {
+        if on_page == max {
+            page += 1;
+            on_page = 0;
+            previous = None;
+            y = spec.margin_top + spec.staff_upper_border;
+        }
+        let (old_y, height) = (system.y, system.height);
+        if let Some((previous_y, previous_height)) = previous {
+            y += (old_y - previous_y - previous_height).max(spec.min_system_distance);
+        }
+        system.y = y;
+        system.page = page;
+        y += height;
+        previous = Some((old_y, height));
+        on_page += 1;
     }
 }
 
@@ -540,6 +600,34 @@ mod option_tests {
             height: 4 * SP,
             staff_offsets: alloc::vec![0],
         }
+    }
+
+    #[test]
+    fn systems_per_page_limits_the_page_without_moving_items_apart() {
+        let spec = PageSpec::default();
+        let mut systems = (0..5).map(system).collect::<Vec<_>>();
+        // Keep the measured gaps: the original y positions are not uniform.
+        systems[2].y += 3 * SP;
+        let original: Vec<(i32, i32)> = systems.iter().map(|s| (s.y, s.height)).collect();
+        limit_systems_per_page(&mut systems, &spec, 2);
+        assert_eq!(systems.iter().map(|s| s.page).collect::<Vec<_>>(), [0, 0, 1, 1, 2]);
+        for (index, system) in systems.iter().enumerate() {
+            let gap = if index == 0 || index == 2 || index == 4 {
+                0
+            } else {
+                original[index].0 - original[index - 1].0 - original[index - 1].1
+            };
+            let expected = if index == 0 {
+                spec.margin_top + spec.title_frame_height
+            } else if index % 2 == 0 {
+                spec.margin_top + spec.staff_upper_border
+            } else {
+                systems[index - 1].y + systems[index - 1].height + gap.max(spec.min_system_distance)
+            };
+            assert_eq!(system.y, expected);
+        }
+        limit_systems_per_page(&mut systems, &spec, 0);
+        assert_eq!(systems.iter().map(|s| s.page).collect::<Vec<_>>(), [0, 0, 1, 1, 2]);
     }
 
     #[test]

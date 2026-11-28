@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
 use crate::api;
-use crate::options::{boolean, number, property};
+use crate::options::{boolean, number, property, string};
 
 use scoretk::EngraveOptions as RustEngraveOptions;
 
@@ -153,7 +153,7 @@ fn options_value(options: Option<&EngraveOptions>) -> JsValue {
 
 /// Construit les options de gravure. Quand au moins un nom Verovio est
 /// présent (`pageWidth`, `pageHeight`, `condense`, `systemMaxPerPage`,
-/// `transpose`, ou un `scale` supérieur à 4), `EngraveOptions::from_verovio`
+/// `breaks`, `transpose`, ou un `scale` supérieur à 4), `EngraveOptions::from_verovio`
 /// convertit les unités 100 % et le zoom en pourcentage ; les noms propres à
 /// scoretk sont appliqués ensuite et peuvent surcharger chaque champ.
 fn engrave_options(value: &JsValue, fallback: Option<&RustEngraveOptions>) -> RustEngraveOptions {
@@ -162,6 +162,7 @@ fn engrave_options(value: &JsValue, fallback: Option<&RustEngraveOptions>) -> Ru
         || u32_opt(value, "pageHeight").is_some()
         || property(value, "condense").is_some()
         || property(value, "systemMaxPerPage").is_some()
+        || property(value, "breaks").is_some()
         || property(value, "transpose").is_some()
         || verovio_scale.is_some_and(|scale| scale > 4);
 
@@ -173,7 +174,7 @@ fn engrave_options(value: &JsValue, fallback: Option<&RustEngraveOptions>) -> Ru
             number(value, "lyricSize").unwrap_or(scoretk::VEROVIO_LYRIC_SIZE),
             boolean(value, "adjustPageHeight").unwrap_or(false),
             condense(value).unwrap_or(false),
-            system_max_per_page(value).unwrap_or(false),
+            u32_opt(value, "systemMaxPerPage").unwrap_or(0) as usize,
             i32_opt(value, "transpose").unwrap_or(0),
         )
     } else {
@@ -205,8 +206,18 @@ fn engrave_options(value: &JsValue, fallback: Option<&RustEngraveOptions>) -> Ru
         // system; `condenseFirstPage` is not meaningful in our layout.
         options.hide_empty_staves = hide;
     }
-    if let Some(one) = system_max_per_page(value) {
-        options.one_system_per_page = one;
+    if let Some(max) = u32_opt(value, "systemMaxPerPage") {
+        // 0 is Verovio's "unlimited"; 1 is cantus' horizontal mode.
+        options.one_system_per_page = max == 1;
+        options.max_systems_per_page = max as usize;
+    }
+    if let Some(breaks) = string(value, "breaks") {
+        match breaks.as_str() {
+            // Verovio's default: ignore encoded breaks and fill to width.
+            "auto" | "none" => options.ignore_encoded_breaks = true,
+            "encoded" => options.ignore_encoded_breaks = false,
+            _ => {}
+        }
     }
     if let Some(lyric) = number(value, "lyricSize") {
         options.lyric_size = lyric;
@@ -229,11 +240,6 @@ fn condense(value: &JsValue) -> Option<bool> {
         value if value.as_bool().is_some() => value.as_bool(),
         value => value.as_string().map(|text| text == "auto"),
     }
-}
-
-/// Only `systemMaxPerPage: 1` has a counterpart in this layout.
-fn system_max_per_page(value: &JsValue) -> Option<bool> {
-    u32_opt(value, "systemMaxPerPage").map(|count| count == 1)
 }
 
 fn nonzero(value: u32) -> Option<u32> {

@@ -31,12 +31,17 @@
 //! | `adjustPageHeight` | `adjust_page_height` |
 //! | `lyricSize` (MEI units, default 4.5) | `lyric_size` (same unit) |
 //! | `condense: "auto"`, `condenseFirstPage: false` | `hide_empty_staves` (first system kept) |
-//! | `systemMaxPerPage: 1` | `one_system_per_page` |
+//! | `systemMaxPerPage: 0` (unlimited) / `1` | `max_systems_per_page` / `one_system_per_page` |
+//! | `breaks: "auto"` (the Verovio default) | `ignore_encoded_breaks` |
 //! | `transpose` (signed semitones) | `transpose_semitones` |
 //!
 //! Cantus computes `pageWidth = innerWidth * 100 / scale`, so the displayed
 //! page stays `innerWidth` px wide while the staff grows with `scale`. Passing
 //! the *displayed* px and the ratio `scale/40` reproduces that behaviour.
+//! Verovio's page geometry is not a screen geometry: at its default 40 % zoom
+//! one staff space is 7.2 px, not the 10–20 px chosen by `screen_staff_px` for
+//! e-ink. `PageUnits::Verovio` selects that scale, so the same displayed page
+//! holds as many systems and measures as in Verovio.
 
 use alloc::vec::Vec;
 
@@ -47,6 +52,22 @@ pub const VEROVIO_DEFAULT_SCALE_PERCENT: u32 = 40;
 /// Pixels per staff space at `scale = 1.0` on the reference short side
 /// (`screen::REFERENCE_SHORT_PX`, 600 px), from `screen_staff_px`.
 pub const REFERENCE_STAFF_PX: i32 = 14;
+/// Verovio's staff space at 100 % zoom, in displayed pixels: 18 of its
+/// 100 % page units, i.e. 7.2 px at cantus' default `scale = 40` %.
+/// Measured on Verovio 4.5.1: an A4 viewBox of 30 000 units in a 1 200 px
+/// page has staff lines 180 units apart.
+pub const VEROVIO_STAFF_PX_AT_100: f64 = 18.0;
+
+/// Interpretation of `page_width_px`/`page_height_px`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageUnits {
+    /// Keep the score's print page (the default, byte-identical path).
+    Score,
+    /// E-ink screen geometry: an integer number of pixels per staff space.
+    Screen,
+    /// Verovio geometry: 7.2 px per staff space at 40 % zoom.
+    Verovio,
+}
 
 /// Options of one engraving pass. All of them are additive: the default
 /// values keep the print layout byte for byte.
@@ -60,6 +81,14 @@ pub struct EngraveOptions {
     pub page_width_px: Option<u32>,
     /// Displayed page height in pixels. `None` keeps the score's print height.
     pub page_height_px: Option<u32>,
+    /// Page geometry used with the pixel dimensions above.
+    pub page_units: PageUnits,
+    /// Ignore `<print new-system>`/`<print new-page>` inherited from the
+    /// MusicXML and break lines by width only (Verovio `breaks: "auto"`).
+    pub ignore_encoded_breaks: bool,
+    /// Maximum number of systems per page; 0 means unlimited (Verovio's
+    /// `systemMaxPerPage: 0`).
+    pub max_systems_per_page: usize,
     /// Shrink the page viewBox to the last system's bottom plus a margin,
     /// as Verovio's `adjustPageHeight`.
     pub adjust_page_height: bool,
@@ -91,6 +120,9 @@ impl Default for EngraveOptions {
             scale: 1.0,
             page_width_px: None,
             page_height_px: None,
+            page_units: PageUnits::Score,
+            ignore_encoded_breaks: false,
+            max_systems_per_page: 0,
             adjust_page_height: false,
             one_system_per_page: false,
             lyric_size: VEROVIO_LYRIC_SIZE,
@@ -117,7 +149,7 @@ impl EngraveOptions {
         lyric_size: f64,
         adjust_page_height: bool,
         hide_empty_staves: bool,
-        one_system_per_page: bool,
+        systems_per_page: usize,
         transpose_semitones: i32,
     ) -> Self {
         let zoom = scale_percent.max(1) as f64 / VEROVIO_DEFAULT_SCALE_PERCENT as f64;
@@ -129,8 +161,13 @@ impl EngraveOptions {
             scale: zoom,
             page_width_px: Some(to_px(page_width)),
             page_height_px: Some(to_px(page_height)),
+            page_units: PageUnits::Verovio,
+            // Verovio's default `breaks` is "auto": encoded breaks are
+            // ignored and systems are filled to the printable width.
+            ignore_encoded_breaks: true,
+            max_systems_per_page: systems_per_page,
             adjust_page_height,
-            one_system_per_page,
+            one_system_per_page: systems_per_page == 1,
             lyric_size,
             hide_empty_staves,
             transpose_semitones,
@@ -163,6 +200,9 @@ mod tests {
         assert_eq!(options.lyric_size, VEROVIO_LYRIC_SIZE);
         assert_eq!(options.text_scale, 1.0);
         assert!(options.page_width_px.is_none() && options.page_height_px.is_none());
+        assert_eq!(options.page_units, PageUnits::Score);
+        assert!(!options.ignore_encoded_breaks);
+        assert_eq!(options.max_systems_per_page, 0);
         assert!(!options.adjust_page_height && !options.one_system_per_page);
         assert!(!options.hide_empty_staves);
         assert_eq!(options.transpose_semitones, 0);
@@ -172,18 +212,40 @@ mod tests {
     #[test]
     fn verovio_options_recover_display_pixels_and_zoom() {
         // cantus: innerWidth 1200, scale 40 → pageWidth 3000 units.
-        let options = EngraveOptions::from_verovio(3000, 2000, 40, 4.5, true, true, true, 2);
+        let options = EngraveOptions::from_verovio(3000, 2000, 40, 4.5, true, true, 1, 2);
         assert_eq!(options.page_width_px, Some(1200));
         assert_eq!(options.page_height_px, Some(800));
         assert_eq!(options.scale, 1.0);
+        assert_eq!(options.page_units, PageUnits::Verovio);
+        assert!(options.ignore_encoded_breaks);
+        assert_eq!(options.max_systems_per_page, 1);
         assert!(options.adjust_page_height && options.hide_empty_staves);
         assert!(options.one_system_per_page);
         assert_eq!(options.transpose_semitones, 2);
         // Doubling the zoom halves the displayed page in 100 % units but
         // doubles our pixels per staff space.
-        let zoomed = EngraveOptions::from_verovio(1500, 1000, 80, 4.5, false, false, false, 0);
+        let zoomed = EngraveOptions::from_verovio(1500, 1000, 80, 4.5, false, false, 0, 0);
         assert_eq!(zoomed.page_width_px, Some(1200));
         assert_eq!(zoomed.scale, 2.0);
+        assert!(!zoomed.one_system_per_page);
+        assert_eq!(zoomed.max_systems_per_page, 0);
+    }
+
+    #[test]
+    fn verovio_auto_breaks_ignore_encoded_breaks_and_page_units_are_not_screen_units() {
+        // Cantus vertical mode: 500 × 900 px at 40 %, `systemMaxPerPage: 0`.
+        let options = EngraveOptions::from_verovio(1250, 2250, 40, 4.5, true, false, 0, 0);
+        assert_eq!(options.page_width_px, Some(500));
+        assert_eq!(options.page_height_px, Some(900));
+        assert!(options.ignore_encoded_breaks, "Verovio breaks default to auto");
+        assert_eq!(options.max_systems_per_page, 0, "0 means unlimited");
+        assert!(!options.one_system_per_page);
+        assert_eq!(options.page_units, PageUnits::Verovio);
+        // At 40 %, the page holds 500 / 7.2 staff spaces across, not the
+        // 500 / 12 given by the e-ink `screen_staff_px` for the same pixels.
+        let staff_px = VEROVIO_STAFF_PX_AT_100 * 40.0 / 100.0;
+        assert_eq!(staff_px, 7.2);
+        assert!((staff_px - 14.0 * 500.0 / 600.0).abs() > 4.0);
     }
 
     #[test]

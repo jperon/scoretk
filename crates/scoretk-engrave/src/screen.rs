@@ -76,11 +76,35 @@ impl PageSpec {
     /// displayed pixel page. // Cantus passes `verovio_scale / 40` here: its
     /// `pageWidth = innerWidth * 100 / scale` compensates the physical page.
     pub fn for_px(width_px: u32, height_px: u32, scale: f64) -> Self {
-        let staff_px = screen_staff_px_at(width_px, height_px, scale);
+        Self::for_staff_px(
+            width_px,
+            height_px,
+            screen_staff_px_at(width_px, height_px, scale) as f64,
+        )
+    }
+
+    /// Geometry of a Verovio page expressed in *displayed* pixels.
+    ///
+    /// Cantus sends `pageWidth = innerWidth * 100 / scale` and `scale` in
+    /// percent. Verovio's staff space is 18 of its 100 % page units, hence
+    /// `18 * scale / 100` displayed pixels (7.2 px at the default 40 %). The
+    /// e-ink `screen_staff_px` would give 10–20 px and stack only one system
+    /// per page; the zoom is already included in `scale` here.
+    pub fn for_verovio_px(width_px: u32, height_px: u32, scale: f64) -> Self {
+        // `scale` here is the zoom ratio (Verovio percent / 40).
+        let staff_px = crate::options::VEROVIO_STAFF_PX_AT_100
+            * scale.max(1.0 / 40.0)
+            * crate::options::VEROVIO_DEFAULT_SCALE_PERCENT as f64
+            / 100.0;
+        Self::for_staff_px(width_px, height_px, staff_px.max(0.5))
+    }
+
+    /// Common geometry for a page whose staff space is a number of pixels.
+    fn for_staff_px(width_px: u32, height_px: u32, staff_px: f64) -> Self {
         // Pixel coordinates round-trip exactly through the fixed-point grid:
         // fixed * staff_px / 1024 == px. The page therefore keeps the screen's
         // aspect ratio without a whole-staff-space quantisation error.
-        let to_sp = |px: i32| (px as f64 * SP as f64 / staff_px as f64).round() as i32;
+        let to_sp = |px: i32| (px as f64 * SP as f64 / staff_px).round() as i32;
         let width = width_px.min(i32::MAX as u32) as i32;
         let height = height_px.min(i32::MAX as u32) as i32;
         // The margins are in whole staff spaces, not a handful of pixels:
@@ -91,10 +115,10 @@ impl PageSpec {
         // edge. Two spaces at the sides and four at the top/bottom keep all
         // emitted outlines inside the caller's buffer. `assign_pages` uses
         // `margin_top` for both the top and the bottom of a page.
-        let margin_x = 2 * staff_px;
-        let margin_y = 4 * staff_px;
+        let margin_x = (2.0 * staff_px).round().max(1.0) as i32;
+        let margin_y = (4.0 * staff_px).round().max(1.0) as i32;
         Self {
-            spatium_mm: staff_px as f64 * SCREEN_PIXEL_PITCH_MM,
+            spatium_mm: staff_px * SCREEN_PIXEL_PITCH_MM,
             page_height: to_sp(height),
             margin_left: to_sp(margin_x),
             margin_top: to_sp(margin_y),
@@ -214,6 +238,19 @@ mod tests {
         assert_eq!(text.user_text_scale, 2.0);
         let em = crate::layout::text_em;
         assert_eq!(em(&text, 10.0), 2 * em(&plain, 10.0));
+    }
+
+    #[test]
+    fn verovio_page_units_hold_more_staff_space_than_screen_units() {
+        // Cantus at 1200 × 800 px, zoom 40 %: Verovio's staff is 7.2 px, so
+        // the page is about 167 sp wide and 111 sp tall.
+        let spec = PageSpec::for_verovio_px(1200, 800, 1.0);
+        let screen = PageSpec::for_px(1200, 800, 1.0);
+        assert_eq!(spec.spatium_mm, 7.2 * SCREEN_PIXEL_PITCH_MM);
+        assert!(spec.printable_width > screen.printable_width * 2);
+        assert!(spec.page_height > screen.page_height * 2);
+        let zoomed = PageSpec::for_verovio_px(1200, 800, 2.0);
+        assert_eq!(zoomed.spatium_mm, spec.spatium_mm * 2.0);
     }
 
     #[test]

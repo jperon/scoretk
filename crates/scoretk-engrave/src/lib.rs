@@ -247,7 +247,13 @@ impl Engraver {
         } else {
             alloc::vec![height; measure_count]
         };
-        let (mut systems, atoms) = breaking::compute_with_atoms(&atoms, &spec, &staffs, &heights);
+        let (mut systems, atoms) = breaking::compute_with_atoms(
+            &atoms,
+            &spec,
+            &staffs,
+            &heights,
+            options.ignore_encoded_breaks,
+        );
         let mut spec = spec;
         // A preliminary layout gives the shapes of every drawn item; their
         // skylines then set the minimum staff and system distances before
@@ -258,6 +264,8 @@ impl Engraver {
         vertical::distribute_all(&mut systems, &staffs, &spec);
         if options.one_system_per_page {
             breaking::one_system_per_page(&mut systems, &spec);
+        } else if options.max_systems_per_page > 1 {
+            breaking::limit_systems_per_page(&mut systems, &spec, options.max_systems_per_page);
         }
         if options.adjust_page_height {
             spec.page_height = breaking::content_height(&systems, &spec)
