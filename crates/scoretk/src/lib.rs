@@ -105,7 +105,10 @@ pub use options::{MidiOptions, Options};
 pub use scoretk_core::model;
 pub use scoretk_core::model::Score;
 #[cfg(feature = "engrave")]
-pub use scoretk_engrave::{EngraveOptions, Engraver};
+pub use scoretk_engrave::{
+    options::{VEROVIO_DEFAULT_SCALE_PERCENT, VEROVIO_LYRIC_SIZE},
+    EngraveOptions, Engraver,
+};
 
 /// Types de la carte des temps, réexportés pour les consommateurs de
 /// [`write_playback`] (wasm, CLI) sans dépendre directement de
@@ -319,6 +322,25 @@ pub fn write_layout_with_options(
 #[cfg(feature = "engrave")]
 pub fn engrave_page_svg(engraver: &Engraver, page: usize) -> Vec<u8> {
     scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes()
+}
+
+/// Décrit une page d'un handle déjà gravé en JSON (sans reconstruire la
+/// gravure), après un `relayout` éventuel.
+#[cfg(feature = "engrave")]
+pub fn engrave_page_layout(engraver: &Engraver, page: usize) -> Vec<u8> {
+    engraver.page_layout(page).to_json().into_bytes()
+}
+
+/// Page d'un identifiant stable dans un handle déjà gravé (0-basé ou `None`).
+#[cfg(feature = "engrave")]
+pub fn engrave_page_of_element(engraver: &Engraver, id: &str) -> Option<usize> {
+    engraver.page_of_element(id)
+}
+
+/// Refait la mise en page d'un handle qui possède son score, sans relecture.
+#[cfg(feature = "engrave")]
+pub fn relayout(engraver: &mut Engraver, options: &EngraveOptions) -> Result<()> {
+    hooks::relayout(engraver, options)
 }
 
 /// Décrit la page gravée en JSON : taille de page, systèmes, mesures et

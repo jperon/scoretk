@@ -483,6 +483,14 @@ pub(crate) fn engrave(score: Score, options: &EngraveOptions) -> Result<Engraver
     Engraver::owned(score, options).map_err(|error| Error::Engrave(error.to_string()))
 }
 
+/// Reconstruit les atomes et les systèmes d'un handle possédant son score.
+#[cfg(feature = "engrave")]
+pub(crate) fn relayout(engraver: &mut Engraver, options: &EngraveOptions) -> Result<()> {
+    engraver
+        .relayout(options)
+        .map_err(|error| Error::Engrave(error.to_string()))
+}
+
 /// Description compacte d'une page gravée (JSON, coordonnées en 1/1024 sp).
 #[cfg(feature = "engrave")]
 pub(crate) fn write_layout(score: &Score, page: usize) -> Result<Vec<u8>> {
