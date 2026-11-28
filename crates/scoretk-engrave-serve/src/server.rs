@@ -25,7 +25,7 @@
 //! `set` changes the next `open` calls, never the document already open:
 //! `set scale <f>` is the staff-size multiplier (notes), `set text <f>` the
 //! multiplier of every text style. Both default to 1.0 and are bounded above
-//! to 3.0; `set scale` goes down to 0.3, `set text` to 0.5. Out-of-range or
+//! to 3.0; `set scale` goes down to 0.07, `set text` to 0.1. Out-of-range or
 //! non-finite values are `err` replies and leave the current setting
 //! unchanged.
 
@@ -35,13 +35,14 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::Document;
 
-/// Lower bound of `set scale`. At 0.3 on the reference 600 × 800 screen,
-/// `screen_staff_px_at` still yields 4 px per staff space (14 * 0.3 rounded),
-/// which is the smallest legible grid: going lower would round to 3 px.
-const SCALE_MIN: f64 = 0.3;
-/// Lower bound of `set text`. Text styles keep the previous 0.5 floor: only
-/// the note size needed the extra zoom-out.
-const TEXT_SCALE_MIN: f64 = 0.5;
+/// Lower bound of `set scale`. At 0.07 on the reference 600 × 800 screen,
+/// `screen_staff_px_at` still yields 1 px per staff space (14 * 0.07 rounds
+/// down, then the 1 px floor applies), the smallest grid the rasteriser
+/// accepts without dividing by a zero pixel size.
+const SCALE_MIN: f64 = 0.07;
+/// Lower bound of `set text`. `text_em` already floors the user text
+/// multiplier at 0.1, so 0.1 is the smallest scale that has an effect.
+const TEXT_SCALE_MIN: f64 = 0.1;
 /// Upper bound shared by `set scale` and `set text`.
 const SCALE_MAX: f64 = 3.0;
 

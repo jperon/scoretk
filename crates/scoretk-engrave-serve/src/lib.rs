@@ -29,7 +29,7 @@
 //!
 //! The protocol also has `set scale <f>` and `set text <f>` (default 1.0,
 //! bounded above to 3.0) to size notes and text of the next documents;
-//! `set scale` accepts down to 0.3, `set text` down to 0.5.
+//! `set scale` accepts down to 0.07, `set text` down to 0.1.
 
 mod document;
 mod reader;

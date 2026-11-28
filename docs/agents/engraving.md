@@ -2422,15 +2422,17 @@ output, if any, goes to stderr.
 `set` takes two settings, both multipliers defaulting to 1.0 and bounded to
 3.0 above (out-of-range, non-finite or unknown values are `err` and leave the
 current setting unchanged). The lower bound depends on the setting:
-`set scale` accepts down to 0.3, `set text` down to 0.5.
+`set scale` accepts down to 0.07 (a 10 % zoom-out is a common request, so the
+floor leaves headroom below it), `set text` down to 0.1.
 
 - `set scale <f>`: staff-size multiplier, i.e. the size of the notes. It
   multiplies `screen_staff_px`; the rasteriser still uses a whole number of
   pixels per staff space (`screen_staff_px_at`), and the stored `staff_px` is
-  that effective value. The 0.3 floor is the smallest zoom that keeps the
-  reference 600 × 800 screen at 4 px per staff space
-  (`screen_staff_px_at(600, 800, 0.3) == 4`, from `14 × 0.3` rounded);
-  below that the grid would drop to 3 px, too coarse for noteheads.
+  that effective value. At 0.07 on the reference 600 × 800 screen the result
+  is 1 px per staff space: `14 × 0.07` rounds down, then the 1 px floor of
+  `screen_staff_px_at` applies. That is the smallest grid the renderer
+  accepts; going lower would round to 0 and divide by a zero staff size. The
+  document still opens and every page is drawn.
 - `set text <f>`: multiplier of every text style (titles/credits, lyrics,
   measure numbers, instrument names). It is applied on top of the automatic
   credit fit of `PageSpec::text_scale` and never changes the staff size.

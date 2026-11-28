@@ -143,8 +143,8 @@ fn invalid_set_commands_are_rejected_without_changing_the_setting() {
         "set scale",
         "set nonsense 1.0",
         "set scale nope",
-        "set scale 0.29",
-        "set text 0.4",
+        "set scale 0.06",
+        "set text 0.09",
         "set text 3.1",
         "set text NaN",
     ] {
@@ -162,18 +162,42 @@ fn invalid_set_commands_are_rejected_without_changing_the_setting() {
 }
 
 #[test]
-fn a_thirty_percent_scale_is_accepted_and_still_draws() {
-    // 0.3 is the floor of `set scale`: on this 600 × 800 screen the auto staff
-    // size is 14 px/sp, and 14 * 0.3 rounds to 4 px per staff space, the
-    // smallest grid that keeps a legible staff. Pages must stay non-blank.
+fn the_smallest_scales_open_and_render_without_panicking() {
+    // Floors of `set scale` (0.07) and `set text` (0.1). On this 600 × 800
+    // screen the auto staff size is 14 px/sp, so 14 * 0.07 rounds down to the
+    // 1 px/sp floor of `screen_staff_px_at`: the tiniest grid the renderer
+    // accepts. Opening must not divide by a zero pixel size, panic (the
+    // protocol then replies `err internal error`) or drop every page.
     let file = corpus("v3/moonlight.mscx");
     let path = file.to_str().unwrap();
     let mut peer = Peer::start();
 
-    let pages = pages_at(&mut peer, path, "0.3");
-    assert!(pages >= 1, "scale 0.3 must still produce a page");
-    let pitch = staff_pitch(&staff_line_rows(&peer.page(0)));
-    assert_eq!(pitch, 4, "scale 0.3 must draw 4 px per staff space");
+    peer.send("set scale 0.07");
+    assert_eq!(peer.line(), "ok");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    let answer = peer.line();
+    assert!(answer.starts_with("ok "), "scale 0.07: {answer}");
+    let pages: usize = answer[3..].parse().unwrap();
+    assert!(pages >= 1, "scale 0.07 must still produce pages");
+    for page in 0..pages {
+        assert_eq!(
+            peer.page(page).len(),
+            WIDTH * HEIGHT,
+            "scale 0.07: page {page} of {pages} is incomplete"
+        );
+    }
+    peer.send("close");
+    assert_eq!(peer.line(), "ok");
+
+    // `set text` reaches 0.1 on top of a normal staff.
+    peer.send("set scale 1.0");
+    assert_eq!(peer.line(), "ok");
+    peer.send("set text 0.1");
+    assert_eq!(peer.line(), "ok");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    let answer = peer.line();
+    assert!(answer.starts_with("ok "), "text 0.1: {answer}");
+    assert_eq!(peer.page(0).len(), WIDTH * HEIGHT);
 
     peer.send("quit");
     assert!(peer.finish().success());
