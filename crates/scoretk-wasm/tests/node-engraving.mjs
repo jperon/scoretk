@@ -67,7 +67,29 @@ assert.equal(typeof engrave.engrave, 'function');
 const engraveFormats = engrave.formats().map((format) => format.name);
 assert.ok(engraveFormats.includes('svg'), 'the engraving module can write SVG');
 
-// 2. Handle basics: structured SVG, compact layout JSON and stable ids.
+// 2. Linear memory of the largest score, measured before any other handle
+// grows the linear memory. It is reported (not a parity assertion) so a
+// Kobo/phone regression is visible; 64 MiB is a generous ceiling.
+const memory = () => engraveModule.wasm.memory.buffer.byteLength;
+const moonlight = read('v3/moonlight.mscx');
+const before = memory();
+const big = engrave.engrave(moonlight);
+const engravedSvg = big.renderPage(0);
+const afterEngraveRender = memory();
+big.relayout({ pageWidth: 2100, pageHeight: 2970, scale: 40, transpose: 2 });
+big.renderPage(0);
+const afterRelayout = memory();
+console.log(
+  `node-engraving: wasm memory ${before} B (init) → ${afterEngraveRender} B ` +
+    `(moonlight engrave + render, ${big.pageCount()} pages, ${engravedSvg.length} B SVG) → ` +
+    `${afterRelayout} B (relayout)`,
+);
+for (const bytes of [afterEngraveRender, afterRelayout]) {
+  assert.ok(bytes > 0 && bytes < 64 * 1024 * 1024, `linear memory ${bytes} B`);
+}
+big.free();
+
+// 3. Handle basics: structured SVG, compact layout JSON and stable ids.
 const voiceswitching = read('v4/voiceswitching.mscx');
 const handle = engrave.engrave(voiceswitching);
 assert.ok(handle.pageCount() >= 1);
@@ -93,7 +115,7 @@ for (const note of layout.notes) {
 assert.equal(handle.pageOfElement('does-not-exist'), null);
 assert.throws(() => handle.renderPage(handle.pageCount()), /hors limites/);
 
-// 3. Every timeline note id is drawn on some page, with the same spelling as
+// 4. Every timeline note id is drawn on some page, with the same spelling as
 //    the unmodified conversion package.
 for (const file of [
   'v4/voiceswitching.mscx',
@@ -116,7 +138,7 @@ for (const file of [
 }
 handle.free();
 
-// 4. Verovio-style options and relayout, including per-part staff sizes.
+// 5. Verovio-style options and relayout, including per-part staff sizes.
 const verovioOptions = {
   pageWidth: 3000,
   pageHeight: 2000,
@@ -132,8 +154,19 @@ const original = engrave.engrave(voiceswitching);
 const originalPages = original.pageCount();
 const originalSvg = original.renderPage(0);
 const originalSize = JSON.parse(original.layout(0)).size;
+// Verovio `breaks: auto` may collapse several encoded systems into one, so
+// the expected horizontal page count is measured, not hard-coded.
+const unlimited = engrave.engrave(voiceswitching, {
+  ...verovioOptions,
+  systemMaxPerPage: 0,
+});
+const systemCount = JSON.parse(unlimited.layout()).reduce(
+  (total, page) => total + page.systems.length,
+  0,
+);
+unlimited.free();
 original.relayout(verovioOptions);
-assert.equal(original.pageCount(), 4, 'systemMaxPerPage: 1 puts one system per page');
+assert.equal(original.pageCount(), systemCount, 'systemMaxPerPage: 1 puts one system per page');
 assert.notDeepEqual(JSON.parse(original.layout(0)).size, originalSize);
 assert.notEqual(original.renderPage(0), originalSvg);
 const resized = original.renderPage(0);
@@ -143,29 +176,49 @@ assert.equal(original.renderPage(0), originalSvg);
 assert.notEqual(resized, originalSvg);
 original.free();
 
-// 5. Linear memory of the largest score. Memory is reported (not a parity
-//    assertion) so a Kobo/phone regression is visible; 64 MiB is a generous
-//    ceiling for an engraving of this score.
-const memory = () => engraveModule.wasm.memory.buffer.byteLength;
-const moonlight = read('v3/moonlight.mscx');
-const before = memory();
-const big = engrave.engrave(moonlight);
-const engravedSvg = big.renderPage(0);
-const afterEngraveRender = memory();
-big.relayout({ pageWidth: 2100, pageHeight: 2970, scale: 40, transpose: 2 });
-big.renderPage(0);
-const afterRelayout = memory();
-console.log(
-  `node-engraving: wasm memory ${before} B (init) → ${afterEngraveRender} B ` +
-    `(moonlight engrave + render, ${big.pageCount()} pages, ${engravedSvg.length} B SVG) → ` +
-    `${afterRelayout} B (relayout)`,
-);
-for (const bytes of [afterEngraveRender, afterRelayout]) {
-  assert.ok(bytes > 0 && bytes < 64 * 1024 * 1024, `linear memory ${bytes} B`);
+// 6. Cantus vertical mode on a multi-page MusicXML. These are the exact
+// options `renderOptions` of worker.coffee sends: Verovio page units at
+// 1200 × 800 px and zoom 40, `breaks: "auto"` (encoded breaks ignored),
+// `adjustPageHeight: true` and `systemMaxPerPage: 0` (unlimited).
+const cantusOptions = {
+  from: 'musicxml',
+  pageWidth: 3000, // innerWidth 1200 * 100 / 40
+  pageHeight: 2000, // innerHeight 800 * 100 / 40
+  scale: 40,
+  lyricSize: 4.5,
+  adjustPageHeight: true,
+  condense: false,
+  systemMaxPerPage: 0,
+  transpose: 0,
+  partSizes: {},
+};
+const cantusScore = read('v3/moonlight.ref.musicxml');
+const cantusLayout = engrave.engrave(cantusScore, cantusOptions);
+assert.ok(cantusLayout.pageCount() >= 3, 'multi-page score in cantus vertical mode');
+for (let page = 0; page < 3; page += 1) {
+  const svg = cantusLayout.renderPage(page);
+  const systems = [...svg.matchAll(/<g\b[^>]*class="system"[^>]*>([\s\S]*?)(?=<g\b[^>]*class="system"|\s*<\/svg>)/g)];
+  assert.ok(systems.length >= 2, `page ${page}: ${systems.length} systems (expected >= 2)`);
+  for (const [index, system] of systems.entries()) {
+    const measures = new Set(
+      [...system[1].matchAll(/data-ordinal="(\d+)"/g)].map((match) => match[1]),
+    );
+    assert.ok(
+      measures.size >= 3,
+      `page ${page}, system ${index}: ${measures.size} measures (expected >= 3)`,
+    );
+  }
 }
-big.free();
+// The same options with `systemMaxPerPage: 1` are cantus' horizontal mode.
+cantusLayout.relayout({ ...cantusOptions, systemMaxPerPage: 1 });
+const horizontal = cantusLayout.layout();
+assert.equal(JSON.parse(horizontal).length, cantusLayout.pageCount());
+for (const page of JSON.parse(horizontal)) {
+  assert.equal(page.systems.length, 1, 'one system per page in horizontal mode');
+}
+cantusLayout.free();
 
-// 6. The classic worker wrapper exposes `self.scoretk.engrave`.
+// 7. The classic worker wrapper exposes `self.scoretk.engrave`.
 const ctx = vm.createContext({
   self: {},
   console,
