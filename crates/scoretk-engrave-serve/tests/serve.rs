@@ -143,7 +143,8 @@ fn invalid_set_commands_are_rejected_without_changing_the_setting() {
         "set scale",
         "set nonsense 1.0",
         "set scale nope",
-        "set scale 0.4",
+        "set scale 0.29",
+        "set text 0.4",
         "set text 3.1",
         "set text NaN",
     ] {
@@ -156,6 +157,24 @@ fn invalid_set_commands_are_rejected_without_changing_the_setting() {
     assert_eq!(peer.line(), "ok");
     peer.send("version");
     assert!(peer.line().starts_with("ok "));
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
+#[test]
+fn a_thirty_percent_scale_is_accepted_and_still_draws() {
+    // 0.3 is the floor of `set scale`: on this 600 × 800 screen the auto staff
+    // size is 14 px/sp, and 14 * 0.3 rounds to 4 px per staff space, the
+    // smallest grid that keeps a legible staff. Pages must stay non-blank.
+    let file = corpus("v3/moonlight.mscx");
+    let path = file.to_str().unwrap();
+    let mut peer = Peer::start();
+
+    let pages = pages_at(&mut peer, path, "0.3");
+    assert!(pages >= 1, "scale 0.3 must still produce a page");
+    let pitch = staff_pitch(&staff_line_rows(&peer.page(0)));
+    assert_eq!(pitch, 4, "scale 0.3 must draw 4 px per staff space");
+
     peer.send("quit");
     assert!(peer.finish().success());
 }

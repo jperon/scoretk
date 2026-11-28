@@ -27,8 +27,9 @@
 //! bytes and the pivot `Score` are dropped as soon as the engraver is built,
 //! and a page's display list is built and dropped inside each `page` call.
 //!
-//! The protocol also has `set scale <f>` and `set text <f>` (both
-//! `[0.5, 3.0]`, default 1.0) to size notes and text of the next documents.
+//! The protocol also has `set scale <f>` and `set text <f>` (default 1.0,
+//! bounded above to 3.0) to size notes and text of the next documents;
+//! `set scale` accepts down to 0.3, `set text` down to 0.5.
 
 mod document;
 mod reader;
