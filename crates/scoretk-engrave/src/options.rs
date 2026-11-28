@@ -237,7 +237,10 @@ mod tests {
         let options = EngraveOptions::from_verovio(1250, 2250, 40, 4.5, true, false, 0, 0);
         assert_eq!(options.page_width_px, Some(500));
         assert_eq!(options.page_height_px, Some(900));
-        assert!(options.ignore_encoded_breaks, "Verovio breaks default to auto");
+        assert!(
+            options.ignore_encoded_breaks,
+            "Verovio breaks default to auto"
+        );
         assert_eq!(options.max_systems_per_page, 0, "0 means unlimited");
         assert!(!options.one_system_per_page);
         assert_eq!(options.page_units, PageUnits::Verovio);

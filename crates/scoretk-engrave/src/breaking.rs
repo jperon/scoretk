@@ -315,8 +315,12 @@ pub fn compute_with_atoms(
     ignore_encoded_breaks: bool,
 ) -> (Vec<SystemPlan>, Vec<Vec<MeasureAtom>>) {
     let mut augmented = all.to_vec();
-    let mut systems =
-        collect_systems(&merged_score(&augmented), spec, staffs, ignore_encoded_breaks);
+    let mut systems = collect_systems(
+        &merged_score(&augmented),
+        spec,
+        staffs,
+        ignore_encoded_breaks,
+    );
     for _ in 0..8 {
         let mut next = all.to_vec();
         for system in &systems {
@@ -610,7 +614,10 @@ mod option_tests {
         systems[2].y += 3 * SP;
         let original: Vec<(i32, i32)> = systems.iter().map(|s| (s.y, s.height)).collect();
         limit_systems_per_page(&mut systems, &spec, 2);
-        assert_eq!(systems.iter().map(|s| s.page).collect::<Vec<_>>(), [0, 0, 1, 1, 2]);
+        assert_eq!(
+            systems.iter().map(|s| s.page).collect::<Vec<_>>(),
+            [0, 0, 1, 1, 2]
+        );
         for (index, system) in systems.iter().enumerate() {
             let gap = if index == 0 || index == 2 || index == 4 {
                 0
@@ -627,7 +634,10 @@ mod option_tests {
             assert_eq!(system.y, expected);
         }
         limit_systems_per_page(&mut systems, &spec, 0);
-        assert_eq!(systems.iter().map(|s| s.page).collect::<Vec<_>>(), [0, 0, 1, 1, 2]);
+        assert_eq!(
+            systems.iter().map(|s| s.page).collect::<Vec<_>>(),
+            [0, 0, 1, 1, 2]
+        );
     }
 
     #[test]

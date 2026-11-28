@@ -146,6 +146,7 @@ is created and page 0 is rendered, then after a `relayout` at a new width:
 | Both ESM modules instantiated | 6 488 064 bytes |
 | After `engrave` + `renderPage(0)` (68 pages) | **6 488 064 bytes** |
 | After `relayout({ pageWidth, pageHeight, scale, transpose })` + render | **6 488 064 bytes** |
+| Same measurement after the pagination fix of § 35 (2026-11-28) | **6 422 528 bytes** at all three steps |
 
 No growth after either operation: the score is kept once in the handle and the
 relayout drops the old atoms before rebuilding them. The module stays in the
@@ -742,7 +743,8 @@ interface EngraveOptions {
   pageWidth?: number;         // 100 % units, e.g. innerWidth * 100 / scale
   pageHeight?: number;
   condense?: boolean | "auto";
-  systemMaxPerPage?: number;  // only 1 has an effect
+  breaks?: "auto" | "encoded" | "none"; // auto (default) ignores encoded breaks
+  systemMaxPerPage?: number;  // 0 = unlimited (default), 1 = one system per page
   transpose?: number;         // signed semitones
 }
 class Engraving {
@@ -763,8 +765,14 @@ value above 4): then it is Verovio's percentage and
 displayed pixels and divides the zoom by 40. The scoretk-named fields are
 applied afterwards and override the Verovio ones. `condense: true`/`"auto"`
 maps to `hide_empty_staves` (the first system keeps every staff);
-`systemMaxPerPage: 1` to `one_system_per_page`. `partSizes` uses the part index
-as key, e.g. `{ "1": 70 }`. Options not listed are ignored.
+`systemMaxPerPage: 1` to `one_system_per_page` and larger values to a per-page
+system limit, while 0 means unlimited. `breaks: "auto"` (the Verovio default,
+also implicit when another Verovio field is present) discards the encoded
+`<print new-system>`/`new-page` breaks so systems fill the printable width;
+`"encoded"` keeps them. Verovio page dimensions use 7.2 px per staff space at
+40 % zoom, not the e-ink screen size. `partSizes` uses the part index
+as key, e.g. `{ "1": 70 }`. Options not listed are ignored. The cantus use case
+and its measurements are recorded in `docs/agents/engraving.md` § 35.
 
 The note ids in the SVG (`<g class="note" id="…">`, and in `layout().notes`)
 are exactly the `id`/`xml:id` of `convertWithTimeline`'s MusicXML and its

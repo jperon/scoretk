@@ -2836,3 +2836,84 @@ Final checks of this step: `cargo fmt --all -- --check`, clippy `-D warnings`
 on `scoretk-wasm` (with and without the feature), `scoretk` and
 `scoretk-engrave`, `cargo build -p scoretk-wasm --target wasm32-unknown-unknown`,
 `nix build .#wasm`, both Node scripts.
+
+## 35. Cantus pagination fix: Verovio page units and auto breaks (2026-11-28)
+
+Cantus' `renderOptions` (`worker.coffee:291-312`) sends Verovio-style values:
+`pageWidth = innerWidth * 100 / scale`, `pageHeight`, `scale` in percent,
+`adjustPageHeight: true`, `breaks: "auto"`, `systemMaxPerPage: 0` in vertical
+mode, and `condense`. The Telemann sonata used by its tests
+(`tests/lib.js`, `telemann-sonatas-for-two-recorders.xml`, 32 `<print
+new-system>` and 4 `<print new-page>`) was laid out one system at a time.
+
+### 35.1 Reproduction (built wasm, exact cantus options)
+
+| Viewport (zoom 40) | Before: pages | Before: systems/page | Before: measures/system | Verovio 4.5.1: pages | Verovio: systems/page |
+| --- | ---: | --- | --- | ---: | --- |
+| 500 × 900 | 26 | 2 | 2 | 6 | 5 |
+| 1200 × 800 | 37 | 1 | 2–4 | 3 | 4 |
+
+(The SVG emits one `<g class="measure">` per part, so the two-part sonata
+counts two groups per displayed measure; Verovio's figures below are per
+part.)
+
+### 35.2 Root causes
+
+1. `EngraveOptions::from_verovio` kept the encoded line breaks imported from
+   `<print new-system>`/`new-page`. Verovio's default `breaks: "auto"`
+   **discards** them and fills each system to the printable width.
+2. `PageSpec::for_px` derives the staff size from `screen_staff_px` (12 px at a
+   500 px short side, 19 px at 800 px) and multiplies it by the zoom ratio.
+   Verovio's page units give a staff space of 18 units at 100 %, i.e.
+   **7.2 px at 40 %**, independent of the screen's short side. Our page held
+   about half as many staff spaces in each direction, so tall two-staff
+   systems could no longer stack and wide measures were split.
+3. `systemMaxPerPage` was reduced to a boolean: `0` was already unlimited,
+   but values above 1 were silently treated as unlimited as well.
+
+### 35.3 Fix
+
+`EngraveOptions` gains `page_units` (`Score` by default, `Verovio` from
+`from_verovio`), `ignore_encoded_breaks` (true from `from_verovio`, Verovio's
+default `auto`) and `max_systems_per_page` (0 = unlimited). `PageSpec::
+for_verovio_px` uses 7.2 px per staff space at 40 % zoom; scoretk's e-ink
+`for_px` is unchanged. The breaking pass skips encoded breaks when asked and
+`limit_systems_per_page` honours limits above 1. The wasm wrapper accepts
+`breaks: "auto" | "encoded" | "none"` and any `systemMaxPerPage` value; the
+CLI gains `--verovio-units` and `--auto-breaks` for the same layout. All new
+fields default to a no-op (§ 33.2): a call without options takes the exact
+previous path.
+
+### 35.4 Result and CLI parity
+
+| Viewport (zoom 40) | After: pages | After: systems/page | After: measures/system (per part) |
+| --- | ---: | --- | --- |
+| 500 × 900 | 7 | 4 | 2 (Verovio: 2) |
+| 1200 × 800 | 3 | 3 | 6 (Verovio: 5.75) |
+
+The CLI on the same file with `--page-width-px 1200 --page-height-px 800
+--engrave-scale 1 --verovio-units --auto-breaks --adjust-page-height` emits
+page 0 with the same `viewBox="0 0 170666 106607"`, 3 systems and 37 measure
+groups as the wasm handle with `pageWidth: 3000, pageHeight: 2000, scale: 40`.
+`systemMaxPerPage: 1` still gives one system per page in both directions.
+
+### 35.5 Tests and budget
+
+Rust tests cover the option translation (100 % units → displayed pixels,
+Verovio zoom, auto breaks, unlimited systems), the Verovio page geometry and
+both new breaking modes. `node-engraving.mjs` now engraves
+`v3/moonlight.ref.musicxml` with cantus' exact options and asserts at least
+two systems and three measures per system on each of the first three pages at
+1200 px, plus the horizontal relayout. With `systemMaxPerPage: 1` the hard-coded
+page count was replaced by the measured number of systems because auto breaks
+can merge encoded systems.
+
+The geometric oracle was run once at the end: 56 files, 0 failures,
+398/2 346 elements within 0.1 sp — the same figures as § 33.7. Every default
+page-0 SVG of the 56 corpus files is byte-identical to the parent commit, and
+so are all pages of `moonlight.mscx` and `voiceswitching.mscx`. Linear memory
+of the engraving module (fresh Node instance, `moonlight.mscx`) is
+6 422 528 B after engrave + render and after a relayout, against 6 488 064 B
+before this fix: no increase. The conversion package is byte-identical
+(2 958 092 raw bytes); the optional engraving module grows by 780 raw bytes
+(3 424 092, 1 312 098 gzip).
