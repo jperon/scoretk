@@ -131,6 +131,23 @@
             '';
           });
 
+        # Variante optionnelle avec la gravure (feature `engrave`). Le paquet
+        # principal garde la façade de conversion seule : cantus ne télécharge
+        # ce second module que quand l'engravement est demandé.
+        wasmEngraveBuild = craneLib.cargoBuild (commonArgs
+          // {
+            cargoArtifacts = wasmCargoArtifacts;
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+            CARGO_PROFILE = "wasm";
+            cargoExtraArgs = "--locked -p scoretk-wasm --features engrave";
+            doCheck = false;
+            doInstallCargoArtifacts = false;
+            installPhaseCommand = ''
+              mkdir -p $out
+              cp target/wasm32-unknown-unknown/wasm/scoretk_wasm.wasm $out/scoretk_engrave.wasm
+            '';
+          });
+
         wasmPackageJson = pkgs.writeText "scoretk-package.json" (builtins.toJSON {
           name = "scoretk";
           inherit version;
@@ -149,6 +166,7 @@
               default = "./esm/scoretk_wasm.js";
             };
             "./classic/scoretk.js" = "./classic/scoretk.js";
+            "./classic/scoretk-engrave.js" = "./classic/scoretk-engrave.js";
             "./classic/*" = "./classic/*";
             "./package.json" = "./package.json";
           };
@@ -179,7 +197,16 @@
             --out-dir $out/classic --out-name scoretk_wasm \
             ${wasm32Build}/scoretk_wasm.wasm
 
-          for module in $out/esm/scoretk_wasm_bg.wasm $out/classic/scoretk_wasm_bg.wasm; do
+          # Module optionnel : mêmes API de conversion + gravure, noms préfixés.
+          wasm-bindgen --target web \
+            --out-dir $out/esm --out-name scoretk_engrave \
+            ${wasmEngraveBuild}/scoretk_engrave.wasm
+          wasm-bindgen --target no-modules \
+            --out-dir $out/classic --out-name scoretk_engrave \
+            ${wasmEngraveBuild}/scoretk_engrave.wasm
+
+          for module in $out/esm/scoretk_wasm_bg.wasm $out/classic/scoretk_wasm_bg.wasm \
+                        $out/esm/scoretk_engrave_bg.wasm $out/classic/scoretk_engrave_bg.wasm; do
             echo "avant wasm-opt : $(stat -c%s "$module") octets ($module)"
             wasm-opt -Oz --strip-debug --converge "$module" -o "$module.opt"
             mv "$module.opt" "$module"
@@ -189,11 +216,18 @@
           gz=$(gzip -9 -c $out/esm/scoretk_wasm_bg.wasm | wc -c)
           echo "scoretk : $raw octets ($gz octets gzip)"
           echo "$raw octets ($gz gzip)" > $out/SIZE
+          raw_engrave=$(stat -c%s $out/esm/scoretk_engrave_bg.wasm)
+          gz_engrave=$(gzip -9 -c $out/esm/scoretk_engrave_bg.wasm | wc -c)
+          echo "scoretk-engrave : $raw_engrave octets ($gz_engrave octets gzip)"
+          echo "$raw_engrave octets ($gz_engrave gzip)" >> $out/SIZE
 
           install -m 0644 ${./crates/scoretk-wasm/pkg/classic/scoretk.js} \
             $out/classic/scoretk.js
+          install -m 0644 ${./crates/scoretk-wasm/pkg/classic/scoretk-engrave.js} \
+            $out/classic/scoretk-engrave.js
 
-          for module in $out/esm/scoretk_wasm.js $out/classic/scoretk_wasm.js; do
+          for module in $out/esm/scoretk_wasm.js $out/classic/scoretk_wasm.js \
+                        $out/esm/scoretk_engrave.js $out/classic/scoretk_engrave.js; do
             cat ${wasmLicenseBanner} "$module" > "$module.banner"
             mv "$module.banner" "$module"
           done
@@ -315,6 +349,16 @@
           # variante ESM telle que livrée (initSync, conversion du corpus,
           # entrée invalide).
           wasm-node-smoke = wasmNodeSmoke;
+
+          # Test Node du module optionnel de gravure livré avec le paquet.
+          wasm-node-engraving = pkgs.runCommand "scoretk-wasm-node-engraving" {
+            nativeBuildInputs = [pkgs.nodejs];
+          } ''
+            export SCORETK_PKG_DIR=${wasm}
+            export SCORETK_CORPUS=${./tests/corpus}
+            node ${./crates/scoretk-wasm/tests/node-engraving.mjs}
+            touch $out
+          '';
 
           # La librairie doit au moins compiler pour wasm32 ; pas de tests ici
           # (doCheck = false) puisqu'on ne peut pas les exécuter sur cette cible.
