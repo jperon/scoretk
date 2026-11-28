@@ -21,6 +21,13 @@ neither direction is compiled. No other API signature changed
 | Crate | Surface | Nix package |
 | --- | --- | --- |
 | `crates/scoretk-wasm` | `convert`, `convertWithTimeline`, `convertDetailed` (additive), `detect`, `formats`, `version` | `packages.wasm` (`nix build .#wasm`) |
+| `crates/scoretk-wasm` with `--features engrave` | same conversion API + `engrave` / `Engraving`, under the prefixed `scoretk_engrave*` files | same package, optional module loaded on demand |
+
+The engraving module is a **separate wasm binary** in the same package: the
+main `scoretk_wasm*` files are byte-for-byte the ones of the conversion-only
+package, so `self.scoretk` keeps exactly its previous members and
+`node-smoke.mjs` is unchanged. Cantus loads `esm/scoretk_engrave.js` (or
+`classic/scoretk-engrave.js`) only when engraving is enabled.
 
 ## 2. Build and size
 
@@ -36,16 +43,27 @@ ls -la result/esm result/classic
 esm/scoretk_wasm.js           ES module (wasm-bindgen --target web)
 esm/scoretk_wasm_bg.wasm      optimised binary (wasm-opt -Oz)
 esm/scoretk_wasm.d.ts         TypeScript types (custom section: see § 3)
+esm/scoretk_engrave.js        optional ES module (same API + engrave)
+esm/scoretk_engrave_bg.wasm   its optimised binary
+esm/scoretk_engrave.d.ts      its types (EngraveOptions, Engraving, engrave)
 classic/scoretk_wasm.js       classic script (--target no-modules)
 classic/scoretk_wasm_bg.wasm  same binary, optimised separately
 classic/scoretk.js            wrapper: self.scoretk = { ready, convert, version, detect, formats, baseUrl }
+classic/scoretk_engrave.js    optional classic glue (--target no-modules)
+classic/scoretk_engrave_bg.wasm  same engraving binary, optimised separately
+classic/scoretk-engrave.js    wrapper: same self.scoretk + engrave
 classic/scoretk_wasm.d.ts     types
+classic/scoretk_engrave.d.ts  types of the optional module
 package.json                  name "scoretk", type "module", exports/types, repository
 README.md                     short package how-to
 LICENSE                       GPL-3.0-only text
 NOTICE                        MuseScore Studio origin, reused data, trademark
-SIZE                          raw and gzip measurement of the .wasm
+SIZE                          raw and gzip measurement of both .wasm files
 ```
+
+The two classic wrappers must not be loaded in the same Worker: the second one
+sees an existing `self.scoretk` and returns. A Worker that needs engraving
+loads only `classic/scoretk-engrave.js`.
 
 Measurement (wasm-bindgen 0.2.130, binaryen 133 / `wasm-opt`, rustc 1.100.0,
 `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `wasm-opt -Oz
@@ -82,6 +100,57 @@ against the exact parent commit `a4053795`:
 The +2 % budget is respected and the total remains below the ≈ 2.5 MB cap.
 (The older 2 331 942-byte figure of `model-modularisation.md` §10.6 predates
 several fixes on `master`; it is not the right baseline for this delta.)
+
+### Engraving option: measured on 2026-11-28 (same pipeline)
+
+The `engrave` feature of `scoretk-wasm` adds `scoretk-engrave`,
+`scoretk-render-svg` and the used SMuFL subset. Measured with
+`nix build .#wasm` from the same tree, once with the feature in the main binary
+and once with the feature only in the separate `scoretk_engrave*` module:
+
+| Binary | Raw | Gzip -9 | Brotli -q 11 |
+| --- | ---: | ---: | ---: |
+| Main conversion package (before and after) | **2 958 092** | **1 154 499** | **869 395** |
+| With engraving compiled into the main package (first measurement) | 3 423 178 | 1 311 297 | 989 078 |
+| Shipped optional `scoretk_engrave_bg.wasm` (final) | 3 423 312 | 1 311 345 | 988 903 |
+
+Integrating engraving into the main package would add **+465 220 raw bytes
+(+15.7 %)**, **+156 846 gzip (+13.6 %)** and **+119 508 brotli (+13.8 %)**:
+well beyond the 2 % budget and above Cantus's ≈ 2.5 MB raw cap. It also makes
+`formats()` list `svg` and breaks the nine-format contract of `node-smoke.mjs`.
+The retained layout therefore keeps the feature **off by default** in the main
+binary and ships the engraving build as the separate optional module. The main
+`esm/scoretk_wasm.js`, `.d.ts` and `_bg.wasm` and `classic/scoretk.js` are
+**byte-identical** to the baseline (checked with `cmp`/`diff`), and
+`node-smoke.mjs` passes unchanged.
+
+Recommendation for cantus: keep loading the small main package for
+conversion; load `scoretk_engrave*` only when its engraving option is on, and
+then use that module for both conversion and engraving (it exposes the whole
+conversion API plus `engrave`). The added download is ≈ 465 kB raw / ≈ 156 kB
+gzip, paid only by users who enable engraving. No font file is shipped: only
+the generated SMuFL subset is compiled in —
+`crates/scoretk-smufl/src/glyphs.rs` is 528 710 bytes (308 Leland glyphs) and
+`crates/scoretk-smufl/src/text.rs` 410 662 bytes (2 × 167 Edwin glyphs,
+12 312 edges); the raw Leland/Edwin `.otf` files (89 132 / 121 404 bytes)
+stay out of the package.
+
+### Linear memory (Node, engraving module)
+
+Measured with `crates/scoretk-wasm/tests/node-engraving.mjs` on
+`v3/moonlight.mscx`, reading `wasm.memory.buffer.byteLength` after the handle
+is created and page 0 is rendered, then after a `relayout` at a new width:
+
+| Step | wasm linear memory |
+| --- | ---: |
+| Both ESM modules instantiated | 6 488 064 bytes |
+| After `engrave` + `renderPage(0)` (68 pages) | **6 488 064 bytes** |
+| After `relayout({ pageWidth, pageHeight, scale, transpose })` + render | **6 488 064 bytes** |
+
+No growth after either operation: the score is kept once in the handle and the
+relayout drops the old atoms before rebuilding them. The module stays in the
+same 5–7 MiB bracket as conversion alone (§ 9), i.e. within the Kobo/phone
+budget of `docs/agents/engraving.md` § 20.
 
 The previous reference (1 552 892 raw / 641 472 gzip, commit `a7f690c`) predates
 the addition of the ABC and LilyPond readers, the MIDI reader and the ten
@@ -615,8 +684,9 @@ as `string | null`, `formats` as `FormatInfo[]` and `convertWithTimeline` as
 | `convertWithTimeline` | `(input: Uint8Array, options?: ConvertOptions) => PlaybackResult` | identified MusicXML + MIDI + time map; `to` ignored |
 | `convertDetailed` | `(input: Uint8Array, options?: ConvertOptions) => DetailedResult` | additive: same bytes as `convert` plus `{ bytes, losses }` |
 | `detect` | `(input: Uint8Array) => string \| null` | `Format::detect` (content) |
-| `formats` | `() => FormatInfo[]` | nine entries in this package, actual capabilities |
+| `formats` | `() => FormatInfo[]` | nine entries in the main package, actual capabilities |
 | `version` | `() => string` | library version |
+| `engrave` (optional module only) | `(input: Uint8Array, options?: EngraveOptions) => Engraving` | keeps the score once; `formats()` there also lists `svg` |
 
 The `FormatInfo[]` is built from `scoretk::formats()`: a format whose read and
 write features are both disabled is not listed. In this package that excludes
@@ -655,7 +725,52 @@ interface TimelineNote { tick: number; timeUs: number; durationTicks: number; me
 interface TimelinePause { tick: number; endTick: number; timeUs: number; endTimeUs: number; seconds: number }
 interface Timeline { division: number; ticks: number; tempo: TimelineTempo[]; measures: TimelineMeasure[]; notes: TimelineNote[]; pauses: TimelinePause[] }
 interface PlaybackResult { musicxml: Uint8Array; midi: Uint8Array; timeline: Timeline }
+
+// Optional engraving module (esm/scoretk_engrave.d.ts)
+interface EngraveOptions {
+  from?: string;
+  scale?: number;             // scoretk zoom (1.0 default); Verovio percent when a Verovio field is present
+  pageWidthPx?: number;       // scoretk displayed pixels
+  pageHeightPx?: number;
+  lyricSize?: number;         // Verovio MEI unit, default 4.5
+  adjustPageHeight?: boolean;
+  oneSystemPerPage?: boolean;
+  hideEmptyStaves?: boolean;
+  transposeSemitones?: number;
+  partSizes?: Record<string, number>; // part index → percent
+  // Verovio-style names, converted through EngraveOptions::from_verovio:
+  pageWidth?: number;         // 100 % units, e.g. innerWidth * 100 / scale
+  pageHeight?: number;
+  condense?: boolean | "auto";
+  systemMaxPerPage?: number;  // only 1 has an effect
+  transpose?: number;         // signed semitones
+}
+class Engraving {
+  pageCount(): number;
+  renderPage(page: number): string;       // structured SVG with stable ids
+  layout(page?: number): string;          // JSON of one page, or an array of all pages
+  pageOfElement(id: string): number | null;
+  relayout(options?: EngraveOptions): void; // no argument restores the initial options
+  free(): void;                           // generated by wasm-bindgen
+}
+function engrave(input: Uint8Array, options?: EngraveOptions): Engraving;
 ```
+
+`scale` is the scoretk zoom (a ratio) unless another Verovio field is present
+(`pageWidth`, `pageHeight`, `condense`, `systemMaxPerPage`, `transpose`, or a
+value above 4): then it is Verovio's percentage and
+`EngraveOptions::from_verovio` converts the 100 % page units back into
+displayed pixels and divides the zoom by 40. The scoretk-named fields are
+applied afterwards and override the Verovio ones. `condense: true`/`"auto"`
+maps to `hide_empty_staves` (the first system keeps every staff);
+`systemMaxPerPage: 1` to `one_system_per_page`. `partSizes` uses the part index
+as key, e.g. `{ "1": 70 }`. Options not listed are ignored.
+
+The note ids in the SVG (`<g class="note" id="…">`, and in `layout().notes`)
+are exactly the `id`/`xml:id` of `convertWithTimeline`'s MusicXML and its
+`timeline.notes[].xmlId`. `g.system`/`data-system` is the rendered system
+index. The handle owns the parsed score: `relayout` rebuilds the layout
+without reading or cloning the source, and `free()` releases it.
 
 `convertWithTimeline` resolves `from` like `convert` (content detection
 if absent) and ignores `to`. The returned MusicXML is exported with stable
@@ -737,10 +852,33 @@ const xml = new TextDecoder().decode(convert(bytes));   // musicxml par défaut
 ```
 
 ```js
+// Optional engraving module (loaded only when engraving is enabled)
+import initEngrave, { engrave } from 'scoretk/esm/scoretk_engrave.js';
+await initEngrave();
+const engraving = engrave(bytes, {
+  pageWidth: 3000, pageHeight: 2000, scale: 40,
+  condense: 'auto', systemMaxPerPage: 1, transpose: 0,
+  lyricSize: 4.5, partSizes: { 0: 70 },
+});
+const svg = engraving.renderPage(0);          // structured SVG
+const layout = JSON.parse(engraving.layout(0)); // boxes + stable ids
+const page = engraving.pageOfElement(layout.notes[0].id);
+engraving.relayout({ scale: 80 });            // no re-read of the source
+engraving.free();
+```
+
+```js
 // Worker classique
 importScripts('scoretk/classic/scoretk.js');
 await self.scoretk.ready;
 const midi = self.scoretk.convert(bytes, { to: 'midi' });
+```
+
+```js
+// Worker classique, module d'engravement optionnel
+importScripts('scoretk/classic/scoretk-engrave.js');
+await self.scoretk.ready;
+const engraving = self.scoretk.engrave(bytes, { systemMaxPerPage: 1 });
 ```
 
 `self.scoretk` is `{ ready, convert, version, detect, formats, baseUrl }` ;
@@ -787,13 +925,24 @@ in the script):
   writes none and no `@…` private prefix appears in either case.
 - `convertDetailed`: additive API, same bytes as `convert` plus the loss report.
 
+`crates/scoretk-wasm/tests/node-engraving.mjs` loads the optional ESM module
+and checks: the main package is unchanged (no `engrave`, nine formats); the
+handle's page count, structured SVG groups, layout JSON (single page and all
+pages), `pageOfElement` and out-of-range errors; every `timeline.notes[].xmlId`
+of three corpus files drawn on some page; Verovio-style options and
+`relayout()`/`relayout(options)` round trip; the classic worker wrapper in a
+stubbed `importScripts` context. It prints wasm linear memory after engrave +
+render and after relayout (§ 2). It does **not** change `node-smoke.mjs`.
+
 Environment variables: `SCORETK_PKG_DIR` (default `result/`) and
-`SCORETK_CORPUS` (default `tests/corpus/`). The flake check
-`checks.wasm-node-smoke` runs this script on the Nix package.
+`SCORETK_CORPUS` (default `tests/corpus/`). The flake checks
+`checks.wasm-node-smoke` and `checks.wasm-node-engraving` run both scripts on
+the Nix package.
 
 ```sh
 nix build .#wasm
 node crates/scoretk-wasm/tests/node-smoke.mjs
+node crates/scoretk-wasm/tests/node-engraving.mjs
 SCORETK_PKG_DIR=$PWD/result node crates/scoretk-wasm/tests/node-smoke.mjs
 ```
 
