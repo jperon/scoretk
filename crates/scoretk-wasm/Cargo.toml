@@ -14,6 +14,13 @@ homepage.workspace = true
 name = "scoretk_wasm"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Additif : la gravure n'entre dans le paquet que lorsqu'un consommateur la
+# demande (`--features engrave`). Le paquet par défaut garde le contrat et la
+# taille de la façade de conversion seule.
+default = []
+engrave = ["scoretk/engrave"]
+
 [dependencies]
 # Toutes les features : le paquet navigateur est la façade complète, comme la
 # CLI scoretk (cf. crates/scoretk-cli/Cargo.toml), une par crate de sens.

@@ -116,6 +116,64 @@ export function detect(input: Uint8Array): string | null;
 export function formats(): FormatInfo[];
 "#;
 
+/// Déclarations de l'API de gravure, compilée seulement avec `engrave`.
+#[cfg(feature = "engrave")]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_ENGRAVE: &'static str = r#"
+/** Options de gravure. Toutes facultatives : les valeurs par défaut sont celles de l'impression. Les noms Verovio sont acceptés en plus des noms scoretk. */
+export interface EngraveOptions {
+  /** Format d'entrée ; détecté par le contenu si absent. */
+  from?: string;
+  /** Zoom scoretk (1.0 = défaut). Interprété comme un pourcentage Verovio quand un autre champ Verovio est présent. */
+  scale?: number;
+  /** Largeur de page affichée, en pixels (scoretk). */
+  pageWidthPx?: number;
+  /** Hauteur de page affichée, en pixels (scoretk). */
+  pageHeightPx?: number;
+  /** Taille des paroles en unités MEI Verovio (4.5 par défaut). */
+  lyricSize?: number;
+  /** Réduit la viewBox à la hauteur du contenu (Verovio `adjustPageHeight`). */
+  adjustPageHeight?: boolean;
+  /** Un système par page (Verovio `systemMaxPerPage: 1`). */
+  oneSystemPerPage?: boolean;
+  /** Cache les portées vides après le premier système (Verovio `condense: "auto"`). */
+  hideEmptyStaves?: boolean;
+  /** Transposition en demi-tons signés. */
+  transposeSemitones?: number;
+  /** Taille de chaque partie en pourcentage, indexée par son index (ex. `{"1": 70}`). */
+  partSizes?: Record<string, number>;
+  /** Largeur de page Verovio en unités 100 % (ex. 3000 pour 1200 px à 40 %). */
+  pageWidth?: number;
+  /** Hauteur de page Verovio en unités 100 %. */
+  pageHeight?: number;
+  /** Portées vides : `true`/`"auto"` cache celles des systèmes suivants (Verovio `condense`). */
+  condense?: boolean | "auto";
+  /** Nombre maximum de systèmes par page ; seul 1 a un effet (un système par page). */
+  systemMaxPerPage?: number;
+  /** Transposition Verovio en demi-tons signés. */
+  transpose?: number;
+}
+
+/** Partition gravée : une seule lecture, plusieurs pages, reprise en place. */
+export class Engraving {
+  /** Nombre de pages du rendu courant. */
+  pageCount(): number;
+  /** SVG structuré de la page (identifiants stables, groupes `g.system`). */
+  renderPage(page: number): string;
+  /** JSON de la page demandée, ou tableau de toutes les pages si `page` est absent. */
+  layout(page?: number): string;
+  /** Page 0-basée contenant l'identifiant stable, ou `null`. */
+  pageOfElement(id: string): number | null;
+  /** Recalcule la mise en page avec de nouvelles options, sans relire la source. Sans argument, restaure les options initiales. */
+  relayout(options?: EngraveOptions): void;
+  /** Libère le handle wasm (généré par wasm-bindgen). */
+  free(): void;
+}
+
+/** Grave une partition à partir de ses octets (identifiants alignés sur `convertWithTimeline`). */
+export function engrave(input: Uint8Array, options?: EngraveOptions): Engraving;
+"#;
+
 /// Convertit un fichier de partition d'un format vers un autre.
 ///
 /// `input` est le contenu binaire du fichier. `from` est détecté par le
@@ -348,6 +406,27 @@ fn build_write_options(options: &ApiOptions) -> scoretk::Options {
     write_options
 }
 
+/// Lit une source à partir d'un objet d'options brut, en réutilisant
+/// exactement la résolution de `from` et les options de lecture de `convert`.
+pub(crate) fn read_input(input: &[u8], value: &JsValue) -> Result<scoretk::Score, JsError> {
+    let options = ApiOptions::from_value(value);
+    let from = match options.from.as_deref() {
+        Some(text) => parse_format(text)?,
+        None => scoretk::Format::detect(input).ok_or_else(|| {
+            JsError::new(
+                "format d'entrée non reconnu d'après le contenu ; \
+                 précisez `from` (mscz, mscx, musicxml, xml, mxl, ly, lilypond, abc, mid, midi)",
+            )
+        })?,
+    };
+    if !from.supports_read() {
+        return Err(JsError::new(&format!(
+            "format « {from} » non pris en charge en lecture"
+        )));
+    }
+    read_score(input, from, &options)
+}
+
 /// Lit la source, en résolvant ses `\include` depuis `options.includes` quand
 /// l'entrée est du LilyPond. Sans la table, le chemin est exactement celui de
 /// `scoretk::read` (les `\include` restent ignorés avec un avertissement).
@@ -418,11 +497,11 @@ fn normalize_include_path(path: &str) -> String {
 
 /// `Format::from_str` fournit déjà le message listant les formats acceptés
 /// (`Error::FormatInconnu`).
-fn parse_format(text: &str) -> Result<scoretk::Format, JsError> {
+pub(crate) fn parse_format(text: &str) -> Result<scoretk::Format, JsError> {
     text.parse::<scoretk::Format>()
         .map_err(|error| JsError::new(&error.to_string()))
 }
 
-fn js_error(error: scoretk::Error) -> JsError {
+pub(crate) fn js_error(error: scoretk::Error) -> JsError {
     JsError::new(&error.to_string())
 }

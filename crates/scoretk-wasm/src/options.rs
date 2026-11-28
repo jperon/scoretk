@@ -57,22 +57,27 @@ impl ApiOptions {
             }
             None => JsValue::UNDEFINED,
         };
+        Self::from_value(&value)
+    }
+
+    /// Same reading from a raw JavaScript object, shared with `engrave`.
+    pub(crate) fn from_value(value: &JsValue) -> Self {
         Self {
-            from: string(&value, "from"),
-            to: string(&value, "to"),
-            encoding_date: string(&value, "encodingDate"),
-            software: string(&value, "software"),
-            concert_pitch: boolean(&value, "concertPitch"),
-            expand_repeats: boolean(&value, "expandRepeats"),
-            gabc_modern_clef: boolean(&value, "gabcModernClef"),
-            gabc_neume_smufl: boolean(&value, "gabcNeumeSmufl"),
-            mei_full_support: boolean(&value, "meiFullSupport"),
-            xml_full_support: boolean(&value, "xmlFullSupport"),
-            xml_lossless_round_trip: boolean(&value, "xmlLosslessRoundTrip"),
-            midi_exact_ticks: boolean(&value, "midiExactTicks"),
-            midi_text: boolean(&value, "midiText"),
-            midi_full_support: boolean(&value, "midiFullSupport"),
-            includes: includes(&value),
+            from: string(value, "from"),
+            to: string(value, "to"),
+            encoding_date: string(value, "encodingDate"),
+            software: string(value, "software"),
+            concert_pitch: boolean(value, "concertPitch"),
+            expand_repeats: boolean(value, "expandRepeats"),
+            gabc_modern_clef: boolean(value, "gabcModernClef"),
+            gabc_neume_smufl: boolean(value, "gabcNeumeSmufl"),
+            mei_full_support: boolean(value, "meiFullSupport"),
+            xml_full_support: boolean(value, "xmlFullSupport"),
+            xml_lossless_round_trip: boolean(value, "xmlLosslessRoundTrip"),
+            midi_exact_ticks: boolean(value, "midiExactTicks"),
+            midi_text: boolean(value, "midiText"),
+            midi_full_support: boolean(value, "midiFullSupport"),
+            includes: includes(value),
         }
     }
 }
@@ -99,16 +104,22 @@ fn includes(value: &JsValue) -> Option<BTreeMap<String, Vec<u8>>> {
     Some(files)
 }
 
-fn property(value: &JsValue, name: &str) -> Option<JsValue> {
+pub(crate) fn property(value: &JsValue, name: &str) -> Option<JsValue> {
     let property = js_sys::Reflect::get(value, &JsValue::from_str(name)).ok()?;
     (!property.is_undefined() && !property.is_null()).then_some(property)
 }
 
-fn string(value: &JsValue, name: &str) -> Option<String> {
+pub(crate) fn string(value: &JsValue, name: &str) -> Option<String> {
     let text = property(value, name)?.as_string()?;
     (!text.is_empty()).then_some(text)
 }
 
-fn boolean(value: &JsValue, name: &str) -> Option<bool> {
+pub(crate) fn boolean(value: &JsValue, name: &str) -> Option<bool> {
     property(value, name)?.as_bool()
+}
+
+/// Lit un nombre fini (`NaN` et les infinis sont ignorés).
+pub(crate) fn number(value: &JsValue, name: &str) -> Option<f64> {
+    let number = property(value, name)?.as_f64()?;
+    number.is_finite().then_some(number)
 }

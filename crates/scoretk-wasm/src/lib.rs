@@ -33,6 +33,8 @@
 //! sens qu'avec un runtime JavaScript (voir `tests/node-smoke.mjs`).
 
 mod api;
+#[cfg(feature = "engrave")]
+mod engrave;
 mod formats;
 mod options;
 mod timemap_js;
