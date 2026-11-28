@@ -104,6 +104,8 @@ pub use formats::{formats, FormatInfo};
 pub use options::{MidiOptions, Options};
 pub use scoretk_core::model;
 pub use scoretk_core::model::Score;
+#[cfg(feature = "engrave")]
+pub use scoretk_engrave::{EngraveOptions, Engraver};
 
 /// Types de la carte des temps, réexportés pour les consommateurs de
 /// [`write_playback`] (wasm, CLI) sans dépendre directement de
@@ -283,6 +285,40 @@ pub fn write_with_report(
 pub fn write_svg(score: &Score, _options: &Options, page: usize) -> Result<Vec<u8>> {
     let _ = _options;
     hooks::write_svg(score, page)
+}
+
+/// Grave une page avec les options de rendu demandées (feature `engrave`).
+/// Sans options, le résultat est identique à [`write_svg`].
+#[cfg(feature = "engrave")]
+pub fn write_svg_with_options(
+    score: &Score,
+    options: &EngraveOptions,
+    page: usize,
+) -> Result<Vec<u8>> {
+    hooks::write_svg_with_options(score, options, page)
+}
+
+/// Prend possession du score et renvoie un handle qui peut être relayouté
+/// à une autre largeur sans relire la source (feature `engrave`).
+#[cfg(feature = "engrave")]
+pub fn engrave(score: Score, options: &EngraveOptions) -> Result<Engraver> {
+    hooks::engrave(score, options)
+}
+
+/// Décrit une page gravée en JSON avec des options explicites.
+#[cfg(feature = "engrave")]
+pub fn write_layout_with_options(
+    score: &Score,
+    options: &EngraveOptions,
+    page: usize,
+) -> Result<Vec<u8>> {
+    hooks::write_layout_with_options(score, options, page)
+}
+
+/// Rend une page d'un handle déjà gravé, après un `relayout` éventuel.
+#[cfg(feature = "engrave")]
+pub fn engrave_page_svg(engraver: &Engraver, page: usize) -> Vec<u8> {
+    scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes()
 }
 
 /// Décrit la page gravée en JSON : taille de page, systèmes, mesures et

@@ -80,17 +80,29 @@ pub use screen::screen_staff_px;
 pub use staffs::StaffInfo;
 pub use style::SP;
 
+/// Compact result of one layout pass, reused by `new` and `relayout`.
+type BuiltLayout = (
+    Vec<Vec<MeasureAtom>>,
+    Vec<SystemPlan>,
+    PageSpec,
+    Vec<StaffInfo>,
+    Vec<Credit>,
+);
+
 /// Why engraving is not possible with a given score.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EngraveError {
     /// The pivot model has no visible staff to engrave.
     NoStaff,
+    /// `relayout` was called on an engraver that does not own its score.
+    NoScore,
 }
 
 impl fmt::Display for EngraveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::NoStaff => f.write_str("no staff to engrave"),
+            Self::NoScore => f.write_str("engraver does not own a score"),
         }
     }
 }
@@ -109,6 +121,10 @@ pub struct Engraver {
     staffs: Vec<StaffInfo>,
     /// Title-frame texts copied once: `page(n)` never borrows the `Score`.
     credits: Vec<Credit>,
+    /// The parsed score, owned only by `Engraver::owned`, so `relayout` can
+    /// re-run layout without a second copy or a re-read. Never borrowed by
+    /// `page(n)`.
+    score: Option<Score>,
 }
 
 impl Engraver {
@@ -124,6 +140,61 @@ impl Engraver {
         spec: PageSpec,
         options: &EngraveOptions,
     ) -> Result<Self, EngraveError> {
+        let (atoms, systems, spec, staffs, credits) = Self::build(score, spec, options)?;
+        Ok(Self {
+            atoms,
+            systems,
+            spec,
+            staffs,
+            credits,
+            score: None,
+        })
+    }
+
+    /// Takes ownership of the parsed score (moved, never cloned). Callers that
+    /// need `relayout` use this entry point; `page(n)` still allocates nothing
+    /// proportional to the score.
+    pub fn owned(score: Score, options: &EngraveOptions) -> Result<Self, EngraveError> {
+        let spec = layout::PageSpec::from_score_with_options(&score, options);
+        let (atoms, systems, spec, staffs, credits) = Self::build(&score, spec, options)?;
+        Ok(Self {
+            atoms,
+            systems,
+            spec,
+            staffs,
+            credits,
+            score: Some(score),
+        })
+    }
+
+    /// Re-runs the layout with new options on the score already owned by this
+    /// engraver. The old atoms and systems are dropped before the new ones are
+    /// built, so the peak stays one layout, not two.
+    pub fn relayout(&mut self, options: &EngraveOptions) -> Result<(), EngraveError> {
+        let Some(score) = self.score.take() else {
+            return Err(EngraveError::NoScore);
+        };
+        self.atoms.clear();
+        self.systems.clear();
+        self.staffs.clear();
+        self.credits.clear();
+        let spec = layout::PageSpec::from_score_with_options(&score, options);
+        let built = Self::build(&score, spec, options);
+        self.score = Some(score);
+        let (atoms, systems, spec, staffs, credits) = built?;
+        self.atoms = atoms;
+        self.systems = systems;
+        self.spec = spec;
+        self.staffs = staffs;
+        self.credits = credits;
+        Ok(())
+    }
+
+    fn build(
+        score: &Score,
+        spec: PageSpec,
+        options: &EngraveOptions,
+    ) -> Result<BuiltLayout, EngraveError> {
         let staffs = StaffInfo::from_score_with_options(score, options);
         if staffs.is_empty() {
             return Err(EngraveError::NoStaff);
@@ -187,13 +258,7 @@ impl Engraver {
             spec.page_height = breaking::content_height(&systems, &spec)
                 .clamp(spec.margin_top * 2, spec.page_height);
         }
-        Ok(Self {
-            atoms,
-            systems,
-            spec,
-            staffs,
-            credits,
-        })
+        Ok((atoms, systems, spec, staffs, credits))
     }
 
     /// Builds an engraver whose page geometry comes from the score's

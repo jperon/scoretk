@@ -181,6 +181,46 @@ struct Cli {
     /// Gravure : écrit la description JSON de la page au lieu du SVG
     #[arg(long)]
     layout_json: bool,
+
+    /// Gravure : zoom, 1.0 = taille d'écran par défaut (Verovio scale / 40)
+    #[arg(long, value_name = "F", default_value_t = 1.0)]
+    engrave_scale: f64,
+
+    /// Gravure : largeur de page affichée en pixels
+    #[arg(long, value_name = "PX")]
+    page_width_px: Option<u32>,
+
+    /// Gravure : hauteur de page affichée en pixels
+    #[arg(long, value_name = "PX")]
+    page_height_px: Option<u32>,
+
+    /// Gravure : réduire la hauteur de page au contenu (adjustPageHeight)
+    #[arg(long)]
+    adjust_page_height: bool,
+
+    /// Gravure : un système par page (mode horizontal de cantus)
+    #[arg(long)]
+    one_system_per_page: bool,
+
+    /// Gravure : taille des paroles en unités MEI (4.5 par défaut)
+    #[arg(long, value_name = "U", default_value_t = 4.5)]
+    lyric_size: f64,
+
+    /// Gravure : masquer les portées vides sauf sur le premier système
+    #[arg(long)]
+    hide_empty_staves: bool,
+
+    /// Gravure : transposition en demi-tons signés
+    #[arg(long, value_name = "N", default_value_t = 0)]
+    transpose_semitones: i32,
+
+    /// Gravure : taille d'une partie, `INDEX=POURCENT` (répétable)
+    #[arg(long, value_name = "INDEX=POURCENT")]
+    part_mag: Vec<String>,
+
+    /// Gravure : refaire la mise en page à cette largeur sans relire le score
+    #[arg(long, value_name = "PX")]
+    relayout_width_px: Option<u32>,
 }
 
 /// Valeur de quantification MIDI acceptée : une puissance de deux ≥ 4.
@@ -195,6 +235,20 @@ fn parse_quant_value(valeur: &str) -> Result<u16, String> {
             "valeur de quantification invalide : {valeur} (4, 8, 16, 32, 64, 128, 256, 512 ou 1024)"
         ))
     }
+}
+
+/// Analyser une surcharge `INDEX=POURCENT` de taille de partie.
+fn parse_part_mag(value: &str) -> Result<(usize, i32), String> {
+    let (part, percent) = value
+        .split_once('=')
+        .ok_or_else(|| format!("part_mag invalide : {value} (attendu INDEX=POURCENT)"))?;
+    let part = part
+        .parse::<usize>()
+        .map_err(|_| format!("index de partie invalide : {part}"))?;
+    let percent = percent
+        .parse::<i32>()
+        .map_err(|_| format!("pourcentage invalide : {percent}"))?;
+    Ok((part, percent))
 }
 
 fn main() -> ExitCode {
@@ -329,9 +383,44 @@ fn main() -> ExitCode {
         ..Options::default()
     };
 
+    let mut engrave_options = scoretk::EngraveOptions {
+        scale: cli.engrave_scale,
+        page_width_px: cli.page_width_px,
+        page_height_px: cli.page_height_px,
+        adjust_page_height: cli.adjust_page_height,
+        one_system_per_page: cli.one_system_per_page,
+        lyric_size: cli.lyric_size,
+        hide_empty_staves: cli.hide_empty_staves,
+        transpose_semitones: cli.transpose_semitones,
+        ..scoretk::EngraveOptions::default()
+    };
+    for value in &cli.part_mag {
+        match parse_part_mag(value) {
+            Ok(entry) => engrave_options.part_mag_percent.push(entry),
+            Err(message) => return fail(&message),
+        }
+    }
+
+    if let Some(width) = cli.relayout_width_px {
+        // The score is moved into the engraver: no second read, no copy.
+        let mut handle = match scoretk::engrave(score, &engrave_options) {
+            Ok(handle) => handle,
+            Err(error) => return fail(&format!("{input} → gravure : {error}")),
+        };
+        engrave_options.page_width_px = Some(width);
+        if let Err(error) = handle.relayout(&engrave_options) {
+            return fail(&format!("{input} → nouvelle mise en page : {error}"));
+        }
+        let output = scoretk::engrave_page_svg(&handle, cli.page.unwrap_or(0));
+        return match cli.output.as_deref() {
+            None | Some("-") => write_stdout(&output),
+            Some(path) => write_file(path, &output),
+        };
+    }
+
     if cli.layout_json {
         let page = cli.page.unwrap_or(0);
-        let output = match scoretk::write_layout(&score, page) {
+        let output = match scoretk::write_layout_with_options(&score, &engrave_options, page) {
             Ok(output) => output,
             Err(error) => return fail(&format!("{input} → layout JSON : {error}")),
         };
@@ -342,9 +431,16 @@ fn main() -> ExitCode {
     }
 
     let to = to.expect("format de sortie exigé hors --layout-json");
-    let output = match scoretk::write(&score, to, &options) {
-        Ok(output) => output,
-        Err(error) => return fail(&format!("{input} → {to} : {error}")),
+    let output = if to == scoretk::Format::Svg {
+        match scoretk::write_svg_with_options(&score, &engrave_options, cli.page.unwrap_or(0)) {
+            Ok(output) => output,
+            Err(error) => return fail(&format!("{input} → {to} : {error}")),
+        }
+    } else {
+        match scoretk::write(&score, to, &options) {
+            Ok(output) => output,
+            Err(error) => return fail(&format!("{input} → {to} : {error}")),
+        }
     };
 
     match cli.output.as_deref() {

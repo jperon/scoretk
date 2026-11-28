@@ -45,6 +45,8 @@
 //! aucun `cfg(not(any(…)))` global à maintenir.
 
 use scoretk_core::model::Score;
+#[cfg(feature = "engrave")]
+use scoretk_engrave::{EngraveOptions, Engraver};
 
 use crate::error::Error;
 use crate::format::Format;
@@ -449,6 +451,36 @@ pub(crate) fn write_svg(score: &Score, page: usize) -> Result<Vec<u8>> {
     let engraver = scoretk_engrave::Engraver::from_score(score)
         .map_err(|error| Error::Engrave(error.to_string()))?;
     Ok(scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes())
+}
+
+/// Grave une page avec des options explicites, sans garder le score.
+#[cfg(feature = "engrave")]
+pub(crate) fn write_svg_with_options(
+    score: &Score,
+    options: &EngraveOptions,
+    page: usize,
+) -> Result<Vec<u8>> {
+    let engraver = Engraver::from_score_with_options(score, options)
+        .map_err(|error| Error::Engrave(error.to_string()))?;
+    Ok(scoretk_render_svg::render_page(&engraver.page(page), engraver.spec()).into_bytes())
+}
+
+/// Grave une page en JSON avec des options explicites.
+#[cfg(feature = "engrave")]
+pub(crate) fn write_layout_with_options(
+    score: &Score,
+    options: &EngraveOptions,
+    page: usize,
+) -> Result<Vec<u8>> {
+    let engraver = Engraver::from_score_with_options(score, options)
+        .map_err(|error| Error::Engrave(error.to_string()))?;
+    Ok(engraver.page_layout(page).to_json().into_bytes())
+}
+
+/// Prend possession du score pour permettre un `relayout` sans relecture.
+#[cfg(feature = "engrave")]
+pub(crate) fn engrave(score: Score, options: &EngraveOptions) -> Result<Engraver> {
+    Engraver::owned(score, options).map_err(|error| Error::Engrave(error.to_string()))
 }
 
 /// Description compacte d'une page gravée (JSON, coordonnées en 1/1024 sp).

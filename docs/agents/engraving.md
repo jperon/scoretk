@@ -2669,3 +2669,24 @@ tpc. Key signatures move by the same number of fifths
 semitone value takes the exact original path. Test: +2 semitones on a G-major
 score moves each note one staff step up and the key to D major while the
 untransposed atoms are unchanged.
+
+### 33.6 Relayout and facade/CLI exposure (step 6)
+
+`Engraver::owned(Score, options)` takes the parsed score by value — no clone —
+and `relayout(&mut options)` drops the previous atoms/systems before rebuilding
+them from the same score. A borrowed-score `Engraver` still has no score field,
+so the per-page memory budget of §20 is unchanged. The facade re-exports
+`EngraveOptions` and `Engraver` under `engrave` and adds
+`write_svg_with_options`, `write_layout_with_options`, `engrave`,
+`engrave_page_svg`; the old `write_svg`/`write_layout`/`page_of_element`
+signatures are untouched. The CLI exposes `--engrave-scale`, `--page-width-px`,
+`--page-height-px`, `--adjust-page-height`, `--one-system-per-page`,
+`--lyric-size`, `--hide-empty-staves`, `--transpose-semitones`,
+`--part-mag INDEX=PERCENT` and `--relayout-width-px`. No wasm surface changed.
+
+Facade tests check default SVG/layout byte identity with `write_svg`/
+`write_layout`, that a relayout of `moonlight.mscx` from 800 to 420 px changes
+the SVG and that a second relayout restores it, and that a MusicXML
+`staff-size` of 70 reaches the SVG as a 0.7 glyph scale. Debug-build relayout
+of `moonlight.mscx` took 14.2 ms; host peak heap/RSS of the default and
+relayout CLI paths are recorded in §33.7.
