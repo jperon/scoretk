@@ -119,6 +119,7 @@ pub(crate) fn boolean(value: &JsValue, name: &str) -> Option<bool> {
 }
 
 /// Lit un nombre fini (`NaN` et les infinis sont ignorés).
+#[cfg(feature = "engrave")]
 pub(crate) fn number(value: &JsValue, name: &str) -> Option<f64> {
     let number = property(value, name)?.as_f64()?;
     number.is_finite().then_some(number)

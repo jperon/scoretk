@@ -408,6 +408,7 @@ fn build_write_options(options: &ApiOptions) -> scoretk::Options {
 
 /// Lit une source à partir d'un objet d'options brut, en réutilisant
 /// exactement la résolution de `from` et les options de lecture de `convert`.
+#[cfg(feature = "engrave")]
 pub(crate) fn read_input(input: &[u8], value: &JsValue) -> Result<scoretk::Score, JsError> {
     let options = ApiOptions::from_value(value);
     let from = match options.from.as_deref() {
