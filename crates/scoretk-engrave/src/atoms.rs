@@ -1274,9 +1274,12 @@ pub const TEXT_WIDTH_SPACING: bool = false;
 pub const LYRIC_SHAPE_SPACING: bool = true;
 
 /// Font em in fixed staff spaces for a point size (`styledef.cpp:1209-1223`).
-fn text_em(style: &StyleSettings, font_size: f64) -> i32 {
+/// `text_scale` is the caller multiplier (see `EngraveOptions::text_scale`):
+/// lyric and annotation shapes must reserve the space they will actually draw.
+fn text_em(style: &StyleSettings, font_size: f64, text_scale: f64) -> i32 {
     let spatium = style.spatium_mm.max(0.1);
-    ((font_size * 25.4 / 72.0) / spatium * SP as f64) as i32
+    let em = ((font_size * 25.4 / 72.0) / spatium * SP as f64) as i32;
+    (em as f64 * text_scale.max(0.1)) as i32
 }
 
 /// Widths of the three text families attached to a chord/rest segment:
@@ -1288,8 +1291,12 @@ fn text_em(style: &StyleSettings, font_size: f64) -> i32 {
 /// previously moved 17 of 44 system breaks away from the oracle; even adding
 /// the measured full width to the segment still moved 3 of 44, because
 /// MuseScore only separates *neighbouring* shapes that would overlap.
-fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSettings) -> [i32; 3] {
-    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0));
+fn attached_text_widths(
+    segment: &scoretk_core::model::Segment,
+    style: &StyleSettings,
+    text_scale: f64,
+) -> [i32; 3] {
+    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0), text_scale);
     let mut widths = [0; 3];
     if segment.kind == SegmentType::ChordRest {
         for (_, item) in segment.iter_elements() {
@@ -1301,8 +1308,8 @@ fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSet
             }
         }
     }
-    let harmony_em = text_em(style, 12.0);
-    let tempo_em = text_em(style, 12.0);
+    let harmony_em = text_em(style, 12.0, text_scale);
+    let tempo_em = text_em(style, 12.0, text_scale);
     for annotation in &segment.annotations {
         let index = match &annotation.annotation {
             Annotation::Harmony(_) => Some(1),
@@ -1325,8 +1332,9 @@ fn attached_text_widths(segment: &scoretk_core::model::Segment, style: &StyleSet
 fn lyric_shape_widths(
     segment: &scoretk_core::model::Segment,
     style: &StyleSettings,
+    text_scale: f64,
 ) -> Vec<(usize, i32, LyricsSyllabic)> {
-    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0));
+    let lyric_em = text_em(style, style.lyricist_font_size.max(10.0), text_scale);
     let mut shapes: Vec<(usize, i32, LyricsSyllabic)> = Vec::new();
     if segment.kind == SegmentType::ChordRest {
         for (_, item) in segment.iter_elements() {
@@ -1412,7 +1420,12 @@ fn initial_clef(score: &Score, staff_index: usize) -> Option<ClefType> {
 }
 
 /// Computes the measure atoms of the given staff.
-fn compute_staff(score: &Score, staff_index: usize, extra: Option<Transpose>) -> Vec<MeasureAtom> {
+fn compute_staff(
+    score: &Score,
+    staff_index: usize,
+    extra: Option<Transpose>,
+    text_scale: f64,
+) -> Vec<MeasureAtom> {
     let staff = &score.staves[staff_index];
     let mut clef = initial_clef(score, staff_index)
         .or_else(|| {
@@ -1685,7 +1698,7 @@ fn compute_staff(score: &Score, staff_index: usize, extra: Option<Transpose>) ->
                 // dot and `minNoteDistance` widths (`:1216-1276`).
                 let mut segment_width = SEGMENT_WIDTH;
                 let text_widths = if TEXT_WIDTH_SPACING {
-                    attached_text_widths(segment, style)
+                    attached_text_widths(segment, style, text_scale)
                 } else {
                     [0; 3]
                 };
@@ -1714,7 +1727,7 @@ fn compute_staff(score: &Score, staff_index: usize, extra: Option<Transpose>) ->
                 // §12.4 attempt) widened every measure and changed the
                 // oracle's system breaks 34 → 33.
                 if LYRIC_SHAPE_SPACING {
-                    for (verse, width, syllabic) in lyric_shape_widths(segment, style) {
+                    for (verse, width, syllabic) in lyric_shape_widths(segment, style, text_scale) {
                         if prev_lyrics.len() <= verse {
                             prev_lyrics.resize(verse + 1, None);
                         }
@@ -2238,7 +2251,7 @@ pub fn compute_with_options(score: &Score, options: &EngraveOptions) -> Vec<Vec<
     let extra = (semitones != 0).then(|| Transpose::new(diatonic, semitones));
     let all: Vec<Vec<MeasureAtom>> = visible_staves(score)
         .into_iter()
-        .map(|index| compute_staff(score, index, extra))
+        .map(|index| compute_staff(score, index, extra, options.text_scale))
         .collect();
     align_staves(all)
 }
@@ -2426,12 +2439,12 @@ mod tests {
             score.add_measure(measure);
             score
         };
-        let plain = compute_staff(&score_with(false), 0, None);
-        let with_lyrics = compute_staff(&score_with(true), 0, None);
+        let plain = compute_staff(&score_with(false), 0, None, 1.0);
+        let with_lyrics = compute_staff(&score_with(true), 0, None, 1.0);
         let plain_gap = plain[0].segment_bases[1] - plain[0].segment_bases[0];
         let lyric_gap = with_lyrics[0].segment_bases[1] - with_lyrics[0].segment_bases[0];
         let style = &score_with(true).engraving.style;
-        let em = text_em(style, style.lyricist_font_size.max(10.0));
+        let em = text_em(style, style.lyricist_font_size.max(10.0), 1.0);
         let needed = lyric_pair_distance(
             LyricsSyllabic::Begin,
             text_width("Mi", em, false),
@@ -2541,7 +2554,7 @@ mod tests {
         );
         measure.add_segment(segment);
         score.add_measure(measure);
-        let atoms = compute_staff(&score, 0, None);
+        let atoms = compute_staff(&score, 0, None, 1.0);
         assert!(
             atoms[0]
                 .events
@@ -2576,7 +2589,7 @@ mod tests {
         }
         measure.add_segment(segment);
         score.add_measure(measure);
-        let atoms = compute_staff(&score, 0, None);
+        let atoms = compute_staff(&score, 0, None, 1.0);
         let atom = &atoms[0];
         let right = atom
             .events

@@ -26,6 +26,9 @@
 //! A document owns only an `Engraver` plus one reusable page buffer: source
 //! bytes and the pivot `Score` are dropped as soon as the engraver is built,
 //! and a page's display list is built and dropped inside each `page` call.
+//!
+//! The protocol also has `set scale <f>` and `set text <f>` (both
+//! `[0.5, 3.0]`, default 1.0) to size notes and text of the next documents.
 
 mod document;
 mod reader;

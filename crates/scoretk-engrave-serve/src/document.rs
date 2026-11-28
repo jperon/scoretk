@@ -17,7 +17,7 @@
 
 //! One engraved score, its screen geometry and a reusable 8-bit grey buffer.
 
-use scoretk_engrave::{screen_staff_px, Engraver, PageSpec};
+use scoretk_engrave::{screen_staff_px_at, Engraver, PageSpec};
 use scoretk_render_raster::display::draw_display_list;
 use scoretk_render_raster::{Gray8, Point};
 
@@ -40,8 +40,25 @@ pub struct Document {
 impl Document {
     /// Reads a score and prepares it for a `width × height` screen.
     pub fn open(path: &str, width: u32, height: u32) -> Result<Self, String> {
+        Self::open_with(path, width, height, 1.0, 1.0)
+    }
+
+    /// Same as [`Self::open`], with the caller's staff zoom and text
+    /// multiplier. `scale` multiplies the pixels per staff space (the stored
+    /// `staff_px` is the effective, rounded value); `text_scale` multiplies
+    /// every text style and never changes the staff size.
+    pub fn open_with(
+        path: &str,
+        width: u32,
+        height: u32,
+        scale: f64,
+        text_scale: f64,
+    ) -> Result<Self, String> {
         if width == 0 || height == 0 {
             return Err("invalid page size: width and height must be positive".to_owned());
+        }
+        if !scale.is_finite() || !text_scale.is_finite() {
+            return Err("invalid engraving scale: must be finite".to_owned());
         }
         let bytes = (width as usize)
             .checked_mul(height as usize)
@@ -50,8 +67,8 @@ impl Document {
             // Both the input bytes and the `Score` die at the end of this
             // block; `Engraver` keeps atoms, breaks, staves and credits only.
             let score = reader::read_score(path)?;
-            let staff_px = screen_staff_px(width, height);
-            let spec = PageSpec::for_screen_with_score(width, height, &score);
+            let staff_px = screen_staff_px_at(width, height, scale);
+            let spec = PageSpec::for_screen_with_score_at(width, height, &score, scale, text_scale);
             let engraver = Engraver::new(&score, spec)
                 .map_err(|error| format!("cannot engrave {path}: {error}"))?;
             (engraver, staff_px)

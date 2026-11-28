@@ -69,6 +69,10 @@ pub struct EngraveOptions {
     /// Lyric size in Verovio MEI units (default 4.5). The lyric point size is
     /// `10 pt * lyric_size / 4.5`.
     pub lyric_size: f64,
+    /// Multiplier of every text style (credits, lyrics, measure numbers,
+    /// instrument names), applied on top of `PageSpec::text_scale` for frame
+    /// credits. 1.0 keeps the print size; it never changes the staff size.
+    pub text_scale: f64,
     /// Hide staves with no note in a system, except the first system
     /// (`condense: "auto"`, `condenseFirstPage: false`).
     pub hide_empty_staves: bool,
@@ -90,6 +94,7 @@ impl Default for EngraveOptions {
             adjust_page_height: false,
             one_system_per_page: false,
             lyric_size: VEROVIO_LYRIC_SIZE,
+            text_scale: 1.0,
             hide_empty_staves: false,
             transpose_semitones: 0,
             part_mag_percent: Vec::new(),
@@ -156,6 +161,7 @@ mod tests {
         let options = EngraveOptions::default();
         assert_eq!(options.scale, 1.0);
         assert_eq!(options.lyric_size, VEROVIO_LYRIC_SIZE);
+        assert_eq!(options.text_scale, 1.0);
         assert!(options.page_width_px.is_none() && options.page_height_px.is_none());
         assert!(!options.adjust_page_height && !options.one_system_per_page);
         assert!(!options.hide_empty_staves);

@@ -133,6 +133,11 @@ pub struct PageSpec {
     /// geometry keeps 1.0; a small screen scales credit runs down to its own
     /// printable width so a 22 pt title cannot overrun a 600 px page.
     pub text_scale: f64,
+    /// Caller multiplier of every text style (credits, lyrics, measure
+    /// numbers, instrument names). It multiplies `text_scale` for frame
+    /// credits and applies to the other text on its own. 1.0 is a no-op and
+    /// it never changes the staff size.
+    pub user_text_scale: f64,
     /// Verovio `condense: "auto"` / MuseScore `hideEmptyStaves`: hide staves
     /// with no note in a system, except the first system.
     pub hide_empty_staves: bool,
@@ -184,6 +189,7 @@ impl Default for PageSpec {
             lyrics_melisma_pad: LYRIC_MELISMA_PAD,
             lyric_font_size: 10.0,
             text_scale: 1.0,
+            user_text_scale: 1.0,
             hide_empty_staves: false,
         }
     }
@@ -210,6 +216,7 @@ impl PageSpec {
             && options.page_height_px.is_none()
             && options.scale == 1.0
             && options.lyric_size == crate::options::VEROVIO_LYRIC_SIZE
+            && options.text_scale == 1.0
             && !options.hide_empty_staves
             && options.transpose_semitones == 0
         {
@@ -246,6 +253,7 @@ impl PageSpec {
         spec.text_scale = (spec.printable_width.max(1) as f64
             / print.printable_width.max(1) as f64)
             .clamp(0.0, 1.0);
+        spec.user_text_scale = options.text_scale;
         spec
     }
 
@@ -317,6 +325,7 @@ impl PageSpec {
                     height + (style.frame_system_distance_sp * SP as f64) as i32
                 }),
             text_scale: 1.0,
+            user_text_scale: 1.0,
             hide_empty_staves: false,
         }
     }
@@ -1274,7 +1283,8 @@ fn place_time_sig(out: &mut DisplayList, numerator: u8, denominator: u8, x: i32,
 /// Font em in fixed staff spaces: point size converted with the score's
 /// spatium (`styledef.cpp:1209-1223`, `TextStyle::fontSize`).
 pub(crate) fn text_em(spec: &PageSpec, font_size: f64) -> i32 {
-    ((font_size * 25.4 / 72.0) / spec.spatium_mm * SP as f64) as i32
+    let em = ((font_size * 25.4 / 72.0) / spec.spatium_mm * SP as f64) as i32;
+    (em as f64 * spec.user_text_scale.max(0.1)) as i32
 }
 
 /// Width of a text run with real Edwin advances (`horizontalspacing.cpp` uses
@@ -1655,6 +1665,8 @@ fn plan_lyric_lines(
 }
 
 fn frame_text_em(spec: &PageSpec, font_size: f64) -> i32 {
+    // `text_em` already carries the caller multiplier; the automatic screen
+    // fit of frame credits applies on top of it.
     (text_em(spec, font_size) as f64 * spec.text_scale) as i32
 }
 

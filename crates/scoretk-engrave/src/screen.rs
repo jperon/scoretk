@@ -49,6 +49,17 @@ pub fn screen_staff_px(width_px: u32, height_px: u32) -> i32 {
     scaled.clamp(SCREEN_STAFF_PX_MIN, SCREEN_STAFF_PX_MAX)
 }
 
+/// Whole pixels per staff space at an explicit zoom.
+///
+/// The auto-fitted `screen_staff_px` is multiplied by `scale` and rounded, so
+/// the raster grid stays integral. `PageSpec::for_px` and `Document` must use
+/// this one function: the stored staff size and the drawn staff size then
+/// always agree.
+pub fn screen_staff_px_at(width_px: u32, height_px: u32, scale: f64) -> i32 {
+    let base = screen_staff_px(width_px, height_px);
+    ((base as f64 * scale.max(1.0 / base as f64)).round() as i32).max(1)
+}
+
 impl PageSpec {
     /// Builds a page geometry for a caller-owned screen buffer.
     ///
@@ -65,9 +76,7 @@ impl PageSpec {
     /// displayed pixel page. // Cantus passes `verovio_scale / 40` here: its
     /// `pageWidth = innerWidth * 100 / scale` compensates the physical page.
     pub fn for_px(width_px: u32, height_px: u32, scale: f64) -> Self {
-        let base = screen_staff_px(width_px, height_px);
-        let staff_px = (base as f64 * scale.max(1.0 / base as f64)).round() as i32;
-        let staff_px = staff_px.max(1);
+        let staff_px = screen_staff_px_at(width_px, height_px, scale);
         // Pixel coordinates round-trip exactly through the fixed-point grid:
         // fixed * staff_px / 1024 == px. The page therefore keeps the screen's
         // aspect ratio without a whole-staff-space quantisation error.
@@ -104,11 +113,29 @@ impl PageSpec {
     /// A 22 pt title that fits an A4 page therefore fits a 600 px screen
     /// without changing any layout algorithm.
     pub fn for_screen_with_score(width_px: u32, height_px: u32, score: &Score) -> Self {
-        let mut spec = Self::for_screen(width_px, height_px);
+        Self::for_screen_with_score_at(width_px, height_px, score, 1.0, 1.0)
+    }
+
+    /// [`Self::for_screen_with_score`] at an explicit staff zoom and an
+    /// explicit multiplier of every text style.
+    ///
+    /// `scale` multiplies the pixels per staff space (integer, as in
+    /// [`Self::for_px`]); `text_scale` reaches `PageSpec::user_text_scale`,
+    /// on top of the automatic credit fit computed here. Neither changes the
+    /// other: text can grow while the staff size and the note glyphs stay.
+    pub fn for_screen_with_score_at(
+        width_px: u32,
+        height_px: u32,
+        score: &Score,
+        scale: f64,
+        text_scale: f64,
+    ) -> Self {
+        let mut spec = Self::for_px(width_px, height_px, scale);
         let print = Self::from_score(score);
         spec.title_frame_height = print.title_frame_height;
         spec.text_scale =
             (spec.printable_width as f64 / print.printable_width.max(SP) as f64).clamp(0.0, 1.0);
+        spec.user_text_scale = text_scale;
         spec
     }
 }
@@ -160,6 +187,26 @@ mod tests {
         assert_eq!(zoomed.spatium_mm, normal.spatium_mm * 2.0);
         let ratio = zoomed.printable_width as f64 / normal.printable_width as f64;
         assert!(ratio > 0.45 && ratio <= 0.5, "width ratio {ratio}");
+    }
+
+    #[test]
+    fn caller_scale_sizes_notes_and_text_independently() {
+        let score = Score::new();
+        let plain = PageSpec::for_screen_with_score_at(600, 800, &score, 1.0, 1.0);
+        let zoomed = PageSpec::for_screen_with_score_at(600, 800, &score, 2.0, 1.0);
+        let text = PageSpec::for_screen_with_score_at(600, 800, &score, 1.0, 2.0);
+        assert_eq!(
+            screen_staff_px_at(600, 800, 2.0),
+            2 * screen_staff_px(600, 800)
+        );
+        assert_eq!(zoomed.spatium_mm, 2.0 * plain.spatium_mm);
+        // Text scaling leaves the staff geometry alone, and vice versa.
+        assert_eq!(text.spatium_mm, plain.spatium_mm);
+        assert_eq!(text.printable_width, plain.printable_width);
+        assert_eq!(zoomed.user_text_scale, 1.0);
+        assert_eq!(text.user_text_scale, 2.0);
+        let em = crate::layout::text_em;
+        assert_eq!(em(&text, 10.0), 2 * em(&plain, 10.0));
     }
 
     #[test]

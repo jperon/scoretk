@@ -112,6 +112,118 @@ fn version_and_unknown_command() {
     assert!(peer.finish().success());
 }
 
+/// Rows of the page that carry a continuous staff line (at least 60 % of the
+/// width), in increasing order.
+fn staff_line_rows(bytes: &[u8]) -> Vec<usize> {
+    bytes
+        .as_chunks::<WIDTH>()
+        .0
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| longest_dark_run(row.as_slice()) >= WIDTH * 3 / 5)
+        .map(|(row, _)| row)
+        .collect()
+}
+
+/// Smallest vertical gap between two distinct staff lines: the pixels per
+/// staff space used by the rasteriser.
+fn staff_pitch(rows: &[usize]) -> usize {
+    rows.windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .filter(|gap| *gap > 1)
+        .min()
+        .unwrap_or(0)
+}
+
+#[test]
+fn invalid_set_commands_are_rejected_without_changing_the_setting() {
+    let mut peer = Peer::start();
+    for command in [
+        "set",
+        "set scale",
+        "set nonsense 1.0",
+        "set scale nope",
+        "set scale 0.4",
+        "set text 3.1",
+        "set text NaN",
+    ] {
+        peer.send(command);
+        let answer = peer.line();
+        assert!(answer.starts_with("err "), "{command}: {answer}");
+    }
+    // The process is still usable and the default stays in force.
+    peer.send("set scale 2.0");
+    assert_eq!(peer.line(), "ok");
+    peer.send("version");
+    assert!(peer.line().starts_with("ok "));
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
+#[test]
+fn a_larger_staff_scale_fits_fewer_systems_per_page() {
+    let file = corpus("v3/moonlight.mscx");
+    let path = file.to_str().unwrap();
+    let mut peer = Peer::start();
+
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    let plain: usize = peer.line()[3..].parse().unwrap();
+    let plain_pitch = staff_pitch(&staff_line_rows(&peer.page(0)));
+    peer.send("close");
+    assert_eq!(peer.line(), "ok");
+
+    peer.send("set scale 2.0");
+    assert_eq!(peer.line(), "ok");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    let zoomed: usize = peer.line()[3..].parse().unwrap();
+    let zoomed_pitch = staff_pitch(&staff_line_rows(&peer.page(0)));
+
+    assert!(
+        plain > 0 && zoomed > plain,
+        "scale 2.0 must need more pages than 1.0 (plain {plain}, zoomed {zoomed})"
+    );
+    // The document's stored staff size is the effective one: the rasteriser
+    // draws twice as many pixels per staff space.
+    assert_eq!(
+        zoomed_pitch,
+        2 * plain_pitch,
+        "scale 2.0 did not double the staff pitch ({plain_pitch} -> {zoomed_pitch})"
+    );
+
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
+#[test]
+fn the_text_scale_does_not_change_the_pixels_per_staff_space() {
+    let file = corpus("v3/moonlight.mscx");
+    let path = file.to_str().unwrap();
+    let mut peer = Peer::start();
+
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    assert!(peer.line().starts_with("ok "));
+    let plain_bytes = peer.page(0);
+    let plain = staff_pitch(&staff_line_rows(&plain_bytes));
+    assert!(plain > 1, "no staff line found");
+
+    peer.send("close");
+    assert_eq!(peer.line(), "ok");
+    peer.send("set text 2.0");
+    assert_eq!(peer.line(), "ok");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    assert!(peer.line().starts_with("ok "));
+    let scaled_bytes = peer.page(0);
+    let scaled = staff_pitch(&staff_line_rows(&scaled_bytes));
+    assert_eq!(
+        scaled, plain,
+        "text 2.0 changed the staff pitch ({plain} -> {scaled})"
+    );
+    assert_ne!(scaled_bytes, plain_bytes, "text 2.0 drew the same page");
+
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
 #[test]
 fn page_zero_has_staff_lines_stems_and_margins() {
     let mut peer = Peer::start();

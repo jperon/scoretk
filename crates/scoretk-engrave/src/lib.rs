@@ -76,7 +76,7 @@ pub use identity::{GraceIdentity, NoteIdentity, NoteSourceRange, SourceRef};
 pub use layout::PageSpec;
 pub use layout_data::{BBox, MeasureLayout, NoteLayout, PageLayout, SystemLayout};
 pub use options::EngraveOptions;
-pub use screen::screen_staff_px;
+pub use screen::{screen_staff_px, screen_staff_px_at};
 pub use staffs::StaffInfo;
 pub use style::SP;
 
@@ -199,7 +199,12 @@ impl Engraver {
         if staffs.is_empty() {
             return Err(EngraveError::NoStaff);
         }
-        let atoms = atoms::compute_with_options(score, options);
+        // The page spec is authoritative for the caller's text multiplier
+        // (a caller may pass a hand-built spec to `new`); the atoms reserve
+        // the same lyric/annotation widths that `page(n)` will draw.
+        let mut atom_options = options.clone();
+        atom_options.text_scale = spec.user_text_scale;
+        let atoms = atoms::compute_with_options(score, &atom_options);
         let credits = score.engraving.credits.clone();
         let (_, height) = staffs::system_geometry(&staffs, &spec);
         // One height per system: spacers are not modelled yet, but the

@@ -17,10 +17,16 @@
 
 //! Line protocol of the persistent engraving process.
 //!
-//! Commands: `version`, `open <width> <height> <path>`, `page <n>`,
-//! `close`, `quit`. Replies are `ok …` or `err <one-line message>`; a `page`
-//! reply is followed by exactly `width × height` raw grey bytes. Every reply
-//! is flushed. Nothing is written to stdout except replies.
+//! Commands: `version`, `set <key> <value>`, `open <width> <height> <path>`,
+//! `page <n>`, `close`, `quit`. Replies are `ok …` or `err <one-line
+//! message>`; a `page` reply is followed by exactly `width × height` raw grey
+//! bytes. Every reply is flushed. Nothing is written to stdout except replies.
+//!
+//! `set` changes the next `open` calls, never the document already open:
+//! `set scale <f>` is the staff-size multiplier (notes), `set text <f>` the
+//! multiplier of every text style. Both default to 1.0 and are bounded to
+//! `[0.5, 3.0]`; out-of-range or non-finite values are `err` replies and
+//! leave the current setting unchanged.
 
 use std::any::Any;
 use std::io::{self, BufRead, Write};
@@ -28,15 +34,28 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::Document;
 
+/// Bounds accepted by `set scale` and `set text`.
+const SCALE_MIN: f64 = 0.5;
+const SCALE_MAX: f64 = 3.0;
+
 /// The line protocol, owning one optional document at a time.
 pub struct Server<W: Write> {
     out: W,
     doc: Option<Document>,
+    /// Staff-size multiplier used by the next `open`.
+    scale: f64,
+    /// Text-style multiplier used by the next `open`.
+    text_scale: f64,
 }
 
 impl<W: Write> Server<W> {
     pub fn new(out: W) -> Self {
-        Self { out, doc: None }
+        Self {
+            out,
+            doc: None,
+            scale: 1.0,
+            text_scale: 1.0,
+        }
     }
 
     /// Handles one line; returns `false` when the caller should exit.
@@ -48,6 +67,7 @@ impl<W: Write> Server<W> {
         };
         match command {
             "version" => Self::reply(&mut self.out, &format!("ok {}", env!("CARGO_PKG_VERSION")))?,
+            "set" => self.set(rest)?,
             "open" => self.open(rest)?,
             "page" => self.page(rest)?,
             "close" => {
@@ -74,6 +94,32 @@ impl<W: Write> Server<W> {
         }
     }
 
+    fn set(&mut self, rest: &str) -> io::Result<()> {
+        let Some((key, value)) = rest.split_once(' ') else {
+            return Self::reply(
+                &mut self.out,
+                "err invalid set arguments (expected: set <key> <value>)",
+            );
+        };
+        let key = key.trim();
+        let value = value.trim();
+        let Ok(value) = value.parse::<f64>() else {
+            return Self::reply(&mut self.out, "err invalid set value");
+        };
+        if !value.is_finite() || !(SCALE_MIN..=SCALE_MAX).contains(&value) {
+            return Self::reply(
+                &mut self.out,
+                &format!("err set value out of range (expected {SCALE_MIN}..={SCALE_MAX})"),
+            );
+        }
+        match key {
+            "scale" => self.scale = value,
+            "text" => self.text_scale = value,
+            _ => return Self::reply(&mut self.out, "err unknown setting"),
+        }
+        Self::reply(&mut self.out, "ok")
+    }
+
     fn open(&mut self, rest: &str) -> io::Result<()> {
         // A new document always replaces (and therefore frees) the old one.
         self.doc = None;
@@ -92,7 +138,10 @@ impl<W: Write> Server<W> {
             return Self::reply(&mut self.out, "err invalid height");
         };
         let path = path.trim_start();
-        let outcome = catch_unwind(AssertUnwindSafe(|| Document::open(path, width, height)));
+        let (scale, text_scale) = (self.scale, self.text_scale);
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            Document::open_with(path, width, height, scale, text_scale)
+        }));
         match outcome {
             Ok(Ok(document)) => {
                 let pages = document.page_count();

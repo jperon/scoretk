@@ -2411,12 +2411,30 @@ output, if any, goes to stderr.
 | Command | Reply |
 | --- | --- |
 | `version` | `ok <version>` |
+| `set <key> <value>` | `ok`, or `err <message>`; applies to the next `open` calls |
 | `open <width> <height> <path>` | `ok <page_count>` or `err <message>` |
 | `page <n>` | `ok <bytes>` then exactly `<bytes> = width × height` raw grey bytes (0 black, 255 white, row by row, no stride), or `err <message>` |
 | `close` | `ok` (releases the document) |
 | `quit` | process exits 0, no reply |
 | EOF on stdin | process exits 0 |
 | unknown command | `err unknown command` |
+
+`set` takes two settings, both multipliers defaulting to 1.0 and bounded to
+`[0.5, 3.0]` (out-of-range, non-finite or unknown values are `err` and leave
+the current setting unchanged):
+
+- `set scale <f>`: staff-size multiplier, i.e. the size of the notes. It
+  multiplies `screen_staff_px`; the rasteriser still uses a whole number of
+  pixels per staff space (`screen_staff_px_at`), and the stored `staff_px` is
+  that effective value.
+- `set text <f>`: multiplier of every text style (titles/credits, lyrics,
+  measure numbers, instrument names). It is applied on top of the automatic
+  credit fit of `PageSpec::text_scale` and never changes the staff size.
+
+A `set` only affects later `open` commands, not the document already open.
+`version` replies with the crate version (`CARGO_PKG_VERSION`); the line
+protocol has no separate version number, so this additive command leaves the
+reply unchanged.
 
 `open` replaces (frees) the previous document first; the path is the rest of
 the line and may contain spaces. A panic during `open` or `page` is caught and
