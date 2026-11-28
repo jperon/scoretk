@@ -157,7 +157,7 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec, heights: &[i32]) ->
     let mut y = spec.margin_top + spec.title_frame_height;
     let bottom = spec.page_height - spec.margin_top;
     for (index, system) in systems.iter_mut().enumerate() {
-        let distance = if system.y == 0 && system.first == 0 {
+        let mut distance = if system.y == 0 && system.first == 0 {
             0
         } else {
             spec.min_system_distance
@@ -167,8 +167,10 @@ fn assign_pages(systems: &mut [SystemPlan], spec: &PageSpec, heights: &[i32]) ->
         if y + distance + height > bottom && system.first > 0 {
             page += 1;
             // // Port of `pagelayout.cpp:179`: the first system of a page
-            // starts below `staffUpperBorder`.
+            // starts below `staffUpperBorder`, and no system distance is
+            // added above it.
             y = spec.margin_top + spec.staff_upper_border;
+            distance = 0;
         }
         y += distance;
         system.y = y;
@@ -197,10 +199,13 @@ pub fn repaginate(systems: &mut [SystemPlan], spec: &PageSpec) {
     let mut y = spec.margin_top + spec.title_frame_height;
     for (index, system) in systems.iter_mut().enumerate() {
         if index > 0 {
-            let gap = gaps[index - 1];
+            let mut gap = gaps[index - 1];
             if y + gap + system.height > bottom {
                 page += 1;
+                // A page starts at its top border: the system distance only
+                // separates systems that share a page.
                 y = spec.margin_top + spec.staff_upper_border;
+                gap = 0;
             }
             y += gap;
         }
