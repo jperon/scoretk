@@ -2690,3 +2690,30 @@ the SVG and that a second relayout restores it, and that a MusicXML
 `staff-size` of 70 reaches the SVG as a 0.7 glyph scale. Debug-build relayout
 of `moonlight.mscx` took 14.2 ms; host peak heap/RSS of the default and
 relayout CLI paths are recorded in §33.7.
+
+### 33.7 Resource budget and final checks (2026-11-28)
+
+`scripts/measure-engrave-memory.sh --build --out …` before (`d53e70ef`) and
+after (`f5312644`) the campaign, release profile, host x86-64, one engraved
+page; "heap" is dhat's `t-gmax`, RSS includes the ~10 MB static/libc floor.
+
+| File | Before: peak heap / max RSS | After: peak heap / max RSS |
+| --- | ---: | ---: |
+| `v3/moonlight.mscx` | 6,774,316 B / 15,928 KB | **6,774,342 B** / 16,308 KB |
+| `v4/voiceswitching.mscx` | 296,710 B / 10,312 KB | **296,736 B** / 10,572 KB |
+| `v4/testExcludeInvisibleElements.mscx` | 374,953 B / 10,312 KB | **374,979 B** / 10,700 KB |
+
+Peak heap grows by **26 B** on every file (three new CLI option strings kept
+alive at exit); RSS moves by 0.26–0.39 MB, within run-to-run noise. The Kobo
+budget of §20 is therefore not regressed. The relayout CLI path
+(`--page-width-px 800 --relayout-width-px 420` on `moonlight.mscx`) reports a
+peak heap of **6,774,241 B** and max RSS **15,752 KB**: one layout at a time,
+not two, with 23.7 MB total allocations (two passes) and 0.24 s wall against
+0.15 s for a single pass. The debug-build facade relayout measured 14.2 ms.
+
+Final checks: `cargo fmt --all -- --check`, clippy `-D warnings` on all touched
+crates, their tests and the targeted facade test file all pass. The engraving
+oracle was run once at the end: 56 files, 0 failures, 398/2 346 elements
+within 0.1 sp. More directly, all 56 page-0 SVGs of the corpus are
+**byte-identical** to the pre-change binary built from `d53e70ef`, which is
+the proof that the default output did not move.
