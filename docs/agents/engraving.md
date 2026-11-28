@@ -2486,6 +2486,28 @@ was written for a `cdylib`; the static process carries its own libc and Rust
 runtime. No Kobo run was performed here: the device test belongs to the
 orchestrator.
 
+### Zoom and page breaks (2026-11-28)
+
+`set scale` above 1 multiplied the page count far more than the staff size
+(600 × 800, `ode_to_joy.abc`, 16 measures: 3 pages at 1.0, 8 at 1.2, 15 at
+1.5, 16 at 2.0; at 1.5 most pages held a single system above a large void).
+Two constant vertical reservations were the cause, and both are a fixed
+number of staff spaces, so they only became fatal when the page shrank with
+the zoom:
+
+- `breaking::assign_pages`/`repaginate` added `minSystemDistance` **above**
+  the first system of every new page, on top of the top border. The distance
+  only separates systems that share a page.
+- `PageSpec::for_px` added the print page's `staffUpperBorder` and
+  `staffLowerBorder` (7 sp each, `styledef.cpp`) on top of its own 4 sp
+  screen margins. On a screen the margins already keep tall clefs inside the
+  buffer, so the screen spec keeps the borders at zero.
+
+Measured after the fix, on the same file: 1 page at 0.7, 2 at 1.0, 6 at 1.5,
+8 at 2.0, every page filled (three systems per page at 1.5, two at 2.0) and
+systems justified to the right margin. `tests/serve.rs` pins the page-count
+bounds (0.7 ≤ 1.0, 1.5 ≤ 2 × 1.0, 2.0 ≤ 3 × 1.0) and rejects blank pages.
+
 ## 32. Element identity and structured output (engid, 2026-11-27)
 
 Goal: let cantus link a drawn element to the pivot score **and** to a playback

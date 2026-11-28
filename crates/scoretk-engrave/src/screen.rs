@@ -99,6 +99,13 @@ impl PageSpec {
             margin_left: to_sp(margin_x),
             margin_top: to_sp(margin_y),
             printable_width: to_sp(width - 2 * margin_x).max(SP),
+            // `margin_top` already reserves the top and bottom clearance:
+            // the print page's `staffUpperBorder`/`staffLowerBorder` (7 sp
+            // each, `styledef.cpp`) would be added on top of it. On a screen
+            // whose page height shrinks with the zoom, that double margin
+            // left room for a single system per page.
+            staff_upper_border: 0,
+            staff_lower_border: 0,
             ..Self::default()
         }
     }

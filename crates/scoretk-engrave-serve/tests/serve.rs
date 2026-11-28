@@ -194,6 +194,60 @@ fn a_larger_staff_scale_fits_fewer_systems_per_page() {
     assert!(peer.finish().success());
 }
 
+/// Opens `path` at `scale` and returns the page count after checking that
+/// every page carries ink.
+fn pages_at(peer: &mut Peer, path: &str, scale: &str) -> usize {
+    peer.send(&format!("set scale {scale}"));
+    assert_eq!(peer.line(), "ok", "set scale {scale}");
+    peer.send(&format!("open {WIDTH} {HEIGHT} {path}"));
+    let answer = peer.line();
+    assert!(answer.starts_with("ok "), "scale {scale}: {answer}");
+    let pages: usize = answer[3..].parse().unwrap();
+    for page in 0..pages {
+        let bytes = peer.page(page);
+        assert!(
+            bytes.iter().any(|value| *value < 128),
+            "scale {scale}: page {page} of {pages} is blank"
+        );
+    }
+    pages
+}
+
+#[test]
+fn zooming_in_does_not_multiply_the_page_count() {
+    // Regression: the first system of a page used to pay the system distance
+    // on top of the top border, and the screen geometry added the print
+    // page's 7 sp staff borders to its own margins. Both errors are a fixed
+    // number of staff spaces, so they only became fatal once the page held
+    // few staff spaces: at 1.5 this two-page score needed seven pages, most
+    // of them a single system with a large void below.
+    let file = corpus("v4/voiceswitching.mscx");
+    let path = file.to_str().unwrap();
+    let mut peer = Peer::start();
+
+    let plain = pages_at(&mut peer, path, "1.0");
+    assert!(plain >= 2, "the sample must span several pages");
+    let narrow = pages_at(&mut peer, path, "0.7");
+    let zoom = pages_at(&mut peer, path, "1.5");
+    let double = pages_at(&mut peer, path, "2.0");
+
+    assert!(
+        narrow <= plain,
+        "0.7 must not need more pages than 1.0 ({narrow} > {plain})"
+    );
+    assert!(
+        zoom <= 2 * plain,
+        "1.5 must stay within twice the pages of 1.0 ({zoom} > 2 x {plain})"
+    );
+    assert!(
+        double <= 3 * plain,
+        "2.0 must stay within three times the pages of 1.0 ({double} > 3 x {plain})"
+    );
+
+    peer.send("quit");
+    assert!(peer.finish().success());
+}
+
 #[test]
 fn the_text_scale_does_not_change_the_pixels_per_staff_space() {
     let file = corpus("v3/moonlight.mscx");
